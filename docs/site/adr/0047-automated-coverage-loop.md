@@ -74,35 +74,57 @@ and a wrong claim is a false alert on every run.
    Defaults: anomaly checks warn at 3 standard deviations, fail at 4, critical at 6; a schema
    change fails. Admins tune them per connection, and a person can edit any check.
 
-   > **Amended 2026-10-13.** Per-connection tuning was never built, and the defaults
-   > are settings, not constants. Sensitivity (the three deviation thresholds) and the baseline
-   > shape (window, minimum points, weekday seasonality) resolve through one hierarchy:
-   > **asset override → workspace setting → built-in default**. The workspace setting is one
-   > row, `coverage_settings` (the `scoring_settings` shape: an absent row means the built-in
-   > defaults); the asset override is `assets.auto_coverage_config`, and may set any subset.
-   > Both are Admin-only and audited. There is no per-connection level: the connection decides
-   > *whether* its tables are covered and pays the warehouse cost, which is why the switch
-   > lives there, but how sensitive a baseline is costs nothing and is a property of the table.
+   > **Amended 2026-10-13.** Per-connection tuning was never built, and the anomaly defaults
+   > become settings (a schema change failing is not one: it has no number to tune). They resolve
+   > through one hierarchy: **asset override → workspace setting → built-in default**.
    >
-   > An automatic anomaly check **inherits at run time**: it stores no thresholds and no window
-   > of its own, and each run resolves them through the hierarchy, so a workspace change reaches
-   > every covered table on its next run. The result records the values it was scored against.
-   > A check says which it is in its config (`inherit_coverage_settings`): `true` on every check
-   > the reconciler creates from now on, `false` once a person edits a threshold or the window
-   > (the edit pins all of them at the values then in effect). An automatic check created before
-   > this amendment has neither; it inherits while its stored values still equal the built-in
-   > defaults, which is exactly the set nobody has tuned.
+   > - **What is set.** *Sensitivity* is the three deviation thresholds, held **per baseline**
+   >   (volume, freshness, column profile), because the column profile takes the largest
+   >   deviation over many series and is the one most likely to need loosening on its own.
+   >   *Baseline shape* is the window, minimum points and weekday seasonality, shared by the three.
+   > - **Where.** The workspace setting is one row, `coverage_settings` (an absent row means the
+   >   built-in defaults); the asset override is `assets.auto_coverage_config`. Both hold the same
+   >   document and both are Admin-only and audited. There is no per-connection level: the
+   >   connection decides *whether* its tables are covered and pays the warehouse cost, which is
+   >   why the switch lives there, but sensitivity costs nothing and is a property of the table.
+   > - **Whole groups only.** A level sets a baseline's three thresholds together, or the three
+   >   shape values together, or leaves the group to the level below. Each group is validated
+   >   where it is saved, so no merge across levels can produce an unordered threshold set or a
+   >   minimum above its window, and a workspace change cannot invalidate an asset override.
+   >
+   > An automatic anomaly check **inherits at run time**: each run resolves its thresholds and
+   > shape through the hierarchy, so a workspace change reaches every covered table on its next
+   > run, and the result records the values it was scored against.
+   >
+   > - **The stored values stay.** An inheriting check keeps its threshold columns and window
+   >   keys populated with the values in effect when it was created, so it remains a valid
+   >   anomaly check for export and for any reader of the table. They are not what it runs on:
+   >   one resolver serves the run path, dry-run and every read surface (REST and MCP), which
+   >   return the effective values and say that they are inherited and from which level.
+   > - **The flag.** A check says which it is in its config, `inherit_coverage_settings`. It is
+   >   server-owned: `true` on every check the reconciler creates from now on, carried over
+   >   unchanged by an edit that does not touch these values, and refused on a check that is not
+   >   automatic. Editing any threshold, the window, the minimum points or seasonality sets it to
+   >   `false` and pins all of them at the values then in effect. Restoring a version restores
+   >   that version's flag, and a suite document carries it.
+   > - **Checks created before this amendment** have no flag. One inherits while its stored
+   >   values equal the values the reconciler wrote then (3 / 4 / 6; window 8, minimum 4,
+   >   seasonality on), which is the set nobody has tuned. That signature is fixed here, apart
+   >   from the built-in defaults, so changing a default later does not change which old checks
+   >   inherit.
+   > - **History.** An inheriting check always retains the seasonal horizon (seven times the
+   >   window), so switching seasonality off and on again loses nothing. Shortening the window
+   >   does trim older observations on the next run, and lengthening it afterwards means waiting
+   >   for them again; the settings surface says so before a shorter window is saved.
 
 6. **The loop never overrides a person.** Checks carry `origin` (`user`, `auto`,
    `suggestion`). The reconciler only adds a universal check that is missing and never edits
    an existing one. A check a person deletes is recorded on the suite and not recreated. An
    edited threshold stays edited.
 
-   > **Amended 2026-10-13.** Inheritance does not weaken this. The reconciler still
-   > writes nothing to an existing check; an inheriting check changes behaviour because an Admin
-   > changed a setting, which is a person's decision, and a check a person has edited stops
-   > inheriting. A changed window does not reset the baseline: the next run scores the
-   > stored observations against the new window.
+   > **Amended 2026-10-13.** Inheritance does not weaken this. The reconciler still writes
+   > nothing to an existing check; an inheriting check changes behaviour because an Admin changed
+   > a setting, which is a person's decision, and a check a person has edited stops inheriting.
 
 7. **The reconciler.** A daily beat task, after inventory sync, per covered connection:
    creates missing automatic suites and checks, pauses the suites of tables that aged out of
