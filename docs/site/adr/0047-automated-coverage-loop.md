@@ -74,10 +74,35 @@ and a wrong claim is a false alert on every run.
    Defaults: anomaly checks warn at 3 standard deviations, fail at 4, critical at 6; a schema
    change fails. Admins tune them per connection, and a person can edit any check.
 
+   > **Amended 2026-10-13.** Per-connection tuning was never built, and the defaults
+   > are settings, not constants. Sensitivity (the three deviation thresholds) and the baseline
+   > shape (window, minimum points, weekday seasonality) resolve through one hierarchy:
+   > **asset override → workspace setting → built-in default**. The workspace setting is one
+   > row, `coverage_settings` (the `scoring_settings` shape: an absent row means the built-in
+   > defaults); the asset override is `assets.auto_coverage_config`, and may set any subset.
+   > Both are Admin-only and audited. There is no per-connection level: the connection decides
+   > *whether* its tables are covered and pays the warehouse cost, which is why the switch
+   > lives there, but how sensitive a baseline is costs nothing and is a property of the table.
+   >
+   > An automatic anomaly check **inherits at run time**: it stores no thresholds and no window
+   > of its own, and each run resolves them through the hierarchy, so a workspace change reaches
+   > every covered table on its next run. The result records the values it was scored against.
+   > A check says which it is in its config (`inherit_coverage_settings`): `true` on every check
+   > the reconciler creates from now on, `false` once a person edits a threshold or the window
+   > (the edit pins all of them at the values then in effect). An automatic check created before
+   > this amendment has neither; it inherits while its stored values still equal the built-in
+   > defaults, which is exactly the set nobody has tuned.
+
 6. **The loop never overrides a person.** Checks carry `origin` (`user`, `auto`,
    `suggestion`). The reconciler only adds a universal check that is missing and never edits
    an existing one. A check a person deletes is recorded on the suite and not recreated. An
    edited threshold stays edited.
+
+   > **Amended 2026-10-13.** Inheritance does not weaken this. The reconciler still
+   > writes nothing to an existing check; an inheriting check changes behaviour because an Admin
+   > changed a setting, which is a person's decision, and a check a person has edited stops
+   > inheriting. A changed window does not reset the baseline: the next run scores the
+   > stored observations against the new window.
 
 7. **The reconciler.** A daily beat task, after inventory sync, per covered connection:
    creates missing automatic suites and checks, pauses the suites of tables that aged out of
@@ -108,6 +133,9 @@ and a wrong claim is a false alert on every run.
 2. The `column_profile` metric.
 3. The review queue: profile and LLM suggestions, accept and reject, in the UI and API.
 4. Coverage and false-positive figures on the dashboard, and the resolution choice on incidents.
+5. Sensitivity settings (the 2026-10-13 amendment): the `coverage_settings` row and the
+   asset override, run-time inheritance, the admin and asset surfaces, and the false-positive
+   rate broken down by baseline and by connection.
 
 ## Consequences
 
@@ -128,6 +156,13 @@ and a wrong claim is a false alert on every run.
   gap this closes.
 - **Coverage per asset or workspace-wide:** per asset keeps it manual; workspace-wide takes the
   warehouse-cost decision away from whoever owns each connection.
+  *(2026-10-13: this stands for the coverage switch. Sensitivity is set at exactly those two
+  levels, because it carries no warehouse cost.)*
+- **Applying a changed setting at check creation only** (decided 2026-10-13): simpler, and the
+  reconciler would stay the only writer, but a workspace change would never reach an existing
+  suite, leaving each check as the only knob.
+- **A hidden baseline with no check** for the zero-config case: already
+  rejected above as "hidden baselines"; the automatic suite is that system.
 - **The reconciler calling the LLM for every covered table** (decided 2026-10-04): an unattended
   call per table sends each table's profile to the model provider and spends tokens with nobody
   having asked, on a schedule the workspace cannot see. On demand keeps both the data flow and
