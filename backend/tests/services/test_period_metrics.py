@@ -56,11 +56,15 @@ def test_the_sum_metric_keeps_its_value_column_with_its_case() -> None:
         {"target_metric": "period_row_count"},  # date_column is required
         {**_COUNT, "date_column": "a; DROP TABLE x"},
         {**_COUNT, "period": "month"},
-        {**_COUNT, "period": None},
         {**_COUNT, "value_column": "amount"},  # a count sums nothing
         {"target_metric": "period_sum", "date_column": "ordered_at"},  # value_column required
         {**_SUM, "value_column": "a b"},
         {**_COUNT, "timezone": "Mars/Olympus"},
+        # Spelled exactly, or a case-insensitive filesystem accepts what the worker refuses.
+        {**_COUNT, "timezone": "europe/london"},
+        {**_COUNT, "timezone": "utc"},
+        # Resolves on Linux to whatever zone the container is in.
+        {**_COUNT, "timezone": "localtime"},
         {**_COUNT, "timezone": "../../etc/passwd"},
         {**_COUNT, "timezone": 5},
         {**_COUNT, "settle_hours": -1},
@@ -77,10 +81,33 @@ def test_a_malformed_period_config_is_refused(config: dict[str, Any]) -> None:
 @pytest.mark.parametrize(
     "key", ["date_column", "period", "value_column", "timezone", "settle_hours"]
 )
-def test_a_period_key_on_a_whole_table_metric_is_refused_and_named(key: str) -> None:
+def test_a_period_key_on_a_whole_table_metric_is_refused_when_authoring(key: str) -> None:
     """Silently ignoring it would leave the author believing the check buckets by date."""
+    config = {"target_metric": "row_count", key: "day"}
+
     with pytest.raises(MonitorConfigError, match=f"anomaly {key} applies only to"):
-        monitors.anomaly_params({"target_metric": "row_count", key: "day"})
+        monitors.validate_monitor_config("anomaly", config)
+    # A check stored before these keys existed, when unknown keys were ignored, still runs.
+    assert monitors.anomaly_params(config).period is None
+
+
+def test_a_key_set_to_null_is_a_key_left_out() -> None:
+    nulls = {"period": None, "timezone": None, "settle_hours": None, "value_column": None}
+
+    assert monitors.anomaly_params({**_COUNT, **nulls}).period == _spec()
+    monitors.validate_monitor_config("anomaly", {"target_metric": "row_count", **nulls})
+
+
+def test_utc_needs_no_time_zone_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    import zoneinfo
+
+    def missing(name: str) -> Any:
+        raise KeyError(name)
+
+    monkeypatch.setattr(zoneinfo, "available_timezones", lambda: set())
+    monkeypatch.setattr(zoneinfo, "ZoneInfo", missing)
+
+    assert _spec().settled(_at("2026-10-13T06:00")) == (date(2026, 10, 12), date(2026, 10, 13))
 
 
 # ── which period is judged ───────────────────────────────────────────────────
@@ -424,6 +451,39 @@ def test_a_dry_run_stores_nothing_and_says_so(
     session, _, check = graph
     assert get_baseline(session, check.id) is None
     assert (outcome.observed_value["recorded"], outcome.observed_value["dry_run"]) == (False, True)
+
+
+def test_a_period_judged_out_of_turn_is_stored_in_date_order(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No run judged the 11th; the 12th is stored; then a longer settle delay makes the next
+    run judge the 11th. Scoring and trimming both read the list as oldest first."""
+    session, _, check = graph
+    _run(graph, monkeypatch, "2026-10-11T12:00", 100)
+    _run(graph, monkeypatch, "2026-10-13T12:00", 120)
+
+    check.config = {**check.config, "settle_hours": 36}
+    session.flush()
+    # Midnight on the 14th, less 36 hours, is noon on the 12th: the 11th is the last settled day.
+    _run(graph, monkeypatch, "2026-10-14T00:00", 110)
+
+    assert _points(graph) == [("2026-10-10", 100.0), ("2026-10-11", 110.0), ("2026-10-12", 120.0)]
+
+
+def test_changing_the_time_zone_or_settle_delay_keeps_the_history(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """They decide when a period is judged, not which rows are in it."""
+    session, _, check = graph
+    for day in ("10", "11", "12", "13"):
+        _run(graph, monkeypatch, f"2026-10-{day}T12:00", 100)
+
+    check.config = {**check.config, "timezone": "Etc/UTC", "settle_hours": 2}
+    session.flush()
+    outcome = _run(graph, monkeypatch, "2026-10-14T12:00", 100)
+
+    assert outcome.observed_value["points"] == 4
+    assert len(_points(graph)) == 5
 
 
 def test_points_bucketed_another_way_are_not_this_checks_history(

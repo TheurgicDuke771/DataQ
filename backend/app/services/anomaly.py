@@ -6,7 +6,7 @@ import math
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -75,14 +75,16 @@ def measure_metric(
     params: AnomalyParams,
     secret_store: SecretStore,
     now: datetime,
+    settled: tuple[date, date] | None = None,
 ) -> float:
     """This run's raw measurement of the configured ``target_metric``. A per-period metric
-    measures the most recent settled period as of ``now`` (ADR 0048)."""
+    measures ``settled``, the period the caller will record the point under (ADR 0048); left
+    out, it is the most recent settled period as of ``now``."""
     try:
         with _open_connection(connection, secret_store) as conn:
             dialect = conn.dialect if catalog is not None else None
             if params.period is not None:
-                start, end = params.period.settled(now)
+                start, end = settled or params.period.settled(now)
                 statement = period_statement(
                     qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect),
                     params.period,
@@ -387,7 +389,9 @@ def dump_baseline(observations: list[Observation], params: AnomalyParams) -> dic
 
 def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
     """What a per-period check's stored points were bucketed by; ``None`` for other metrics
-    (absent from their payload, so baselines written before this stay readable)."""
+    (absent from their payload, so baselines written before this stay readable). The time
+    zone and settle delay are not part of it: they decide when a period is judged, not which
+    rows are in it."""
     spec = params.period
     if spec is None:
         return None
@@ -395,17 +399,18 @@ def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
         "date_column": spec.date_column,
         "unit": spec.unit,
         "value_column": spec.value_column,
-        "timezone": spec.timezone,
     }
 
 
-def observation_time(params: AnomalyParams, now: datetime) -> tuple[datetime, dict[str, Any]]:
+def observation_time(
+    params: AnomalyParams, now: datetime, settled: tuple[date, date] | None = None
+) -> tuple[datetime, dict[str, Any]]:
     """When this run's point is dated, and the period fields its result carries. A per-period
     point is dated at the start of its period (a calendar label, stored as midnight UTC)."""
     spec = params.period
     if spec is None:
         return now, {}
-    start, end = spec.settled(now)
+    start, end = settled or spec.settled(now)
     return datetime.combine(start, time.min, tzinfo=UTC), {
         "period": {
             "start": start.isoformat(),
@@ -518,6 +523,8 @@ def build_anomaly_executor(
                 params = replace(params, retain_seasonal_horizon=True)
             if params.target_metric == COLUMN_PROFILE_METRIC:
                 return _column_profile_outcome(check, config, params, now)
+            # Resolved once: the period measured is the period the point is stored under.
+            settled = params.period.settled(now) if params.period is not None else None
             value = measure_metric(
                 connection,
                 table=target_table,
@@ -526,6 +533,7 @@ def build_anomaly_executor(
                 params=params,
                 secret_store=secret_store,
                 now=now,
+                settled=settled,
             )
         except Exception as exc:
             # Safe-marked messages (bad config, an unparseable timestamp cell) name the user's own
@@ -555,7 +563,7 @@ def build_anomaly_executor(
         observations = load_observations(row, params)
         # A per-period metric is about a period, not about when the run happened: its point
         # is stamped with the period, scored against earlier periods only, and written once.
-        at, period_fields = observation_time(params, now)
+        at, period_fields = observation_time(params, now, settled)
         earlier = (
             [o for o in observations if o.ts < at] if params.period is not None else observations
         )
@@ -574,7 +582,12 @@ def build_anomaly_executor(
             # result, but the stored point is the one written when the period was first judged.
             payload["recorded"] = persist and not already_recorded
         if persist and not already_recorded:
-            kept = trim([*observations, Observation(ts=at, value=value)], params)
+            points = [*observations, Observation(ts=at, value=value)]
+            if params.period is not None:
+                # A changed settle delay can judge an older period after a newer one; scoring
+                # and trimming both take the list as oldest first.
+                points.sort(key=lambda o: o.ts)
+            kept = trim(points, params)
             baseline = dump_baseline(kept, params)
             if row is None:
                 insert_baseline_if_absent(

@@ -187,6 +187,47 @@ describe('CheckTrend', () => {
     expect(screen.queryByText(/μ=3049/)).not.toBeInTheDocument();
   });
 
+  it('draws a per-period check’s seasonal band for the next period’s weekday, not today’s', async () => {
+    // Today is a Friday; the last stored point is Wednesday the 29th, so the next run judges
+    // Thursday the 30th and is scored against Thursdays.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-31T12:00:00Z'));
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-07-31T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: '2026-07-31T00:00:00Z',
+      baseline: {
+        version: 1,
+        target_metric: 'period_row_count',
+        window: 2,
+        seasonality: true,
+        observations: [
+          { ts: '2026-07-16T00:00:00Z', value: 130 }, // Thursday — kept
+          { ts: '2026-07-17T00:00:00Z', value: 9999 }, // Friday — today’s weekday, must be excluded
+          { ts: '2026-07-23T00:00:00Z', value: 150 }, // Thursday — kept
+          { ts: '2026-07-24T00:00:00Z', value: 8888 }, // Friday — must be excluded
+          { ts: '2026-07-29T00:00:00Z', value: 7777 }, // Wednesday — the last stored period
+        ],
+      },
+    });
+    render(
+      <CheckTrend
+        suiteId="s1"
+        check={{
+          ...anomalyCheck,
+          config: { target_metric: 'period_row_count', date_column: 'ordered_at' },
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/Anomaly baseline — learned band for Thursdays/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/μ=140\.00/)).toBeInTheDocument();
+  });
+
   it('says a column-profile baseline is per column, never "no observations captured yet"', async () => {
     mockHistory.mockResolvedValue([
       { run_id: 'r1', status: 'pass', metric_value: 1.2, created_at: '2026-06-10T00:00:00Z' },

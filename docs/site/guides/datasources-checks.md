@@ -1238,10 +1238,14 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
 
 - `date_column` says which column dates a row, `period` is `day` or `week` (Monday to
   Sunday), and `period_sum` also names a `value_column`.
-- Only **complete** periods are judged. `timezone` (an IANA name, default `UTC`) decides
-  when a day ends, and a period is judged once it has been closed for `settle_hours`
-  (default 6), so a suite that runs just after midnight does not judge yesterday before the
-  nightly load has landed. Raise it for a table that fills in slowly.
+- Only **complete** periods are judged. `timezone` (an IANA name spelled exactly, default
+  `UTC`) is the zone the date column's values are written in, and decides when a day ends.
+  A period is judged once it has been closed for `settle_hours` (default 6), so a suite that
+  runs just after midnight does not judge yesterday before the nightly load has landed.
+  Raise it for a table that fills in slowly.
+- Set `timezone` to the data's zone, not to where you are. If the column holds UTC
+  timestamps and `timezone` is `Asia/Tokyo`, a morning run in Tokyo judges a UTC day that
+  still has hours to go, and that short count becomes the day's stored point.
 - Each period gets **one** stored point, written the first time it is judged. Running the
   suite again the same day measures the period again and reports it, but the baseline keeps
   the first value, and rows that arrive later do not revise it. The result's `recorded` field
@@ -1250,13 +1254,13 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
   time zone is read in the warehouse session's zone, which DataQ does not set, so for such a
   column `timezone` only decides when a period counts as complete.
 - A period with no rows counts as 0, for the sum as well.
-- Changing `date_column`, `period`, `value_column` or `timezone` starts the history again,
-  because the earlier points measured something else.
+- Changing `date_column`, `period` or `value_column` starts the history again, because the
+  earlier points measured something else. Changing `timezone` or `settle_hours` does not.
 
 For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
 "amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges
-yesterday's sales each morning against the fourteen days before it. The check editor does
-not offer these two metrics yet; create them through the API or MCP.
+yesterday's sales each morning against the fourteen days before it. In the check editor,
+choose **Rows per period** or **Sum per period** as the anomaly's target metric.
 
 ### Comparison check (all datasources — ADR 0015)
 

@@ -336,6 +336,11 @@
     "dimension": null,
     "fields": [
       "target_metric",
+      "date_column",
+      "value_column",
+      "period",
+      "timezone",
+      "settle_hours",
       "column",
       "window",
       "min_points",

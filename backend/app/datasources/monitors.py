@@ -371,9 +371,10 @@ class PeriodSpec:
         """``[start, end)`` of the most recent period closed for at least ``settle_hours``."""
         from zoneinfo import ZoneInfo
 
+        zone = UTC if self.timezone == "UTC" else ZoneInfo(self.timezone)
         # The delay is taken off in absolute time, then read on the local calendar, so a
         # daylight-saving change cannot move the cut by an hour.
-        cutoff = (now - timedelta(hours=self.settle_hours)).astimezone(ZoneInfo(self.timezone))
+        cutoff = (now - timedelta(hours=self.settle_hours)).astimezone(zone)
         end = self.start_of(cutoff.date())
         return end - self.length, end
 
@@ -412,9 +413,13 @@ def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, hi
     return raw
 
 
-def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
+def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> AnomalyParams:
     """Parse + validate an `anomaly` config (single parse shared by author gate,
     run executor and dry-run — a config that saves is a config that runs).
+
+    ``authoring`` adds the one refusal a stored check must not start failing on: a per-period
+    key on a metric that takes none. Unknown keys were ignored before those keys existed, so
+    a check saved then still runs; a save or a preview now names the key.
     """
     target_metric = config.get("target_metric")
     if target_metric not in ANOMALY_TARGET_METRICS:
@@ -456,23 +461,26 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
         window=window,
         min_points=min_points,
         seasonality=seasonality,
-        period=_period_spec(config, str(target_metric)),
+        period=_period_spec(config, str(target_metric), authoring=authoring),
     )
 
 
-def _period_spec(config: dict[str, Any], target_metric: str) -> PeriodSpec | None:
-    """The bucketing of a per-period metric; its keys are refused on any other metric, where
-    silently ignoring one would mislead the author about what is watched."""
+def _period_spec(
+    config: dict[str, Any], target_metric: str, *, authoring: bool
+) -> PeriodSpec | None:
+    """The bucketing of a per-period metric. At author time its keys are refused on any other
+    metric, where silently ignoring one would mislead the author about what is watched. A key
+    set to null is the same as a key left out, on every metric."""
     if target_metric not in PERIOD_METRICS:
         stray = [key for key in _PERIOD_KEYS if config.get(key) is not None]
-        if stray:
+        if stray and authoring:
             raise MonitorConfigError(
                 f"anomaly {stray[0]} applies only to target_metric "
                 f"{' or '.join(repr(m) for m in PERIOD_METRICS)}; {target_metric!r} takes none"
             )
         return None
     date_column = _ident(config.get("date_column"), what="anomaly date_column")
-    unit = config.get("period", "day")
+    unit = "day" if config.get("period") is None else config["period"]
     if unit not in PERIOD_UNITS:
         raise MonitorConfigError(
             f"anomaly period must be one of {', '.join(PERIOD_UNITS)}: {_echo(unit)}"
@@ -485,14 +493,18 @@ def _period_spec(config: dict[str, Any], target_metric: str) -> PeriodSpec | Non
             f"anomaly value_column applies only to target_metric={PERIOD_SUM_METRIC!r}; "
             f"{target_metric!r} counts rows"
         )
-    timezone = config.get("timezone", "UTC")
+    timezone = "UTC" if config.get("timezone") is None else config["timezone"]
     if not isinstance(timezone, str) or not _is_timezone(timezone):
         raise MonitorConfigError(
-            f"anomaly timezone must be an IANA time zone such as UTC or Europe/London: "
-            f"{_echo(timezone)}"
+            f"anomaly timezone must be an IANA time zone, spelled exactly, such as UTC or "
+            f"Europe/London: {_echo(timezone)}"
         )
     settle_hours = _anomaly_int(
-        config, "settle_hours", _SETTLE_HOURS_DEFAULT, low=0, high=_SETTLE_HOURS_MAX
+        {} if config.get("settle_hours") is None else config,
+        "settle_hours",
+        _SETTLE_HOURS_DEFAULT,
+        low=0,
+        high=_SETTLE_HOURS_MAX,
     )
     return PeriodSpec(
         date_column=date_column,
@@ -504,13 +516,14 @@ def _period_spec(config: dict[str, Any], target_metric: str) -> PeriodSpec | Non
 
 
 def _is_timezone(name: str) -> bool:
-    from zoneinfo import ZoneInfo
+    """An exact IANA key: ``UTC`` or ``Area/Location``. Membership in the tz database's own
+    key list, not "the file opens", so the answer is the same on every host: a
+    case-insensitive filesystem would otherwise accept ``europe/london`` here and refuse it in
+    the worker, and ``localtime`` would follow whatever zone the container happens to be in."""
+    from zoneinfo import available_timezones
 
-    try:
-        ZoneInfo(name)
-    except (KeyError, ValueError, OSError):  # unknown key, a path-like name, an unreadable file
-        return False
-    return True
+    # UTC needs no database, so it is valid even on a host that ships none.
+    return name == "UTC" or ("/" in name and name in available_timezones())
 
 
 def period_statement(
@@ -575,7 +588,7 @@ def column_distinct_probe(target: TableClause, name: str) -> Select[Any]:
 
 
 def _validate_anomaly(config: dict[str, Any]) -> None:
-    anomaly_params(config)
+    anomaly_params(config, authoring=True)
 
 
 def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:

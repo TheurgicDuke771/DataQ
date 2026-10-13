@@ -500,7 +500,8 @@ def _dry_run_anomaly(
     from backend.app.services import anomaly as anomaly_service
 
     try:
-        params = anomaly_params(config)
+        # The author gate: a preview must refuse what a save would.
+        params = anomaly_params(config, authoring=True)
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": ANOMALY}) from exc
     resolved = run_target.resolve_target(connection.type, target)

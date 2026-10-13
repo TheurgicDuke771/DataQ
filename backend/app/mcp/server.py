@@ -2259,9 +2259,12 @@ def create_check(
       against the table here; confirm it with ``list_columns``.
     - ``value_column`` (required for ``period_sum``, refused for the count).
     - ``period`` (optional): ``day`` (default) or ``week`` (Monday to Sunday).
-    - ``timezone`` (optional, an IANA name, default ``UTC``): decides when a
-      period is over. It does not change which period a row falls in, which is
-      the date the warehouse returns for the column.
+    - ``timezone`` (optional, an IANA name spelled exactly, default ``UTC``):
+      the zone the date column's values are written in. It decides when a period
+      is over; it does not change which period a row falls in, which is the date
+      the warehouse returns for the column. Do not set it to the user's own zone
+      when the data is in another: a zone ahead of the data's judges a day
+      before it has finished and stores that short value.
     - ``settle_hours`` (optional, default 6): a period is judged only once it has
       been closed that long.
     Each run judges the **most recent settled period, not "today"**, and its

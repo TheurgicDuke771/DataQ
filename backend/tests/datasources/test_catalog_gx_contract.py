@@ -214,9 +214,14 @@ def test_monitor_fields_match_engine_config_keys() -> None:
     assert sorted(by_kind[monitors.VOLUME]) == ["max_rows", "min_rows"]
     assert sorted(by_kind[monitors.ANOMALY]) == [
         "column",
+        "date_column",
         "min_points",
+        "period",
         "seasonality",
+        "settle_hours",
         "target_metric",
+        "timezone",
+        "value_column",
         "window",
     ]
     assert set(by_kind[monitors.AGGREGATE]) == {

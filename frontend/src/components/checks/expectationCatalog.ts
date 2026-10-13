@@ -101,6 +101,9 @@ export const DIMENSION_LABEL: Record<DqDimension, string> = {
   validity: 'Validity',
 };
 
+/** The anomaly metrics that watch one calendar period at a time (backend `PERIOD_METRICS`). */
+const PERIOD_METRICS = ['period_row_count', 'period_sum'];
+
 export interface ConfigField {
   /** Key in the GX `config` kwargs object. */
   name: string;
@@ -134,7 +137,7 @@ export interface ConfigField {
    * Show (and submit) this field only when a SIBLING config field equals a given value — a generic
    * conditional-field mechanism.
    */
-  showWhen?: { field: string; equals: unknown };
+  showWhen?: { field: string; equals?: unknown; oneOf?: unknown[] };
 }
 
 /**
@@ -146,7 +149,10 @@ export function fieldVisible(
   configValues: Record<string, unknown> | undefined,
 ): boolean {
   if (!field.showWhen) return true;
-  return (configValues ?? {})[field.showWhen.field] === field.showWhen.equals;
+  const value = (configValues ?? {})[field.showWhen.field];
+  return field.showWhen.oneOf
+    ? field.showWhen.oneOf.includes(value)
+    : value === field.showWhen.equals;
 }
 
 /** Severity-threshold semantics for a monitor kind (ADR 0012/0016). */
@@ -831,8 +837,57 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
           { value: 'row_count', label: 'Row count' },
           { value: 'freshness_age_hours', label: 'Freshness age (hours)' },
           { value: 'column_profile', label: 'Column profile (every column)' },
+          { value: 'period_row_count', label: 'Rows per period (by a date column)' },
+          { value: 'period_sum', label: 'Sum per period (by a date column)' },
         ],
-        help: 'What this check measures every run and learns a baseline for. Column profile measures every column’s null rate and distinct count in one query and names the columns that moved; a distinct count is flagged only when it falls.',
+        help: 'What this check measures every run and learns a baseline for. Column profile measures every column’s null rate and distinct count in one query and names the columns that moved; a distinct count is flagged only when it falls. The per-period metrics watch one calendar day or week at a time, for a table that only grows.',
+      },
+      {
+        name: 'date_column',
+        label: 'Date column',
+        type: 'string',
+        help: 'The column that dates a row. A row counts toward the day the warehouse returns for it.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
+      },
+      {
+        name: 'value_column',
+        label: 'Column to sum',
+        type: 'string',
+        help: 'The numeric column summed over each period. A period with no rows sums to 0.',
+        showWhen: { field: 'target_metric', equals: 'period_sum' },
+      },
+      {
+        name: 'period',
+        label: 'Period',
+        type: 'select',
+        optional: true,
+        defaultValue: 'day',
+        options: [
+          { value: 'day', label: 'Day' },
+          { value: 'week', label: 'Week (Monday to Sunday)' },
+        ],
+        help: 'Each period gets one point, stored the first time it is judged. Changing this, or either column, starts the history again.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
+      },
+      {
+        name: 'timezone',
+        label: 'Time zone of the dates',
+        type: 'string',
+        optional: true,
+        defaultValue: 'UTC',
+        help: 'An IANA name such as UTC or Europe/London: the zone the date column’s values are written in. It decides when a day is over. Set it ahead of the data’s own zone and a day is judged before it has finished.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
+      },
+      {
+        name: 'settle_hours',
+        label: 'Hours to wait after a period closes',
+        type: 'number',
+        optional: true,
+        min: 0,
+        max: 168,
+        defaultValue: 6,
+        help: 'A period is judged only once it has been closed this long, so a run just after midnight does not judge yesterday before the nightly load lands. Rows that arrive later do not revise a judged period.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
       {
         name: 'column',
