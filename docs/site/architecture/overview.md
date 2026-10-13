@@ -159,6 +159,7 @@ erDiagram
         jsonb column_tags "warehouse governance classifications, cached per read"
         timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
         bool auto_coverage_excluded "left out of its connection's automatic coverage (ADR 0047)"
+        jsonb auto_coverage_config "this table's sensitivity for its automatic baselines; NULL = workspace setting"
         timestamptz first_seen
         timestamptz last_seen
     }
@@ -366,6 +367,11 @@ erDiagram
         numeric warn_weight "0 <= warn <= fail <= critical, critical > 0 (table CHECK)"
         numeric fail_weight
         numeric critical_weight "also the normaliser - all-critical scores 0"
+        uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
+    }
+    coverage_settings {
+        int id PK "always 1 - singleton sensitivity for automatic baselines (ADR 0047)"
+        jsonb config "per-baseline thresholds + baseline shape; absent row = built-in defaults"
         uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
     }
     llm_settings {
