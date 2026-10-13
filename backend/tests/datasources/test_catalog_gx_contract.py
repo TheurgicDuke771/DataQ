@@ -224,6 +224,7 @@ def test_monitor_fields_match_engine_config_keys() -> None:
         "timezone",
         "value_column",
         "window",
+        "yearly",
     ]
     assert set(by_kind[monitors.AGGREGATE]) == {
         "aggregate",

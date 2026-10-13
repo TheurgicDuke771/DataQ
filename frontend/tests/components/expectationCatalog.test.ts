@@ -174,11 +174,14 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
     const shown = (target_metric: string) =>
       spec.fields.filter((f) => fieldVisible(f, { target_metric })).map((f) => f.name);
     const common = ['target_metric', 'window', 'min_points', 'seasonality'];
-    const period = ['date_column', 'period', 'timezone', 'settle_hours', 'backfill'];
+    const period = ['date_column', 'period', 'timezone', 'settle_hours', 'backfill', 'yearly'];
 
     expect(shown('row_count').sort()).toEqual([...common].sort());
     expect(shown('period_row_count').sort()).toEqual([...common, ...period].sort());
     expect(shown('period_sum').sort()).toEqual([...common, ...period, 'value_column'].sort());
+    // A whole-table metric has no period to match across years.
+    expect(shown('column_profile')).not.toContain('yearly');
+    expect(shown('freshness_age_hours')).not.toContain('yearly');
   });
 
   it("bounds min_points by window's live value, not a static max (backend: 3 <= min_points <= window)", () => {

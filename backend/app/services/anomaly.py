@@ -40,6 +40,7 @@ from backend.app.datasources.monitors import (
     row_count_from_scalar,
 )
 from backend.app.db.models import Check, Connection, MonitorBaseline
+from backend.app.services import seasonal
 from backend.app.services.coverage_settings_service import CheckSettings, SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -716,15 +717,31 @@ def build_anomaly_executor(
             seed = {"status": "off"}  # backfill is switched off and has never run
         # A per-period metric is about a period, not about when the run happened: its point
         # is stamped with the period, scored against earlier periods only, and written once.
-        earlier = (
-            [o for o in observations if o.ts < at] if params.period is not None else observations
-        )
+        dated = params.period is not None
+        earlier = [o for o in observations if o.ts < at] if dated else observations
         already_recorded = params.period is not None and any(o.ts == at for o in observations)
         considered = _considered(earlier, at, params)
         payload = {
             **build_score_payload(value, [o.value for o in considered], params),
             **period_fields,
         }
+        if params.yearly:
+            compared = seasonal.History({o.ts.date(): o.value for o in earlier}, params).score(
+                at.date(), value
+            )
+            payload["yearly"] = compared.as_dict()
+            if compared.applied and compared.centre is not None:
+                # `mean` and `stddev` are what the run was scored against, in the metric's
+                # own units, so `|value - mean| / stddev` is the z-score for any reader.
+                payload.update(
+                    {
+                        "z_score": round(compared.z_score or 0.0, 6),
+                        "mean": round(compared.centre, 6),
+                        "stddev": round(compared.spread or 0.0, 6),
+                        "deviation": round(value - compared.centre, 6),
+                        "degenerate_stddev": compared.degenerate,
+                    }
+                )
         if row is not None:
             # BOTH timestamps, because they answer different questions and only one of them moves:
             # `captured_at` is when learning STARTED (the row's first capture — no `onupdate`,
@@ -753,7 +770,7 @@ def build_anomaly_executor(
                 if already_recorded
                 else [*observations, Observation(ts=at, value=value)]
             )
-            if params.period is not None:
+            if dated:
                 # A changed settle delay can judge an older period after a newer one; scoring
                 # and trimming both take the list as oldest first.
                 points = sorted(points, key=lambda o: o.ts)

@@ -399,6 +399,9 @@ class AnomalyParams:
     seasonality: bool
     #: Set exactly for the per-period metrics.
     period: PeriodSpec | None = None
+    #: Compare with the same time in earlier years as well (ADR 0048). Per-period metrics.
+    yearly: bool = False
+
     #: Keep the seasonal horizon even with seasonality off (ADR 0047): a check that inherits its
     #: shape must not lose history when an Admin switches seasonality off and on again.
     retain_seasonal_horizon: bool = False
@@ -466,6 +469,16 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
     seasonality = config.get("seasonality", False)
     if not isinstance(seasonality, bool):
         raise MonitorConfigError(f"anomaly seasonality must be true or false: {_echo(seasonality)}")
+    yearly = False if config.get("yearly") is None else config["yearly"]
+    if not isinstance(yearly, bool):
+        raise MonitorConfigError(f"anomaly yearly must be true or false: {_echo(yearly)}")
+    if yearly and target_metric not in PERIOD_METRICS:
+        # A whole-table metric is measured several times a day and has no period to match
+        # across years; the column profile is hundreds of series a check.
+        raise MonitorConfigError(
+            f"anomaly yearly is available only for target_metric "
+            f"{' or '.join(repr(m) for m in PERIOD_METRICS)}, not {target_metric!r}"
+        )
     return AnomalyParams(
         target_metric=str(target_metric),
         column=column,
@@ -473,6 +486,7 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
         min_points=min_points,
         seasonality=seasonality,
         period=_period_spec(config, str(target_metric), authoring=authoring),
+        yearly=yearly,
     )
 
 
@@ -670,6 +684,8 @@ def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Chec
     }
     if params.column is not None:
         expected["column"] = params.column
+    if params.yearly:
+        expected["yearly"] = True
     if params.period is not None:
         expected["date_column"] = params.period.date_column
         expected["period"] = params.period.unit

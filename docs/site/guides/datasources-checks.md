@@ -1274,10 +1274,39 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
   on the next two runs and then stops; dropping the check's baseline starts over.
 - A per-period check keeps three years of periods on top of its window.
 
-For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
-"amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges
-yesterday's sales each morning against the fourteen days before it. In the check editor,
-choose **Rows per period** or **Sum per period** as the anomaly's target metric.
+**Yearly seasonality** (`yearly: true`, on the per-period metrics) makes a check compare
+with the same time in earlier years as well as with its recent window. It is for data with a
+yearly rhythm: a sale every November, a quiet week at the end of December.
+
+- The check works out how this time last year compared with the days around it then, and
+  expects the same now. If last year's sale day ran at 2.4 times its surroundings, 2.4 times
+  the current level is expected this year: arriving near that is normal, and arriving flat (a
+  load that failed during the sale) fails.
+- A peak gets room in proportion to its size. If an ordinary day varies by 3%, a sale day is
+  allowed about 3% of its own, larger, value. With two or three earlier years, how much
+  they disagreed about the size of the peak is added to that room.
+- The days after a peak are not judged against the peak, because the peak was expected too.
+- A day is matched to the same weekday nearest the same date a year back, and a week to the
+  week containing that date. With two earlier years the index is their average; with
+  three, the middle one.
+- It needs a year of history, which seeding supplies at once where the table still holds its
+  past. Until a period has an earlier year to compare with, the check scores exactly as it
+  does without the setting and the result says why: `yearly.applied` is `false` with a
+  `reason`.
+- When it is applied, the result's `yearly` gives the `level`, the `index`, the `expected`
+  value, the earlier periods it was `matched` to and the `ratios` each of them ran at. The
+  result's `mean` and `stddev` are then the centre and spread the run was scored against.
+- One earlier year cannot tell a yearly event from a one-off. The check uses it and says how
+  many `years` stand behind the comparison. When the years disagree a lot (two had a sale,
+  one did not), the comparison is loose, and `ratios` shows why.
+- A peak tied to a fixed date (25 December) or one that moves by more than a few days is not
+  lined up by this matching.
+- Not available for whole-table row count, freshness age or the column profile.
+
+For example, a daily `period_sum` check on `orders.amount` with `yearly` on, created in
+October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the sale, it
+expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
+2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.
 
 ### Comparison check (all datasources — ADR 0015)
 
