@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "4709e7a3f50e",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-settings-api-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/admin_coverage.py",
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/coverage_service.py",
+    "backend/app/services/coverage_settings_service.py",
+    "backend/tests/api/test_admin_coverage.py",
+    "backend/tests/services/test_coverage_settings_service.py",
+    "docs/site/reference/openapi.json",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_coverage_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/09e7a3f50e/0/metadata.json",
+      "transcript": "/47/09e7a3f50e/0/full.jsonl",
+      "compact_transcript": "/47/09e7a3f50e/0/transcript.jsonl",
+      "content_hash": "/47/09e7a3f50e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 17055,
+    "cache_read_tokens": 1988953,
+    "output_tokens": 13662,
+    "api_call_count": 8
+  }
+}
