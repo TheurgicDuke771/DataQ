@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "cac0b3f04c00",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-inherit-at-run-time-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/admin_coverage.py",
+    "backend/app/api/v1/assets.py",
+    "backend/app/api/v1/checks.py",
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/anomaly.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/coverage_service.py",
+    "backend/app/services/coverage_settings_service.py",
+    "backend/app/services/run_service.py",
+    "backend/app/services/schema_drift.py",
+    "backend/app/services/stateful_monitors.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/api/test_checks_inherited.py",
+    "backend/tests/services/test_coverage_inheritance.py",
+    "backend/tests/services/test_coverage_settings_service.py",
+    "docs/site/adr/0047-automated-coverage-loop.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/check_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/inherited_from.py",
+    "packages/dataq-client/src/dataq_client/generated/models/inherited_from_baseline.py",
+    "packages/dataq-client/src/dataq_client/generated/models/inherited_from_sensitivity.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ca/c0b3f04c00/0/metadata.json",
+      "transcript": "/ca/c0b3f04c00/0/full.jsonl",
+      "compact_transcript": "/ca/c0b3f04c00/0/transcript.jsonl",
+      "content_hash": "/ca/c0b3f04c00/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 92317,
+    "cache_read_tokens": 12205008,
+    "output_tokens": 59135,
+    "api_call_count": 40
+  }
+}
