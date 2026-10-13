@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "200076ff470e",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-settings-ui-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/admin.spec.ts",
+    "frontend/e2e/assets.spec.ts",
+    "frontend/src/components/assets/CoverageSensitivityBlock.tsx",
+    "frontend/src/components/checks/BulkThresholdsModal.tsx",
+    "frontend/src/components/coverage-settings/CoverageSettingsForm.tsx",
+    "frontend/src/components/coverage-settings/coverageDraft.ts",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/src/pages/admin/CoveragePanel.tsx",
+    "frontend/tests/components/BulkThresholdsModal.test.tsx",
+    "frontend/tests/components/CoverageSensitivityBlock.test.tsx",
+    "frontend/tests/components/coverage-settings/coverageDraft.test.ts",
+    "frontend/tests/pages/admin/CoveragePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/20/0076ff470e/0/metadata.json",
+      "transcript": "/20/0076ff470e/0/full.jsonl",
+      "compact_transcript": "/20/0076ff470e/0/transcript.jsonl",
+      "content_hash": "/20/0076ff470e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 23692,
+    "cache_read_tokens": 6135626,
+    "output_tokens": 15195,
+    "api_call_count": 13
+  }
+}
