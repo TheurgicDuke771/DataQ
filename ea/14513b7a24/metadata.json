@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "ea14513b7a24",
+  "strategy": "manual-commit",
+  "branch": "feature/period-history-seeding-2440",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/anomaly.py",
+    "backend/tests/services/test_period_history.py",
+    "backend/tests/services/test_period_metrics.py",
+    "docs/site/guides/datasources-checks.md",
+    "frontend/src/components/checks/CheckTrend.tsx",
+    "frontend/tests/components/CheckTrend.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/14513b7a24/0/metadata.json",
+      "transcript": "/ea/14513b7a24/0/full.jsonl",
+      "compact_transcript": "/ea/14513b7a24/0/transcript.jsonl",
+      "content_hash": "/ea/14513b7a24/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 30512,
+    "cache_read_tokens": 10081946,
+    "output_tokens": 25743,
+    "api_call_count": 14
+  }
+}
