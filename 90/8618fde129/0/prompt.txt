@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b6hti12u1</task-id>
+<tool-use-id>toolu_01FcFDmS5J87EPckpPotGRea</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e86383af-6cdc-4853-bf6c-3d69e1f8b515/tasks/b6hti12u1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the phase 3 PR to merge" completed (exit code 0)</summary>
+</task-notification>
