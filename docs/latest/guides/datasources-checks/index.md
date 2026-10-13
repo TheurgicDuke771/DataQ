@@ -657,6 +657,49 @@ first run, once the schema check has recorded the columns: DataQ prefers a colum
 `loaded_at` or `updated_at`, and if the table has no timestamp column it says so instead of
 guessing. A schema change fails.
 
+Those numbers are the built-in defaults, and a workspace admin can change them without editing
+a check. There are two groups of settings:
+
+- **Sensitivity**: the warn, fail and critical deviations, set separately for row count,
+  freshness and column profile. The column profile watches many series at once and is the one
+  most likely to need loosening on its own.
+- **Baseline shape**: how many earlier runs are compared (the window), how many are needed
+  before scoring starts, and whether only the same weekday counts. One shape is shared by the
+  three checks.
+
+Each group is taken from the nearest level that sets it: **this table's override**, then the
+**workspace setting**, then the built-in default. A level sets a group whole (all three
+deviations for one check, or all three shape values) or leaves it alone. The workspace setting
+is `PUT /admin/coverage`; a table's override is `auto_coverage_config` on `PATCH /assets/{id}`;
+`GET /assets/{id}/coverage-settings` shows what a table resolves to and which level each group
+came from.
+
+Automatic checks **inherit** these settings each time they run, so a change reaches every
+covered table on its next run and nothing has to be edited. Each result records the thresholds
+and shape it was scored against and where they came from. A check shows the values in effect
+and is marked as inherited.
+
+Editing a threshold, the window, the minimum or seasonality on an automatic check gives that
+check its own values: all of them are fixed at what was in effect, with your change applied, and
+later changes to the settings no longer reach it. Renaming or disabling it does not. To hand it
+back, save its configuration with `inherit_coverage_settings: true`; numbers sent in the same
+request are not applied, because the check then runs on the settings. Automatic checks created
+before these settings existed inherit as long as nobody has changed their thresholds or shape.
+
+An exported suite document writes an inheriting check with that flag and the values it runs
+on. Re-applying the file changes nothing, even after the settings have moved on. Importing it
+as a new suite, or applying it to a suite you authored, gives ordinary checks holding those
+numbers as their own.
+
+For example, turning weekday seasonality off in the workspace with a window of 7 and a minimum
+of 4 makes a new daily suite start scoring on its fifth day instead of its fifth week. A table
+whose row count legitimately swings can then be given a wider row-count band of its own while
+every other table stays on the workspace values.
+
+Two things to know before changing the shape. Shortening the window trims older history on the
+next run, and lengthening it again means waiting for that history to build back up. Switching
+seasonality off and on again loses nothing.
+
 For example, with coverage on for a connection whose inventory lists `shop.public.orders`, the
 next daily pass creates *Auto: shop.public.orders* with the row-count, schema and column-profile
 checks and a daily schedule. After its first run it adds *Data is fresh* on `ordered_at`.
