@@ -10,7 +10,7 @@
 # bump here (e.g. from Dependabot) is the only edit needed.
 
 black==26.5.1
-ruff==0.16.5
+ruff==0.17.0
 mypy==2.4.0
 bandit[toml]==1.9.4
 pre-commit==4.6.2
