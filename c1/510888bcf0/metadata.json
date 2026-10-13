@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "c1510888bcf0",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-settings-api-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/admin_coverage.py",
+    "backend/app/api/v1/assets.py",
+    "backend/app/main.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/audit_service.py",
+    "backend/app/services/coverage_settings_service.py",
+    "backend/tests/api/test_admin_coverage.py",
+    "backend/tests/services/test_coverage_settings_service.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/reference/openapi.json",
+    "packages/dataq-client/src/dataq_client/generated/api/admin/get_coverage_settings.py",
+    "packages/dataq-client/src/dataq_client/generated/api/admin/put_coverage_settings.py",
+    "packages/dataq-client/src/dataq_client/generated/api/admin/reset_coverage_settings.py",
+    "packages/dataq-client/src/dataq_client/generated/api/assets/get_asset_coverage_settings.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_coverage_settings_read_override_type_0.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_metadata_update.py",
+    "packages/dataq-client/src/dataq_client/generated/models/baseline_shape_write.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_read_setting.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_write.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_settings_write_sensitivity_type_0.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_coverage_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_coverage_read_sensitivity.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_sensitivity.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_sensitivity_source.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_shape.py",
+    "packages/dataq-client/src/dataq_client/generated/models/effective_shape_source.py",
+    "packages/dataq-client/src/dataq_client/generated/models/sensitivity_write.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c1/510888bcf0/0/metadata.json",
+      "transcript": "/c1/510888bcf0/0/full.jsonl",
+      "compact_transcript": "/c1/510888bcf0/0/transcript.jsonl",
+      "content_hash": "/c1/510888bcf0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 52219,
+    "cache_read_tokens": 4930820,
+    "output_tokens": 26296,
+    "api_call_count": 23
+  }
+}
