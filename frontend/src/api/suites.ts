@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { CoverageLevel } from './coverage';
 
 /** Suites API — a suite is a named bundle of DQ checks bound to one connection. */
 
@@ -145,6 +146,9 @@ export interface Check {
   kind: string;
   /** `auto` = added by automatic coverage; `suggestion` = an accepted suggestion (ADR 0047). */
   origin?: 'user' | 'auto' | 'suggestion';
+  /** Set on an automatic baseline that takes its thresholds and window from the coverage
+   *  settings: the values shown are the ones in effect, and editing one gives the check its own. */
+  inherited?: { sensitivity: CoverageLevel; baseline: CoverageLevel } | null;
   /** Check engine (ADR 0036) — `gx` (default) or `dmf` on a Snowflake connection.
    *  Optional so pre-0036 fixtures need no change. */
   engine?: string;

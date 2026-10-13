@@ -165,6 +165,40 @@ test.describe('Admin control centre', () => {
       .click();
   }
 
+  test('sets the automatic-coverage sensitivity for one check and resets it', async ({ page }) => {
+    await page.goto('/admin/settings');
+    const card = page.locator('.ant-card', { hasText: 'Sensitivity of automatic checks' });
+    await expect(card.getByText('Defaults', { exact: true })).toBeVisible();
+    const profile = card.getByTestId('coverage-profile');
+    const warn = profile.getByRole('spinbutton', { name: 'Column profile warn deviations' });
+    // Not set here: the built-in value shows, read-only, with where it comes from.
+    await expect(warn).toBeDisabled();
+    await expect(profile.getByText('Built-in default')).toBeVisible();
+
+    await card
+      .getByRole('switch', { name: 'Set for the workspace: Column profile thresholds' })
+      .click();
+    for (const [tier, value] of [
+      ['critical', '9'],
+      ['fail', '7'],
+      ['warn', '5'],
+    ]) {
+      const input = profile.getByRole('spinbutton', { name: `Column profile ${tier} deviations` });
+      await input.fill(value);
+      await input.blur();
+    }
+    await card.getByRole('button', { name: 'Save' }).click();
+    await expect(card.getByText('Customised', { exact: true })).toBeVisible();
+    // The server's answer, re-read: the other checks still follow the built-in default.
+    await page.reload();
+    await expect(warn).toHaveValue('5.0');
+    await expect(card.getByTestId('coverage-volume').getByText('Built-in default')).toBeVisible();
+
+    await card.getByRole('button', { name: 'Reset to defaults' }).click();
+    await expect(card.getByText('Defaults', { exact: true })).toBeVisible();
+    await expect(warn).toBeDisabled();
+  });
+
   test('edits a member’s workspace role and reflects the server’s answer', async ({ page }) => {
     await page.goto('/admin/members');
     // `analyst@dataq.local` — the demo seed's non-admin member

@@ -1,5 +1,6 @@
 import { api } from './client';
 import { toListPage, type ListPage } from './listPage';
+import type { CoverageDocument } from './coverage';
 
 /** Assets API — the read-only browse/reason surface over `assets` (ADR 0034, #760). */
 
@@ -226,6 +227,8 @@ export interface AssetMetadataUpdate {
   description?: string | null;
   /** Leave this table out of its connection's automatic coverage (ADR 0047). */
   auto_coverage_excluded?: boolean;
+  /** This table's own sensitivity for its automatic baselines; `null` removes the override. */
+  auto_coverage_config?: CoverageDocument | null;
 }
 
 /**

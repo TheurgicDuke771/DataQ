@@ -51,4 +51,26 @@ test.describe('Assets page', () => {
     await page.getByRole('button', { name: 'Orders quality' }).click();
     await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
   });
+
+  test('an admin overrides one table’s automatic-check sensitivity and removes it again', async ({
+    page,
+    request,
+  }) => {
+    const assets = (await (await request.get('/api/v1/assets')).json()) as { id: string }[];
+    await page.goto(`/assets/${assets[0].id}`);
+    await page.getByText('Sensitivity of this table’s automatic checks').click();
+    const block = page.getByTestId('coverage-sensitivity');
+
+    await block.getByRole('switch', { name: 'Set for this table: Row count thresholds' }).click();
+    const critical = block.getByRole('spinbutton', { name: 'Row count critical deviations' });
+    await critical.fill('10');
+    await critical.blur();
+    await block.getByRole('button', { name: 'Save' }).click();
+    await expect(block.locator('.ant-tag', { hasText: 'Set for this table' })).toBeVisible();
+    await expect(critical).toHaveValue('10.0');
+
+    await block.getByRole('button', { name: 'Use the workspace setting' }).click();
+    await expect(block.locator('.ant-tag', { hasText: 'Workspace setting' }).first()).toBeVisible();
+    await expect(critical).toBeDisabled();
+  });
 });

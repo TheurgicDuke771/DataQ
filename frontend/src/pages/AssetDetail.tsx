@@ -26,6 +26,7 @@ import {
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { CoverageBlock } from '../components/assets/CoverageBlock';
+import { CoverageSensitivityBlock } from '../components/assets/CoverageSensitivityBlock';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
 import { InheritedMaskingPanel } from '../components/assets/InheritedMaskingPanel';
 import { ScorecardPanel } from '../components/assets/ScorecardPanel';
@@ -160,6 +161,7 @@ function AssetDetailBody({
           onChanged={onChanged}
         />
       )}
+      {isAdmin && <CoverageSensitivityBlock key={summary.id} assetId={summary.id} />}
 
       {/* Between the header verdict and the per-suite breakdown: the scorecard
           answers "what is and isn't watched here", which is the question a data
