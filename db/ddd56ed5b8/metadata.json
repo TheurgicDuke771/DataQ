@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "dbddd56ed5b8",
+  "strategy": "manual-commit",
+  "branch": "feature/period-metrics-2440",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/anomaly.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/tests/datasources/test_monitors.py",
+    "backend/tests/services/test_period_metrics.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/db/ddd56ed5b8/0/metadata.json",
+      "transcript": "/db/ddd56ed5b8/0/full.jsonl",
+      "compact_transcript": "/db/ddd56ed5b8/0/transcript.jsonl",
+      "content_hash": "/db/ddd56ed5b8/0/content_hash.txt",
+      "prompt": "/db/ddd56ed5b8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 40532,
+    "cache_read_tokens": 8826138,
+    "output_tokens": 28781,
+    "api_call_count": 15
+  }
+}
