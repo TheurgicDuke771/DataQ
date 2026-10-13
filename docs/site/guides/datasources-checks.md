@@ -669,21 +669,26 @@ a check. There are two groups of settings:
 
 Each group is taken from the nearest level that sets it: **this table's override**, then the
 **workspace setting**, then the built-in default. A level sets a group whole (all three
-deviations for one check, or all three shape values) or leaves it alone. The workspace setting
-is `PUT /admin/coverage`; a table's override is `auto_coverage_config` on `PATCH /assets/{id}`;
-`GET /assets/{id}/coverage-settings` shows what a table resolves to and which level each group
-came from.
+deviations for one check, or all three shape values) or leaves it alone.
+
+The workspace setting is in **Admin → Settings → Automatic coverage**. A table's own override is
+on its asset page, under **Sensitivity of this table's automatic checks**. In both places each
+group has a switch: off, it shows the value it follows and where that comes from; on, the group
+is set there. In the API these are `PUT /admin/coverage` and `auto_coverage_config` on
+`PATCH /assets/{id}`, and `GET /assets/{id}/coverage-settings` shows what a table resolves to and
+which level each group came from.
 
 Automatic checks **inherit** these settings each time they run, so a change reaches every
 covered table on its next run and nothing has to be edited. Each result records the thresholds
 and shape it was scored against and where they came from. A check shows the values in effect
-and is marked as inherited.
+and carries an **Inherited thresholds** tag in the suite's check list.
 
 Editing a threshold, the window, the minimum or seasonality on an automatic check gives that
 check its own values: all of them are fixed at what was in effect, with your change applied, and
-later changes to the settings no longer reach it. Renaming or disabling it does not. To hand it
-back, save its configuration with `inherit_coverage_settings: true`; numbers sent in the same
-request are not applied, because the check then runs on the settings. Automatic checks created
+later changes to the settings no longer reach it. The check editor says so before you save.
+Renaming or disabling it does not. To hand it back, use **Follow the coverage settings** in the
+check editor, or in the API save its configuration with `inherit_coverage_settings: true`;
+numbers sent in the same request are not applied, because the check then runs on the settings. Automatic checks created
 before these settings existed inherit as long as nobody has changed their thresholds or shape.
 
 An exported suite document writes an inheriting check with that flag and the values it runs
@@ -697,7 +702,8 @@ whose row count legitimately swings can then be given a wider row-count band of 
 every other table stays on the workspace values.
 
 Two things to know before changing the shape. Shortening the window trims older history on the
-next run, and lengthening it again means waiting for that history to build back up. Switching
+next run, and lengthening it again means waiting for that history to build back up; the form
+warns before a shorter window is saved. Switching
 seasonality off and on again loses nothing.
 
 For example, with coverage on for a connection whose inventory lists `shop.public.orders`, the

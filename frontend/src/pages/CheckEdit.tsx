@@ -26,6 +26,7 @@ import {
 } from '../components/checks/checkFormFields';
 import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
 import { CheckTrend } from '../components/checks/CheckTrend';
+import { InheritanceNotice } from '../components/checks/InheritanceNotice';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import {
@@ -239,8 +240,26 @@ function CheckEditForm({
     });
   };
 
+  const { run: runResume, loading: resuming } = useAsyncAction('Could not change the check');
+  const onResume = () => {
+    // Resuming saves nothing else and leaves the page, so it must not drop edits in the form.
+    if (form.isFieldsTouched()) {
+      message.warning('Save or discard your changes to this check first.');
+      return;
+    }
+    void runResume(async () => {
+      // The flag is server-owned and never returned; sending it hands the check back.
+      await updateCheck(suiteId, check.id, {
+        config: { ...check.config, inherit_coverage_settings: true },
+      });
+      message.success(`${check.name}: following the coverage settings`);
+      onSaved();
+    });
+  };
+
   return (
     <>
+      <InheritanceNotice check={check} resuming={resuming} onResume={onResume} />
       <Form form={form} layout="vertical" onFinish={onSubmit}>
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="e.g. order_id not null" />

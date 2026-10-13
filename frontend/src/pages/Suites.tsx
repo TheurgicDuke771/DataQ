@@ -49,6 +49,7 @@ import {
 } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { AutomaticTag } from '../components/suites/AutomaticTag';
+import { InheritedTag } from '../components/checks/InheritanceNotice';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../components/checks/bulkLimit';
 import { BulkThresholdsModal } from '../components/checks/BulkThresholdsModal';
@@ -794,6 +795,7 @@ function ChecksList({
         <BulkThresholdsModal
           open={thresholdsOpen}
           count={selectedIds.length}
+          inheriting={checks.filter((c) => selected.has(c.id) && c.inherited).length}
           onCancel={() => setThresholdsOpen(false)}
           onApply={async (thresholds) => {
             await runBulk(
@@ -1013,6 +1015,7 @@ function ChecksList({
                     {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
                     <EngineTag engine={check.engine} />
                     <AutomaticTag origin={check.origin} />
+                    <InheritedTag check={check} />
                     <DimensionTag dimension={check.dimension} />
                     <SnoozedTag check={check} now={now} />
                   </Flex>

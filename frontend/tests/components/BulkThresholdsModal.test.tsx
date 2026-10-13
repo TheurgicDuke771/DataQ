@@ -16,6 +16,21 @@ async function setMode(user: ReturnType<typeof userEvent.setup>, tier: string, o
 }
 
 describe('BulkThresholdsModal', () => {
+  it('says how many selected checks will stop following the coverage settings', () => {
+    const { rerender } = render(
+      <BulkThresholdsModal open count={3} inheriting={1} onCancel={vi.fn()} onApply={vi.fn()} />,
+    );
+    expect(screen.getByText('1 of these follows the coverage settings')).toBeInTheDocument();
+
+    rerender(
+      <BulkThresholdsModal open count={3} inheriting={2} onCancel={vi.fn()} onApply={vi.fn()} />,
+    );
+    expect(screen.getByText('2 of these follow the coverage settings')).toBeInTheDocument();
+
+    rerender(<BulkThresholdsModal open count={3} onCancel={vi.fn()} onApply={vi.fn()} />);
+    expect(screen.queryByText(/the coverage settings/)).not.toBeInTheDocument();
+  });
+
   it('cannot be applied until a tier is changed', () => {
     renderModal();
     expect(screen.getByRole('button', { name: 'Apply to 3 checks' })).toBeDisabled();

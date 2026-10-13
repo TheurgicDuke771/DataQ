@@ -9,8 +9,9 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
-  numbers. A workspace admin sets them for the workspace (`PUT /admin/coverage`) and can
-  override them for one table (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
+  numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
+  (`PUT /admin/coverage`) and can override them for one table on its asset page
+  (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
   level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
   deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
   column profile can be loosened without loosening the others. Automatic checks inherit the
