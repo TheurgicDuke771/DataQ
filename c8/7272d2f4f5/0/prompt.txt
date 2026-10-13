@@ -1,0 +1,13 @@
+let's maintain seasonality YoY, say a team maintaining sales cagr report, they need to identify what are the on_sale time of the year
+
+---
+
+Also, does it make sence here, or it need to be in elsewhere?
+
+---
+
+I think it is better to give alteast a year for dataq to detect the seasonality that's the reason I choose - accumulate over runs, correct me if I'm not making sense here
+
+---
+
+Okay, let's go with hybrid
