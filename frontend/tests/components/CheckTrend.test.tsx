@@ -252,11 +252,14 @@ describe('CheckTrend', () => {
         suiteId="s1"
         check={{
           ...anomalyCheck,
-          config: { target_metric: 'period_row_count', date_column: 'ordered_at' },
+          config: { target_metric: 'period_row_count', date_column: 'ordered_at', yearly: true },
         }}
       />,
     );
 
+    // The band drawn is the recent window; with yearly on, the caption must not pass it off
+    // as what the run is scored against.
+    expect(await screen.findByText(/this band is the recent window only/)).toBeInTheDocument();
     expect(
       await screen.findByText(
         /399 of the 400 stored points were seeded.*the chart shows the most recent 180/,

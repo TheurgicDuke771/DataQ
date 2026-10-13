@@ -399,16 +399,8 @@ class AnomalyParams:
     seasonality: bool
     #: Set exactly for the per-period metrics.
     period: PeriodSpec | None = None
-    #: Compare with the same time in earlier years as well (ADR 0048).
+    #: Compare with the same time in earlier years as well (ADR 0048). Per-period metrics.
     yearly: bool = False
-
-    @property
-    def history_points(self) -> int:
-        """Points kept for the years of history, on top of the rolling window: a per-period
-        check's periods, or one point a day for a whole-table check with ``yearly`` on."""
-        if self.period is not None:
-            return self.period.history_periods
-        return PERIOD_HISTORY_YEARS * 366 if self.yearly else 0
 
     #: Keep the seasonal horizon even with seasonality off (ADR 0047): a check that inherits its
     #: shape must not lose history when an Admin switches seasonality off and on again.
@@ -420,7 +412,7 @@ class AnomalyParams:
         keeps its years of history on top (ADR 0048)."""
         seasonal = self.seasonality or self.retain_seasonal_horizon
         rolling = self.window * (_ANOMALY_SEASONAL_WEEKDAYS if seasonal else 1)
-        return rolling + self.history_points
+        return rolling + (self.period.history_periods if self.period is not None else 0)
 
 
 def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, high: int) -> int:
@@ -480,10 +472,12 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
     yearly = False if config.get("yearly") is None else config["yearly"]
     if not isinstance(yearly, bool):
         raise MonitorConfigError(f"anomaly yearly must be true or false: {_echo(yearly)}")
-    if yearly and target_metric == COLUMN_PROFILE_METRIC:
-        # Hundreds of series a check, three years of each: not a baseline, a warehouse.
+    if yearly and target_metric not in PERIOD_METRICS:
+        # A whole-table metric is measured several times a day and has no period to match
+        # across years; the column profile is hundreds of series a check.
         raise MonitorConfigError(
-            f"anomaly yearly is not available for target_metric={COLUMN_PROFILE_METRIC!r}"
+            f"anomaly yearly is available only for target_metric "
+            f"{' or '.join(repr(m) for m in PERIOD_METRICS)}, not {target_metric!r}"
         )
     return AnomalyParams(
         target_metric=str(target_metric),

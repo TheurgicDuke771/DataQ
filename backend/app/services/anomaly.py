@@ -526,9 +526,6 @@ def observation_time(
     point is dated at the start of its period (a calendar label, stored as midnight UTC)."""
     spec = params.period
     if spec is None:
-        if params.yearly:
-            # A whole-table check compared across years keeps one point a day (ADR 0048).
-            return datetime.combine(now.astimezone(UTC).date(), time.min, tzinfo=UTC), {}
         return now, {}
     start, end = settled or spec.settled(now)
     return datetime.combine(start, time.min, tzinfo=UTC), {
@@ -568,19 +565,6 @@ def eligible_values(
 ) -> list[float]:
     """The prior values this run is scored against, newest-last."""
     return [o.value for o in _considered(observations, now, params)]
-
-
-def _one_per_day(observations: list[Observation]) -> list[Observation]:
-    """The last point of each UTC day, dated at that day's midnight, oldest first."""
-    by_day: dict[date, Observation] = {}
-    for point in sorted(observations, key=lambda o: o.ts):
-        day = point.ts.astimezone(UTC).date()
-        by_day[day] = Observation(
-            ts=datetime.combine(day, time.min, tzinfo=UTC),
-            value=point.value,
-            observed=point.observed,
-        )
-    return [by_day[day] for day in sorted(by_day)]
 
 
 @dataclass(frozen=True)
@@ -718,11 +702,6 @@ def build_anomaly_executor(
         # concurrent run of the same check, or one measurement is silently lost.
         row = get_baseline(session, check.id, for_update=persist)
         observations = load_observations(row, params)
-        # One point a day, the day's last: for a whole-table check compared across years,
-        # including the points it stored, several a day, before `yearly` was switched on.
-        daily = params.yearly and params.period is None
-        if daily:
-            observations = _one_per_day(observations)
         seed = stored_seed(row, params)
         seeded_now = attempt is not None and seeding_due(params, seed)
         if attempt is not None and seeded_now:
@@ -738,7 +717,7 @@ def build_anomaly_executor(
             seed = {"status": "off"}  # backfill is switched off and has never run
         # A per-period metric is about a period, not about when the run happened: its point
         # is stamped with the period, scored against earlier periods only, and written once.
-        dated = params.period is not None or daily
+        dated = params.period is not None
         earlier = [o for o in observations if o.ts < at] if dated else observations
         already_recorded = params.period is not None and any(o.ts == at for o in observations)
         considered = _considered(earlier, at, params)
@@ -751,15 +730,15 @@ def build_anomaly_executor(
                 at.date(), value
             )
             payload["yearly"] = compared.as_dict()
-            if compared.applied and compared.expected is not None:
-                # Scored on the distance from what this time of year is expected to be;
-                # `mean` is that expected value, so every reader of the band shows it.
+            if compared.applied and compared.centre is not None:
+                # `mean` and `stddev` are what the run was scored against, in the metric's
+                # own units, so `|value - mean| / stddev` is the z-score for any reader.
                 payload.update(
                     {
                         "z_score": round(compared.z_score or 0.0, 6),
-                        "mean": round(compared.expected, 6),
+                        "mean": round(compared.centre, 6),
                         "stddev": round(compared.spread or 0.0, 6),
-                        "deviation": round(value - compared.expected, 6),
+                        "deviation": round(value - compared.centre, 6),
                         "degenerate_stddev": compared.degenerate,
                     }
                 )
@@ -789,7 +768,7 @@ def build_anomaly_executor(
             points = (
                 observations
                 if already_recorded
-                else [*(o for o in observations if o.ts != at), Observation(ts=at, value=value)]
+                else [*observations, Observation(ts=at, value=value)]
             )
             if dated:
                 # A changed settle delay can judge an older period after a newer one; scoring

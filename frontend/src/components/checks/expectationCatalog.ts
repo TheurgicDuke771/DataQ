@@ -944,11 +944,8 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'boolean',
         optional: true,
         defaultValue: false,
-        help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It applies once the history reaches back a year; until then the check scores as usual and each result says so. A whole-table metric then keeps one point a day.',
-        showWhen: {
-          field: 'target_metric',
-          oneOf: ['row_count', 'freshness_age_hours', ...PERIOD_METRICS],
-        },
+        help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It applies once the history reaches back a year, which seeding from the table can supply at once; until then the check scores as usual and each result says so.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
     ],
     thresholds: {

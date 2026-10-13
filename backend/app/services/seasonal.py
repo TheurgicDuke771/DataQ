@@ -4,12 +4,15 @@ baseline.
 Pure functions over a check's stored points. The *level* at a period is the median of the
 points it would ordinarily be scored against; the *index* is what the matching period in an
 earlier year was, divided by the level then; the *expected* value is the level now times the
-index. A run is scored on its distance from that, against the spread of the same distance
-over its prior points. Nothing is divided by the index, so an index of zero is ordinary.
+index. A run is scored on how far it is from that **in proportion to it**, against how far
+its prior points were from what was expected of them: a sale day five times an ordinary day
+has five times the room. Where the expected value is zero (the shop was closed that day
+last year) there is no proportion to take, and the distance is taken as it stands.
 """
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -23,6 +26,8 @@ from backend.app.datasources.monitors import (
 
 #: Points before a period needed for its level to mean anything.
 _LEVEL_MIN_POINTS = 2
+#: A spread this small against the expected value is float rounding, not variation.
+_NEGLIGIBLE = 1e-9
 
 # Why the yearly comparison was not applied to a run (``yearly.reason``).
 NO_EARLIER_YEAR = "no_earlier_year"
@@ -54,10 +59,16 @@ class YearlyScore:
     reason: str | None = None
     level: float | None = None
     index: float | None = None
-    #: The earlier periods the index came from, newest first.
+    #: The earlier periods the index came from, newest first, and what each was against its
+    #: own level then. Years that disagree widen the spread; the result shows them.
     matched: tuple[date, ...] = ()
+    ratios: tuple[float, ...] = ()
+    #: The level times the index: what this time of year is expected to be.
     expected: float | None = None
     z_score: float | None = None
+    #: The centre and spread the run was scored against, in the metric's own units, so that
+    #: ``|value - centre| / spread`` is the z-score.
+    centre: float | None = None
     spread: float | None = None
     degenerate: bool = False
 
@@ -70,6 +81,7 @@ class YearlyScore:
             "index": _rounded(self.index),
             "expected": _rounded(self.expected),
             "matched": [d.isoformat() for d in self.matched],
+            "ratios": [round(r, 4) for r in self.ratios],
             "years": len(self.matched),
         }
 
@@ -100,8 +112,9 @@ class History:
             return None
         return statistics.median(self._value[d] for d in priors)
 
-    def index(self, day: date) -> tuple[float, tuple[date, ...]] | str:
-        """``(index, matched periods)``, or the reason there is none."""
+    def _ratios(self, day: date) -> tuple[list[float], list[date]] | str:
+        """What each matching earlier period was against its own level, newest first, or the
+        reason there is none."""
         ratios: list[float] = []
         matched: list[date] = []
         reason = NO_EARLIER_YEAR
@@ -121,9 +134,15 @@ class History:
                 continue
             ratios.append(self._value[then] / level)
             matched.append(then)
-        if not ratios:
-            return reason
-        return statistics.median(ratios), tuple(matched)
+        return (ratios, matched) if ratios else reason
+
+    def index(self, day: date) -> tuple[float, tuple[date, ...]] | str:
+        """``(index, matched periods)``, or the reason there is none. The index is the median
+        of the earlier years' ratios: with two, their average."""
+        found = self._ratios(day)
+        if isinstance(found, str):
+            return found
+        return statistics.median(found[0]), tuple(found[1])
 
     def expected(self, day: date) -> float | None:
         """What ``day`` is expected to be: its level, times its index where one applies."""
@@ -139,34 +158,50 @@ class History:
             return YearlyScore(applied=False, reason=INSUFFICIENT_HISTORY)
         if value < 0 or level < 0:
             return YearlyScore(applied=False, reason=NEGATIVE_VALUE)
-        index = self.index(day)
-        if isinstance(index, str):
-            return YearlyScore(applied=False, reason=index)
-        factor, matched = index
-        # Each prior's own distance from what was expected of it: the weeks after a sale are
+        found = self._ratios(day)
+        if isinstance(found, str):
+            return YearlyScore(applied=False, reason=found)
+        ratios, matched = found
+        factor = statistics.median(ratios)
+        expected = level * factor
+        # Each prior's own distance from what was expected of it: the days after a sale are
         # then not judged against the sale, because the sale was expected too.
-        residuals = [
-            self._value[d] - expected
-            for d in self.priors(day)
-            if (expected := self.expected(d)) is not None
+        priors = [
+            (self._value[d], was) for d in self.priors(day) if (was := self.expected(d)) is not None
         ]
-        if len(residuals) < max(_LEVEL_MIN_POINTS, self._params.min_points):
+        proportional = expected > 0
+        distances = [
+            (got - was) / was if proportional else got - was
+            for got, was in priors
+            if was > 0 or not proportional
+        ]
+        if len(distances) < max(_LEVEL_MIN_POINTS, self._params.min_points):
             return YearlyScore(applied=False, reason=INSUFFICIENT_HISTORY)
-        expected_now = level * factor
-        centre = statistics.fmean(residuals)
-        spread = statistics.stdev(residuals)
-        distance = value - expected_now - centre
-        if spread == 0.0:
-            z_score = 0.0 if distance == 0.0 else ANOMALY_DEGENERATE_Z
+        scale = expected if proportional else 1.0
+        centre = expected + statistics.fmean(distances) * scale
+        spread = statistics.stdev(distances) * scale
+        if proportional and len(ratios) > 1:
+            # The earlier years did not agree exactly on how big this time of year is; that
+            # disagreement is uncertainty about what to expect, on top of ordinary noise.
+            spread = math.hypot(spread, statistics.stdev(ratios) * level)
+        # A series that repeats exactly leaves a spread of rounding error, not of data:
+        # dividing by it would turn a difference in the fifteenth decimal into a verdict.
+        negligible = _NEGLIGIBLE * max(1.0, abs(expected))
+        degenerate = spread <= negligible
+        if degenerate:
+            spread = 0.0
+            z_score = 0.0 if abs(value - centre) <= negligible else ANOMALY_DEGENERATE_Z
         else:
-            z_score = abs(distance) / spread
+            z_score = abs(value - centre) / spread
         return YearlyScore(
             applied=True,
             level=level,
             index=factor,
-            matched=matched,
-            expected=expected_now,
+            matched=tuple(matched),
+            ratios=tuple(ratios),
+            expected=expected,
             z_score=z_score,
+            centre=centre,
             spread=spread,
-            degenerate=spread == 0.0,
+            degenerate=degenerate,
         )

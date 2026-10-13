@@ -399,6 +399,8 @@ function AnomalyBaselinePanel({
               ` · ${seeded} of the ${observations.length} stored points were seeded from the table’s own rows, not measured by a run`}
             {observations.length > shown.length &&
               ` · the chart shows the most recent ${shown.length}`}
+            {check.config?.yearly === true &&
+              ' · yearly seasonality is on: this band is the recent window only. A run is scored against what this time of year is expected to be, which its result gives as the expected value'}
           </>
         ) : observations.length === 0 ? (
           // Matches the empty chart below it (#594 review): no observations at

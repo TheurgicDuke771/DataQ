@@ -737,15 +737,7 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
       name: 'orders row-count anomaly',
       engine: 'gx',
       expectation_type: 'monitor:anomaly',
-      // Every stored key comes back as it was. A key the check never had is sent at its
-      // default, which is what the backend reads an absent key as.
-      config: {
-        target_metric: 'row_count',
-        window: 21,
-        min_points: 10,
-        seasonality: true,
-        yearly: false,
-      },
+      config: { target_metric: 'row_count', window: 21, min_points: 10, seasonality: true },
       dimension: undefined,
       warn_threshold: null,
       fail_threshold: 3,

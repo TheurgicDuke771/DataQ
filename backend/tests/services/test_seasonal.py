@@ -14,7 +14,7 @@ from sqlalchemy.engine.default import DefaultDialect
 
 from backend.app.datasources import monitors
 from backend.app.datasources.monitors import MonitorConfigError
-from backend.app.db.models import Check, Connection, MonitorBaseline, Suite, User
+from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.services import anomaly, seasonal
 from backend.app.services.monitor_baseline import get_baseline
 from backend.app.services.seasonal import History, matched_day
@@ -55,36 +55,27 @@ def _series(
 
 
 def test_yearly_is_off_by_default_and_must_be_a_boolean() -> None:
+    assert monitors.anomaly_params({**_DAILY, "yearly": None}).yearly is False
     assert monitors.anomaly_params({"target_metric": "row_count"}).yearly is False
-    assert monitors.anomaly_params({"target_metric": "row_count", "yearly": None}).yearly is False
     with pytest.raises(MonitorConfigError, match="yearly must be true or false"):
-        monitors.anomaly_params({"target_metric": "row_count", "yearly": "yes"})
-
-
-def test_yearly_is_refused_for_the_column_profile() -> None:
-    with pytest.raises(
-        MonitorConfigError, match="not available for target_metric='column_profile'"
-    ):
-        monitors.anomaly_params({"target_metric": "column_profile", "yearly": True})
+        monitors.anomaly_params({**_DAILY, "yearly": "yes"})
 
 
 @pytest.mark.parametrize(
-    ("config", "kept"),
+    "config",
     [
-        ({"target_metric": "row_count", "window": 14, "yearly": True}, 14 + 3 * 366),
-        (
-            {"target_metric": "freshness_age_hours", "column": "t", "window": 14, "yearly": True},
-            1112,
-        ),
-        ({"target_metric": "row_count", "window": 14}, 14),
-        (_DAILY, 14 + 3 * 366),  # a per-period check keeps its years whether or not it is on
-        ({**_DAILY, "yearly": False}, 14 + 3 * 366),
+        {"target_metric": "row_count", "yearly": True},
+        {"target_metric": "freshness_age_hours", "column": "loaded_at", "yearly": True},
+        {"target_metric": "column_profile", "yearly": True},
     ],
 )
-def test_a_whole_table_check_keeps_three_years_only_with_yearly_on(
-    config: dict[str, Any], kept: int
-) -> None:
-    assert monitors.anomaly_params(config).retained_observations == kept
+def test_yearly_is_offered_on_the_per_period_metrics_only(config: dict[str, Any]) -> None:
+    """A whole-table metric is measured several times a day and has no period to match
+    across years."""
+    with pytest.raises(MonitorConfigError, match="yearly is available only for"):
+        monitors.anomaly_params(config)
+    # Switched off, the key is harmless on any metric.
+    assert monitors.anomaly_params({**config, "yearly": False}).yearly is False
 
 
 # ── matching a period to an earlier year ─────────────────────────────────────
@@ -206,6 +197,88 @@ def test_a_sale_that_arrives_as_last_year_is_normal_and_one_that_does_not_is_not
     assert missing.z_score is not None and missing.z_score > 6
 
 
+def _noisy_with_a_sale_day(
+    sale: dict[int, float], *, start: date = date(2024, 10, 1)
+) -> dict[date, float]:
+    """About 1000 a day, give or take 3%, with one sale day each November."""
+    points: dict[date, float] = {}
+    day = start
+    while day < date(2026, 11, 25):
+        wobble = ((day.toordinal() * 37) % 61 - 30) / 1000  # deterministic, within 3%
+        points[day] = 1000.0 * (1 + wobble)
+        day += timedelta(days=1)
+    for year, value in sale.items():
+        points[matched_day(date(2026, 11, 25), 2026 - year, weekly=False)] = value
+    return points
+
+
+@pytest.mark.parametrize(
+    ("value", "normal"),
+    [
+        (5000.0, True),  # as last year
+        (4500.0, True),  # as the year before
+        (5300.0, True),  # a little above either
+        (1000.0, False),  # the sale did not arrive
+        (9000.0, False),  # nearly double any sale it has seen
+    ],
+)
+def test_a_peak_has_room_in_proportion_to_its_size_and_to_how_much_the_years_disagree(
+    value: float, normal: bool
+) -> None:
+    """An ordinary day varies by 30. A sale day five times as large varies by more than
+    that, and the two earlier years did not agree on its size either: a sale inside their
+    range is not an anomaly."""
+    history = History(_noisy_with_a_sale_day({2025: 5000.0, 2024: 4500.0}), _params())
+
+    scored = history.score(date(2026, 11, 25), value)
+
+    assert scored.applied and scored.index == pytest.approx(4.75, rel=0.03)
+    assert scored.z_score is not None
+    assert (scored.z_score < 3) is normal
+
+
+def test_with_one_earlier_year_a_peak_is_allowed_its_own_share_of_ordinary_noise() -> None:
+    """An ordinary day varies by under 3%, about 30. A 5000 sale day is allowed about 3% of
+    5000, not 30: 2% above last year is noise, and 20% above is not."""
+    history = History(_noisy_with_a_sale_day({2025: 5000.0}, start=date(2025, 10, 1)), _params())
+
+    near = history.score(date(2026, 11, 25), 5100.0)
+    far = history.score(date(2026, 11, 25), 6000.0)
+
+    assert near.as_dict()["years"] == 1
+    assert near.z_score is not None and near.z_score < 3
+    assert far.z_score is not None and far.z_score > 3
+    # A few percent of the peak, not the 20 to 30 an ordinary day moves by.
+    assert near.spread is not None and 50 < near.spread < 200
+
+
+def test_an_earlier_year_with_no_peak_makes_the_comparison_loose_and_the_result_shows_why() -> None:
+    """Two years with a sale and one without do not agree on what this day should be. The
+    check does not pretend they do: the spread is wide, and the three ratios are in the
+    result for anyone asking why a low day passed."""
+    points = _noisy_with_a_sale_day({2025: 5000.0, 2024: 4500.0})
+    day = date(2023, 10, 1)
+    while day < date(2024, 10, 1):
+        points[day] = 1000.0
+        day += timedelta(days=1)
+    history = History(points, _params())
+
+    scored = history.score(date(2026, 11, 25), 1000.0)
+
+    assert [round(r, 1) for r in scored.as_dict()["ratios"]] == [5.0, 4.5, 1.0]
+    assert scored.as_dict()["years"] == 3
+    assert scored.z_score is not None and scored.z_score < 3
+
+
+def test_the_centre_and_spread_reported_reproduce_the_score() -> None:
+    history = History(_noisy_with_a_sale_day({2025: 5000.0, 2024: 4500.0}), _params())
+
+    scored = history.score(date(2026, 11, 25), 5600.0)
+
+    assert scored.centre is not None and scored.spread is not None and scored.z_score
+    assert abs(5600.0 - scored.centre) / scored.spread == pytest.approx(scored.z_score)
+
+
 def test_the_days_after_a_sale_are_not_judged_against_the_sale() -> None:
     after = date(2025, 12, 3)  # the Wednesday after the sale: back to 100
     history = _history(after)
@@ -224,15 +297,19 @@ def test_the_days_after_a_sale_are_not_judged_against_the_sale() -> None:
 
 
 def test_a_day_the_shop_was_closed_last_year_expects_zero_without_dividing_by_it() -> None:
-    points = _series(date(2024, 10, 1), date(2025, 12, 25))
-    points[date(2024, 12, 26)] = 0.0  # Thursday 26 Dec 2024, matched from Thu 25 Dec 2025
-    history = History(points, _params())
+    day = date(2026, 11, 25)
+    history = History(_noisy_with_a_sale_day({2025: 0.0}, start=date(2025, 10, 1)), _params())
 
-    closed_again = history.score(date(2025, 12, 25), 0.0)
-    open_this_year = history.score(date(2025, 12, 25), 100.0)
+    closed_again = history.score(day, 0.0)
+    a_few_orders = history.score(day, 20.0)
+    open_this_year = history.score(day, 1000.0)
 
     assert (closed_again.index, closed_again.expected) == (0.0, 0.0)
     assert closed_again.z_score is not None and closed_again.z_score < 1
+    # With nothing to take a proportion of, the distance is taken as it stands, against the
+    # ordinary day-to-day spread (about 17 here): a few orders are noise, a normal day's
+    # worth is not.
+    assert a_few_orders.z_score is not None and a_few_orders.z_score < 3
     assert open_this_year.z_score is not None and open_this_year.z_score > 6
 
 
@@ -378,10 +455,13 @@ def test_a_seeded_check_judges_its_first_sale_against_last_years(
         "index": 2.4,
         "expected": 240.0,
         "matched": ["2024-11-27"],
+        "ratios": [2.4],
         "years": 1,
     }
-    # `mean` is what was expected, so the band every surface draws is the seasonal one.
-    assert (observed["mean"], observed["deviation"]) == (240.0, 0.0)
+    # `mean` and `stddev` are what the run was scored against. This table repeats exactly
+    # (last year's Saturdays explain this year's), so nothing is left over as spread.
+    assert (observed["mean"], observed["deviation"], observed["stddev"]) == (240.0, 0.0, 0.0)
+    assert observed["degenerate_stddev"] is True
     assert outcome.metric_value is not None and outcome.metric_value < 1
     assert outcome.expected_value["yearly"] is True
 
@@ -419,44 +499,3 @@ def test_with_no_earlier_year_the_score_is_exactly_the_ordinary_one(
     assert [with_yearly.observed_value[k] for k in keys] == [
         without.observed_value[k] for k in keys
     ]
-
-
-def test_a_whole_table_check_with_yearly_keeps_one_point_a_day_the_days_last(
-    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    session, _, check = graph
-    check.config = {"target_metric": "row_count", "window": 5, "min_points": 3, "yearly": True}
-    session.flush()
-    # Points it stored, several a day, before `yearly` was switched on.
-    session.add(
-        MonitorBaseline(
-            check_id=check.id,
-            kind="anomaly",
-            baseline={
-                "version": 1,
-                "target_metric": "row_count",
-                "window": 5,
-                "seasonality": False,
-                "observations": [
-                    {"ts": "2026-10-10T06:00:00+00:00", "value": 100},
-                    {"ts": "2026-10-10T18:00:00+00:00", "value": 105},
-                    {"ts": "2026-10-11T06:00:00+00:00", "value": 110},
-                ],
-            },
-        )
-    )
-    session.flush()
-
-    _run(graph, monkeypatch, "2026-10-12T06:00", 120)
-    second = _run(graph, monkeypatch, "2026-10-12T18:00", 125)
-
-    row = get_baseline(session, check.id)
-    assert row is not None
-    assert [(o["ts"][:10], o["value"]) for o in row.baseline["observations"]] == [
-        ("2026-10-10", 105.0),
-        ("2026-10-11", 110.0),
-        ("2026-10-12", 125.0),
-    ]
-    # Scored against earlier days only, never against this morning's run.
-    assert second.observed_value["points"] == 2
-    assert "period" not in second.observed_value
