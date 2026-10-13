@@ -3203,6 +3203,23 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
 - A period with no rows counts as 0, for the sum as well.
 - Changing `date_column`, `period` or `value_column` starts the history again, because the
   earlier points measured something else. Changing `timezone` or `settle_hours` does not.
+- **The history is seeded on the first run.** One query reads up to three years of past
+  periods from the table's own rows, so the check scores on its first run instead of waiting
+  for `min_points` runs. Seeded points are marked `backfilled` and points a run measured are
+  `observed`, and that mark never changes: a backfilled point is what the table says today
+  about the past, which a restatement or a purge can have altered. Every result's `history`
+  says how many of each it was scored against and what seeding came to (`seeding`: `done`,
+  `off` or `failed`); the result of the run that seeded also carries `seeded`, with the
+  number of points kept and where they start.
+- Seeding starts at the period **after** the first one that has rows, because that first
+  period is usually partial (a table that began on a Thursday has a four-day first week),
+  and counts a later period with no rows as 0.
+- It is one scan of the table: set `backfill` to `false` for a warehouse that bills per
+  query, or where old rows are archived, and the check starts empty and waits. Switching it
+  on later seeds around the points runs have already measured, which are kept.
+- If the seeding query fails, the check still runs, starts empty and says so. It tries again
+  on the next two runs and then stops; dropping the check's baseline starts over.
+- A per-period check keeps three years of periods on top of its window.
 
 For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
 "amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges
@@ -4812,7 +4829,9 @@ the per-PR history lives in the repo's commit log and pull requests.
   `period_row_count` and `period_sum`, watch the rows or the summed amount in each calendar
   period of a date column, for tables whose whole-table row count only grows. A period is
   judged once it is complete and has settled (`timezone`, `settle_hours`), and each period
-  gets one stored point.
+  gets one stored point. On its first run a check seeds up to three years of history from
+  the table's own rows (marked `backfilled`, apart from what later runs observe), so it
+  scores at once; `backfill: false` turns that off.
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
@@ -5875,7 +5894,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `date_column`, `value_column`, `period` *(optional)*, `timezone` *(optional)*, `settle_hours` *(optional)*, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
+| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `date_column`, `value_column`, `period` *(optional)*, `timezone` *(optional)*, `settle_hours` *(optional)*, `backfill` *(optional)*, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
 
 ### Examples
 

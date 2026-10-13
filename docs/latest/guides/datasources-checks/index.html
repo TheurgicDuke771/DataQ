@@ -4516,6 +4516,23 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
 <li>A period with no rows counts as 0, for the sum as well.</li>
 <li>Changing <code>date_column</code>, <code>period</code> or <code>value_column</code> starts the history again, because the
   earlier points measured something else. Changing <code>timezone</code> or <code>settle_hours</code> does not.</li>
+<li><strong>The history is seeded on the first run.</strong> One query reads up to three years of past
+  periods from the table's own rows, so the check scores on its first run instead of waiting
+  for <code>min_points</code> runs. Seeded points are marked <code>backfilled</code> and points a run measured are
+  <code>observed</code>, and that mark never changes: a backfilled point is what the table says today
+  about the past, which a restatement or a purge can have altered. Every result's <code>history</code>
+  says how many of each it was scored against and what seeding came to (<code>seeding</code>: <code>done</code>,
+  <code>off</code> or <code>failed</code>); the result of the run that seeded also carries <code>seeded</code>, with the
+  number of points kept and where they start.</li>
+<li>Seeding starts at the period <strong>after</strong> the first one that has rows, because that first
+  period is usually partial (a table that began on a Thursday has a four-day first week),
+  and counts a later period with no rows as 0.</li>
+<li>It is one scan of the table: set <code>backfill</code> to <code>false</code> for a warehouse that bills per
+  query, or where old rows are archived, and the check starts empty and waits. Switching it
+  on later seeds around the points runs have already measured, which are kept.</li>
+<li>If the seeding query fails, the check still runs, starts empty and says so. It tries again
+  on the next two runs and then stops; dropping the check's baseline starts over.</li>
+<li>A per-period check keeps three years of periods on top of its window.</li>
 </ul>
 <p>For example, <code>{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
 "amount", "window": 14, "min_points": 7}</code> on <code>orders</code>, run daily at 07:00 UTC, judges

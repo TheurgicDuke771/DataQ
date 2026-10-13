@@ -2671,7 +2671,9 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   <code>period_row_count</code> and <code>period_sum</code>, watch the rows or the summed amount in each calendar
   period of a date column, for tables whose whole-table row count only grows. A period is
   judged once it is complete and has settled (<code>timezone</code>, <code>settle_hours</code>), and each period
-  gets one stored point.</li>
+  gets one stored point. On its first run a check seeds up to three years of history from
+  the table's own rows (marked <code>backfilled</code>, apart from what later runs observe), so it
+  scores at once; <code>backfill: false</code> turns that off.</li>
 <li><strong>Tune automatic coverage in one place.</strong> The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in <strong>Admin → Settings → Automatic coverage</strong>
