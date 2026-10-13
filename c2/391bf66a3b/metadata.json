@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "c2391bf66a3b",
+  "strategy": "manual-commit",
+  "branch": "chore/coverage-settings-migration-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/alembic/versions/543b75689c8c_coverage_settings.py",
+    "backend/app/db/models.py",
+    "backend/tests/db/test_coverage_settings_migration.py",
+    "docs/site/architecture/overview.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c2/391bf66a3b/0/metadata.json",
+      "transcript": "/c2/391bf66a3b/0/full.jsonl",
+      "compact_transcript": "/c2/391bf66a3b/0/transcript.jsonl",
+      "content_hash": "/c2/391bf66a3b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 22130,
+    "cache_read_tokens": 2374530,
+    "output_tokens": 8961,
+    "api_call_count": 14
+  }
+}
