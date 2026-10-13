@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "21a53186c730",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0047-coverage-sensitivity-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md",
+    "docs/site/adr/0047-automated-coverage-loop.md",
+    "docs/site/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/21/a53186c730/0/metadata.json",
+      "transcript": "/21/a53186c730/0/full.jsonl",
+      "compact_transcript": "/21/a53186c730/0/transcript.jsonl",
+      "content_hash": "/21/a53186c730/0/content_hash.txt",
+      "prompt": "/21/a53186c730/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 130347,
+    "cache_read_tokens": 1638115,
+    "output_tokens": 11232,
+    "api_call_count": 13
+  }
+}
