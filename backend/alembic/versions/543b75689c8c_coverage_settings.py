@@ -36,9 +36,16 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
+        sa.CheckConstraint("id = 1", name="singleton"),
         sa.CheckConstraint("jsonb_typeof(config) = 'object'", name="config_is_object"),
     )
     op.add_column("assets", sa.Column("auto_coverage_config", postgresql.JSONB(), nullable=True))
+    # The column is all NULL, so the check validates instantly and never scans real data.
+    op.create_check_constraint(
+        op.f("ck_assets_auto_coverage_config_is_object"),
+        "assets",
+        "auto_coverage_config IS NULL OR jsonb_typeof(auto_coverage_config) = 'object'",
+    )
 
 
 def downgrade() -> None:

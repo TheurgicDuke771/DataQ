@@ -300,7 +300,13 @@ class Asset(Base):
     """
 
     __tablename__ = "assets"
-    __table_args__ = (UniqueConstraint("namespace", "name", name="uq_assets_namespace_name"),)
+    __table_args__ = (
+        UniqueConstraint("namespace", "name", name="uq_assets_namespace_name"),
+        CheckConstraint(
+            "auto_coverage_config IS NULL OR jsonb_typeof(auto_coverage_config) = 'object'",
+            name="auto_coverage_config_is_object",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     namespace: Mapped[str] = mapped_column(Text, nullable=False)
@@ -325,7 +331,7 @@ class Asset(Base):
         Boolean, nullable=False, server_default=text("false")
     )
     # This table's own sensitivity for its automatic baselines; NULL = the workspace setting.
-    auto_coverage_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    auto_coverage_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -1377,7 +1383,10 @@ class CoverageSetting(Base):
     """
 
     __tablename__ = "coverage_settings"
-    __table_args__ = (CheckConstraint("jsonb_typeof(config) = 'object'", name="config_is_object"),)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="singleton"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="config_is_object"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

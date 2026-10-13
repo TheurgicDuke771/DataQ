@@ -74,13 +74,33 @@ def test_upgrade_leaves_no_setting_and_no_override(db_session: Any) -> None:
     assert overrides == [None, None]
 
 
-def test_the_setting_must_be_a_json_object(db_session: Any) -> None:
+def test_the_setting_is_one_row_holding_a_json_object(db_session: Any) -> None:
     _run(db_session, "downgrade")
     _run(db_session, "upgrade")
     db_session.execute(text("INSERT INTO coverage_settings (id, config) VALUES (1, '{}'::jsonb)"))
 
     with pytest.raises(IntegrityError), db_session.begin_nested():
         db_session.execute(text("UPDATE coverage_settings SET config = '[]'::jsonb"))
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.execute(
+            text("INSERT INTO coverage_settings (id, config) VALUES (2, '{}'::jsonb)")
+        )
+
+
+def test_an_override_is_a_json_object_or_absent(db_session: Any) -> None:
+    _run(db_session, "downgrade")
+    _run(db_session, "upgrade")
+    asset = _asset_written_by_old_code(db_session)
+    db_session.execute(
+        text("UPDATE assets SET auto_coverage_config = '{}'::jsonb WHERE id = :id"), {"id": asset}
+    )
+
+    for not_an_object in ("[]", "null", "3"):
+        with pytest.raises(IntegrityError), db_session.begin_nested():
+            db_session.execute(
+                text("UPDATE assets SET auto_coverage_config = CAST(:v AS jsonb) WHERE id = :id"),
+                {"v": not_an_object, "id": asset},
+            )
 
 
 def test_downgrade_removes_both_and_upgrade_puts_them_back(db_session: Any) -> None:
