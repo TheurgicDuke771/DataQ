@@ -32,7 +32,12 @@ from backend.app.lineage.warehouse import (
     WAREHOUSE_LINEAGE_CONNECTION_TYPES,
     snapshot_lineage_connection_types,
 )
-from backend.app.services import audit_service, column_tags, scoring_settings_service
+from backend.app.services import (
+    audit_service,
+    column_tags,
+    coverage_settings_service,
+    scoring_settings_service,
+)
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     SEVERITY_STATUSES,
@@ -960,6 +965,13 @@ def _lineage_nodes(
     ]
 
 
+def get_asset(session: Session, asset_id: uuid.UUID) -> Asset:
+    asset = session.get(Asset, asset_id)
+    if asset is None:
+        raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    return asset
+
+
 def update_asset_metadata(
     session: Session,
     asset_id: uuid.UUID,
@@ -969,23 +981,33 @@ def update_asset_metadata(
     set_owner: bool = False,
     set_description: bool = False,
     auto_coverage_excluded: bool | None = None,
+    auto_coverage_config: dict[str, Any] | None = None,
+    set_auto_coverage_config: bool = False,
     actor_id: uuid.UUID | None = None,
 ) -> Asset:
     """Set an asset's owner and/or description (workspace-Admin-only; gated at API)."""
-    asset = session.get(Asset, asset_id)
-    if asset is None:
-        raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    asset = get_asset(session, asset_id)
     audit_before = audit_service.snapshot("asset", asset)
+    # Both refusals come before anything is assigned, so a refused request leaves the
+    # session clean.
+    override = (
+        coverage_settings_service.validate(auto_coverage_config)
+        if set_auto_coverage_config and auto_coverage_config is not None
+        else None
+    )
+    if set_owner and owner_user_id is not None and session.get(User, owner_user_id) is None:
+        raise AssetOwnerInvalidError(
+            "owner user does not exist", detail={"owner_user_id": str(owner_user_id)}
+        )
     if set_owner:
-        if owner_user_id is not None and session.get(User, owner_user_id) is None:
-            raise AssetOwnerInvalidError(
-                "owner user does not exist", detail={"owner_user_id": str(owner_user_id)}
-            )
         asset.owner_user_id = owner_user_id
     if set_description:
         asset.description = description
     if auto_coverage_excluded is not None:
         asset.auto_coverage_excluded = auto_coverage_excluded
+    if set_auto_coverage_config:
+        # An override that sets no group is no override: stored as NULL, not `{}`.
+        asset.auto_coverage_config = override or None
     # Metadata mutation only (ADR 0041 §2.5). The inventory-sync column family and
     # `first_seen`/`last_seen` are machine writes and never reach a payload.
     audit_service.record_entity_change(

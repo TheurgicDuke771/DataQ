@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
@@ -16,12 +16,18 @@ from backend.app.api.v1._base import (
     ApiRequestModel,
     total_count_responses,
 )
+from backend.app.api.v1.admin_coverage import (
+    CoverageSettingsWrite,
+    EffectiveCoverageRead,
+    effective_read,
+)
 from backend.app.core.auth import get_current_user, require_workspace_admin
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.lineage.columns import DEFAULT_TRACE_DEPTH, MAX_TRACE_DEPTH, TraceDirection
 from backend.app.services import asset_view_service as svc
+from backend.app.services import coverage_settings_service
 
 router = APIRouter(tags=["assets"])
 
@@ -332,6 +338,18 @@ class AssetMetadataUpdate(ApiRequestModel):
     description: str | None = Field(default=None, max_length=1024)
     # Leave this table out of its connection's automatic coverage (ADR 0047).
     auto_coverage_excluded: bool | None = None
+    # This table's own sensitivity for its automatic baselines (ADR 0047): the same document as
+    # `PUT /admin/coverage`. `null` removes the override; omitted leaves it unchanged.
+    auto_coverage_config: CoverageSettingsWrite | None = None
+
+
+class AssetCoverageSettingsRead(ApiModel):
+    """One table's sensitivity for its automatic baselines. `override` is what this table
+    stores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with
+    the level each group came from."""
+
+    override: dict[str, Any] | None
+    effective: EffectiveCoverageRead
 
 
 _LIST_LIMIT_DEFAULT = 200
@@ -412,11 +430,37 @@ def update_asset(
         set_owner="owner_user_id" in fields,
         set_description="description" in fields,
         auto_coverage_excluded=payload.auto_coverage_excluded,
+        auto_coverage_config=(
+            payload.auto_coverage_config.document() if payload.auto_coverage_config else None
+        ),
+        set_auto_coverage_config="auto_coverage_config" in fields,
         actor_id=admin.id,
     )
     # Return the refreshed workspace-true summary. Never 404s on an asset with no
     # composing suites — metadata exists independently of suites.
     return svc.summarize_asset(db, asset)
+
+
+@router.get(
+    "/assets/{asset_id}/coverage-settings",
+    response_model=AssetCoverageSettingsRead,
+    summary="Automatic-baseline sensitivity for one asset",
+)
+def get_asset_coverage_settings(
+    asset_id: uuid.UUID,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AssetCoverageSettingsRead:
+    # Asset identity is workspace-visible (ADR 0037); these are thresholds, not results.
+    asset = svc.get_asset(db, asset_id)
+    return AssetCoverageSettingsRead(
+        override=asset.auto_coverage_config,
+        effective=effective_read(
+            coverage_settings_service.resolve(
+                coverage_settings_service.workspace_document(db), asset.auto_coverage_config
+            )
+        ),
+    )
 
 
 @router.get(

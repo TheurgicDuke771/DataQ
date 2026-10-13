@@ -645,6 +645,32 @@
         "title": "ApiKeyRead",
         "type": "object"
       },
+      "AssetCoverageSettingsRead": {
+        "description": "One table's sensitivity for its automatic baselines. `override` is what this table\nstores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with\nthe level each group came from.",
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/EffectiveCoverageRead"
+          },
+          "override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override"
+          }
+        },
+        "required": [
+          "override",
+          "effective"
+        ],
+        "title": "AssetCoverageSettingsRead",
+        "type": "object"
+      },
       "AssetDetailRead": {
         "description": "Asset detail: the workspace-true summary + the caller's per-suite breakdown\n+ upstream/downstream lineage. `suites` lists only suites the caller can view\n(ADR 0027); `restricted_suite_count` is how many more compose the asset \u2014 they\nroll into `summary` (workspace-true) but stay unnamed.",
         "properties": {
@@ -769,6 +795,16 @@
         "additionalProperties": false,
         "description": "Partial metadata update (workspace-Admin-only). Each field is optional; an\nexplicit `null` clears it, an omitted field leaves it unchanged \u2014 the two are\ndistinguished via `model_fields_set` at the route so `owner_user_id: null`\nmeans \"unassign\" rather than \"leave as is\".",
         "properties": {
+          "auto_coverage_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoverageSettingsWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "auto_coverage_excluded": {
             "anyOf": [
               {
@@ -1206,6 +1242,31 @@
           "to"
         ],
         "title": "AuthEmailTestResponse",
+        "type": "object"
+      },
+      "BaselineShapeWrite": {
+        "additionalProperties": false,
+        "description": "How much history a baseline compares against. All three are set together.",
+        "properties": {
+          "min_points": {
+            "title": "Min Points",
+            "type": "integer"
+          },
+          "seasonality": {
+            "title": "Seasonality",
+            "type": "boolean"
+          },
+          "window": {
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window",
+          "min_points",
+          "seasonality"
+        ],
+        "title": "BaselineShapeWrite",
         "type": "object"
       },
       "BatchPreviewRead": {
@@ -4137,6 +4198,98 @@
         "title": "CoverageGapRead",
         "type": "object"
       },
+      "CoverageSettingsRead": {
+        "description": "The workspace's sensitivity for automatic baselines. `setting` is exactly what is\nstored (a group it omits falls to the built-in default); `effective` is the result for a\ntable with no override of its own. `is_default` means nothing is stored.",
+        "properties": {
+          "defaults": {
+            "$ref": "#/components/schemas/EffectiveCoverageRead"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/EffectiveCoverageRead"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "setting": {
+            "additionalProperties": true,
+            "title": "Setting",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "setting",
+          "effective",
+          "defaults",
+          "is_default",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "CoverageSettingsRead",
+        "type": "object"
+      },
+      "CoverageSettingsWrite": {
+        "additionalProperties": false,
+        "description": "A level sets a group whole or leaves it to the level below: any of the three\nbaselines' thresholds, and the shared baseline shape.",
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineShapeWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sensitivity": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/SensitivityWrite"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "volume",
+                    "freshness",
+                    "profile"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensitivity"
+          }
+        },
+        "title": "CoverageSettingsWrite",
+        "type": "object"
+      },
       "CredentialHealthRead": {
         "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used since\nthe signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
         "properties": {
@@ -4605,6 +4758,100 @@
           "message"
         ],
         "title": "DocumentProblemRead",
+        "type": "object"
+      },
+      "EffectiveCoverageRead": {
+        "description": "What the hierarchy resolves to: asset override, then workspace setting, then the\nbuilt-in default.",
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/EffectiveShape"
+          },
+          "sensitivity": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/EffectiveSensitivity"
+            },
+            "propertyNames": {
+              "enum": [
+                "volume",
+                "freshness",
+                "profile"
+              ]
+            },
+            "title": "Sensitivity",
+            "type": "object"
+          }
+        },
+        "required": [
+          "sensitivity",
+          "baseline"
+        ],
+        "title": "EffectiveCoverageRead",
+        "type": "object"
+      },
+      "EffectiveSensitivity": {
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "number"
+          },
+          "fail": {
+            "title": "Fail",
+            "type": "number"
+          },
+          "source": {
+            "enum": [
+              "asset",
+              "workspace",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "warn": {
+            "title": "Warn",
+            "type": "number"
+          }
+        },
+        "required": [
+          "warn",
+          "fail",
+          "critical",
+          "source"
+        ],
+        "title": "EffectiveSensitivity",
+        "type": "object"
+      },
+      "EffectiveShape": {
+        "properties": {
+          "min_points": {
+            "title": "Min Points",
+            "type": "integer"
+          },
+          "seasonality": {
+            "title": "Seasonality",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "asset",
+              "workspace",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "window": {
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window",
+          "min_points",
+          "seasonality",
+          "source"
+        ],
+        "title": "EffectiveShape",
         "type": "object"
       },
       "EventAck": {
@@ -8466,6 +8713,31 @@
         "title": "SecretSweepRunResponse",
         "type": "object"
       },
+      "SensitivityWrite": {
+        "additionalProperties": false,
+        "description": "Standard deviations from the table's own history at which a baseline warns, fails\nand goes critical. All three are set together.",
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "number"
+          },
+          "fail": {
+            "title": "Fail",
+            "type": "number"
+          },
+          "warn": {
+            "title": "Warn",
+            "type": "number"
+          }
+        },
+        "required": [
+          "warn",
+          "fail",
+          "critical"
+        ],
+        "title": "SensitivityWrite",
+        "type": "object"
+      },
       "ShareCreate": {
         "additionalProperties": false,
         "properties": {
@@ -10416,6 +10688,85 @@
         ]
       }
     },
+    "/api/v1/admin/coverage": {
+      "delete": {
+        "operationId": "reset_coverage_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset automatic-baseline sensitivity (admin)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "operationId": "get_coverage_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Automatic-baseline sensitivity",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "put_coverage_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CoverageSettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set automatic-baseline sensitivity (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/data-subject-requests/erase": {
       "post": {
         "description": "Workspace-wide, on-demand erasure of every captured sample cell naming\n`column` = `value` \u2014 surgical (only the matching row/cell), not a blanket purge;\nsee `data_subject_requests.erase_matching_results`. Runs synchronously and\nrecords one `audit_events` row inside the same transaction as the scrub, so a\nfailed write leaves nothing behind and an applied one cannot go unrecorded\n(mirrors the ADR 0041 phase-1 mutation pattern).",
@@ -11852,6 +12203,49 @@
           }
         },
         "summary": "Trace one column's lineage",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/v1/assets/{asset_id}/coverage-settings": {
+      "get": {
+        "operationId": "get_asset_coverage_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCoverageSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Automatic-baseline sensitivity for one asset",
         "tags": [
           "assets"
         ]

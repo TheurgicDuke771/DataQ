@@ -252,6 +252,8 @@ _SCORING_SETTING_FIELDS: Final[tuple[str, ...]] = (
     "critical_weight",
     "updated_by",
 )
+# Thresholds and window sizes only: no warehouse value can reach this document.
+_COVERAGE_SETTING_FIELDS: Final[tuple[str, ...]] = ("id", "config", "updated_by")
 
 # `token_hash` is absent and must stay absent. ADR 0041 §2.5: an api_key event
 # records the mint/revoke, **never the token or its hash**.
@@ -280,6 +282,8 @@ _ASSET_FIELDS: Final[tuple[str, ...]] = (
     "description",
     # Leaving a table out of automatic coverage is a deliberate admin act (ADR 0047).
     "auto_coverage_excluded",
+    # This table's own sensitivity for its automatic baselines: numbers and flags only.
+    "auto_coverage_config",
 )
 
 # `evidence` is deliberately ABSENT: it is derived from a failing run and can
@@ -315,6 +319,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "llm_setting": _LLM_SETTING_FIELDS,
     "privacy_setting": _PRIVACY_SETTING_FIELDS,
     "scoring_setting": _SCORING_SETTING_FIELDS,
+    "coverage_setting": _COVERAGE_SETTING_FIELDS,
 }
 
 
