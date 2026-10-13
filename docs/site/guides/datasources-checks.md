@@ -1260,14 +1260,18 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
   periods from the table's own rows, so the check scores on its first run instead of waiting
   for `min_points` runs. Seeded points are marked `backfilled` and points a run measured are
   `observed`, and that mark never changes: a backfilled point is what the table says today
-  about the past, which a restatement or a purge can have altered. Each result's `history`
-  says how many of each it was scored against, and the first result's `seeded` says what the
-  seeding found.
-- Seeding starts at the first period that has rows and counts a later period with none as 0.
-  It is one scan of the table: set `backfill` to `false` for a warehouse that bills per
-  query, or where old rows are archived, and the check starts empty and waits. If the
-  seeding query fails, the check still runs, starts empty and reports `seeded.status:
-  failed`. Dropping the check's baseline seeds it again.
+  about the past, which a restatement or a purge can have altered. Every result's `history`
+  says how many of each it was scored against and what seeding came to (`seeding`: `done`,
+  `off` or `failed`); the result of the run that seeded also carries `seeded`, with the
+  number of points kept and where they start.
+- Seeding starts at the period **after** the first one that has rows, because that first
+  period is usually partial (a table that began on a Thursday has a four-day first week),
+  and counts a later period with no rows as 0.
+- It is one scan of the table: set `backfill` to `false` for a warehouse that bills per
+  query, or where old rows are archived, and the check starts empty and waits. Switching it
+  on later seeds around the points runs have already measured, which are kept.
+- If the seeding query fails, the check still runs, starts empty and says so. It tries again
+  on the next two runs and then stops; dropping the check's baseline starts over.
 - A per-period check keeps three years of periods on top of its window.
 
 For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":

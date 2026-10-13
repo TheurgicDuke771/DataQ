@@ -171,14 +171,22 @@ def _compiled(config: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return " ".join(str(compiled).split()), dict(compiled.params)
 
 
-def test_the_count_statement_is_a_half_open_range_on_the_bare_column() -> None:
+def test_the_count_statement_selects_by_the_cast_date_inside_a_range_the_planner_can_use() -> None:
     sql, params = _compiled(_COUNT)
 
     assert sql == (
         "SELECT count(*) AS count_1 FROM shop.orders "
-        "WHERE ordered_at >= %(period_start)s AND ordered_at < %(period_end)s"
+        "WHERE ordered_at >= %(period_from)s AND ordered_at < %(period_until)s "
+        "AND CAST(ordered_at AS DATE) >= %(period_start)s "
+        "AND CAST(ordered_at AS DATE) < %(period_end)s"
     )
-    assert params == {"period_start": date(2026, 10, 12), "period_end": date(2026, 10, 13)}
+    # The bare-column range is a day wider each side than the cast can move a row.
+    assert params == {
+        "period_from": date(2026, 10, 11),
+        "period_until": date(2026, 10, 14),
+        "period_start": date(2026, 10, 12),
+        "period_end": date(2026, 10, 13),
+    }
 
 
 def test_the_sum_statement_quotes_mixed_case_columns() -> None:
@@ -186,6 +194,7 @@ def test_the_sum_statement_quotes_mixed_case_columns() -> None:
 
     assert 'sum("NetAmount")' in sql
     assert 'WHERE "OrderedAt" >=' in sql
+    assert 'CAST("OrderedAt" AS DATE) <' in sql
 
 
 def test_the_statement_gives_the_right_answer_on_a_real_database(db_session: Any) -> None:
@@ -297,10 +306,11 @@ def test_measurement_accepts_what_drivers_return(
     seen = _patch_scalar(monkeypatch, scalar)
 
     assert _measure(config) == expected
-    assert dict(seen["statement"].compile().params) == {
-        "period_start": date(2026, 10, 12),
-        "period_end": date(2026, 10, 13),
-    }
+    params = dict(seen["statement"].compile().params)
+    assert (params["period_start"], params["period_end"]) == (
+        date(2026, 10, 12),
+        date(2026, 10, 13),
+    )
 
 
 @pytest.mark.parametrize("scalar", ["30.75", True, float("nan"), b"30"])

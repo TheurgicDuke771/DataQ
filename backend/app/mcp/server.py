@@ -2277,12 +2277,15 @@ def create_check(
     table says *today* about the past, not what it held then: a restatement or a
     purge since will have changed them. ``observed_value.history`` on every
     result gives how many of the points it was scored against were
-    ``backfilled`` and how many a run ``observed``; say so when most are
-    backfilled. ``observed_value.seeded`` on the seeding run reports ``status``
-    (``done`` with the point count, ``off`` when ``backfill`` is false, or
-    ``failed``: the check ran but started with no history). A ``done`` with
-    ``points: 0`` means the table had no rows before the judged period, not that
-    seeding was skipped. It is one full scan of the table; pass
+    ``backfilled`` and how many a run ``observed`` (say so when most are
+    backfilled), and ``seeding``: ``done``, ``off`` (``backfill`` is false),
+    ``failed`` (the scan failed, so the check started with no history; it is
+    retried on the next two runs, then not again), or null on a dry run. The
+    result of the run that seeded also has ``observed_value.seeded`` with the
+    ``points`` kept and the date they start ``from``. A ``done`` with
+    ``points: 0`` means the table had too little before the judged period, not
+    that seeding was skipped: the period the table began in is never seeded,
+    because it is usually partial. It is one full scan of the table; pass
     ``backfill=false`` in the config for a warehouse billed per query.
 
     It needs a positive fail/critical threshold, which is the z-score

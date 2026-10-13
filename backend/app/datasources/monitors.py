@@ -541,33 +541,53 @@ def _is_timezone(name: str) -> bool:
     return name == "UTC" or ("/" in name and name in available_timezones())
 
 
+def _period_filter(spec: PeriodSpec, *, start: date, end: date, prefix: str) -> tuple[Any, Any]:
+    """``(day, predicates)`` selecting the rows whose date, as the warehouse casts it, falls
+    in ``[start, end)``.
+
+    The cast decides, in both the per-run query and the seeding query, so a seeded day and
+    a measured day always mean the same rows (a zone-carrying timestamp casts by its own
+    rule, which a comparison against midnight would not follow). The range on the bare
+    column is there for the planner only: it is a day wider on each side than the cast can
+    move a row, so a partition or an index on the column is still used.
+    """
+    from sqlalchemy import Date, and_, bindparam, cast
+    from sqlalchemy import column as sql_column
+
+    when: Any = sql_column(folding_identifier(spec.date_column))
+    day = cast(when, Date)
+    one_day = timedelta(days=1)
+    return day, and_(
+        when >= bindparam(f"{prefix}_from", start - one_day, type_=Date),
+        when < bindparam(f"{prefix}_until", end + one_day, type_=Date),
+        day >= bindparam(f"{prefix}_start", start, type_=Date),
+        day < bindparam(f"{prefix}_end", end, type_=Date),
+    )
+
+
+def _period_measure(spec: PeriodSpec) -> Any:
+    from sqlalchemy import column as sql_column
+    from sqlalchemy import func
+
+    if spec.value_column is None:
+        return func.count()
+    return func.sum(sql_column(folding_identifier(spec.value_column)))
+
+
 def period_history_statement(
     target: TableClause, spec: PeriodSpec, *, start: date, end: date
 ) -> Select[Any]:
     """One row per calendar day in ``[start, end)`` that has rows: the day, and its row count
     or summed column. Days, whatever the period: weeks are added up by the caller, so no
     engine's week arithmetic is involved.
-
-    The range filter is on the bare column, as in ``period_statement``; only the grouping
-    casts it to a date.
     """
-    from sqlalchemy import Date, bindparam, cast, func, select
-    from sqlalchemy import column as sql_column
+    from sqlalchemy import select
 
-    when: Any = sql_column(folding_identifier(spec.date_column))
-    day = cast(when, Date)
-    measure = (
-        func.count()
-        if spec.value_column is None
-        else func.sum(sql_column(folding_identifier(spec.value_column)))
-    )
+    day, in_range = _period_filter(spec, start=start, end=end, prefix="history")
     return (
-        select(day.label("period_day"), measure.label("period_value"))
+        select(day.label("period_day"), _period_measure(spec).label("period_value"))
         .select_from(target)
-        .where(
-            when >= bindparam("history_start", start, type_=Date),
-            when < bindparam("history_end", end, type_=Date),
-        )
+        .where(in_range)
         .group_by(day)
     )
 
@@ -591,29 +611,11 @@ def history_day(value: Any) -> date:
 def period_statement(
     target: TableClause, spec: PeriodSpec, *, start: date, end: date
 ) -> Select[Any]:
-    """One scalar: the rows, or the summed column, whose date falls in ``[start, end)``.
+    """One scalar: the rows, or the summed column, whose date falls in ``[start, end)``."""
+    from sqlalchemy import select
 
-    The column is compared to the dates directly, not cast, so a partition or an index on it
-    is still used; a timestamp column is compared from midnight in the warehouse session's
-    zone.
-    """
-    from sqlalchemy import Date, bindparam, func, select
-    from sqlalchemy import column as sql_column
-
-    when: Any = sql_column(folding_identifier(spec.date_column))
-    measure = (
-        func.count()
-        if spec.value_column is None
-        else func.sum(sql_column(folding_identifier(spec.value_column)))
-    )
-    return (
-        select(measure)
-        .select_from(target)
-        .where(
-            when >= bindparam("period_start", start, type_=Date),
-            when < bindparam("period_end", end, type_=Date),
-        )
-    )
+    _, in_range = _period_filter(spec, start=start, end=end, prefix="period")
+    return select(_period_measure(spec)).select_from(target).where(in_range)
 
 
 def column_profile_statement(

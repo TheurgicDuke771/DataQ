@@ -58,6 +58,21 @@ function shortDay(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
 }
 
+/** `Jun 13, 25`: for a series long enough that a day and month alone repeat. */
+function dayWithYear(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
+/** A seeded per-period baseline holds about three years of points; the chart and the table
+ *  show the most recent of them and say how many there are. */
+const BASELINE_POINTS_SHOWN = 180;
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
 /** Severity → a dash pattern distinct enough to read without color (a11y). */
 const THRESHOLD_DASH: Record<'warn' | 'fail' | 'critical', string> = {
   warn: '4 3',
@@ -364,7 +379,14 @@ function AnomalyBaselinePanel({
   const weekdayName = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
   const weekdaySuffix = meta.seasonality ? ` for ${weekdayName}s` : '';
 
-  const data = observations.map((o) => ({ label: shortDay(o.ts), value: o.value }));
+  const shown = observations.slice(-BASELINE_POINTS_SHOWN);
+  const spansYears =
+    shown.length > 1 &&
+    new Date(shown[shown.length - 1].ts).getTime() - new Date(shown[0].ts).getTime() > YEAR_MS;
+  const data = shown.map((o) => ({
+    label: spansYears ? dayWithYear(o.ts) : shortDay(o.ts),
+    value: o.value,
+  }));
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -375,6 +397,8 @@ function AnomalyBaselinePanel({
             · σ={stats.stddev.toFixed(2)} · {eligible.length} points
             {seeded > 0 &&
               ` · ${seeded} of the ${observations.length} stored points were seeded from the table’s own rows, not measured by a run`}
+            {observations.length > shown.length &&
+              ` · the chart shows the most recent ${shown.length}`}
           </>
         ) : observations.length === 0 ? (
           // Matches the empty chart below it (#594 review): no observations at
@@ -470,16 +494,30 @@ function TrendTable({
             type="secondary"
             style={{ fontSize: 12, marginTop: 12, display: 'block' }}
           >
-            Anomaly baseline observations (raw measurements)
+            Anomaly baseline points, newest first
           </Typography.Text>
           <Table<Observation>
             size="small"
             rowKey={(o) => o.ts}
-            pagination={false}
+            pagination={
+              observations.length > BASELINE_POINTS_SHOWN
+                ? { pageSize: 50, showSizeChanger: false, size: 'small' }
+                : false
+            }
             dataSource={[...observations].reverse()}
             columns={[
-              { title: 'Observed at', dataIndex: 'ts', render: (v: string) => formatTimestamp(v) },
+              { title: 'Dated', dataIndex: 'ts', render: (v: string) => formatTimestamp(v) },
               { title: 'Value', dataIndex: 'value' },
+              ...(observations.some((o) => o.backfilled)
+                ? [
+                    {
+                      title: 'Source',
+                      dataIndex: 'backfilled',
+                      // A seeded point is what the table says today about that period.
+                      render: (b: boolean) => (b ? 'Seeded from the table' : 'Measured by a run'),
+                    },
+                  ]
+                : []),
             ]}
           />
         </>

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -198,16 +198,16 @@ def _seed(
     return [(p.ts.date().isoformat(), p.value, p.observed) for p in points]
 
 
-def test_seeding_starts_at_the_first_day_with_rows_and_counts_later_gaps_as_zero(
+def test_seeding_starts_after_the_first_period_with_rows_and_counts_later_gaps_as_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     history = [(date(2026, 10, 8), 40), (date(2026, 10, 9), Decimal("55")), ("2026-10-11", "30")]
 
     points = _seed(monkeypatch, history, _COUNT, date(2026, 10, 13))
 
-    # Nothing before the 8th is invented; the 10th and the 12th had no rows, so zero.
+    # The 8th is when the table began, so it may be a part-day and is left out; nothing
+    # before it is invented; the 10th and the 12th had no rows, so zero.
     assert points == [
-        ("2026-10-08", 40.0, False),
         ("2026-10-09", 55.0, False),
         ("2026-10-10", 0.0, False),
         ("2026-10-11", 30.0, False),
@@ -225,7 +225,20 @@ def test_seeding_adds_days_up_into_weeks(monkeypatch: pytest.MonkeyPatch) -> Non
 
     points = _seed(monkeypatch, history, {**_SUM, "period": "week"}, date(2026, 10, 12))
 
-    assert points == [("2026-09-28", 11.75, False), ("2026-10-05", 4.0, False)]
+    # The first week is the one the table began in: it is not kept as a full week.
+    assert points == [("2026-10-05", 4.0, False)]
+
+
+def test_a_table_that_began_midweek_does_not_seed_a_short_first_week(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = [(date(2026, 9, 24), 400)] + [  # a Thursday, then full weeks at 100 a day
+        (date(2026, 9, 28) + timedelta(days=i), 100) for i in range(14)
+    ]
+
+    points = _seed(monkeypatch, history, {**_COUNT, "period": "week"}, date(2026, 10, 12))
+
+    assert points == [("2026-09-28", 700.0, False), ("2026-10-05", 700.0, False)]
 
 
 def test_seeding_a_table_with_no_rows_in_range_gives_no_history(
@@ -240,7 +253,12 @@ def test_seeding_ignores_a_row_dated_outside_the_range_it_asked_for(
     """A warehouse session in another zone can cast a boundary row to the day outside. One
     before the range would otherwise become the start of the history, with every day from
     there counted as zero."""
-    history = [(date(2023, 10, 10), 999), (date(2026, 10, 13), 999), (date(2026, 10, 12), 7)]
+    history = [
+        (date(2023, 10, 10), 999),
+        (date(2026, 10, 13), 999),
+        (date(2026, 10, 11), 3),
+        (date(2026, 10, 12), 7),
+    ]
 
     assert _seed(monkeypatch, history, _COUNT, date(2026, 10, 13)) == [("2026-10-12", 7.0, False)]
 
@@ -305,7 +323,8 @@ def graph(db_session: Any) -> tuple[Any, Connection, Check]:
     return db_session, conn, check
 
 
-_HISTORY = [(date(2026, 10, day), 100 + day) for day in range(5, 12)]  # the 5th to the 11th
+# The 4th (when the table began, so not kept) to the 11th.
+_HISTORY = [(date(2026, 10, day), 100 + day) for day in range(4, 12)]
 
 
 def _run(graph: tuple[Any, Connection, Check], now: str, *, persist: bool = True) -> Any:
@@ -348,10 +367,19 @@ def test_the_first_run_seeds_the_past_and_scores_at_once(
     assert [s for _, _, s in stored] == ["backfilled"] * 7 + ["observed"]
     assert stored[0] == ("2026-10-05", 105.0, "backfilled")
     assert stored[-1] == ("2026-10-12", 108.0, "observed")
-    assert outcome.observed_value["seeded"] == {"status": "done", "points": 7, "from": "2026-10-05"}
+    assert outcome.observed_value["seeded"] == {
+        "status": "done",
+        "points": 7,
+        "from": "2026-10-05",
+        "attempts": 1,
+    }
     # Scored on its first run, against the last five seeded days.
     assert outcome.skipped is False
-    assert outcome.observed_value["history"] == {"backfilled": 5, "observed": 0}
+    assert outcome.observed_value["history"] == {
+        "backfilled": 5,
+        "observed": 0,
+        "seeding": "done",
+    }
 
 
 def test_a_later_run_does_not_seed_again_and_the_marks_never_change(
@@ -365,7 +393,11 @@ def test_a_later_run_does_not_seed_again_and_the_marks_never_change(
 
     assert warehouse.asked == ["period"]
     assert "seeded" not in outcome.observed_value
-    assert outcome.observed_value["history"] == {"backfilled": 4, "observed": 1}
+    assert outcome.observed_value["history"] == {
+        "backfilled": 4,
+        "observed": 1,
+        "seeding": "done",
+    }
     assert [s for _, _, s in _stored(graph)] == ["backfilled"] * 7 + ["observed"] * 2
 
 
@@ -380,9 +412,31 @@ def test_with_seeding_off_the_check_starts_empty_and_asks_for_no_history(
     outcome = _run(graph, "2026-10-13T12:00")
 
     assert warehouse.asked == ["period"]
-    assert outcome.observed_value["seeded"] == {"status": "off"}
+    assert outcome.observed_value["history"]["seeding"] == "off"
+    assert "seeded" not in outcome.observed_value
     assert outcome.skipped is True
     assert _stored(graph) == [("2026-10-12", 108.0, "observed")]
+
+
+def test_switching_seeding_on_later_seeds_around_the_points_already_observed(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, _, check = graph
+    check.config = {**check.config, "backfill": False}
+    session.flush()
+    warehouse = _Warehouse(_HISTORY, value=108).install(monkeypatch)
+    _run(graph, "2026-10-12T12:00")  # judges the 11th, stored as observed
+
+    check.config = {**check.config, "backfill": True}
+    session.flush()
+    outcome = _run(graph, "2026-10-13T12:00")
+
+    assert outcome.observed_value["seeded"]["status"] == "done"
+    stored = _stored(graph)
+    # The 11th keeps what a run saw (108), not what the table says today (111).
+    assert stored[-2:] == [("2026-10-11", 108.0, "observed"), ("2026-10-12", 108.0, "observed")]
+    assert [s for _, _, s in stored[:-2]] == ["backfilled"] * 6
+    assert warehouse.asked.count("history") == 1
 
 
 def test_a_seeding_query_that_fails_does_not_fail_the_check(
@@ -395,10 +449,100 @@ def test_a_seeding_query_that_fails_does_not_fail_the_check(
     outcome = _run(graph, "2026-10-13T12:00")
 
     assert outcome.errored is False and outcome.skipped is True
-    assert outcome.observed_value["seeded"]["status"] == "failed"
+    seeded = outcome.observed_value["seeded"]
+    assert (seeded["status"], seeded["attempts"], seeded["will_retry"]) == ("failed", 1, True)
     # The driver's message is not the reason shown.
-    assert "permission denied" not in str(outcome.observed_value["seeded"])
+    assert "permission denied" not in str(seeded)
     assert _stored(graph) == [("2026-10-12", 108.0, "observed")]
+
+
+def test_a_failed_seeding_is_tried_again_and_fills_in_behind_the_observed_points(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    warehouse = _Warehouse(TimeoutError("statement timeout"), value=108).install(monkeypatch)
+    _run(graph, "2026-10-13T12:00")
+
+    warehouse.history = _HISTORY
+    outcome = _run(graph, "2026-10-14T12:00")
+
+    # Seven points kept: the scan also returned the 12th, which a run had already judged.
+    assert outcome.observed_value["seeded"] == {
+        "status": "done",
+        "points": 7,
+        "from": "2026-10-05",
+        "attempts": 2,
+    }
+    stored = _stored(graph)
+    assert [s for _, _, s in stored] == ["backfilled"] * 7 + ["observed"] * 2
+    # The 12th was judged by the first run: the table's later answer for it is not used.
+    assert stored[-2] == ("2026-10-12", 108.0, "observed")
+    assert outcome.skipped is False
+
+
+def test_seeding_gives_up_after_three_failures_and_every_result_still_says_so(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    warehouse = _Warehouse(TimeoutError("statement timeout"), value=108).install(monkeypatch)
+    outcomes = [_run(graph, f"2026-10-{day}T12:00") for day in (13, 14, 15, 16, 17)]
+
+    assert warehouse.asked.count("history") == 3
+    assert [o.observed_value.get("seeded", {}).get("will_retry") for o in outcomes] == [
+        True,
+        True,
+        False,
+        None,
+        None,
+    ]
+    # Long after the attempts stopped, a result still says why the history is short.
+    assert outcomes[-1].observed_value["history"]["seeding"] == "failed"
+
+
+def test_the_table_scan_happens_before_the_baseline_row_is_locked(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent run of the same check waits on that lock with a short timeout; a scan of
+    three years must not be inside it."""
+    events: list[str] = []
+    warehouse = _Warehouse(_HISTORY, value=108).install(monkeypatch)
+    real_seed, real_get = anomaly.seed_history, get_baseline
+
+    def seed(*args: Any, **kwargs: Any) -> Any:
+        events.append("scan")
+        return real_seed(*args, **kwargs)
+
+    def get(session: Any, check_id: Any, *, for_update: bool = False) -> Any:
+        if for_update:
+            events.append("lock")
+        return real_get(session, check_id, for_update=for_update)
+
+    monkeypatch.setattr(anomaly, "seed_history", seed)
+    monkeypatch.setattr(anomaly, "get_baseline", get)
+    _run(graph, "2026-10-13T12:00")
+
+    assert events == ["scan", "lock"]
+    assert warehouse.asked == ["period", "history"]
+
+
+def test_a_scan_that_lost_the_race_to_another_run_is_thrown_away(
+    graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _Warehouse(_HISTORY, value=108).install(monkeypatch)
+    _run(graph, "2026-10-13T12:00")
+    before = _stored(graph)
+    # This run's unlocked look sees nothing seeded; by the time it holds the lock, the
+    # other run's seeding is there.
+    real = anomaly.stored_seed
+    looks: list[int] = []
+
+    def stale_first_look(row: Any, params: Any) -> Any:
+        looks.append(1)
+        return None if len(looks) == 1 else real(row, params)
+
+    monkeypatch.setattr(anomaly, "stored_seed", stale_first_look)
+    outcome = _run(graph, "2026-10-13T18:00")
+
+    assert "seeded" not in outcome.observed_value
+    assert _stored(graph) == before
 
 
 def test_a_dry_run_never_seeds(
@@ -411,6 +555,7 @@ def test_a_dry_run_never_seeds(
     session, _, check = graph
     assert warehouse.asked == ["period"]
     assert "seeded" not in outcome.observed_value
+    assert outcome.observed_value["history"]["seeding"] is None
     assert get_baseline(session, check.id) is None
 
 
@@ -447,7 +592,6 @@ def test_changing_what_the_check_buckets_by_seeds_the_new_history(
 
     assert warehouse.asked == ["period", "history"]
     assert _stored(graph) == [
-        ("2026-10-10", 7.0, "backfilled"),
         ("2026-10-11", 9.0, "backfilled"),
         ("2026-10-12", 108.0, "observed"),
     ]
@@ -456,8 +600,6 @@ def test_changing_what_the_check_buckets_by_seeds_the_new_history(
 def test_three_years_of_seeded_days_survive_the_trim(
     graph: tuple[Any, Connection, Check], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from datetime import timedelta
-
     start = date(2023, 10, 12)
     history = [(start + timedelta(days=i), 100) for i in range((date(2026, 10, 12) - start).days)]
     _Warehouse(history, value=100).install(monkeypatch)
@@ -465,4 +607,4 @@ def test_three_years_of_seeded_days_survive_the_trim(
     _run(graph, "2026-10-13T12:00")
 
     stored = _stored(graph)
-    assert (stored[0][0], stored[-1][0], len(stored)) == ("2023-10-12", "2026-10-12", 1097)
+    assert (stored[0][0], stored[-1][0], len(stored)) == ("2023-10-13", "2026-10-12", 1096)
