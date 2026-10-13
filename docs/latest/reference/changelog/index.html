@@ -2679,6 +2679,11 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   was scored against. Editing a threshold or the window on an automatic check gives it its
   own values and stops it inheriting. Check responses show the values in effect and an
   <code>inherited</code> field (<code>inherited_from</code> over MCP) naming the level they came from.</li>
+<li><strong>See which automatic check cries wolf.</strong> The Dashboard's coverage panel now splits the
+  false-positive rate by automatic check and by connection, each with the count behind it, so
+  a noisy column profile can be told apart from a noisy row count before any threshold is
+  changed. <code>GET /dashboard/coverage</code> and the MCP <code>get_coverage</code> figures carry the same
+  breakdown as <code>false_positives_by_baseline</code> and <code>false_positives_by_connection</code>.</li>
 <li><strong>Disable a check without deleting it.</strong> A check can be switched off from its row on the
   suite page, from its editor, or many at once with <strong>Disable selected</strong> and <strong>Enable
   selected</strong>. A disabled check keeps its results, version history and baseline and is left

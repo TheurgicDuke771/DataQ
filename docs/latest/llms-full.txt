@@ -2693,6 +2693,15 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
   last 30 days **and said what they were**, the share marked false positive. Both show the counts
   behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
+  Under it the same rate is split **by automatic check** (row count, freshness, column profile,
+  schema, and other checks in the automatic suite) and **by connection**, each as "false
+  positives of stated". Only a check or connection with a stated resolution is listed; one that
+  is missing was not measured. This is where to look before loosening a threshold: if the column
+  profile accounts for most of the false positives, loosen that check's sensitivity in the
+  coverage settings and leave the others alone. The settings govern row count, freshness and
+  column profile only, and only checks that still inherit them. A schema check has no
+  threshold, and "other checks" (accepted suggestions and checks someone added to the suite)
+  are tuned on the check itself.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 
@@ -4780,6 +4789,11 @@ the per-PR history lives in the repo's commit log and pull requests.
   was scored against. Editing a threshold or the window on an automatic check gives it its
   own values and stops it inheriting. Check responses show the values in effect and an
   `inherited` field (`inherited_from` over MCP) naming the level they came from.
+- **See which automatic check cries wolf.** The Dashboard's coverage panel now splits the
+  false-positive rate by automatic check and by connection, each with the count behind it, so
+  a noisy column profile can be told apart from a noisy row count before any threshold is
+  changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
+  breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
   selected**. A disabled check keeps its results, version history and baseline and is left
