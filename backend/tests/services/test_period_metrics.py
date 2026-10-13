@@ -104,7 +104,7 @@ def test_utc_needs_no_time_zone_database(monkeypatch: pytest.MonkeyPatch) -> Non
     def missing(name: str) -> Any:
         raise KeyError(name)
 
-    monkeypatch.setattr(zoneinfo, "available_timezones", lambda: set())
+    monkeypatch.setattr(zoneinfo, "available_timezones", set)
     monkeypatch.setattr(zoneinfo, "ZoneInfo", missing)
 
     assert _spec().settled(_at("2026-10-13T06:00")) == (date(2026, 10, 12), date(2026, 10, 13))
