@@ -15,6 +15,52 @@ import {
  * `buildCheckPayload` (checkForm.ts) — the conditional-field (`ConfigField.showWhen`) half of
  * #593's generic mechanism.
  */
+describe('buildCheckPayload — per-period anomaly metrics', () => {
+  const base = {
+    name: 'daily sales',
+    expectation_type: 'monitor:anomaly',
+    fail_threshold: 3,
+  };
+  const period = {
+    date_column: 'ordered_at',
+    value_column: 'amount',
+    period: 'week',
+    timezone: 'Europe/London',
+    settle_hours: 12,
+  };
+
+  it('submits every period field for the sum metric, so an edit does not strip them', () => {
+    const config = { target_metric: 'period_sum', ...period, window: 14, min_points: 7 };
+
+    expect(buildCheckPayload({ ...base, config }).config).toEqual(config);
+    // What the editor is prefilled with is what it sends back.
+    const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
+    expect(buildCheckPayload({ ...base, config: configToForm(spec, config) }).config).toEqual(
+      config,
+    );
+  });
+
+  it('leaves the summed column out of a row count, and every period field out of a whole-table metric', () => {
+    const count = buildCheckPayload({
+      ...base,
+      config: { target_metric: 'period_row_count', ...period },
+    }).config;
+    const whole = buildCheckPayload({
+      ...base,
+      config: { target_metric: 'row_count', ...period, column: 'loaded_at' },
+    }).config;
+
+    expect(count).toEqual({
+      target_metric: 'period_row_count',
+      date_column: 'ordered_at',
+      period: 'week',
+      timezone: 'Europe/London',
+      settle_hours: 12,
+    });
+    expect(whole).toEqual({ target_metric: 'row_count' });
+  });
+});
+
 describe('buildCheckPayload — anomaly conditional column field (#593)', () => {
   it('omits column from the submitted config when target_metric is row_count, even with a stale value present', () => {
     const payload = buildCheckPayload({

@@ -191,6 +191,14 @@ function eligibleValues(
   return considered.slice(-meta.window).map((o) => o.value);
 }
 
+function nextScoredAt(observations: Observation[], check: CheckTrendCheck): Date {
+  const last = observations.at(-1);
+  if (typeof check.config?.date_column !== 'string' || !last) return new Date();
+  const next = new Date(last.ts);
+  next.setUTCDate(next.getUTCDate() + (check.config.period === 'week' ? 7 : 1));
+  return next;
+}
+
 export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const isAnomaly = check.kind === 'anomaly';
@@ -338,9 +346,10 @@ function AnomalyBaselinePanel({
   meta: AnomalyBaselineMeta;
   check: CheckTrendCheck;
 }) {
-  // "Right now" — the same instant a run happening this moment would be measured against
-  // (`eligible_values(now)` in anomaly.py).
-  const now = new Date();
+  // The moment the next run would be scored at (`eligible_values` in anomaly.py). A per-period
+  // check is scored at its period, not at the run: the next one is the period after the last
+  // stored point, so a seasonal band is drawn for that weekday, not for today's.
+  const now = nextScoredAt(observations, check);
   const eligible = eligibleValues(observations, meta, now);
   const stats = meanStddev(eligible);
   const k =

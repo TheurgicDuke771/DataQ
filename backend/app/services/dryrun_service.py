@@ -500,7 +500,8 @@ def _dry_run_anomaly(
     from backend.app.services import anomaly as anomaly_service
 
     try:
-        params = anomaly_params(config)
+        # The author gate: a preview must refuse what a save would.
+        params = anomaly_params(config, authoring=True)
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": ANOMALY}) from exc
     resolved = run_target.resolve_target(connection.type, target)
@@ -527,7 +528,11 @@ def _dry_run_anomaly(
                 secret_store=secret_store,
                 now=now,
             )
-            payload = anomaly_service.build_score_payload(value, [], params)
+            payload = {
+                **anomaly_service.build_score_payload(value, [], params),
+                # Which period a per-period metric measured (ADR 0048).
+                **anomaly_service.observation_time(params, now)[1],
+            }
     except MonitorConfigError as exc:
         # DataQ-authored and safe to echo (a bad column, a non-SQL datasource, an
         # empty table) — the actionable half of a failed preview.

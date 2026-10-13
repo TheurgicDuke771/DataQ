@@ -2239,8 +2239,9 @@ def create_check(
     against it. ``column_profile`` measures every column's null % and distinct
     count in one query (a distinct count scores only when it falls) and names
     the columns that moved in ``observed_value.deviations``. Its config takes:
-    - ``target_metric`` (required): ``row_count``, ``freshness_age_hours`` or
-      ``column_profile``.
+    - ``target_metric`` (required): ``row_count``, ``freshness_age_hours``,
+      ``column_profile``, or one of the per-period metrics ``period_row_count`` /
+      ``period_sum`` (below).
     - ``column`` (required only for ``freshness_age_hours``): which timestamp
       column to measure.
     - ``window`` (optional): how many past runs the rolling baseline covers.
@@ -2248,6 +2249,28 @@ def create_check(
       runs report ``skip``, not a false anomaly.
     - ``seasonality`` (optional): set to compare against the same day-of-week
       rather than a flat rolling window.
+
+    **Per-period metrics** are for a table that only grows, where a whole-table
+    ``row_count`` has no normal to return to ('alert me when daily orders look
+    wrong', 'weekly sales amount'). ``period_row_count`` counts the rows whose date
+    falls in one calendar period; ``period_sum`` sums a numeric column over them.
+    They add these keys, which are refused on every other metric:
+    - ``date_column`` (required): the column that dates a row. It is not checked
+      against the table here; confirm it with ``list_columns``.
+    - ``value_column`` (required for ``period_sum``, refused for the count).
+    - ``period`` (optional): ``day`` (default) or ``week`` (Monday to Sunday).
+    - ``timezone`` (optional, an IANA name spelled exactly, default ``UTC``):
+      the zone the date column's values are written in. It decides when a period
+      is over; it does not change which period a row falls in, which is the date
+      the warehouse returns for the column. Do not set it to the user's own zone
+      when the data is in another: a zone ahead of the data's judges a day
+      before it has finished and stores that short value.
+    - ``settle_hours`` (optional, default 6): a period is judged only once it has
+      been closed that long.
+    Each run judges the **most recent settled period, not "today"**, and its
+    result says which one in ``observed_value.period``. A check created now tells
+    you nothing until ``min_points`` periods have been stored, one per day or
+    week of runs: there is no backfill from the table's existing rows.
 
     It needs a positive fail/critical threshold, which is the z-score
     sensitivity (3 is a common starting point) — this is not a value the

@@ -632,7 +632,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
+| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `date_column`, `value_column`, `period` *(optional)*, `timezone` *(optional)*, `settle_hours` *(optional)*, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
 
 ### Examples
 
