@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +36,7 @@ from backend.app.datasources.monitors import (
     row_count_from_scalar,
 )
 from backend.app.db.models import Check, Connection, MonitorBaseline
+from backend.app.services.coverage_settings_service import CheckSettings, SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.profile_service import (
@@ -435,14 +436,31 @@ def build_anomaly_executor(
     target_catalog: str | None,
     secret_store: SecretStore,
     persist: bool = True,
+    coverage: SuiteCoverage | None = None,
 ) -> Callable[[Check], CheckOutcome]:
-    """A per-run executor for `anomaly` checks (the #592/#794 stateful pattern)."""
+    """A per-run executor for `anomaly` checks (the #592/#794 stateful pattern).
+
+    ``coverage`` resolves the shape an inheriting automatic check runs on (ADR 0047); without
+    it every check runs on its own stored config.
+    """
 
     def executor(check: Check) -> CheckOutcome:
+        inherited = coverage.for_check(check) if coverage is not None else None
+        outcome = _measure_and_score(check, inherited)
+        if inherited is None or outcome.expected_value is None:
+            return outcome
+        # The result names what it was scored against: the stored config is not it.
+        return replace(outcome, expected_value={**outcome.expected_value, **inherited.provenance()})
+
+    def _measure_and_score(check: Check, inherited: CheckSettings | None) -> CheckOutcome:
         config = dict(check.config)
+        if inherited is not None:
+            config = inherited.config(config)
         now = datetime.now(UTC)
         try:
             params = anomaly_params(config)
+            if inherited is not None:
+                params = replace(params, retain_seasonal_horizon=True)
             if params.target_metric == COLUMN_PROFILE_METRIC:
                 return _column_profile_outcome(check, config, params, now)
             value = measure_metric(

@@ -12,6 +12,7 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
 from backend.app.db.models import Check, Connection
 from backend.app.services import anomaly, schema_drift
+from backend.app.services.coverage_settings_service import SuiteCoverage
 
 
 class _ExecutorBuilder(Protocol):
@@ -25,6 +26,7 @@ class _ExecutorBuilder(Protocol):
         target_catalog: str | None,
         secret_store: SecretStore,
         persist: bool = True,
+        coverage: SuiteCoverage | None = None,
     ) -> Callable[[Check], CheckOutcome]: ...
 
 
@@ -44,6 +46,7 @@ def build_stateful_monitor_executor(
     target_catalog: str | None,
     secret_store: SecretStore,
     persist: bool = True,
+    coverage: SuiteCoverage | None = None,
 ) -> Callable[[Check], CheckOutcome]:
     """One callable covering every stateful kind, dispatching on ``check.kind``."""
     built: dict[str, Callable[[Check], CheckOutcome]] = {}
@@ -70,6 +73,7 @@ def build_stateful_monitor_executor(
                 target_catalog=target_catalog,
                 secret_store=secret_store,
                 persist=persist,
+                coverage=coverage,
             )
             built[check.kind] = cached
         return cached(check)

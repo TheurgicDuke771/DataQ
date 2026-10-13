@@ -646,7 +646,7 @@
         "type": "object"
       },
       "AssetCoverageSettingsRead": {
-        "description": "One table's sensitivity for its automatic baselines. `override` is what this table\nstores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with\nthe level each group came from.",
+        "description": "One table's sensitivity for its automatic baselines. `override` is what this table\nstores itself (`null` = none); `effective` is what its automatic checks run on while they\nstill inherit, with the level each group came from. A check a person has edited runs on its\nown values instead, which this does not show: read the check.",
         "properties": {
           "effective": {
             "$ref": "#/components/schemas/EffectiveCoverageRead"
@@ -2549,6 +2549,16 @@
             "title": "Id",
             "type": "string"
           },
+          "inherited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InheritedFrom"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -4199,7 +4209,7 @@
         "type": "object"
       },
       "CoverageSettingsRead": {
-        "description": "The workspace's sensitivity for automatic baselines. `setting` is exactly what is\nstored (a group it omits falls to the built-in default); `effective` is the result for a\ntable with no override of its own. `is_default` means nothing is stored.",
+        "description": "The workspace's sensitivity for automatic baselines. `setting` is exactly what is\nstored (a group it omits falls to the built-in default); `effective` is the result for a\ntable with no override of its own. `is_default` means nothing is stored. A change reaches\nevery automatic check that still inherits on its next run; a check a person has edited\nkeeps its own values.",
         "properties": {
           "defaults": {
             "$ref": "#/components/schemas/EffectiveCoverageRead"
@@ -5664,6 +5674,35 @@
           "sources"
         ],
         "title": "InheritedClassificationRead",
+        "type": "object"
+      },
+      "InheritedFrom": {
+        "description": "The level each inherited group came from: this table's override (`asset`), the\nworkspace setting, or the built-in default.",
+        "properties": {
+          "baseline": {
+            "enum": [
+              "asset",
+              "workspace",
+              "default"
+            ],
+            "title": "Baseline",
+            "type": "string"
+          },
+          "sensitivity": {
+            "enum": [
+              "asset",
+              "workspace",
+              "default"
+            ],
+            "title": "Sensitivity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sensitivity",
+          "baseline"
+        ],
+        "title": "InheritedFrom",
         "type": "object"
       },
       "InheritedSourceRead": {

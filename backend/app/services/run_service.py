@@ -8,6 +8,7 @@ from collections import defaultdict
 from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Literal, cast
 
 from sqlalchemy import delete, func, null, select, update
@@ -57,6 +58,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
+from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
 from backend.app.services.severity import resolve_status
@@ -69,7 +71,12 @@ def _now() -> datetime:
 
 
 def _build_result(
-    run_id: uuid.UUID, check: Check, outcome: CheckOutcome, *, zero_sample: bool
+    run_id: uuid.UUID,
+    check: Check,
+    outcome: CheckOutcome,
+    *,
+    zero_sample: bool,
+    coverage: SuiteCoverage | None = None,
 ) -> Result:
     """Map a check + its GX outcome to a `Result`, deriving the severity tier
     (ADR 0005/0016; the scalar persists as `metric_value`, ADR 0012).
@@ -77,12 +84,24 @@ def _build_result(
     `zero_sample` is the EFFECTIVE privacy mode from
     `privacy_settings_service.zero_sample_mode`, resolved once per run by the
     caller rather than re-read per check (#1887).
+
+    ``coverage`` supplies the thresholds of a check that inherits them (ADR 0047): its
+    stored columns are not what it is banded against.
     """
+    inherited = coverage.for_check(check) if coverage is not None else None
+    thresholds: tuple[Decimal | None, Decimal | None, Decimal | None] = (
+        check.warn_threshold,
+        check.fail_threshold,
+        check.critical_threshold,
+    )
+    if inherited is not None:
+        sens = inherited.sensitivity
+        thresholds = (Decimal(str(sens.warn)), Decimal(str(sens.fail)), Decimal(str(sens.critical)))
     status, metric = resolve_status(
         outcome,
-        warn_threshold=check.warn_threshold,
-        fail_threshold=check.fail_threshold,
-        critical_threshold=check.critical_threshold,
+        warn_threshold=thresholds[0],
+        fail_threshold=thresholds[1],
+        critical_threshold=thresholds[2],
     )
     # Zero-sample privacy mode (#1676): a workspace-level switch, so this is the ONE choke
     # point every check kind funnels through — gate it here and every reader (results API,
@@ -382,6 +401,7 @@ def execute_run(
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
     stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
     value_signal_gate: ValueSignalGate | None = None,
+    coverage: SuiteCoverage | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome."""
     run.status = "running"
@@ -420,7 +440,9 @@ def execute_run(
             native_previous=lambda batch: latest_evaluated_observed(session, batch),
         ):
             rows = [
-                _build_result(run.id, checks[i], check_outcome, zero_sample=zero_sample)
+                _build_result(
+                    run.id, checks[i], check_outcome, zero_sample=zero_sample, coverage=coverage
+                )
                 for i, check_outcome in phase.resolved
             ]
             session.add_all(rows)

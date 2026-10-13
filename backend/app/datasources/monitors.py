@@ -338,11 +338,15 @@ class AnomalyParams:
     window: int
     min_points: int
     seasonality: bool
+    #: Keep the seasonal horizon even with seasonality off (ADR 0047): a check that inherits its
+    #: shape must not lose history when an Admin switches seasonality off and on again.
+    retain_seasonal_horizon: bool = False
 
     @property
     def retained_observations(self) -> int:
         """Raw observations kept: ``window``, or ``window * 7`` seasonal."""
-        return self.window * (_ANOMALY_SEASONAL_WEEKDAYS if self.seasonality else 1)
+        seasonal = self.seasonality or self.retain_seasonal_horizon
+        return self.window * (_ANOMALY_SEASONAL_WEEKDAYS if seasonal else 1)
 
 
 def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, high: int) -> int:

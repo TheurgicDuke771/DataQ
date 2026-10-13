@@ -39,6 +39,7 @@ from backend.app.services import (
     column_tags,
     comparison_run,
     connection_service,
+    coverage_settings_service,
     credential_health,
     incident_service,
     llm_kinds,  # noqa: F401 — registers every LLM feature kind in the worker
@@ -201,6 +202,9 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
 
             # Stateful monitor executors (#592/#593) own the session + baseline
             # store, which runners must never see.
+            # Resolved once per run: an automatic baseline that inherits its thresholds and
+            # shape (ADR 0047) is measured and banded against the same settings.
+            coverage = coverage_settings_service.for_suite(session, suite)
             stateful_monitor_executor = None
             if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
                 stateful_monitor_executor = stateful_monitors.build_stateful_monitor_executor(
@@ -210,6 +214,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                     target_schema=target.schema,
                     target_catalog=target.catalog,
                     secret_store=get_secret_store(),
+                    coverage=coverage,
                 )
 
             run_service.execute_run(
@@ -223,6 +228,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 comparison_executor=comparison_executor,
                 stateful_monitor_executor=stateful_monitor_executor,
                 value_signal_gate=value_signal_gate,
+                coverage=coverage,
             )
             return str(run.status)
 

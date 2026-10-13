@@ -10,7 +10,10 @@ values), so each group is valid where it is saved and no merge across levels can
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Final, Literal, get_args
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -19,12 +22,15 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import (
+    ANOMALY,
     ANOMALY_DEGENERATE_Z,
+    COLUMN_PROFILE_METRIC,
+    FRESHNESS_AGE_METRIC,
     ROW_COUNT_METRIC,
     MonitorConfigError,
     anomaly_params,
 )
-from backend.app.db.models import CoverageSetting, User
+from backend.app.db.models import Asset, Check, CoverageSetting, Suite, User
 from backend.app.services import audit_service
 
 log = get_logger(__name__)
@@ -198,6 +204,216 @@ def resolve(workspace: dict[str, Any] | None, asset: dict[str, Any] | None = Non
     )
 
 
+# ───────────────────────── run-time inheritance ─────────────────────────
+
+#: Server-owned key in an automatic anomaly check's config: ``true`` = each run resolves its
+#: thresholds and shape through the hierarchy; ``false`` = a person edited them, so its own
+#: stored values apply.
+INHERIT_KEY: Final = "inherit_coverage_settings"
+
+_BASELINE_BY_METRIC: Final[dict[str, str]] = {
+    ROW_COUNT_METRIC: "volume",
+    FRESHNESS_AGE_METRIC: "freshness",
+    COLUMN_PROFILE_METRIC: "profile",
+}
+
+# What the reconciler wrote before the flag existed. Fixed here, apart from the built-in
+# defaults, so changing a default later does not change which old checks inherit.
+_LEGACY_SENSITIVITY: Final = Sensitivity(warn=3, fail=4, critical=6)
+_LEGACY_SHAPE: Final = Shape(window=8, min_points=4, seasonality=True)
+
+
+@dataclass(frozen=True)
+class CheckSettings:
+    """What one inheriting check runs on, and the level each group came from."""
+
+    sensitivity: Sensitivity
+    sensitivity_from: Level
+    shape: Shape
+    shape_from: Level
+
+    def config(self, stored: dict[str, Any]) -> dict[str, Any]:
+        """The check's config with the resolved shape in place of the stored one."""
+        return {**stored, **self.shape.as_dict()}
+
+    def provenance(self) -> dict[str, Any]:
+        """Recorded on each result: the values it was scored against and where they came from."""
+        return {
+            "thresholds": self.sensitivity.as_dict(),
+            "inherited_from": {"sensitivity": self.sensitivity_from, "baseline": self.shape_from},
+        }
+
+
+def baseline_of(check: Check) -> str | None:
+    """Which automatic baseline an anomaly check is, by the metric it watches."""
+    if check.kind != ANOMALY:
+        return None
+    return _BASELINE_BY_METRIC.get(str((check.config or {}).get("target_metric")))
+
+
+def _number(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _matches_legacy_signature(check: Check) -> bool:
+    config = check.config or {}
+    stored = (
+        _number(check.warn_threshold),
+        _number(check.fail_threshold),
+        _number(check.critical_threshold),
+    )
+    legacy = _LEGACY_SENSITIVITY
+    return stored == (legacy.warn, legacy.fail, legacy.critical) and all(
+        # `is` for the flag: 1 == True, and a window of 1 must not read as seasonality on.
+        type(config.get(key)) is type(want) and config.get(key) == want
+        for key, want in _LEGACY_SHAPE.as_dict().items()
+    )
+
+
+def inherits(check: Check) -> bool:
+    """Whether this check takes its thresholds and shape from the settings rather than from
+    its own stored values. Only an automatic baseline can."""
+    if check.origin != "auto" or baseline_of(check) is None:
+        return False
+    flag = (check.config or {}).get(INHERIT_KEY)
+    if isinstance(flag, bool):
+        return flag
+    # No flag: created before it existed. Inherits while nobody has tuned it.
+    return _matches_legacy_signature(check)
+
+
+@dataclass(frozen=True)
+class SuiteCoverage:
+    """The settings in effect for one suite's table. Built once per run or request."""
+
+    effective: Effective
+
+    def for_check(self, check: Check) -> CheckSettings | None:
+        """What ``check`` runs on if it inherits; ``None`` when its own stored values apply."""
+        baseline = baseline_of(check)
+        if baseline is None or not inherits(check):
+            return None
+        return CheckSettings(
+            sensitivity=self.effective.sensitivity[baseline],
+            sensitivity_from=self.effective.sensitivity_from[baseline],
+            shape=self.effective.shape,
+            shape_from=self.effective.shape_from,
+        )
+
+
+class InheritEditError(ValueError):
+    """An edit that cannot be reconciled with the check's inheritance; the message is safe
+    to show the author."""
+
+
+def strip_flag(config: dict[str, Any]) -> dict[str, Any]:
+    """A config for a check that cannot inherit (anything a person authors or imports)."""
+    return {k: v for k, v in config.items() if k != INHERIT_KEY}
+
+
+def validate_new_check(config: dict[str, Any], *, kind: str, origin: str) -> None:
+    """The flag is server-owned: only the coverage loop may create a check that carries it."""
+    if INHERIT_KEY not in config:
+        return
+    if not isinstance(config[INHERIT_KEY], bool):
+        raise InheritEditError(f"{INHERIT_KEY} must be true or false")
+    is_baseline = kind == ANOMALY and str(config.get("target_metric")) in _BASELINE_BY_METRIC
+    if origin != "auto" or not is_baseline:
+        raise InheritEditError(
+            f"{INHERIT_KEY} applies only to an automatic baseline check; remove it"
+        )
+
+
+def _same(a: Any, b: Any) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return float(a) == float(b)
+
+
+def settle_edit(
+    check: Check,
+    coverage: SuiteCoverage,
+    *,
+    sent_config: dict[str, Any] | None,
+    sent_thresholds: Mapping[str, Decimal | None],
+) -> tuple[dict[str, Any], dict[str, Decimal | None]]:
+    """The config and thresholds an edit leaves on ``check``, with the inherit flag settled.
+
+    ``sent_thresholds`` holds only the tiers the edit names (``warn`` / ``fail`` /
+    ``critical``). The rule (ADR 0047): an edit that changes a threshold or the shape of an
+    inheriting check pins all of them at the values then in effect; one that does not leaves
+    it inheriting. A sent flag decides outright: ``false`` pins, ``true`` (re)starts
+    inheriting, and ``true`` together with a changed value is refused rather than guessed at.
+    """
+    stored_config = dict(check.config or {})
+    stored = {
+        "warn": check.warn_threshold,
+        "fail": check.fail_threshold,
+        "critical": check.critical_threshold,
+    }
+    config = dict(sent_config) if sent_config is not None else stored_config
+    sent_flag = config.pop(INHERIT_KEY, None) if sent_config is not None else None
+    config.pop(INHERIT_KEY, None)
+    if sent_flag is not None and not isinstance(sent_flag, bool):
+        raise InheritEditError(f"{INHERIT_KEY} must be true or false")
+    is_baseline = (
+        check.origin == "auto"
+        and check.kind == ANOMALY
+        and str(config.get("target_metric")) in _BASELINE_BY_METRIC
+    )
+    if not is_baseline:
+        if sent_flag is not None:
+            raise InheritEditError(
+                f"{INHERIT_KEY} applies only to an automatic baseline check; remove it"
+            )
+        return config, {**stored, **sent_thresholds}
+    settings = coverage.for_check(check)
+    if settings is None:
+        # Its own values apply today; only an explicit `true` hands it back to the settings.
+        return {**config, INHERIT_KEY: sent_flag is True}, {**stored, **sent_thresholds}
+
+    effective = settings.sensitivity.as_dict()
+    shape = settings.shape.as_dict()
+    sent_shape = {k: config[k] for k in _SHAPE_KEYS if sent_config is not None and k in config}
+    changed = [t for t, v in sent_thresholds.items() if not _same(v, effective[t])]
+    changed += [k for k, v in sent_shape.items() if v != shape[k]]
+    if sent_flag is True:
+        # A document that says "inherit" carries the stored snapshot, which is not an edit.
+        edits = [
+            name
+            for name in changed
+            if not (
+                _same(sent_thresholds[name], stored[name])
+                if name in sent_thresholds
+                else sent_shape[name] == stored_config.get(name)
+            )
+        ]
+        if edits:
+            raise InheritEditError(
+                f"this check inherits its thresholds and baseline shape, but the edit also "
+                f"changes {', '.join(edits)}; send {INHERIT_KEY}: false to give it its own "
+                "values, or leave those unchanged to keep inheriting"
+            )
+        changed = []
+    if sent_flag is False or changed:
+        pinned_thresholds: dict[str, Decimal | None] = {
+            t: Decimal(str(v)) for t, v in effective.items()
+        }
+        return (
+            {**config, **shape, **sent_shape, INHERIT_KEY: False},
+            {**pinned_thresholds, **sent_thresholds},
+        )
+    # Still inheriting: the stored snapshot stays as it was, whatever was echoed back.
+    kept_shape = {k: stored_config.get(k, shape[k]) for k in _SHAPE_KEYS}
+    return {**config, **kept_shape, INHERIT_KEY: True}, stored
+
+
+def for_suite(session: Session, suite: Suite) -> SuiteCoverage:
+    asset = session.get(Asset, suite.asset_id) if suite.asset_id is not None else None
+    override = asset.auto_coverage_config if asset is not None else None
+    return SuiteCoverage(resolve(workspace_document(session), override))
+
+
 def get_row(session: Session) -> CoverageSetting | None:
     return session.get(CoverageSetting, _SETTINGS_ROW_ID)
 
@@ -259,3 +475,24 @@ def reset_workspace(session: Session, *, actor: User) -> None:
         after=None,
     )
     log.info("coverage_settings_reset")
+
+
+def inherited_settings(session: Session, checks: Iterable[Check]) -> dict[uuid.UUID, CheckSettings]:
+    """What each inheriting check among ``checks`` runs on, keyed by check id. The one resolver
+    behind every read surface (REST, MCP): a check absent from the result runs on its own
+    stored values."""
+    by_suite: dict[uuid.UUID, SuiteCoverage] = {}
+    out: dict[uuid.UUID, CheckSettings] = {}
+    for check in checks:
+        if check.origin != "auto" or baseline_of(check) is None:
+            continue
+        coverage = by_suite.get(check.suite_id)
+        if coverage is None:
+            suite = session.get(Suite, check.suite_id)
+            if suite is None:
+                continue
+            coverage = by_suite[check.suite_id] = for_suite(session, suite)
+        settings = coverage.for_check(check)
+        if settings is not None:
+            out[check.id] = settings
+    return out

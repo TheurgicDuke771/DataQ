@@ -105,8 +105,12 @@ and a wrong claim is a false alert on every run.
    >   server-owned: `true` on every check the reconciler creates from now on, carried over
    >   unchanged by an edit that does not touch these values, and refused on a check that is not
    >   automatic. Editing any threshold, the window, the minimum points or seasonality sets it to
-   >   `false` and pins all of them at the values then in effect. Restoring a version restores
-   >   that version's flag, and a suite document carries it.
+   >   `false` and pins all of them at the values then in effect. "Editing" means sending a value
+   >   that differs from the one in effect, which is what every read surface shows. A sent flag
+   >   decides outright: `false` pins, `true` hands a pinned check back to the settings, and
+   >   `true` together with a changed value is refused. Restoring a version restores that
+   >   version's flag. A suite document carries it; importing one as a new suite drops it,
+   >   because an imported check is a person's.
    > - **Checks created before this amendment** have no flag. One inherits while its stored
    >   values equal the values the reconciler wrote then (3 / 4 / 6; window 8, minimum 4,
    >   seasonality on), which is the set nobody has tuned. That signature is fixed here, apart

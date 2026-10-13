@@ -23,7 +23,12 @@ from backend.app.db.models import (
     Connection,
     Suite,
 )
-from backend.app.services import audit_service, check_service, suite_service
+from backend.app.services import (
+    audit_service,
+    check_service,
+    coverage_settings_service,
+    suite_service,
+)
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     CheckConfigInvalidError,
@@ -294,7 +299,8 @@ def import_suite(
                 else derive_dimension(expectation_type=c["expectation_type"], kind=c["kind"])
             ),
             source_connection_id=source_id,
-            config=c["config"],
+            # An imported check is a person's: it cannot inherit coverage settings (ADR 0047).
+            config=coverage_settings_service.strip_flag(c["config"]),
             warn_threshold=c["warn_threshold"],
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
@@ -499,7 +505,7 @@ def apply_document(
                 name=body["name"],
                 kind=body["kind"],
                 expectation_type=body["expectation_type"],
-                config=body["config"],
+                config=coverage_settings_service.strip_flag(body["config"]),
                 warn_threshold=body["warn_threshold"],
                 fail_threshold=body["fail_threshold"],
                 critical_threshold=body["critical_threshold"],

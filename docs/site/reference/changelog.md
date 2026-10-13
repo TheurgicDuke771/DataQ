@@ -7,6 +7,17 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Tune automatic coverage in one place.** The thresholds and history window of the
+  automatic row-count, freshness and column-profile checks are now settings, not fixed
+  numbers. A workspace admin sets them for the workspace (`PUT /admin/coverage`) and can
+  override them for one table (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
+  level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
+  deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
+  column profile can be loosened without loosening the others. Automatic checks inherit the
+  settings on every run, so a change needs no check edited, and each result records what it
+  was scored against. Editing a threshold or the window on an automatic check gives it its
+  own values and stops it inheriting. Check responses show the values in effect and an
+  `inherited` field (`inherited_from` over MCP) naming the level they came from.
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
   selected**. A disabled check keeps its results, version history and baseline and is left

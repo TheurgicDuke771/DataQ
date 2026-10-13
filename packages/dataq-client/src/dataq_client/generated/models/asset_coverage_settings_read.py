@@ -20,8 +20,9 @@ T = TypeVar("T", bound="AssetCoverageSettingsRead")
 @_attrs_define
 class AssetCoverageSettingsRead:
     """One table's sensitivity for its automatic baselines. `override` is what this table
-    stores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with
-    the level each group came from.
+    stores itself (`null` = none); `effective` is what its automatic checks run on while they
+    still inherit, with the level each group came from. A check a person has edited runs on its
+    own values instead, which this does not show: read the check.
 
         Attributes:
             effective (EffectiveCoverageRead): What the hierarchy resolves to: asset override, then workspace setting, then

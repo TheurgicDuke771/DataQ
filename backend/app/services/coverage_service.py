@@ -33,9 +33,14 @@ from backend.app.db.models import (
     Schedule,
     Suite,
 )
-from backend.app.services import check_service, cron, suggestion_service, suite_service
+from backend.app.services import (
+    check_service,
+    coverage_settings_service,
+    cron,
+    suggestion_service,
+    suite_service,
+)
 from backend.app.services.asset_identity import resolve_asset_identity
-from backend.app.services.coverage_settings_service import DEFAULT_SENSITIVITY, DEFAULT_SHAPE
 from backend.app.services.inventory_service import INVENTORY_TYPES
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
@@ -49,11 +54,6 @@ VOLUME_CHECK = "Row count is normal"
 SCHEMA_CHECK = "Schema is unchanged"
 FRESHNESS_CHECK = "Data is fresh"
 PROFILE_CHECK = "Column profile is normal"
-
-#: Anomaly defaults (ADR 0047 §5): warn at 3 standard deviations, fail at 4, critical at 6.
-#: Same-weekday history, 4 points before scoring: a daily suite starts scoring in its fifth week.
-_ANOMALY_THRESHOLDS = DEFAULT_SENSITIVITY.as_dict()
-_ANOMALY_WINDOW = DEFAULT_SHAPE.as_dict()
 
 #: Timestamp columns preferred as the freshness column, most specific first.
 _FRESHNESS_NAMES = (
@@ -208,6 +208,11 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
     roles: dict[str, str] = dict(state.get("checks", {}))
     live = {str(cid) for cid in session.scalars(select(Check.id).where(Check.suite_id == suite.id))}
     created = 0
+    # A new baseline inherits (ADR 0047): each run resolves its thresholds and shape. The
+    # values stored beside the flag are the ones in effect now, so the row stays a valid
+    # anomaly check for export and for any reader of the table.
+    effective = coverage_settings_service.for_suite(session, suite).effective
+    inheriting = {**effective.shape.as_dict(), coverage_settings_service.INHERIT_KEY: True}
 
     def add(role: str, **spec: Any) -> None:
         nonlocal created
@@ -215,39 +220,28 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
         roles[role] = str(check.id)
         created += 1
 
+    def add_baseline(role: str, name: str, **metric: Any) -> None:
+        add(
+            role,
+            name=name,
+            kind="anomaly",
+            config={**metric, **inheriting},
+            thresholds=effective.sensitivity[role].as_dict(),
+        )
+
     if "schema" not in roles:
         add("schema", name=SCHEMA_CHECK, kind="schema_drift", config={}, thresholds=None)
     if "volume" not in roles:
-        add(
-            "volume",
-            name=VOLUME_CHECK,
-            kind="anomaly",
-            config={"target_metric": "row_count", **_ANOMALY_WINDOW},
-            thresholds=_ANOMALY_THRESHOLDS,
-        )
+        add_baseline("volume", VOLUME_CHECK, target_metric="row_count")
     if "profile" not in roles:
-        add(
-            "profile",
-            name=PROFILE_CHECK,
-            kind="anomaly",
-            config={"target_metric": "column_profile", **_ANOMALY_WINDOW},
-            thresholds=_ANOMALY_THRESHOLDS,
-        )
+        add_baseline("profile", PROFILE_CHECK, target_metric="column_profile")
     if "freshness" not in roles:
         schema_id = roles.get("schema")
         schema_uuid = uuid.UUID(schema_id) if schema_id and schema_id in live else None
         column = _freshness_column(session, schema_uuid)
         if column is not None:
-            add(
-                "freshness",
-                name=FRESHNESS_CHECK,
-                kind="anomaly",
-                config={
-                    "target_metric": "freshness_age_hours",
-                    "column": column,
-                    **_ANOMALY_WINDOW,
-                },
-                thresholds=_ANOMALY_THRESHOLDS,
+            add_baseline(
+                "freshness", FRESHNESS_CHECK, target_metric="freshness_age_hours", column=column
             )
             state.pop("freshness_gap", None)
         elif schema_uuid is not None and session.scalar(

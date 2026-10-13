@@ -72,7 +72,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service, suggestion_claims
+from backend.app.services import audit_service, coverage_settings_service, suggestion_claims
 from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
@@ -911,6 +911,10 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    try:
+        coverage_settings_service.validate_new_check(config, kind=kind, origin=origin)
+    except coverage_settings_service.InheritEditError as exc:
+        raise CheckConfigInvalidError(str(exc), detail={"kind": kind}) from exc
     validate_engine(engine, connection_type=_connection_type(session, suite))
     validate_engine_compatibility(
         engine,
@@ -1156,6 +1160,43 @@ def _record_version_and_commit(
     return check
 
 
+def _settle_inheritance(
+    session: Session,
+    check: Check,
+    *,
+    config: dict[str, Any] | None,
+    warn_threshold: Decimal | _Keep | None,
+    fail_threshold: Decimal | _Keep | None,
+    critical_threshold: Decimal | _Keep | None,
+) -> tuple[dict[str, Any], Decimal | None, Decimal | None, Decimal | None]:
+    """The post-edit config and thresholds, with an automatic baseline's inherit flag
+    settled (ADR 0047): an edit to its thresholds or shape pins it."""
+    sent = {
+        tier: value
+        for tier, value in (
+            ("warn", warn_threshold),
+            ("fail", fail_threshold),
+            ("critical", critical_threshold),
+        )
+        if not isinstance(value, _Keep)
+    }
+    # Only an automatic baseline can inherit, so only it needs the settings read.
+    coverage = (
+        coverage_settings_service.for_suite(session, get_suite(session, check.suite_id))
+        if check.origin == "auto" and check.kind == ANOMALY
+        else coverage_settings_service.SuiteCoverage(coverage_settings_service.resolve(None))
+    )
+    try:
+        new_config, thresholds = coverage_settings_service.settle_edit(
+            check, coverage, sent_config=config, sent_thresholds=sent
+        )
+    except coverage_settings_service.InheritEditError as exc:
+        raise CheckConfigInvalidError(
+            str(exc), detail={"field": coverage_settings_service.INHERIT_KEY}
+        ) from exc
+    return new_config, thresholds["warn"], thresholds["fail"], thresholds["critical"]
+
+
 class _Keep(enum.Enum):
     """The one value of the "leave this field as it is" marker."""
 
@@ -1228,10 +1269,18 @@ def update_check(
     new_expectation_type = (
         expectation_type if expectation_type is not None else check.expectation_type
     )
-    new_config = config if config is not None else check.config
-    new_warn = check.warn_threshold if warn_threshold is KEEP else warn_threshold
-    new_fail = check.fail_threshold if fail_threshold is KEEP else fail_threshold
-    new_critical = check.critical_threshold if critical_threshold is KEEP else critical_threshold
+    new_config, new_warn, new_fail, new_critical = _settle_inheritance(
+        session,
+        check,
+        config=config,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
+    if new_config != check.config:
+        # The inherit flag is server-owned, so the stored config can change on an edit that
+        # sent none (a threshold edit pins the check).
+        config = new_config
     # #568: validate the EFFECTIVE post-patch thresholds, not just the ones this PATCH touches —
     # same merge-then-validate shape as the monitor guard below.
     validate_threshold_ordering(
@@ -1551,15 +1600,18 @@ def bulk_set_thresholds(
             "change one kind at a time. Nothing was changed",
             detail={"kinds": kinds},
         )
-    planned: list[tuple[Check, Decimal | None, Decimal | None, Decimal | None]] = []
+    planned: list[tuple[Check, dict[str, Any], Decimal | None, Decimal | None, Decimal | None]] = []
     problems: list[dict[str, str]] = []
     for check in checks:
-        new_warn = check.warn_threshold if warn_threshold is KEEP else warn_threshold
-        new_fail = check.fail_threshold if fail_threshold is KEEP else fail_threshold
-        new_critical = (
-            check.critical_threshold if critical_threshold is KEEP else critical_threshold
-        )
         try:
+            new_config, new_warn, new_fail, new_critical = _settle_inheritance(
+                session,
+                check,
+                config=None,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+                critical_threshold=critical_threshold,
+            )
             validate_threshold_ordering(
                 warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
             )
@@ -1567,7 +1619,7 @@ def bulk_set_thresholds(
                 check.engine or GX_ENGINE,
                 kind=check.kind,
                 expectation_type=check.expectation_type,
-                config=check.config,
+                config=new_config,
                 warn_threshold=new_warn,
                 fail_threshold=new_fail,
                 critical_threshold=new_critical,
@@ -1577,7 +1629,7 @@ def bulk_set_thresholds(
                 suite_id,
                 check,
                 expectation_type=check.expectation_type,
-                config=check.config,
+                config=new_config,
                 warn_threshold=new_warn,
                 fail_threshold=new_fail,
                 critical_threshold=new_critical,
@@ -1590,7 +1642,7 @@ def bulk_set_thresholds(
         except CheckConfigInvalidError as exc:
             problems.append({"check_id": str(check.id), "name": check.name, "reason": exc.message})
             continue
-        planned.append((check, new_warn, new_fail, new_critical))
+        planned.append((check, new_config, new_warn, new_fail, new_critical))
     if problems:
         raise CheckConfigInvalidError(
             f"{len(problems)} of {len(checks)} checks cannot take these thresholds "
@@ -1601,8 +1653,11 @@ def bulk_set_thresholds(
                 "truncated": len(problems) > _BULK_PROBLEMS_SHOWN,
             },
         )
-    for check, new_warn, new_fail, new_critical in planned:
+    for check, new_config, new_warn, new_fail, new_critical in planned:
         audit_before = audit_service.snapshot("check", check)
+        if new_config != check.config:
+            # Setting a threshold on an inheriting automatic baseline pins it (ADR 0047).
+            check.config = new_config
         check.warn_threshold = new_warn
         check.fail_threshold = new_fail
         check.critical_threshold = new_critical

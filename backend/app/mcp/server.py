@@ -15,7 +15,7 @@ selection, not REST consumers (CLAUDE.md §10).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -73,6 +73,7 @@ from backend.app.services import (
     check_service,
     connection_service,
     coverage_service,
+    coverage_settings_service,
     credential_health,
     dashboard_service,
     dryrun_service,
@@ -92,6 +93,7 @@ from backend.app.services import (
     suite_service,
     trigger_binding_service,
 )
+from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -913,7 +915,11 @@ def get_adf_pipeline_status(
     return get_pipeline_status(provider=provider, status=status, limit=limit, offset=offset)
 
 
-def _check_summary(check: Check) -> dict[str, Any]:
+def _inherited(session: Session, checks: Sequence[Check]) -> dict[uuid.UUID, CheckSettings]:
+    return coverage_settings_service.inherited_settings(session, checks)
+
+
+def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict[str, Any]:
     """The LLM-shaped view of one check — shared by `list_checks`/`get_check` so
     the two can't describe the same row differently.
 
@@ -946,10 +952,20 @@ def _check_summary(check: Check) -> dict[str, Any]:
         "source_connection_id": (
             str(check.source_connection_id) if check.source_connection_id else None
         ),
-        "config": check.config,
-        "warn_threshold": _num(check.warn_threshold),
-        "fail_threshold": _num(check.fail_threshold),
-        "critical_threshold": _num(check.critical_threshold),
+        # An automatic baseline that inherits (ADR 0047) runs on the coverage settings, not on
+        # its stored columns: show what it runs on, and say so, or "what does this check alert
+        # at?" would be answered from numbers no run uses.
+        "config": inherited.config(dict(check.config)) if inherited else check.config,
+        "warn_threshold": inherited.sensitivity.warn if inherited else _num(check.warn_threshold),
+        "fail_threshold": inherited.sensitivity.fail if inherited else _num(check.fail_threshold),
+        "critical_threshold": (
+            inherited.sensitivity.critical if inherited else _num(check.critical_threshold)
+        ),
+        "inherited_from": (
+            {"sensitivity": inherited.sensitivity_from, "baseline": inherited.shape_from}
+            if inherited
+            else None
+        ),
         # Operational, not config: an LLM asked "why did nobody get alerted?"
         # needs to see a live snooze (#370). Null = alerts are active.
         #
@@ -989,6 +1005,15 @@ def list_checks(
     alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
     for how those checks last performed, use ``get_suite_results``.
 
+    **A non-null ``inherited_from`` means the thresholds are not the check's own.** It
+    appears on the automatic baselines of a system-created suite (row count, freshness
+    and column profile anomaly checks). The three thresholds and the ``window`` /
+    ``min_points`` / ``seasonality`` in ``config`` are then the values in effect *now*,
+    taken from this table's override (``asset``), the workspace coverage setting
+    (``workspace``) or the built-in default (``default``), and they change whenever an
+    admin changes that setting. This tool cannot show the setting itself or who changed
+    it. Null means the check runs on its own stored values.
+
     **``enabled: false`` means the check is switched off and no run evaluates it.**
     Do not describe such a check as something the suite verifies. It still appears
     here, and its last result from before it was switched off still appears in older
@@ -1019,7 +1044,11 @@ def list_checks(
             "total": len(checks),
             "returned": min(len(checks), limit),
             "truncated": len(checks) > limit,
-            "checks": [_check_summary(c) for c in checks[:limit]],
+            "checks": [
+                _check_summary(c, inherited.get(c.id))
+                for inherited in [_inherited(session, checks[:limit])]
+                for c in checks[:limit]
+            ],
         }
 
 
@@ -1041,7 +1070,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
         require_permission(session, sid, user.id, minimum="view")
         check = check_service.get_check(session, sid, cid)
         return {
-            **_check_summary(check),
+            **_check_summary(check, _inherited(session, [check]).get(check.id)),
             "suite_id": suite_id,
             "created_at": check.created_at.isoformat(),
             "updated_at": check.updated_at.isoformat(),
@@ -2340,6 +2369,19 @@ def update_check(
     tier comes back ``null``. The result still has to be a valid check: a kind that needs a
     fail or critical threshold refuses to lose its last one, and nothing changes.
 
+    **Editing an inherited threshold detaches the check from the coverage settings.**
+    When ``get_check`` shows a non-null ``inherited_from``, the thresholds and the
+    ``window`` / ``min_points`` / ``seasonality`` in its config come from the workspace
+    or table coverage setting. Changing any one of them here gives the check its own
+    values from then on: all of them are fixed at what was in effect, with your change
+    applied, and later changes to the setting no longer reach it. Tell the user that
+    before making the change. The result comes back with ``inherited_from: null``. To
+    hand the check back to the settings, send its config with
+    ``"inherit_coverage_settings": true`` and no threshold changes; sending ``true``
+    together with a changed threshold is refused. Renaming or disabling the check does
+    not detach it. This tool cannot change the setting itself, which is an admin
+    action in the app.
+
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
     empty string, which would set that value, not clear it. If an earlier version
@@ -2405,7 +2447,7 @@ def update_check(
             enabled=enabled,
             actor_id=user.id,
         )
-        return _check_summary(check)
+        return _check_summary(check, _inherited(session, [check]).get(check.id))
 
 
 @mcp.tool
@@ -2451,7 +2493,10 @@ def restore_check_version(
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.restore_check_version(session, sid, cid, version_no, actor_id=user.id)
-        return {**_check_summary(check), "restored_from_version": version_no}
+        return {
+            **_check_summary(check, _inherited(session, [check]).get(check.id)),
+            "restored_from_version": version_no,
+        }
 
 
 @mcp.tool
