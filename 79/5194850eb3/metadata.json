@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "795194850eb3",
+  "strategy": "manual-commit",
+  "branch": "feature/yearly-seasonality-2440",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/anomaly.py",
+    "backend/app/services/seasonal.py",
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "backend/tests/fixtures/expectation_catalog.json",
+    "backend/tests/services/test_seasonal.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/check-types.md",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/tests/components/expectationCatalog.test.ts",
+    "frontend/tests/pages/CheckEdit.test.tsx",
+    "frontend/tests/pages/CheckNewMonitor.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/5194850eb3/0/metadata.json",
+      "transcript": "/79/5194850eb3/0/full.jsonl",
+      "compact_transcript": "/79/5194850eb3/0/transcript.jsonl",
+      "content_hash": "/79/5194850eb3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 37871,
+    "cache_read_tokens": 11370158,
+    "output_tokens": 32026,
+    "api_call_count": 15
+  }
+}
