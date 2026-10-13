@@ -324,6 +324,8 @@ class Asset(Base):
     auto_coverage_excluded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # This table's own sensitivity for its automatic baselines; NULL = the workspace setting.
+    auto_coverage_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -1360,6 +1362,25 @@ class ScoringSetting(Base):
     warn_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     fail_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     critical_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class CoverageSetting(Base):
+    """The workspace's sensitivity for automatic baselines (ADR 0047, 2026-10-13 amendment).
+    One row, the `ScoringSetting` idiom; an absent row means the built-in defaults.
+
+    `config` holds the same document as `assets.auto_coverage_config`, which overrides it
+    per table.
+    """
+
+    __tablename__ = "coverage_settings"
+    __table_args__ = (CheckConstraint("jsonb_typeof(config) = 'object'", name="config_is_object"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
