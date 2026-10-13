@@ -12,6 +12,8 @@ from .admin_webhook_read import AdminWebhookRead
 from .api_key_create import ApiKeyCreate
 from .api_key_created import ApiKeyCreated
 from .api_key_read import ApiKeyRead
+from .asset_coverage_settings_read import AssetCoverageSettingsRead
+from .asset_coverage_settings_read_override_type_0 import AssetCoverageSettingsReadOverrideType0
 from .asset_detail_read import AssetDetailRead
 from .asset_metadata_update import AssetMetadataUpdate
 from .asset_summary_read import AssetSummaryRead
@@ -24,6 +26,7 @@ from .audit_event_read import AuditEventRead
 from .audit_event_read_after_type_0 import AuditEventReadAfterType0
 from .audit_event_read_before_type_0 import AuditEventReadBeforeType0
 from .auth_email_test_response import AuthEmailTestResponse
+from .baseline_shape_write import BaselineShapeWrite
 from .batch_preview_read import BatchPreviewRead
 from .beat_health_read import BeatHealthRead
 from .beat_health_read_status import BeatHealthReadStatus
@@ -101,6 +104,10 @@ from .connection_version_read import ConnectionVersionRead
 from .connection_version_read_config import ConnectionVersionReadConfig
 from .coverage_figures_read import CoverageFiguresRead
 from .coverage_gap_read import CoverageGapRead
+from .coverage_settings_read import CoverageSettingsRead
+from .coverage_settings_read_setting import CoverageSettingsReadSetting
+from .coverage_settings_write import CoverageSettingsWrite
+from .coverage_settings_write_sensitivity_type_0 import CoverageSettingsWriteSensitivityType0
 from .credential_health_read import CredentialHealthRead
 from .credential_health_read_status import CredentialHealthReadStatus
 from .dashboard_summary_read import DashboardSummaryRead
@@ -118,6 +125,12 @@ from .deployment_posture_read import DeploymentPostureRead
 from .deployment_posture_read_zero_sample_source import DeploymentPostureReadZeroSampleSource
 from .dimension_score_read import DimensionScoreRead
 from .document_problem_read import DocumentProblemRead
+from .effective_coverage_read import EffectiveCoverageRead
+from .effective_coverage_read_sensitivity import EffectiveCoverageReadSensitivity
+from .effective_sensitivity import EffectiveSensitivity
+from .effective_sensitivity_source import EffectiveSensitivitySource
+from .effective_shape import EffectiveShape
+from .effective_shape_source import EffectiveShapeSource
 from .event_ack import EventAck
 from .export_suite_format import ExportSuiteFormat
 from .external_transfer import ExternalTransfer
@@ -226,6 +239,7 @@ from .secret_sweep_report_read import SecretSweepReportRead
 from .secret_sweep_report_read_mode_type_0 import SecretSweepReportReadModeType0
 from .secret_sweep_report_read_status import SecretSweepReportReadStatus
 from .secret_sweep_run_response import SecretSweepRunResponse
+from .sensitivity_write import SensitivityWrite
 from .share_create import ShareCreate
 from .share_create_permission import ShareCreatePermission
 from .share_read import ShareRead
@@ -291,6 +305,8 @@ __all__ = (
     "ApiKeyCreate",
     "ApiKeyCreated",
     "ApiKeyRead",
+    "AssetCoverageSettingsRead",
+    "AssetCoverageSettingsReadOverrideType0",
     "AssetDetailRead",
     "AssetMetadataUpdate",
     "AssetSummaryRead",
@@ -303,6 +319,7 @@ __all__ = (
     "AuditEventReadAfterType0",
     "AuditEventReadBeforeType0",
     "AuthEmailTestResponse",
+    "BaselineShapeWrite",
     "BatchPreviewRead",
     "BeatHealthRead",
     "BeatHealthReadStatus",
@@ -378,6 +395,10 @@ __all__ = (
     "ConnectionVersionReadConfig",
     "CoverageFiguresRead",
     "CoverageGapRead",
+    "CoverageSettingsRead",
+    "CoverageSettingsReadSetting",
+    "CoverageSettingsWrite",
+    "CoverageSettingsWriteSensitivityType0",
     "CredentialHealthRead",
     "CredentialHealthReadStatus",
     "DashboardSummaryRead",
@@ -393,6 +414,12 @@ __all__ = (
     "DeploymentPostureReadZeroSampleSource",
     "DimensionScoreRead",
     "DocumentProblemRead",
+    "EffectiveCoverageRead",
+    "EffectiveCoverageReadSensitivity",
+    "EffectiveSensitivity",
+    "EffectiveSensitivitySource",
+    "EffectiveShape",
+    "EffectiveShapeSource",
     "EventAck",
     "ExportSuiteFormat",
     "ExternalTransfer",
@@ -501,6 +528,7 @@ __all__ = (
     "SecretSweepReportReadModeType0",
     "SecretSweepReportReadStatus",
     "SecretSweepRunResponse",
+    "SensitivityWrite",
     "ShareCreate",
     "ShareCreatePermission",
     "ShareRead",
