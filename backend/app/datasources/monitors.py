@@ -326,7 +326,9 @@ ANOMALY_TARGET_METRICS = (
     *PERIOD_METRICS,
 )
 PERIOD_UNITS = ("day", "week")
-_PERIOD_KEYS = ("date_column", "period", "value_column", "timezone", "settle_hours")
+_PERIOD_KEYS = ("date_column", "period", "value_column", "timezone", "settle_hours", "backfill")
+#: How much history a per-period check keeps, and how far back its seeding reads (ADR 0048).
+PERIOD_HISTORY_YEARS = 3
 _SETTLE_HOURS_DEFAULT = 6
 #: A week: a longer wait is a different check schedule, not a settle delay.
 _SETTLE_HOURS_MAX = 168
@@ -358,10 +360,17 @@ class PeriodSpec:
     timezone: str
     #: A period is judged only once it has been closed this long.
     settle_hours: int
+    #: Seed the history from the table's own rows on the first run.
+    backfill: bool = True
 
     @property
     def length(self) -> timedelta:
         return timedelta(days=7 if self.unit == "week" else 1)
+
+    @property
+    def history_periods(self) -> int:
+        """Periods in the years of history kept (366-day years, 53-week years: never short)."""
+        return PERIOD_HISTORY_YEARS * (53 if self.unit == "week" else 366)
 
     def start_of(self, day: date) -> date:
         """The first day of the period ``day`` falls in."""
@@ -396,9 +405,11 @@ class AnomalyParams:
 
     @property
     def retained_observations(self) -> int:
-        """Raw observations kept: ``window``, or ``window * 7`` seasonal."""
+        """Raw observations kept: ``window``, or ``window * 7`` seasonal. A per-period check
+        keeps its years of history on top (ADR 0048)."""
         seasonal = self.seasonality or self.retain_seasonal_horizon
-        return self.window * (_ANOMALY_SEASONAL_WEEKDAYS if seasonal else 1)
+        rolling = self.window * (_ANOMALY_SEASONAL_WEEKDAYS if seasonal else 1)
+        return rolling + (self.period.history_periods if self.period is not None else 0)
 
 
 def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, high: int) -> int:
@@ -506,12 +517,16 @@ def _period_spec(
         low=0,
         high=_SETTLE_HOURS_MAX,
     )
+    backfill = True if config.get("backfill") is None else config["backfill"]
+    if not isinstance(backfill, bool):
+        raise MonitorConfigError(f"anomaly backfill must be true or false: {_echo(backfill)}")
     return PeriodSpec(
         date_column=date_column,
         unit=str(unit),
         value_column=value_column,
         timezone=timezone,
         settle_hours=settle_hours,
+        backfill=backfill,
     )
 
 
@@ -526,32 +541,81 @@ def _is_timezone(name: str) -> bool:
     return name == "UTC" or ("/" in name and name in available_timezones())
 
 
-def period_statement(
-    target: TableClause, spec: PeriodSpec, *, start: date, end: date
-) -> Select[Any]:
-    """One scalar: the rows, or the summed column, whose date falls in ``[start, end)``.
+def _period_filter(spec: PeriodSpec, *, start: date, end: date, prefix: str) -> tuple[Any, Any]:
+    """``(day, predicates)`` selecting the rows whose date, as the warehouse casts it, falls
+    in ``[start, end)``.
 
-    The column is compared to the dates directly, not cast, so a partition or an index on it
-    is still used; a timestamp column is compared from midnight in the warehouse session's
-    zone.
+    The cast decides, in both the per-run query and the seeding query, so a seeded day and
+    a measured day always mean the same rows (a zone-carrying timestamp casts by its own
+    rule, which a comparison against midnight would not follow). The range on the bare
+    column is there for the planner only: it is a day wider on each side than the cast can
+    move a row, so a partition or an index on the column is still used.
     """
-    from sqlalchemy import Date, bindparam, func, select
+    from sqlalchemy import Date, and_, bindparam, cast
     from sqlalchemy import column as sql_column
 
     when: Any = sql_column(folding_identifier(spec.date_column))
-    measure = (
-        func.count()
-        if spec.value_column is None
-        else func.sum(sql_column(folding_identifier(spec.value_column)))
+    day = cast(when, Date)
+    one_day = timedelta(days=1)
+    return day, and_(
+        when >= bindparam(f"{prefix}_from", start - one_day, type_=Date),
+        when < bindparam(f"{prefix}_until", end + one_day, type_=Date),
+        day >= bindparam(f"{prefix}_start", start, type_=Date),
+        day < bindparam(f"{prefix}_end", end, type_=Date),
     )
+
+
+def _period_measure(spec: PeriodSpec) -> Any:
+    from sqlalchemy import column as sql_column
+    from sqlalchemy import func
+
+    if spec.value_column is None:
+        return func.count()
+    return func.sum(sql_column(folding_identifier(spec.value_column)))
+
+
+def period_history_statement(
+    target: TableClause, spec: PeriodSpec, *, start: date, end: date
+) -> Select[Any]:
+    """One row per calendar day in ``[start, end)`` that has rows: the day, and its row count
+    or summed column. Days, whatever the period: weeks are added up by the caller, so no
+    engine's week arithmetic is involved.
+    """
+    from sqlalchemy import select
+
+    day, in_range = _period_filter(spec, start=start, end=end, prefix="history")
     return (
-        select(measure)
+        select(day.label("period_day"), _period_measure(spec).label("period_value"))
         .select_from(target)
-        .where(
-            when >= bindparam("period_start", start, type_=Date),
-            when < bindparam("period_end", end, type_=Date),
-        )
+        .where(in_range)
+        .group_by(day)
     )
+
+
+def history_day(value: Any) -> date:
+    """The day of one seeding row — a driver boundary: a ``date``, a ``datetime`` (a
+    connector that widens it), or ISO text."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            pass
+    # The value is target data: only its type is named.
+    raise MonitorConfigError(f"a history row's date is not a date (got {type(value).__name__})")
+
+
+def period_statement(
+    target: TableClause, spec: PeriodSpec, *, start: date, end: date
+) -> Select[Any]:
+    """One scalar: the rows, or the summed column, whose date falls in ``[start, end)``."""
+    from sqlalchemy import select
+
+    _, in_range = _period_filter(spec, start=start, end=end, prefix="period")
+    return select(_period_measure(spec)).select_from(target).where(in_range)
 
 
 def column_profile_statement(

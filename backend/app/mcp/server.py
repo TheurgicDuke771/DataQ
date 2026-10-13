@@ -2267,10 +2267,26 @@ def create_check(
       before it has finished and stores that short value.
     - ``settle_hours`` (optional, default 6): a period is judged only once it has
       been closed that long.
+    - ``backfill`` (optional, default true): seed the history on the first run.
     Each run judges the **most recent settled period, not "today"**, and its
-    result says which one in ``observed_value.period``. A check created now tells
-    you nothing until ``min_points`` periods have been stored, one per day or
-    week of runs: there is no backfill from the table's existing rows.
+    result says which one in ``observed_value.period``.
+
+    **The first run reads the table's past.** One query takes up to three years
+    of earlier periods from the table's own rows, so the check can score on its
+    first run instead of waiting ``min_points`` runs. Those points are what the
+    table says *today* about the past, not what it held then: a restatement or a
+    purge since will have changed them. ``observed_value.history`` on every
+    result gives how many of the points it was scored against were
+    ``backfilled`` and how many a run ``observed`` (say so when most are
+    backfilled), and ``seeding``: ``done``, ``off`` (``backfill`` is false),
+    ``failed`` (the scan failed, so the check started with no history; it is
+    retried on the next two runs, then not again), or null on a dry run. The
+    result of the run that seeded also has ``observed_value.seeded`` with the
+    ``points`` kept and the date they start ``from``. A ``done`` with
+    ``points: 0`` means the table had too little before the judged period, not
+    that seeding was skipped: the period the table began in is never seeded,
+    because it is usually partial. It is one full scan of the table; pass
+    ``backfill=false`` in the config for a warehouse billed per query.
 
     It needs a positive fail/critical threshold, which is the z-score
     sensitivity (3 is a common starting point) — this is not a value the

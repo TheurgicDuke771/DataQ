@@ -31,8 +31,10 @@ from backend.app.datasources.monitors import (
     column_distinct_probe,
     column_profile_statement,
     freshness_age_hours,
+    history_day,
     monitor_expectation_type,
     monitor_outcome,
+    period_history_statement,
     period_statement,
     qualified_table,
     row_count_from_scalar,
@@ -53,6 +55,8 @@ log = get_logger(__name__)
 # Bump only alongside a real payload-shape change; an unrecognised version is treated as "no usable
 # history" (cold start) rather than mis-read — a wrong baseline is worse than a slow one.
 BASELINE_VERSION = 1
+#: The ``source`` of a stored point that was seeded from the table, not measured by a run.
+BACKFILLED = "backfilled"
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,9 @@ class Observation:
 
     ts: datetime
     value: float
+    #: False for a point seeded from the table's own rows (ADR 0048): what the table says
+    #: today about the past, not what it held when a run looked.
+    observed: bool = True
 
 
 # ───────────────────────── measurement ─────────────────────────
@@ -371,20 +378,70 @@ def load_observations(row: MonitorBaseline | None, params: AnomalyParams) -> lis
             ts = datetime.fromisoformat(str(entry.get("ts")))
         except (TypeError, ValueError):
             continue
-        out.append(Observation(ts=as_utc(ts), value=float(value)))
+        out.append(
+            Observation(
+                ts=as_utc(ts), value=float(value), observed=entry.get("source") != BACKFILLED
+            )
+        )
     return out
 
 
-def dump_baseline(observations: list[Observation], params: AnomalyParams) -> dict[str, Any]:
-    """The JSONB payload for a set of observations (already trimmed by the caller)."""
+def dump_baseline(
+    observations: list[Observation], params: AnomalyParams, seed: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The JSONB payload for a set of observations (already trimmed by the caller). ``seed``
+    is what seeding a per-period check's history came to (``stored_seed``)."""
     return {
         "version": BASELINE_VERSION,
         "target_metric": params.target_metric,
         "window": params.window,
         "seasonality": params.seasonality,
         **({"period": signature} if (signature := _period_signature(params)) else {}),
-        "observations": [{"ts": o.ts.isoformat(), "value": o.value} for o in observations],
+        **({"seed": seed} if seed is not None else {}),
+        "observations": [
+            {
+                "ts": o.ts.isoformat(),
+                "value": o.value,
+                # Written only on a seeded point, so every other baseline keeps its shape.
+                **({} if o.observed else {"source": BACKFILLED}),
+            }
+            for o in observations
+        ],
     }
+
+
+#: Seeding is tried again on later runs after a failure, this many times in all: a transient
+#: timeout should not cost the check its history, and a table that can never be scanned
+#: should not be scanned on every run for ever.
+SEED_ATTEMPTS = 3
+
+
+def stored_seed(row: MonitorBaseline | None, params: AnomalyParams) -> dict[str, Any] | None:
+    """What seeding came to for the history this check holds now: ``status`` (``done``,
+    ``off`` or ``failed``), and for a ``done`` the ``points`` and where they start ``from``.
+    ``None`` when seeding has not been tried for points bucketed this way."""
+    if row is None or not isinstance(row.baseline, dict):
+        return None
+    payload = row.baseline
+    if payload.get("version") != BASELINE_VERSION:
+        return None
+    if payload.get("target_metric") != params.target_metric:
+        return None
+    if payload.get("period") != _period_signature(params):
+        return None
+    seed = payload.get("seed")
+    return dict(seed) if isinstance(seed, dict) else None
+
+
+def seeding_due(params: AnomalyParams, seed: dict[str, Any] | None) -> bool:
+    """Whether this run should read the table's past: never tried, tried and failed fewer
+    than ``SEED_ATTEMPTS`` times, or switched on after having been off."""
+    spec = params.period
+    if spec is None or not spec.backfill:
+        return False
+    if seed is None or seed.get("status") == "off":
+        return True
+    return seed.get("status") == "failed" and int(seed.get("attempts", 1)) < SEED_ATTEMPTS
 
 
 def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
@@ -400,6 +457,65 @@ def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
         "unit": spec.unit,
         "value_column": spec.value_column,
     }
+
+
+def seed_history(
+    connection: Connection,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    params: AnomalyParams,
+    secret_store: SecretStore,
+    before: date,
+) -> list[Observation]:
+    """The periods before ``before`` as the table's own rows describe them today, oldest
+    first, each marked as backfilled (ADR 0048). One scan, over at most the years kept.
+
+    History starts at the period after the first one that has rows: that first period is
+    partial unless the table's first row happened to open it (a table that began on a
+    Thursday has a four-day first week), and a short point would widen the spread every
+    later run is scored against. A period with no rows after that counts as zero, as it
+    would have had a run judged it, and nothing is invented before the table began.
+    """
+    spec = params.period
+    if spec is None:
+        return []
+    start = spec.start_of(before) - spec.history_periods * spec.length
+    with _open_connection(connection, secret_store) as conn:
+        dialect = conn.dialect if catalog is not None else None
+        rows = conn.execute(
+            period_history_statement(
+                qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect),
+                spec,
+                start=start,
+                end=before,
+            )
+        ).all()
+    totals: dict[date, float] = {}
+    for day_value, measure in rows:
+        period = spec.start_of(history_day(day_value))
+        if not start <= period < before:
+            continue  # a session-zone edge can put a boundary row a day outside the range
+        if spec.value_column is None:
+            amount = float(row_count_from_scalar(measure))
+        else:
+            amount = aggregate_value(measure, source=f"SUM({spec.value_column})") or 0.0
+        totals[period] = totals.get(period, 0.0) + amount
+    if not totals:
+        return []
+    out: list[Observation] = []
+    period = min(totals) + spec.length
+    while period < before:
+        out.append(
+            Observation(
+                ts=datetime.combine(period, time.min, tzinfo=UTC),
+                value=totals.get(period, 0.0),
+                observed=False,
+            )
+        )
+        period += spec.length
+    return out
 
 
 def observation_time(
@@ -431,16 +547,31 @@ def trim(observations: list[Observation], params: AnomalyParams) -> list[Observa
 # ───────────────────────── scoring (pure) ─────────────────────────
 
 
-def eligible_values(
-    observations: list[Observation], *, now: datetime, params: AnomalyParams
-) -> list[float]:
-    """The prior values this run is scored against, newest-last."""
+def _considered(
+    observations: list[Observation], now: datetime, params: AnomalyParams
+) -> list[Observation]:
+    """The prior points this run is scored against, newest-last."""
     considered = (
         [o for o in observations if o.ts.weekday() == now.weekday()]
         if params.seasonality
         else list(observations)
     )
-    return [o.value for o in considered[-params.window :]]
+    return considered[-params.window :]
+
+
+def eligible_values(
+    observations: list[Observation], *, now: datetime, params: AnomalyParams
+) -> list[float]:
+    """The prior values this run is scored against, newest-last."""
+    return [o.value for o in _considered(observations, now, params)]
+
+
+@dataclass(frozen=True)
+class _Seeding:
+    """What seeding produced, and what the result says about it."""
+
+    points: list[Observation]
+    report: dict[str, Any]
 
 
 def score(value: float, priors: list[float]) -> tuple[float, float, float, bool]:
@@ -557,19 +688,43 @@ def build_anomaly_executor(
                 error_message=(safe_failure_reason(exc)),
                 observed_value=observed,
             )
+        at, period_fields = observation_time(params, now, settled)
+        # The three-year scan runs BEFORE the row is locked: holding the lock across it would
+        # make a concurrent run of this check time out waiting. Decided on an unlocked read;
+        # the locked read below settles who keeps what.
+        attempt = None
+        if persist and settled is not None:
+            seen = stored_seed(get_baseline(session, check.id), params)
+            if seeding_due(params, seen):
+                attempt = _seed(check, params, settled[0], seen)
         # Read-modify-write: the observation list this run appends to must not be read by a
         # concurrent run of the same check, or one measurement is silently lost.
         row = get_baseline(session, check.id, for_update=persist)
         observations = load_observations(row, params)
+        seed = stored_seed(row, params)
+        seeded_now = attempt is not None and seeding_due(params, seed)
+        if attempt is not None and seeded_now:
+            # Still wanted now the row is ours (a concurrent run may have seeded meanwhile).
+            # Periods a run already judged keep their observed point.
+            held = {o.ts for o in observations}
+            added = [o for o in attempt.points if o.ts not in held and o.ts < at]
+            observations = sorted([*observations, *added], key=lambda o: o.ts)
+            seed = dict(attempt.report)
+            if seed["status"] == "done":
+                seed["points"] = len(added)  # what was kept, not what the scan returned
+        elif params.period is not None and seed is None and persist:
+            seed = {"status": "off"}  # backfill is switched off and has never run
         # A per-period metric is about a period, not about when the run happened: its point
         # is stamped with the period, scored against earlier periods only, and written once.
-        at, period_fields = observation_time(params, now, settled)
         earlier = (
             [o for o in observations if o.ts < at] if params.period is not None else observations
         )
         already_recorded = params.period is not None and any(o.ts == at for o in observations)
-        priors = eligible_values(earlier, now=at, params=params)
-        payload = {**build_score_payload(value, priors, params), **period_fields}
+        considered = _considered(earlier, at, params)
+        payload = {
+            **build_score_payload(value, [o.value for o in considered], params),
+            **period_fields,
+        }
         if row is not None:
             # BOTH timestamps, because they answer different questions and only one of them moves:
             # `captured_at` is when learning STARTED (the row's first capture — no `onupdate`,
@@ -578,17 +733,31 @@ def build_anomaly_executor(
             payload["baseline_captured_at"] = row.captured_at.isoformat()
             payload["baseline_updated_at"] = row.updated_at.isoformat()
         if params.period is not None:
+            # How much of what this run was scored against the table said about its own
+            # past, as opposed to what a run saw at the time; and what seeding came to, on
+            # every result, so a check that started empty says why long after its first run.
+            payload["history"] = {
+                "backfilled": sum(1 for o in considered if not o.observed),
+                "observed": sum(1 for o in considered if o.observed),
+                "seeding": seed["status"] if seed else None,
+            }
+            if seeded_now:
+                payload["seeded"] = seed
             # False on a second run inside the same settled period: measured again for this
             # result, but the stored point is the one written when the period was first judged.
             payload["recorded"] = persist and not already_recorded
-        if persist and not already_recorded:
-            points = [*observations, Observation(ts=at, value=value)]
+        changed = seeded_now or not already_recorded
+        if persist and changed:
+            points = (
+                observations
+                if already_recorded
+                else [*observations, Observation(ts=at, value=value)]
+            )
             if params.period is not None:
                 # A changed settle delay can judge an older period after a newer one; scoring
                 # and trimming both take the list as oldest first.
-                points.sort(key=lambda o: o.ts)
-            kept = trim(points, params)
-            baseline = dump_baseline(kept, params)
+                points = sorted(points, key=lambda o: o.ts)
+            baseline = dump_baseline(trim(points, params), params, seed)
             if row is None:
                 insert_baseline_if_absent(
                     session, check_id=check.id, kind=ANOMALY, baseline=baseline
@@ -598,6 +767,45 @@ def build_anomaly_executor(
         elif not persist:
             payload["dry_run"] = True
         return monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
+
+    def _seed(
+        check: Check, params: AnomalyParams, before: date, earlier: dict[str, Any] | None
+    ) -> _Seeding:
+        """Read the table's past for a per-period check (ADR 0048)."""
+        attempts = int((earlier or {}).get("attempts", 0)) + 1
+        try:
+            points = seed_history(
+                connection,
+                table=target_table,
+                schema=target_schema,
+                catalog=target_catalog,
+                params=params,
+                secret_store=secret_store,
+                before=before,
+            )
+        except Exception as exc:
+            # The check still judges this period; it starts with no history and says why.
+            # Tried again on later runs, up to SEED_ATTEMPTS in all.
+            log.warning(
+                "anomaly_history_seed_failed",
+                check_id=str(check.id),
+                connection_type=connection.type,
+                error_type=type(exc).__name__,
+                attempt=attempts,
+            )
+            return _Seeding(
+                [],
+                {
+                    "status": "failed",
+                    "reason": safe_failure_reason(exc),
+                    "attempts": attempts,
+                    "will_retry": attempts < SEED_ATTEMPTS,
+                },
+            )
+        report: dict[str, Any] = {"status": "done", "points": len(points), "attempts": attempts}
+        if points:
+            report["from"] = points[0].ts.date().isoformat()
+        return _Seeding(points, report)
 
     def _column_profile_outcome(
         check: Check, config: dict[str, Any], params: AnomalyParams, now: datetime

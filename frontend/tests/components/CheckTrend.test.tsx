@@ -209,7 +209,7 @@ describe('CheckTrend', () => {
           { ts: '2026-07-23T00:00:00Z', value: 150 }, // Thursday — kept
           { ts: '2026-07-24T00:00:00Z', value: 8888 }, // Friday — must be excluded
           { ts: '2026-07-29T00:00:00Z', value: 7777 }, // Wednesday — the last stored period
-        ],
+        ].map((o, i) => (i < 3 ? { ...o, source: 'backfilled' } : o)),
       },
     });
     render(
@@ -226,6 +226,49 @@ describe('CheckTrend', () => {
       await screen.findByText(/Anomaly baseline — learned band for Thursdays/),
     ).toBeInTheDocument();
     expect(screen.getByText(/μ=140\.00/)).toBeInTheDocument();
+    // Three of the five were read from the table on the first run, not measured by a run.
+    expect(
+      screen.getByText(/3 of the 5 stored points were seeded from the table’s own rows/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the recent end of a three-year seeded baseline and marks which points were seeded', async () => {
+    const start = Date.UTC(2023, 9, 13);
+    const observations = Array.from({ length: 400 }, (_, i) => ({
+      ts: new Date(start + i * 86_400_000).toISOString(),
+      value: 100,
+      ...(i < 399 ? { source: 'backfilled' } : {}),
+    }));
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-07-31T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: '2026-07-31T00:00:00Z',
+      baseline: { version: 1, target_metric: 'period_row_count', window: 14, observations },
+    });
+    render(
+      <CheckTrend
+        suiteId="s1"
+        check={{
+          ...anomalyCheck,
+          config: { target_metric: 'period_row_count', date_column: 'ordered_at' },
+        }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        /399 of the 400 stored points were seeded.*the chart shows the most recent 180/,
+      ),
+    ).toBeInTheDocument();
+
+    const { default: userEvent } = await import('@testing-library/user-event');
+    await userEvent.setup().click(screen.getByText('Table'));
+    expect(await screen.findByText('Source')).toBeInTheDocument();
+    // Newest first: the one point a run measured leads, the rest of the page is seeded.
+    expect(screen.getAllByText('Measured by a run')).toHaveLength(1);
+    expect(screen.getAllByText('Seeded from the table')).toHaveLength(49);
   });
 
   it('says a column-profile baseline is per column, never "no observations captured yet"', async () => {
@@ -342,10 +385,8 @@ describe('CheckTrend', () => {
     const user = userEvent.setup();
     await user.click(screen.getByText('Table'));
 
-    expect(
-      await screen.findByText('Anomaly baseline observations (raw measurements)'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Observed at')).toBeInTheDocument();
+    expect(await screen.findByText('Anomaly baseline points, newest first')).toBeInTheDocument();
+    expect(screen.getByText('Dated')).toBeInTheDocument();
     expect(screen.getByText('100')).toBeInTheDocument();
   });
 });
