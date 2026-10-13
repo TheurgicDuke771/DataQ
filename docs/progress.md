@@ -56,7 +56,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 
 | Status | Task |
 |---|---|
-| ⬜ | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check — researched 2026-10-07: ADR 0047 already covers all but sensitivity config above the check level; needs an ADR 0047 amendment and one decision (see the issue) |
+| 🟡 | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check — ADR 0047 already covers all but sensitivity config above the check level. Decided 2026-10-13: automatic checks inherit at run time (asset override → workspace setting → built-in default); ADR 0047 amended. Remaining: migration, backend, frontend, false-positive breakdown |
 | ✅ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) — migration [PR #2414](https://github.com/TheurgicDuke771/DataQ/pull/2414), code [PR #2415](https://github.com/TheurgicDuke771/DataQ/pull/2415) |
 | ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source — researched 2026-10-07: five design decisions needed before code (see the issue) |
 | ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column — blocked on #1674; also needs a migration widening the kind constraints |
