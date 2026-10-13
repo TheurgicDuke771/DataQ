@@ -4619,13 +4619,16 @@ def get_coverage(
     ``false_positives_by_baseline`` and ``false_positives_by_connection`` split that
     same rate: by which automatic check the incident was on (``volume`` = row count,
     ``freshness``, ``profile`` = column profile, ``schema``, ``other`` = an accepted
-    suggestion or a check someone added to the automatic suite), and by connection.
+    suggestion or a check someone added to the automatic suite), and by connection
+    (``label`` is the connection's name and environment).
     Each entry has ``label``, ``stated``, ``false_positive`` and ``rate`` (a
     percentage of that slice's ``stated``). **A slice with no stated resolution is
     not listed, so a baseline or connection missing from the list was not measured;
     it is not a baseline with zero false positives.** Each list sums to ``stated``.
-    Quote a slice's ``stated`` with its rate. A noisy baseline is what an admin
-    loosens in the app's coverage settings, which no tool here reads or changes.
+    Quote a slice's ``stated`` with its rate. The coverage settings an admin can
+    loosen in the app govern only ``volume``, ``freshness`` and ``profile``, and only
+    checks that still inherit them (``inherited_from`` on ``get_check``); ``schema``
+    and ``other`` have no such setting. No tool here reads or changes those settings.
 
     These are workspace-wide counts, identical for every user, and include assets
     and suites the caller cannot open. No asset, suite or incident is named;

@@ -24,6 +24,12 @@ export function CoveragePanel() {
   }
   const f = state.data;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const byBaseline = f.false_positives_by_baseline ?? [];
+  const byConnection = f.false_positives_by_connection ?? [];
+  // The coverage settings govern these three only; schema and other checks have none.
+  const tunable = byBaseline.some(
+    (g) => g.false_positive > 0 && ['volume', 'freshness', 'profile'].includes(g.key),
+  );
   return (
     <Card size="small" title="Coverage, across the workspace" data-testid="coverage-panel">
       <Row gutter={[24, 16]}>
@@ -52,34 +58,29 @@ export function CoveragePanel() {
           </Typography.Text>
         </Col>
       </Row>
-      {f.stated > 0 && (
+      {byBaseline.length + byConnection.length > 0 && (
         <Row gutter={[24, 16]} style={{ marginTop: 16 }}>
           <Col xs={24} md={12}>
-            <Breakdown
-              title="By automatic check"
-              column="Check"
-              groups={f.false_positives_by_baseline ?? []}
-            />
+            <Breakdown title="By automatic check" column="Check" groups={byBaseline} />
           </Col>
           <Col xs={24} md={12}>
-            <Breakdown
-              title="By connection"
-              column="Connection"
-              groups={f.false_positives_by_connection ?? []}
-            />
+            <Breakdown title="By connection" column="Connection" groups={byConnection} />
           </Col>
           <Col span={24}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Only checks and connections with a resolved incident that said what it was are listed;
-              the rest were not measured.{' '}
-              {isAdmin ? (
-                <>
-                  A check that cries wolf can be made less sensitive in{' '}
-                  <Link to="/admin/settings">Admin → Settings → Automatic coverage</Link>.
-                </>
-              ) : (
-                'A workspace admin can make a check that cries wolf less sensitive.'
-              )}
+              the rest were not measured.
+              {tunable &&
+                (isAdmin ? (
+                  <>
+                    {' '}
+                    Row count, freshness and column profile can be made less sensitive in{' '}
+                    <Link to="/admin/settings">Admin → Settings → Automatic coverage</Link>, unless
+                    a check has been given its own thresholds.
+                  </>
+                ) : (
+                  ' A workspace admin can make row count, freshness and column profile less sensitive.'
+                ))}
             </Typography.Text>
           </Col>
         </Row>

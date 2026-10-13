@@ -44,7 +44,7 @@ const BREAKDOWN: CoverageFigures = {
     { key: 'profile', label: 'Column profile', stated: 3, false_positive: 1, rate: 33.3 },
   ],
   false_positives_by_connection: [
-    { key: 'c1', label: 'warehouse-prod', stated: 4, false_positive: 1, rate: 25 },
+    { key: 'c1', label: 'warehouse (prod)', stated: 4, false_positive: 1, rate: 25 },
   ],
 };
 
@@ -124,7 +124,7 @@ describe('CoveragePanel', () => {
     const profile = (await screen.findByText('Column profile')).closest('tr') as HTMLElement;
     expect(within(profile).getByText('1 of 3')).toBeInTheDocument();
     expect(within(profile).getByText('33.3%')).toBeInTheDocument();
-    const prod = screen.getByText('warehouse-prod').closest('tr') as HTMLElement;
+    const prod = screen.getByText('warehouse (prod)').closest('tr') as HTMLElement;
     expect(within(prod).getByText('1 of 4')).toBeInTheDocument();
     // Freshness had nothing stated: absent, and the note says absent means not measured.
     expect(screen.queryByText('Freshness')).not.toBeInTheDocument();
@@ -140,19 +140,41 @@ describe('CoveragePanel', () => {
 
     expect(await screen.findByText('Column profile')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getByText(/A workspace admin can make a check/)).toBeInTheDocument();
+    expect(screen.getByText(/A workspace admin can make row count/)).toBeInTheDocument();
   });
 
-  it('shows no breakdown when nothing was stated, or on a payload without one', async () => {
-    mockGet.mockResolvedValue({ ...BREAKDOWN, stated: 0, false_positive_rate: null });
+  it('does not point at the settings when only checks they do not govern are noisy', async () => {
+    mockGet.mockResolvedValue({
+      ...BREAKDOWN,
+      false_positives_by_baseline: [
+        { key: 'volume', label: 'Row count', stated: 1, false_positive: 0, rate: 0 },
+        { key: 'schema', label: 'Schema', stated: 2, false_positive: 1, rate: 50 },
+        { key: 'other', label: 'Other checks', stated: 1, false_positive: 1, rate: 100 },
+      ],
+    });
+    renderAs('admin');
+
+    expect(await screen.findByText('Schema')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText(/the rest were not measured/)).toBeInTheDocument();
+  });
+
+  it('shows no breakdown, and no caption, when the lists are empty or absent', async () => {
+    mockGet.mockResolvedValue({
+      ...FIGURES,
+      false_positives_by_baseline: [],
+      false_positives_by_connection: [],
+    });
     const { unmount } = renderAs('admin');
     expect(await screen.findByText('Coverage, across the workspace')).toBeInTheDocument();
-    expect(screen.queryByText('By automatic check')).not.toBeInTheDocument();
+    expect(screen.queryByText(/were not measured/)).not.toBeInTheDocument();
     unmount();
 
+    // An API that predates the breakdown: figures stated, no lists at all.
     mockGet.mockResolvedValue(FIGURES);
     renderAs('admin');
     expect(await screen.findByText('Coverage, across the workspace')).toBeInTheDocument();
     expect(screen.queryByText('By automatic check')).not.toBeInTheDocument();
+    expect(screen.queryByText(/were not measured/)).not.toBeInTheDocument();
   });
 });

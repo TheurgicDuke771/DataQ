@@ -453,7 +453,8 @@ class FalsePositiveGroup:
     rate: float
 
 
-#: The automatic checks an incident can be on, in the order they are listed.
+#: The automatic checks an incident can be on, in the order they are listed: the three
+#: baselines the coverage settings govern, then the two they do not.
 _BASELINE_LABELS = {
     "volume": "Row count",
     "freshness": "Freshness",
@@ -463,16 +464,16 @@ _BASELINE_LABELS = {
 }
 
 
-def _baseline_key(kind: str, target_metric: str | None) -> str:
+def _baseline_key(origin: str, kind: str, target_metric: str | None) -> str:
+    """Which automatic check an incident was on. Only a check the coverage loop created is
+    one of its baselines: an accepted suggestion, or a check a person added to the automatic
+    suite (even an anomaly check on the same metric), is an "other" check."""
+    if origin != "auto":
+        return "other"
     if kind == "schema_drift":
         return "schema"
     if kind == "anomaly":
-        return {
-            "row_count": "volume",
-            "freshness_age_hours": "freshness",
-            "column_profile": "profile",
-        }.get(target_metric or "", "other")
-    # An accepted suggestion, or a check a person added to the automatic suite.
+        return coverage_settings_service.BASELINE_BY_METRIC.get(target_metric or "", "other")
     return "other"
 
 
@@ -555,35 +556,15 @@ def coverage_figures(
     watched = len(origins)
 
     since = now - timedelta(days=false_positive_window_days)
-    counts = dict(
-        session.execute(
-            select(Incident.resolution, func.count())
-            .join(Suite, Suite.id == Incident.suite_id)
-            .where(
-                Suite.origin == "auto",
-                Incident.status == "resolved",
-                Incident.resolved_by == "user",
-                Incident.resolved_at >= since,
-            )
-            .group_by(Incident.resolution)
-        )
-        .tuples()
-        .all()
-    )
-    unstated = counts.pop(None, 0)
-    stated = sum(counts.values())
-    false_positive = counts.get("false_positive", 0)
+    # ONE grouped read for the headline and both breakdowns, so they cannot disagree: two
+    # statements could see different incidents under READ COMMITTED.
+    metric = Check.config["target_metric"].astext
+    grouping = (Check.origin, Check.kind, metric, Connection.id, Connection.name, Connection.env)
+    unstated = stated = false_positive = 0
     by_baseline: dict[tuple[str, str], list[int]] = {}
     by_connection: dict[tuple[str, str], list[int]] = {}
-    for kind, metric, connection_id, connection_name, resolution, n in session.execute(
-        select(
-            Check.kind,
-            Check.config["target_metric"].astext,
-            Connection.id,
-            Connection.name,
-            Incident.resolution,
-            func.count(),
-        )
+    for origin, kind, target, connection_id, name, env, resolution, n in session.execute(
+        select(*grouping, Incident.resolution, func.count())
         .join(Suite, Suite.id == Incident.suite_id)
         .join(Check, Check.id == Incident.check_id)
         .join(Connection, Connection.id == Suite.connection_id)
@@ -592,21 +573,20 @@ def coverage_figures(
             Incident.status == "resolved",
             Incident.resolved_by == "user",
             Incident.resolved_at >= since,
-            Incident.resolution.is_not(None),
         )
-        .group_by(
-            Check.kind,
-            Check.config["target_metric"].astext,
-            Connection.id,
-            Connection.name,
-            Incident.resolution,
-        )
+        .group_by(*grouping, Incident.resolution)
     ).tuples():
+        if resolution is None:
+            unstated += n
+            continue
         wolf = n if resolution == "false_positive" else 0
-        baseline = _baseline_key(kind, metric)
+        stated += n
+        false_positive += wolf
+        baseline = _baseline_key(origin, kind, target)
         for bucket, slot in (
             (by_baseline, (baseline, _BASELINE_LABELS[baseline])),
-            (by_connection, (str(connection_id), connection_name)),
+            # Names are unique per environment only, so the label carries both.
+            (by_connection, (str(connection_id), f"{name} ({env})")),
         ):
             totals = bucket.setdefault(slot, [0, 0])
             totals[0] += n

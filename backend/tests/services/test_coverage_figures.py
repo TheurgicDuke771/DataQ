@@ -73,11 +73,13 @@ def _resolved(
     days_ago: float = 1,
     kind: str = "expectation",
     metric: str | None = None,
+    origin: str = "auto",
 ) -> None:
     check = Check(
         suite_id=suite.id,
         name=uuid.uuid4().hex[:8],
         kind=kind,
+        origin=origin,
         expectation_type="e",
         config={"target_metric": metric} if metric else {},
     )
@@ -206,7 +208,7 @@ def test_the_rate_is_split_by_which_automatic_check_and_by_connection(
     asset = _asset(db_session, "t")
     auto = _suite(db_session, conn, asset, origin="auto")
     quiet = Connection(
-        name="aaa-quiet", type="postgres", env="dev", config={}, created_by=conn.created_by
+        name="aaa-quiet", type="postgres", env="uat", config={}, created_by=conn.created_by
     )
     db_session.add(quiet)
     db_session.flush()
@@ -218,7 +220,9 @@ def test_the_rate_is_split_by_which_automatic_check_and_by_connection(
     _resolved(db_session, auto, resolution="fixed", **profile)
     _resolved(db_session, auto, resolution="fixed", **volume)
     _resolved(db_session, elsewhere, resolution="expected_change", kind="schema_drift")
-    _resolved(db_session, elsewhere, resolution="false_positive")  # an accepted suggestion
+    _resolved(db_session, elsewhere, resolution="false_positive", origin="suggestion")
+    # A person's own row-count anomaly check in the automatic suite is not the baseline.
+    _resolved(db_session, elsewhere, resolution="fixed", origin="user", **volume)
     # In no slice, as in the headline: unstated, auto-resolved, outside the window, authored.
     _resolved(db_session, auto, resolution=None, **profile)
     _resolved(db_session, auto, resolution="false_positive", by="auto", **volume)
@@ -232,18 +236,20 @@ def test_the_rate_is_split_by_which_automatic_check_and_by_connection(
 
     figures = cov.coverage_figures(db_session, now=NOW)
 
-    assert (figures.stated, figures.false_positive, figures.false_positive_rate) == (6, 3, 50.0)
+    assert (figures.stated, figures.unstated, figures.false_positive) == (7, 1, 3)
+    assert figures.false_positive_rate == 42.9
     # Listed in a fixed order; freshness had nothing stated, so it is absent, not 0%.
     assert _slices(figures.false_positives_by_baseline) == [
         ("Row count", 1, 0, 0.0),
         ("Column profile", 3, 2, 66.7),
         ("Schema", 1, 0, 0.0),
-        ("Other checks", 1, 1, 100.0),
+        ("Other checks", 2, 1, 50.0),
     ]
-    # Noisiest first, although the quiet connection sorts first by name.
+    # Noisiest first, although the quiet connection sorts first by name. The label carries
+    # the environment: a name is unique per environment only.
     assert _slices(figures.false_positives_by_connection) == [
-        (conn.name, 4, 2, 50.0),
-        ("aaa-quiet", 2, 1, 50.0),
+        (f"{conn.name} (dev)", 4, 2, 50.0),
+        ("aaa-quiet (uat)", 3, 1, 33.3),
     ]
     for groups in (figures.false_positives_by_baseline, figures.false_positives_by_connection):
         assert sum(g.stated for g in groups) == figures.stated
@@ -261,7 +267,37 @@ def test_nothing_stated_lists_no_slices(db_session: Any, conn: Connection) -> No
     assert figures.false_positives_by_connection == []
 
 
-def test_an_anomaly_check_on_an_unknown_metric_is_an_other_check() -> None:
-    assert cov._baseline_key("anomaly", "something_new") == "other"
-    assert cov._baseline_key("anomaly", None) == "other"
-    assert cov._baseline_key("anomaly", "freshness_age_hours") == "freshness"
+def test_only_a_check_the_coverage_loop_created_is_one_of_its_baselines() -> None:
+    assert cov._baseline_key("auto", "anomaly", "freshness_age_hours") == "freshness"
+    assert cov._baseline_key("auto", "schema_drift", None) == "schema"
+    assert cov._baseline_key("auto", "anomaly", "something_new") == "other"
+    assert cov._baseline_key("auto", "anomaly", None) == "other"
+    assert cov._baseline_key("user", "anomaly", "row_count") == "other"
+    assert cov._baseline_key("suggestion", "expectation", None) == "other"
+
+
+def test_connections_with_the_same_false_positives_are_ordered_by_stated_then_name(
+    db_session: Any, conn: Connection
+) -> None:
+    def connection(name: str) -> Suite:
+        row = Connection(
+            name=name, type="postgres", env="dev", config={}, created_by=conn.created_by
+        )
+        db_session.add(row)
+        db_session.flush()
+        return _suite(db_session, row, _asset(db_session, name), origin="auto")
+
+    # One false positive each: more stated first, then by name.
+    for name, fixed in (("zeta", 2), ("beta", 0), ("alpha", 0)):
+        suite = connection(name)
+        _resolved(db_session, suite, resolution="false_positive")
+        for _ in range(fixed):
+            _resolved(db_session, suite, resolution="fixed")
+
+    figures = cov.coverage_figures(db_session, now=NOW)
+
+    assert [g.label for g in figures.false_positives_by_connection] == [
+        "zeta (dev)",
+        "alpha (dev)",
+        "beta (dev)",
+    ]
