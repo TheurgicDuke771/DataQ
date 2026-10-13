@@ -20,15 +20,15 @@ T = TypeVar("T", bound="CoverageSettingsRead")
 class CoverageSettingsRead:
     """The workspace's sensitivity for automatic baselines. `setting` is exactly what is
     stored (a group it omits falls to the built-in default); `effective` is the result for a
-    table with no override of its own. `is_default` means no row is stored. A change applies
-    to every inheriting automatic check on its next run.
+    table with no override of its own. `is_default` means nothing is stored.
 
         Attributes:
-            defaults (EffectiveCoverageRead): What automatic baselines run on once the hierarchy is applied: asset override,
-                then workspace setting, then the built-in default.
-            effective (EffectiveCoverageRead): What automatic baselines run on once the hierarchy is applied: asset
-                override,
-                then workspace setting, then the built-in default.
+            defaults (EffectiveCoverageRead): What the hierarchy resolves to: asset override, then workspace setting, then
+                the
+                built-in default.
+            effective (EffectiveCoverageRead): What the hierarchy resolves to: asset override, then workspace setting, then
+                the
+                built-in default.
             is_default (bool):
             setting (CoverageSettingsReadSetting):
             updated_at (datetime.datetime | None):

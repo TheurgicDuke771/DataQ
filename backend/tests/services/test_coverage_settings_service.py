@@ -109,12 +109,70 @@ def test_set_then_reset_round_trips_and_audits_both(db_session: Any) -> None:
     assert svc.get_row(db_session) is None
     assert svc.workspace_document(db_session) == {}
     events = db_session.scalars(
-        select(AuditEvent)
-        .where(AuditEvent.action == "coverage_setting.update")
-        .order_by(AuditEvent.occurred_at)
+        select(AuditEvent).where(AuditEvent.action == "coverage_setting.update")
     ).all()
-    assert [(e.before is None, e.after is None) for e in events] == [(True, False), (False, True)]
-    assert events[0].after["config"] == stored
+    assert sorted((e.before is None, e.after is None) for e in events) == [
+        (False, True),
+        (True, False),
+    ]
+    assert next(e.after for e in events if e.after)["config"] == stored
+
+
+def test_saving_a_document_that_sets_nothing_is_a_reset(db_session: Any) -> None:
+    admin = _admin(db_session)
+    svc.set_workspace(db_session, {"baseline": _SHAPE}, actor=admin)
+
+    returned = svc.set_workspace(db_session, {"sensitivity": {}}, actor=admin)
+
+    assert returned is None
+    assert svc.get_row(db_session) is None
+
+
+def test_an_empty_first_save_stores_no_row_and_no_audit_event(db_session: Any) -> None:
+    svc.set_workspace(db_session, {}, actor=_admin(db_session))
+
+    assert svc.get_row(db_session) is None
+    assert db_session.scalars(select(AuditEvent.id)).all() == []
+
+
+def test_a_second_save_records_the_first_as_its_before(db_session: Any) -> None:
+    admin = _admin(db_session)
+    svc.set_workspace(db_session, {"baseline": _SHAPE}, actor=admin)
+
+    svc.set_workspace(db_session, {"sensitivity": {"volume": _LOOSE}}, actor=admin)
+
+    # Both events share the transaction's timestamp, so pick the update by its shape.
+    befores = [
+        e.before
+        for e in db_session.scalars(
+            select(AuditEvent).where(AuditEvent.action == "coverage_setting.update")
+        )
+    ]
+    assert sorted(befores, key=lambda b: b is not None) == [
+        None,
+        {"id": 1, "config": {"baseline": _SHAPE}, "updated_by": str(admin.id)},
+    ]
+    assert svc.workspace_document(db_session) == {
+        "sensitivity": {"volume": {"warn": 5.0, "fail": 7.0, "critical": 9.0}}
+    }
+
+
+def test_the_ceiling_is_the_deviation_a_never_varying_value_reports() -> None:
+    at_ceiling = {"warn": 3, "fail": 4, "critical": 99}
+
+    assert (
+        svc.validate({"sensitivity": {"volume": at_ceiling}})["sensitivity"]["volume"]["critical"]
+        == 99.0
+    )
+    with pytest.raises(svc.CoverageSettingsInvalidError, match="never varied"):
+        svc.validate({"sensitivity": {"volume": {**at_ceiling, "critical": 99.5}}})
+
+
+def test_automatic_checks_are_created_with_the_built_in_defaults() -> None:
+    from backend.app.services import coverage_service
+
+    assert coverage_service._ANOMALY_THRESHOLDS == svc.DEFAULT_SENSITIVITY.as_dict()
+    assert coverage_service._ANOMALY_WINDOW == svc.DEFAULT_SHAPE.as_dict()
 
 
 def test_a_refused_save_stores_nothing(db_session: Any) -> None:

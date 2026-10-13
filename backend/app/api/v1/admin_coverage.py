@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel, updated_by_email
@@ -20,13 +21,15 @@ router = APIRouter(
     dependencies=[Depends(require_workspace_admin)],
 )
 
-Baseline = Literal["volume", "freshness", "profile"]
-Level = Literal["asset", "workspace", "default"]
+# Strict: `true` must not save as a 1-deviation tier, nor "yes" as seasonality on.
+_STRICT = ConfigDict(extra="forbid", strict=True)
 
 
 class SensitivityWrite(ApiRequestModel):
     """Standard deviations from the table's own history at which a baseline warns, fails
     and goes critical. All three are set together."""
+
+    model_config = _STRICT
 
     warn: float
     fail: float
@@ -35,6 +38,8 @@ class SensitivityWrite(ApiRequestModel):
 
 class BaselineShapeWrite(ApiRequestModel):
     """How much history a baseline compares against. All three are set together."""
+
+    model_config = _STRICT
 
     window: int
     min_points: int
@@ -45,7 +50,7 @@ class CoverageSettingsWrite(ApiRequestModel):
     """A level sets a group whole or leaves it to the level below: any of the three
     baselines' thresholds, and the shared baseline shape."""
 
-    sensitivity: dict[Baseline, SensitivityWrite] | None = None
+    sensitivity: dict[svc.Baseline, SensitivityWrite] | None = None
     baseline: BaselineShapeWrite | None = None
 
     def document(self) -> dict[str, Any]:
@@ -57,29 +62,28 @@ class EffectiveSensitivity(ApiModel):
     fail: float
     critical: float
     #: The level these three came from.
-    source: Level
+    source: svc.Level
 
 
 class EffectiveShape(ApiModel):
     window: int
     min_points: int
     seasonality: bool
-    source: Level
+    source: svc.Level
 
 
 class EffectiveCoverageRead(ApiModel):
-    """What automatic baselines run on once the hierarchy is applied: asset override,
-    then workspace setting, then the built-in default."""
+    """What the hierarchy resolves to: asset override, then workspace setting, then the
+    built-in default."""
 
-    sensitivity: dict[str, EffectiveSensitivity]
+    sensitivity: dict[svc.Baseline, EffectiveSensitivity]
     baseline: EffectiveShape
 
 
 class CoverageSettingsRead(ApiModel):
     """The workspace's sensitivity for automatic baselines. `setting` is exactly what is
     stored (a group it omits falls to the built-in default); `effective` is the result for a
-    table with no override of its own. `is_default` means no row is stored. A change applies
-    to every inheriting automatic check on its next run."""
+    table with no override of its own. `is_default` means nothing is stored."""
 
     setting: dict[str, Any]
     effective: EffectiveCoverageRead

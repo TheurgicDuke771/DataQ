@@ -988,20 +988,21 @@ def update_asset_metadata(
     """Set an asset's owner and/or description (workspace-Admin-only; gated at API)."""
     asset = get_asset(session, asset_id)
     audit_before = audit_service.snapshot("asset", asset)
-    if set_owner:
-        if owner_user_id is not None and session.get(User, owner_user_id) is None:
-            raise AssetOwnerInvalidError(
-                "owner user does not exist", detail={"owner_user_id": str(owner_user_id)}
-            )
-        asset.owner_user_id = owner_user_id
-    if set_description:
-        asset.description = description
-    # Validated before anything is assigned, so a refused override leaves the session clean.
+    # Both refusals come before anything is assigned, so a refused request leaves the
+    # session clean.
     override = (
         coverage_settings_service.validate(auto_coverage_config)
         if set_auto_coverage_config and auto_coverage_config is not None
         else None
     )
+    if set_owner and owner_user_id is not None and session.get(User, owner_user_id) is None:
+        raise AssetOwnerInvalidError(
+            "owner user does not exist", detail={"owner_user_id": str(owner_user_id)}
+        )
+    if set_owner:
+        asset.owner_user_id = owner_user_id
+    if set_description:
+        asset.description = description
     if auto_coverage_excluded is not None:
         asset.auto_coverage_excluded = auto_coverage_excluded
     if set_auto_coverage_config:

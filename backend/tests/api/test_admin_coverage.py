@@ -99,6 +99,11 @@ def test_delete_resets_to_defaults(client: TestClient, db_session: Any) -> None:
         {"baseline": {**_SHAPE, "min_points": 20}},
         {"baseline": {"window": 14}},
         {"thresholds": _LOOSE},
+        # Strict types: none of these may coerce into a saved setting.
+        {"sensitivity": {"volume": {**_LOOSE, "warn": True}}},
+        {"sensitivity": {"volume": {**_LOOSE, "fail": "7"}}},
+        {"baseline": {**_SHAPE, "window": "14"}},
+        {"baseline": {**_SHAPE, "seasonality": "yes"}},
     ],
 )
 def test_an_invalid_document_is_a_422_and_stores_nothing(
@@ -117,6 +122,14 @@ def test_an_unordered_group_names_the_service_error(client: TestClient) -> None:
     )
 
     assert resp.json()["error"]["code"] == "coverage_settings_invalid"
+
+
+def test_putting_a_document_that_sets_nothing_reads_as_default(client: TestClient) -> None:
+    client.put("/api/v1/admin/coverage", json={"baseline": _SHAPE})
+
+    body = client.put("/api/v1/admin/coverage", json={}).json()
+
+    assert (body["is_default"], body["setting"], body["updated_by"]) == (True, {}, None)
 
 
 @pytest.mark.parametrize("role", ["member", "viewer"])
@@ -228,6 +241,23 @@ def test_a_refused_override_changes_nothing_else_in_the_request(
 
     assert resp.status_code == 422
     assert (asset.description, asset.auto_coverage_config) == (None, None)
+
+
+def test_a_refused_override_leaves_the_session_clean(db_session: Any, asset: Asset) -> None:
+    """A caller that catches the refusal and commits later must not persist half a request."""
+    from backend.app.services import asset_view_service
+
+    with pytest.raises(svc.CoverageSettingsInvalidError):
+        asset_view_service.update_asset_metadata(
+            db_session,
+            asset.id,
+            description="should not land",
+            set_description=True,
+            auto_coverage_config={"baseline": {"window": 1}},
+            set_auto_coverage_config=True,
+        )
+
+    assert not db_session.dirty
 
 
 def test_any_member_reads_an_assets_settings_but_only_an_admin_overrides(

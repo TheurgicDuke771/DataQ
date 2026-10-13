@@ -11,8 +11,9 @@ values), so each group is valid where it is saved and no merge across levels can
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, get_args
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
@@ -31,7 +32,8 @@ log = get_logger(__name__)
 _SETTINGS_ROW_ID = 1
 
 #: The automatic baselines that carry deviation thresholds (the roles in ``auto_state``).
-BASELINES: Final[tuple[str, ...]] = ("volume", "freshness", "profile")
+Baseline = Literal["volume", "freshness", "profile"]
+BASELINES: Final[tuple[str, ...]] = get_args(Baseline)
 _TIERS: Final[tuple[str, ...]] = ("warn", "fail", "critical")
 _SHAPE_KEYS: Final[tuple[str, ...]] = ("window", "min_points", "seasonality")
 
@@ -102,10 +104,12 @@ def _sensitivity(value: Any, baseline: str) -> Sensitivity:
         raw = group[tier]
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             raise CoverageSettingsInvalidError(f"{what}.{tier} must be a number")
-        # Above the degenerate z no run can reach it, so the tier would be dead.
+        # A history with no spread reports a change as this fixed deviation, so a tier above
+        # it could never fire on a table whose value had never moved before.
         if not 0 < raw <= ANOMALY_DEGENERATE_Z:
             raise CoverageSettingsInvalidError(
-                f"{what}.{tier} must be above 0 and at most {ANOMALY_DEGENERATE_Z:g}"
+                f"{what}.{tier} must be above 0 and at most {ANOMALY_DEGENERATE_Z:g} "
+                "(the deviation reported when a value that never varied changes)"
             )
         numbers.append(float(raw))
     warn, fail, critical = numbers
@@ -203,13 +207,24 @@ def workspace_document(session: Session) -> dict[str, Any]:
     return dict(row.config) if row is not None else {}
 
 
-def set_workspace(session: Session, document: Any, *, actor: User) -> CoverageSetting:
+def set_workspace(session: Session, document: Any, *, actor: User) -> CoverageSetting | None:
+    """Store the workspace setting. A document that sets no group is a reset: a stored row
+    always means something differs from the built-in defaults."""
     config = validate(document)
-    row = get_row(session)
-    before = audit_service.snapshot("coverage_setting", row) if row is not None else None
-    if row is None:
-        row = CoverageSetting(id=_SETTINGS_ROW_ID)
-        session.add(row)
+    if not config:
+        reset_workspace(session, actor=actor)
+        return None
+    # Two first saves at once must not both INSERT the singleton: claim the row, then lock it.
+    created = session.scalar(
+        pg_insert(CoverageSetting)
+        .values(id=_SETTINGS_ROW_ID, config={})
+        .on_conflict_do_nothing(index_elements=["id"])
+        .returning(CoverageSetting.id)
+    )
+    row = session.get(CoverageSetting, _SETTINGS_ROW_ID, with_for_update=True)
+    if row is None:  # unreachable: just inserted or already present, and now locked
+        raise RuntimeError("coverage_settings row vanished between insert and lock")
+    before = None if created is not None else audit_service.snapshot("coverage_setting", row)
     row.config = config
     row.updated_by = actor.id
     session.flush()

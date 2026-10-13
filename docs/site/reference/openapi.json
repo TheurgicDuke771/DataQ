@@ -646,7 +646,7 @@
         "type": "object"
       },
       "AssetCoverageSettingsRead": {
-        "description": "One table's sensitivity for its automatic baselines. `override` is what this table\nstores itself (`null` = none); `effective` is what its inheriting automatic checks run on,\nwith the level each group came from. A check a person has edited no longer inherits and\nruns on its own stored values instead.",
+        "description": "One table's sensitivity for its automatic baselines. `override` is what this table\nstores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with\nthe level each group came from.",
         "properties": {
           "effective": {
             "$ref": "#/components/schemas/EffectiveCoverageRead"
@@ -4199,7 +4199,7 @@
         "type": "object"
       },
       "CoverageSettingsRead": {
-        "description": "The workspace's sensitivity for automatic baselines. `setting` is exactly what is\nstored (a group it omits falls to the built-in default); `effective` is the result for a\ntable with no override of its own. `is_default` means no row is stored. A change applies\nto every inheriting automatic check on its next run.",
+        "description": "The workspace's sensitivity for automatic baselines. `setting` is exactly what is\nstored (a group it omits falls to the built-in default); `effective` is the result for a\ntable with no override of its own. `is_default` means nothing is stored.",
         "properties": {
           "defaults": {
             "$ref": "#/components/schemas/EffectiveCoverageRead"
@@ -4761,7 +4761,7 @@
         "type": "object"
       },
       "EffectiveCoverageRead": {
-        "description": "What automatic baselines run on once the hierarchy is applied: asset override,\nthen workspace setting, then the built-in default.",
+        "description": "What the hierarchy resolves to: asset override, then workspace setting, then the\nbuilt-in default.",
         "properties": {
           "baseline": {
             "$ref": "#/components/schemas/EffectiveShape"
@@ -4769,6 +4769,13 @@
           "sensitivity": {
             "additionalProperties": {
               "$ref": "#/components/schemas/EffectiveSensitivity"
+            },
+            "propertyNames": {
+              "enum": [
+                "volume",
+                "freshness",
+                "profile"
+              ]
             },
             "title": "Sensitivity",
             "type": "object"

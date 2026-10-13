@@ -35,6 +35,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import check_service, cron, suggestion_service, suite_service
 from backend.app.services.asset_identity import resolve_asset_identity
+from backend.app.services.coverage_settings_service import DEFAULT_SENSITIVITY, DEFAULT_SHAPE
 from backend.app.services.inventory_service import INVENTORY_TYPES
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
@@ -51,8 +52,8 @@ PROFILE_CHECK = "Column profile is normal"
 
 #: Anomaly defaults (ADR 0047 §5): warn at 3 standard deviations, fail at 4, critical at 6.
 #: Same-weekday history, 4 points before scoring: a daily suite starts scoring in its fifth week.
-_ANOMALY_THRESHOLDS = {"warn": 3, "fail": 4, "critical": 6}
-_ANOMALY_WINDOW = {"window": 8, "min_points": 4, "seasonality": True}
+_ANOMALY_THRESHOLDS = DEFAULT_SENSITIVITY.as_dict()
+_ANOMALY_WINDOW = DEFAULT_SHAPE.as_dict()
 
 #: Timestamp columns preferred as the freshness column, most specific first.
 _FRESHNESS_NAMES = (
@@ -168,8 +169,8 @@ def _freshness_column(session: Session, schema_check_id: uuid.UUID | None) -> st
     return timestamps[0]
 
 
-def _decimal(value: int | None) -> Decimal | None:
-    return None if value is None else Decimal(value)
+def _decimal(value: float | None) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
 
 
 def _add_check(
@@ -179,7 +180,7 @@ def _add_check(
     name: str,
     kind: str,
     config: dict[str, Any],
-    thresholds: dict[str, int] | None,
+    thresholds: dict[str, float] | None,
 ) -> Check:
     t = thresholds or {}
     return check_service.create_check(

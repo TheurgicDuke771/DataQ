@@ -17,8 +17,8 @@ T = TypeVar("T", bound="EffectiveCoverageRead")
 
 @_attrs_define
 class EffectiveCoverageRead:
-    """What automatic baselines run on once the hierarchy is applied: asset override,
-    then workspace setting, then the built-in default.
+    """What the hierarchy resolves to: asset override, then workspace setting, then the
+    built-in default.
 
         Attributes:
             baseline (EffectiveShape):
