@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "ee8341ffe68d",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-inherit-at-run-time-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/mcp/server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ee/8341ffe68d/0/metadata.json",
+      "transcript": "/ee/8341ffe68d/0/full.jsonl",
+      "compact_transcript": "/ee/8341ffe68d/0/transcript.jsonl",
+      "content_hash": "/ee/8341ffe68d/0/content_hash.txt",
+      "prompt": "/ee/8341ffe68d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 7824,
+    "cache_read_tokens": 1537753,
+    "output_tokens": 4873,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 110749,
+      "cache_read_tokens": 869649,
+      "output_tokens": 134,
+      "api_call_count": 10
+    }
+  }
+}
