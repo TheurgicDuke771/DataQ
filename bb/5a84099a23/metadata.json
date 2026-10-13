@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "bb5a84099a23",
+  "strategy": "manual-commit",
+  "branch": "feature/period-metrics-2440",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_period_metrics.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bb/5a84099a23/0/metadata.json",
+      "transcript": "/bb/5a84099a23/0/full.jsonl",
+      "compact_transcript": "/bb/5a84099a23/0/transcript.jsonl",
+      "content_hash": "/bb/5a84099a23/0/content_hash.txt",
+      "prompt": "/bb/5a84099a23/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 46001,
+    "cache_read_tokens": 19822972,
+    "output_tokens": 32118,
+    "api_call_count": 29
+  }
+}
