@@ -15,7 +15,7 @@ selection, not REST consumers (CLAUDE.md §10).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Generator, Sequence
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -915,8 +915,8 @@ def get_adf_pipeline_status(
     return get_pipeline_status(provider=provider, status=status, limit=limit, offset=offset)
 
 
-def _inherited(session: Session, checks: Sequence[Check]) -> dict[uuid.UUID, CheckSettings]:
-    return coverage_settings_service.inherited_settings(session, checks)
+def _one_inherited(session: Session, check: Check) -> CheckSettings | None:
+    return coverage_settings_service.inherited_settings(session, [check]).get(check.id)
 
 
 def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict[str, Any]:
@@ -955,17 +955,17 @@ def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict
         # An automatic baseline that inherits (ADR 0047) runs on the coverage settings, not on
         # its stored columns: show what it runs on, and say so, or "what does this check alert
         # at?" would be answered from numbers no run uses.
-        "config": inherited.config(dict(check.config)) if inherited else check.config,
+        "config": (
+            inherited.shown(dict(check.config))
+            if inherited
+            else coverage_settings_service.strip_flag(check.config)
+        ),
         "warn_threshold": inherited.sensitivity.warn if inherited else _num(check.warn_threshold),
         "fail_threshold": inherited.sensitivity.fail if inherited else _num(check.fail_threshold),
         "critical_threshold": (
             inherited.sensitivity.critical if inherited else _num(check.critical_threshold)
         ),
-        "inherited_from": (
-            {"sensitivity": inherited.sensitivity_from, "baseline": inherited.shape_from}
-            if inherited
-            else None
-        ),
+        "inherited_from": inherited.levels() if inherited else None,
         # Operational, not config: an LLM asked "why did nobody get alerted?"
         # needs to see a live snooze (#370). Null = alerts are active.
         #
@@ -1039,16 +1039,14 @@ def list_checks(
         # cost this cap actually targets is the CONFIG payload crossing the wire
         # into a context window, not the fetch. `total` keeps the truncation
         # honest — a bare list would let an LLM report "the suite has 200 checks".
+        page = checks[:limit]
+        inherited = coverage_settings_service.inherited_settings(session, page)
         return {
             "suite_id": suite_id,
             "total": len(checks),
             "returned": min(len(checks), limit),
             "truncated": len(checks) > limit,
-            "checks": [
-                _check_summary(c, inherited.get(c.id))
-                for inherited in [_inherited(session, checks[:limit])]
-                for c in checks[:limit]
-            ],
+            "checks": [_check_summary(c, inherited.get(c.id)) for c in page],
         }
 
 
@@ -1070,7 +1068,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
         require_permission(session, sid, user.id, minimum="view")
         check = check_service.get_check(session, sid, cid)
         return {
-            **_check_summary(check, _inherited(session, [check]).get(check.id)),
+            **_check_summary(check, _one_inherited(session, check)),
             "suite_id": suite_id,
             "created_at": check.created_at.isoformat(),
             "updated_at": check.updated_at.isoformat(),
@@ -2375,12 +2373,18 @@ def update_check(
     or table coverage setting. Changing any one of them here gives the check its own
     values from then on: all of them are fixed at what was in effect, with your change
     applied, and later changes to the setting no longer reach it. Tell the user that
-    before making the change. The result comes back with ``inherited_from: null``. To
-    hand the check back to the settings, send its config with
-    ``"inherit_coverage_settings": true`` and no threshold changes; sending ``true``
-    together with a changed threshold is refused. Renaming or disabling the check does
-    not detach it. This tool cannot change the setting itself, which is an admin
-    action in the app.
+    before making the change. The result comes back with ``inherited_from: null``.
+    Renaming or disabling the check does not detach it, and neither does sending back a
+    value equal to the one in effect. Leaving ``window`` / ``min_points`` /
+    ``seasonality`` out of a replacement ``config`` leaves them inherited; it does not
+    reset them.
+
+    To hand a detached automatic check back to the settings, send its config with
+    ``"inherit_coverage_settings": true`` added. Any thresholds or window values sent in
+    that same call are **not applied**: the check runs on the settings, and the result
+    shows those values with ``inherited_from`` set. That key is accepted only on the
+    automatic baselines and is never returned in ``config``. This tool cannot change the
+    setting itself, which is an admin action in the app.
 
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
@@ -2447,7 +2451,7 @@ def update_check(
             enabled=enabled,
             actor_id=user.id,
         )
-        return _check_summary(check, _inherited(session, [check]).get(check.id))
+        return _check_summary(check, _one_inherited(session, check))
 
 
 @mcp.tool
@@ -2494,7 +2498,7 @@ def restore_check_version(
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.restore_check_version(session, sid, cid, version_no, actor_id=user.id)
         return {
-            **_check_summary(check, _inherited(session, [check]).get(check.id)),
+            **_check_summary(check, _one_inherited(session, check)),
             "restored_from_version": version_no,
         }
 

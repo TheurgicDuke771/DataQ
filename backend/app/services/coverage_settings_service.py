@@ -236,11 +236,20 @@ class CheckSettings:
         """The check's config with the resolved shape in place of the stored one."""
         return {**stored, **self.shape.as_dict()}
 
+    def levels(self) -> dict[str, Level]:
+        return {"sensitivity": self.sensitivity_from, "baseline": self.shape_from}
+
+    def shown(self, stored: dict[str, Any]) -> dict[str, Any]:
+        """The config a read surface returns: what the check runs on, without the
+        server-owned flag (the surface reports inheritance in its own field), so a client
+        that edits what it read and sends it back is making an ordinary edit."""
+        return strip_flag(self.config(stored))
+
     def provenance(self) -> dict[str, Any]:
         """Recorded on each result: the values it was scored against and where they came from."""
         return {
             "thresholds": self.sensitivity.as_dict(),
-            "inherited_from": {"sensitivity": self.sensitivity_from, "baseline": self.shape_from},
+            "inherited_from": self.levels(),
         }
 
 
@@ -270,10 +279,15 @@ def _matches_legacy_signature(check: Check) -> bool:
     )
 
 
+def can_inherit(check: Check) -> bool:
+    """Only an automatic baseline can take its thresholds and shape from the settings."""
+    return check.origin == "auto" and baseline_of(check) is not None
+
+
 def inherits(check: Check) -> bool:
     """Whether this check takes its thresholds and shape from the settings rather than from
-    its own stored values. Only an automatic baseline can."""
-    if check.origin != "auto" or baseline_of(check) is None:
+    its own stored values."""
+    if not can_inherit(check):
         return False
     flag = (check.config or {}).get(INHERIT_KEY)
     if isinstance(flag, bool):
@@ -332,7 +346,7 @@ def _same(a: Any, b: Any) -> bool:
 
 def settle_edit(
     check: Check,
-    coverage: SuiteCoverage,
+    coverage: SuiteCoverage | None,
     *,
     sent_config: dict[str, Any] | None,
     sent_thresholds: Mapping[str, Decimal | None],
@@ -340,10 +354,19 @@ def settle_edit(
     """The config and thresholds an edit leaves on ``check``, with the inherit flag settled.
 
     ``sent_thresholds`` holds only the tiers the edit names (``warn`` / ``fail`` /
-    ``critical``). The rule (ADR 0047): an edit that changes a threshold or the shape of an
-    inheriting check pins all of them at the values then in effect; one that does not leaves
-    it inheriting. A sent flag decides outright: ``false`` pins, ``true`` (re)starts
-    inheriting, and ``true`` together with a changed value is refused rather than guessed at.
+    ``critical``); ``coverage`` may be ``None`` for a check that cannot inherit. The rule
+    (ADR 0047), for an automatic baseline:
+
+    - No flag sent, the usual case since read surfaces do not return it: a threshold or shape
+      value that differs from the one in effect is an edit, and pins all of them at the values
+      in effect with the edit applied. Anything else leaves the check as it was.
+    - ``false`` pins.
+    - ``true`` makes the check inherit. The thresholds and shape sent beside it are a
+      snapshot, not an instruction: no run uses them.
+
+    A shape key left out of a replacement config is "not changed" on an inheriting check,
+    not "back to the anomaly default": a caller that sends only the keys it knows must not
+    detach the check by accident.
     """
     stored_config = dict(check.config or {})
     stored = {
@@ -361,7 +384,7 @@ def settle_edit(
         and check.kind == ANOMALY
         and str(config.get("target_metric")) in _BASELINE_BY_METRIC
     )
-    if not is_baseline:
+    if not is_baseline or coverage is None:
         if sent_flag is not None:
             raise InheritEditError(
                 f"{INHERIT_KEY} applies only to an automatic baseline check; remove it"
@@ -375,27 +398,10 @@ def settle_edit(
     effective = settings.sensitivity.as_dict()
     shape = settings.shape.as_dict()
     sent_shape = {k: config[k] for k in _SHAPE_KEYS if sent_config is not None and k in config}
-    changed = [t for t, v in sent_thresholds.items() if not _same(v, effective[t])]
-    changed += [k for k, v in sent_shape.items() if v != shape[k]]
-    if sent_flag is True:
-        # A document that says "inherit" carries the stored snapshot, which is not an edit.
-        edits = [
-            name
-            for name in changed
-            if not (
-                _same(sent_thresholds[name], stored[name])
-                if name in sent_thresholds
-                else sent_shape[name] == stored_config.get(name)
-            )
-        ]
-        if edits:
-            raise InheritEditError(
-                f"this check inherits its thresholds and baseline shape, but the edit also "
-                f"changes {', '.join(edits)}; send {INHERIT_KEY}: false to give it its own "
-                "values, or leave those unchanged to keep inheriting"
-            )
-        changed = []
-    if sent_flag is False or changed:
+    changed = any(not _same(v, effective[t]) for t, v in sent_thresholds.items()) or any(
+        v != shape[k] for k, v in sent_shape.items()
+    )
+    if sent_flag is False or (sent_flag is None and changed):
         pinned_thresholds: dict[str, Decimal | None] = {
             t: Decimal(str(v)) for t, v in effective.items()
         }
@@ -403,9 +409,51 @@ def settle_edit(
             {**config, **shape, **sent_shape, INHERIT_KEY: False},
             {**pinned_thresholds, **sent_thresholds},
         )
-    # Still inheriting: the stored snapshot stays as it was, whatever was echoed back.
+    # Still inheriting: the stored snapshot stays as it was, whatever was sent beside it.
     kept_shape = {k: stored_config.get(k, shape[k]) for k in _SHAPE_KEYS}
     return {**config, **kept_shape, INHERIT_KEY: True}, stored
+
+
+def document_fields(check: Check, settings: CheckSettings | None) -> dict[str, Any]:
+    """A check as a suite document carries it. An inheriting check is written with the values
+    it runs on and the flag, so a copy imported elsewhere (where it cannot inherit) keeps
+    alerting where the source did, not at a snapshot from the day the check was created."""
+    if settings is None:
+        return {
+            "config": check.config,
+            "warn_threshold": check.warn_threshold,
+            "fail_threshold": check.fail_threshold,
+            "critical_threshold": check.critical_threshold,
+        }
+    return {
+        "config": {**settings.config(dict(check.config)), INHERIT_KEY: True},
+        **{
+            f"{tier}_threshold": Decimal(str(value))
+            for tier, value in settings.sensitivity.as_dict().items()
+        },
+    }
+
+
+def document_differs(
+    check: Check, settings: CheckSettings | None, doc: dict[str, Any], field: str
+) -> bool:
+    """Whether applying ``doc`` would change ``field`` (``config`` or a threshold) of
+    ``check``. Mirrors ``settle_edit``, so a plan never reports a change the apply would not
+    make: the numbers beside ``inherit: true`` are not compared, and a document that does not
+    mention the flag is compared against what the check runs on."""
+    current = document_fields(check, settings)
+    doc_config = dict(doc["config"])
+    flag = doc_config.pop(INHERIT_KEY, None)
+    mine = strip_flag(dict(current["config"]))
+    if field != "config":
+        return not (flag is True and settings is not None) and not _same(current[field], doc[field])
+    if flag is not None and flag != (settings is not None):
+        return True
+    if flag is True:
+        for key in _SHAPE_KEYS:
+            mine.pop(key, None)
+            doc_config.pop(key, None)
+    return bool(mine != doc_config)
 
 
 def for_suite(session: Session, suite: Suite) -> SuiteCoverage:

@@ -1184,7 +1184,7 @@ def _settle_inheritance(
     coverage = (
         coverage_settings_service.for_suite(session, get_suite(session, check.suite_id))
         if check.origin == "auto" and check.kind == ANOMALY
-        else coverage_settings_service.SuiteCoverage(coverage_settings_service.resolve(None))
+        else None
     )
     try:
         new_config, thresholds = coverage_settings_service.settle_edit(

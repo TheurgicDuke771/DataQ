@@ -682,8 +682,14 @@ and is marked as inherited.
 Editing a threshold, the window, the minimum or seasonality on an automatic check gives that
 check its own values: all of them are fixed at what was in effect, with your change applied, and
 later changes to the settings no longer reach it. Renaming or disabling it does not. To hand it
-back, save its configuration with `inherit_coverage_settings: true`. Automatic checks created
+back, save its configuration with `inherit_coverage_settings: true`; numbers sent in the same
+request are not applied, because the check then runs on the settings. Automatic checks created
 before these settings existed inherit as long as nobody has changed their thresholds or shape.
+
+An exported suite document writes an inheriting check with that flag and the values it runs
+on. Re-applying the file changes nothing, even after the settings have moved on. Importing it
+as a new suite, or applying it to a suite you authored, gives ordinary checks holding those
+numbers as their own.
 
 For example, turning weekday seasonality off in the workspace with a window of 7 and a minimum
 of 4 makes a new daily suite start scoring on its fifth day instead of its fifth week. A table

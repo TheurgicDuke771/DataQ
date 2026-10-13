@@ -139,19 +139,17 @@ def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
     for check in checks:
         read = CheckRead.model_validate(check)
         settings = inherited.get(check.id)
+        # The flag is server-owned and never shown: `inherited` says it instead.
+        update: dict[str, Any] = {"config": coverage_settings_service.strip_flag(read.config)}
         if settings is not None:
-            read = read.model_copy(
-                update={
-                    "config": settings.config(dict(check.config)),
-                    "warn_threshold": settings.sensitivity.warn,
-                    "fail_threshold": settings.sensitivity.fail,
-                    "critical_threshold": settings.sensitivity.critical,
-                    "inherited": InheritedFrom(
-                        sensitivity=settings.sensitivity_from, baseline=settings.shape_from
-                    ),
-                }
-            )
-        out.append(read)
+            update = {
+                "config": settings.shown(dict(check.config)),
+                "warn_threshold": settings.sensitivity.warn,
+                "fail_threshold": settings.sensitivity.fail,
+                "critical_threshold": settings.sensitivity.critical,
+                "inherited": InheritedFrom(**settings.levels()),
+            }
+        out.append(read.model_copy(update=update))
     return out
 
 

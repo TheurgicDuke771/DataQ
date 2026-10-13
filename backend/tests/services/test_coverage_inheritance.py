@@ -192,19 +192,16 @@ def test_a_replacement_config_that_omits_the_flag_and_shape_keeps_both() -> None
     }
 
 
-def test_a_document_that_says_inherit_may_carry_the_stored_snapshot() -> None:
+def test_the_numbers_beside_an_explicit_inherit_are_a_snapshot_not_an_edit() -> None:
+    """A document that says "inherit" carries numbers from whenever it was written."""
     check = _check(**_flag(True))
 
-    config, thresholds = _settle(check, config=dict(check.config), **_STORED)
+    config, thresholds = _settle(
+        check, config={**check.config, "window": 30}, warn=Decimal(8), fail=Decimal(8)
+    )
 
-    assert (config[KEY], thresholds) == (True, _STORED)
-
-
-def test_inherit_together_with_a_real_change_is_refused_and_names_it() -> None:
-    check = _check(**_flag(True))
-
-    with pytest.raises(svc.InheritEditError, match="also changes warn, window"):
-        _settle(check, config={**check.config, "window": 30}, warn=Decimal(8))
+    assert (config[KEY], config["window"]) == (True, 8)
+    assert thresholds == _STORED
 
 
 def test_an_explicit_false_pins_even_with_nothing_changed() -> None:
@@ -242,6 +239,8 @@ def test_a_check_that_cannot_inherit_never_gains_the_flag_and_refuses_it() -> No
     assert KEY not in config and thresholds["warn"] == Decimal(1)
     with pytest.raises(svc.InheritEditError, match="only to an automatic baseline"):
         _settle(user, config={**user.config, KEY: True})
+    # No settings read is made for a check that cannot inherit.
+    assert svc.settle_edit(user, None, sent_config=None, sent_thresholds={})[0] == dict(user.config)
 
 
 @pytest.mark.parametrize("flag", ["true", 1, None])
@@ -560,25 +559,43 @@ def test_editing_a_threshold_through_the_service_pins_the_check(
     assert svc.for_suite(db_session, suite).for_check(edited) is None
 
 
-def test_an_edit_refused_for_mixing_inherit_with_a_change_is_a_422_and_changes_nothing(
+def test_a_flag_that_is_not_a_boolean_is_a_422_and_changes_nothing(
     db_session: Any, conn: Connection, admin: User
 ) -> None:
     _, suite = _covered(db_session, conn)
     volume = _named(db_session, suite, cov.VOLUME_CHECK)
     before = (dict(volume.config), volume.warn_threshold)
 
-    with pytest.raises(check_service.CheckConfigInvalidError, match="also changes warn"):
+    with pytest.raises(check_service.CheckConfigInvalidError, match="must be true or false"):
         check_service.update_check(
             db_session,
             suite.id,
             volume.id,
-            config=dict(volume.config),
+            config={**volume.config, KEY: "yes"},
             warn_threshold=Decimal(8),
             actor_id=admin.id,
         )
 
     db_session.refresh(volume)
     assert (dict(volume.config), volume.warn_threshold) == before
+
+
+def test_the_reconciler_reads_the_settings_only_when_it_adds_a_baseline(
+    db_session: Any, conn: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _covered(db_session, conn)
+    reads: list[Any] = []
+    real = svc.for_suite
+
+    def counting(*args: Any, **kwargs: Any) -> svc.SuiteCoverage:
+        reads.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(svc, "for_suite", counting)
+
+    cov.reconcile_connection(db_session, conn, now=NOW)
+
+    assert reads == []
 
 
 def test_setting_thresholds_in_bulk_pins_each_inheriting_check(

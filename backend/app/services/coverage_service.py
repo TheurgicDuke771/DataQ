@@ -211,8 +211,13 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
     # A new baseline inherits (ADR 0047): each run resolves its thresholds and shape. The
     # values stored beside the flag are the ones in effect now, so the row stays a valid
     # anomaly check for export and for any reader of the table.
-    effective = coverage_settings_service.for_suite(session, suite).effective
-    inheriting = {**effective.shape.as_dict(), coverage_settings_service.INHERIT_KEY: True}
+    resolved: list[coverage_settings_service.Effective] = []
+
+    def effective() -> coverage_settings_service.Effective:
+        # Only a pass that adds a baseline pays for the settings read.
+        if not resolved:
+            resolved.append(coverage_settings_service.for_suite(session, suite).effective)
+        return resolved[0]
 
     def add(role: str, **spec: Any) -> None:
         nonlocal created
@@ -225,8 +230,12 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
             role,
             name=name,
             kind="anomaly",
-            config={**metric, **inheriting},
-            thresholds=effective.sensitivity[role].as_dict(),
+            config={
+                **metric,
+                **effective().shape.as_dict(),
+                coverage_settings_service.INHERIT_KEY: True,
+            },
+            thresholds=effective().sensitivity[role].as_dict(),
         )
 
     if "schema" not in roles:
