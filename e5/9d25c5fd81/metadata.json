@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "e59d25c5fd81",
+  "strategy": "manual-commit",
+  "branch": "feature/false-positive-breakdown-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/coverage_service.py",
+    "backend/tests/services/test_coverage_figures.py",
+    "docs/progress.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/dashboard.ts",
+    "frontend/src/components/dashboard/CoveragePanel.tsx",
+    "frontend/tests/components/CoveragePanel.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_figures_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/false_positive_group_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e5/9d25c5fd81/0/metadata.json",
+      "transcript": "/e5/9d25c5fd81/0/full.jsonl",
+      "compact_transcript": "/e5/9d25c5fd81/0/transcript.jsonl",
+      "content_hash": "/e5/9d25c5fd81/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 36512,
+    "cache_read_tokens": 11076294,
+    "output_tokens": 21824,
+    "api_call_count": 22
+  }
+}
