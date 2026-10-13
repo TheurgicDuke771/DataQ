@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b1a1uuta8</task-id>
+<tool-use-id>toolu_01X4b6UcHa1pFtQ3XPUHQLR6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e86383af-6cdc-4853-bf6c-3d69e1f8b515/tasks/b1a1uuta8.output</output-file>
+<status>failed</status>
+<summary>Background command "Read the admin e2e spec layout and start the scratch dev-bypass stack" failed with exit code 144</summary>
+</task-notification>

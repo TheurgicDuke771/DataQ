@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "b9b99c4a1409",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-settings-ui-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "frontend/e2e/admin.spec.ts",
+    "frontend/e2e/assets.spec.ts",
+    "frontend/src/api/assets.ts",
+    "frontend/src/api/coverage.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/assets/CoverageSensitivityBlock.tsx",
+    "frontend/src/components/checks/InheritanceNotice.tsx",
+    "frontend/src/components/coverage-settings/CoverageSettingsForm.tsx",
+    "frontend/src/components/coverage-settings/coverageDraft.ts",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/src/pages/admin/AdminSettings.tsx",
+    "frontend/src/pages/admin/CoveragePanel.tsx",
+    "frontend/tests/components/CoverageSensitivityBlock.test.tsx",
+    "frontend/tests/components/InheritanceNotice.test.tsx",
+    "frontend/tests/components/coverage-settings/coverageDraft.test.ts",
+    "frontend/tests/pages/admin/CoveragePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b9/b99c4a1409/0/metadata.json",
+      "transcript": "/b9/b99c4a1409/0/full.jsonl",
+      "compact_transcript": "/b9/b99c4a1409/0/transcript.jsonl",
+      "content_hash": "/b9/b99c4a1409/0/content_hash.txt",
+      "prompt": "/b9/b99c4a1409/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 70318,
+    "cache_read_tokens": 15869295,
+    "output_tokens": 38359,
+    "api_call_count": 37
+  }
+}
