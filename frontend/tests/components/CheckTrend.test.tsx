@@ -209,7 +209,7 @@ describe('CheckTrend', () => {
           { ts: '2026-07-23T00:00:00Z', value: 150 }, // Thursday — kept
           { ts: '2026-07-24T00:00:00Z', value: 8888 }, // Friday — must be excluded
           { ts: '2026-07-29T00:00:00Z', value: 7777 }, // Wednesday — the last stored period
-        ],
+        ].map((o, i) => (i < 3 ? { ...o, source: 'backfilled' } : o)),
       },
     });
     render(
@@ -226,6 +226,10 @@ describe('CheckTrend', () => {
       await screen.findByText(/Anomaly baseline — learned band for Thursdays/),
     ).toBeInTheDocument();
     expect(screen.getByText(/μ=140\.00/)).toBeInTheDocument();
+    // Three of the five were read from the table on the first run, not measured by a run.
+    expect(
+      screen.getByText(/3 of the 5 stored points were seeded from the table’s own rows/),
+    ).toBeInTheDocument();
   });
 
   it('says a column-profile baseline is per column, never "no observations captured yet"', async () => {

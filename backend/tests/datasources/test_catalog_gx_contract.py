@@ -213,6 +213,7 @@ def test_monitor_fields_match_engine_config_keys() -> None:
     assert by_kind[monitors.FRESHNESS] == ["column"]
     assert sorted(by_kind[monitors.VOLUME]) == ["max_rows", "min_rows"]
     assert sorted(by_kind[monitors.ANOMALY]) == [
+        "backfill",
         "column",
         "date_column",
         "min_points",

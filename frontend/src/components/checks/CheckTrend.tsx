@@ -113,6 +113,8 @@ function bandLabel(band: ThresholdBand): string {
 interface Observation {
   ts: string;
   value: number;
+  /** Seeded from the table's own rows, not measured by a run (a per-period check's first run). */
+  backfilled: boolean;
 }
 
 /**
@@ -136,9 +138,9 @@ function parseObservations(baseline: CheckBaseline | null): Observation[] {
   const out: Observation[] = [];
   for (const entry of raw) {
     if (entry === null || typeof entry !== 'object') continue;
-    const { ts, value } = entry as Record<string, unknown>;
+    const { ts, value, source } = entry as Record<string, unknown>;
     if (typeof ts === 'string' && typeof value === 'number' && Number.isFinite(value)) {
-      out.push({ ts, value });
+      out.push({ ts, value, backfilled: source === 'backfilled' });
     }
   }
   return out;
@@ -351,6 +353,7 @@ function AnomalyBaselinePanel({
   // stored point, so a seasonal band is drawn for that weekday, not for today's.
   const now = nextScoredAt(observations, check);
   const eligible = eligibleValues(observations, meta, now);
+  const seeded = observations.filter((o) => o.backfilled).length;
   const stats = meanStddev(eligible);
   const k =
     check.fail_threshold !== null && check.fail_threshold > 0
@@ -370,6 +373,8 @@ function AnomalyBaselinePanel({
           <>
             Anomaly baseline — learned band{weekdaySuffix} (mean ± {k}σ) · μ={stats.mean.toFixed(2)}{' '}
             · σ={stats.stddev.toFixed(2)} · {eligible.length} points
+            {seeded > 0 &&
+              ` · ${seeded} of the ${observations.length} stored points were seeded from the table’s own rows, not measured by a run`}
           </>
         ) : observations.length === 0 ? (
           // Matches the empty chart below it (#594 review): no observations at

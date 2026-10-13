@@ -31,8 +31,10 @@ from backend.app.datasources.monitors import (
     column_distinct_probe,
     column_profile_statement,
     freshness_age_hours,
+    history_day,
     monitor_expectation_type,
     monitor_outcome,
+    period_history_statement,
     period_statement,
     qualified_table,
     row_count_from_scalar,
@@ -53,6 +55,8 @@ log = get_logger(__name__)
 # Bump only alongside a real payload-shape change; an unrecognised version is treated as "no usable
 # history" (cold start) rather than mis-read — a wrong baseline is worse than a slow one.
 BASELINE_VERSION = 1
+#: The ``source`` of a stored point that was seeded from the table, not measured by a run.
+BACKFILLED = "backfilled"
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,9 @@ class Observation:
 
     ts: datetime
     value: float
+    #: False for a point seeded from the table's own rows (ADR 0048): what the table says
+    #: today about the past, not what it held when a run looked.
+    observed: bool = True
 
 
 # ───────────────────────── measurement ─────────────────────────
@@ -371,7 +378,11 @@ def load_observations(row: MonitorBaseline | None, params: AnomalyParams) -> lis
             ts = datetime.fromisoformat(str(entry.get("ts")))
         except (TypeError, ValueError):
             continue
-        out.append(Observation(ts=as_utc(ts), value=float(value)))
+        out.append(
+            Observation(
+                ts=as_utc(ts), value=float(value), observed=entry.get("source") != BACKFILLED
+            )
+        )
     return out
 
 
@@ -383,7 +394,15 @@ def dump_baseline(observations: list[Observation], params: AnomalyParams) -> dic
         "window": params.window,
         "seasonality": params.seasonality,
         **({"period": signature} if (signature := _period_signature(params)) else {}),
-        "observations": [{"ts": o.ts.isoformat(), "value": o.value} for o in observations],
+        "observations": [
+            {
+                "ts": o.ts.isoformat(),
+                "value": o.value,
+                # Written only on a seeded point, so every other baseline keeps its shape.
+                **({} if o.observed else {"source": BACKFILLED}),
+            }
+            for o in observations
+        ],
     }
 
 
@@ -400,6 +419,63 @@ def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
         "unit": spec.unit,
         "value_column": spec.value_column,
     }
+
+
+def seed_history(
+    connection: Connection,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    params: AnomalyParams,
+    secret_store: SecretStore,
+    before: date,
+) -> list[Observation]:
+    """The periods before ``before`` as the table's own rows describe them today, oldest
+    first, each marked as backfilled (ADR 0048). One scan, over at most the years kept.
+
+    History starts at the first period that has rows: a period with none after that counts
+    as zero, as it would have had a run judged it, but nothing is invented before the table
+    began.
+    """
+    spec = params.period
+    if spec is None:
+        return []
+    start = spec.start_of(before) - spec.history_periods * spec.length
+    with _open_connection(connection, secret_store) as conn:
+        dialect = conn.dialect if catalog is not None else None
+        rows = conn.execute(
+            period_history_statement(
+                qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect),
+                spec,
+                start=start,
+                end=before,
+            )
+        ).all()
+    totals: dict[date, float] = {}
+    for day_value, measure in rows:
+        period = spec.start_of(history_day(day_value))
+        if not start <= period < before:
+            continue  # a session-zone edge can put a boundary row a day outside the range
+        if spec.value_column is None:
+            amount = float(row_count_from_scalar(measure))
+        else:
+            amount = aggregate_value(measure, source=f"SUM({spec.value_column})") or 0.0
+        totals[period] = totals.get(period, 0.0) + amount
+    if not totals:
+        return []
+    out: list[Observation] = []
+    period = min(totals)
+    while period < before:
+        out.append(
+            Observation(
+                ts=datetime.combine(period, time.min, tzinfo=UTC),
+                value=totals.get(period, 0.0),
+                observed=False,
+            )
+        )
+        period += spec.length
+    return out
 
 
 def observation_time(
@@ -431,16 +507,31 @@ def trim(observations: list[Observation], params: AnomalyParams) -> list[Observa
 # ───────────────────────── scoring (pure) ─────────────────────────
 
 
-def eligible_values(
-    observations: list[Observation], *, now: datetime, params: AnomalyParams
-) -> list[float]:
-    """The prior values this run is scored against, newest-last."""
+def _considered(
+    observations: list[Observation], now: datetime, params: AnomalyParams
+) -> list[Observation]:
+    """The prior points this run is scored against, newest-last."""
     considered = (
         [o for o in observations if o.ts.weekday() == now.weekday()]
         if params.seasonality
         else list(observations)
     )
-    return [o.value for o in considered[-params.window :]]
+    return considered[-params.window :]
+
+
+def eligible_values(
+    observations: list[Observation], *, now: datetime, params: AnomalyParams
+) -> list[float]:
+    """The prior values this run is scored against, newest-last."""
+    return [o.value for o in _considered(observations, now, params)]
+
+
+@dataclass(frozen=True)
+class _Seeding:
+    """What seeding produced, and what the result says about it."""
+
+    points: list[Observation]
+    report: dict[str, Any]
 
 
 def score(value: float, priors: list[float]) -> tuple[float, float, float, bool]:
@@ -561,6 +652,9 @@ def build_anomaly_executor(
         # concurrent run of the same check, or one measurement is silently lost.
         row = get_baseline(session, check.id, for_update=persist)
         observations = load_observations(row, params)
+        seeding = _seed_if_empty(params, observations, settled) if persist else None
+        if seeding is not None:
+            observations = seeding.points
         # A per-period metric is about a period, not about when the run happened: its point
         # is stamped with the period, scored against earlier periods only, and written once.
         at, period_fields = observation_time(params, now, settled)
@@ -578,6 +672,15 @@ def build_anomaly_executor(
             payload["baseline_captured_at"] = row.captured_at.isoformat()
             payload["baseline_updated_at"] = row.updated_at.isoformat()
         if params.period is not None:
+            # How much of what this run was scored against the table said about its own
+            # past, as opposed to what a run saw at the time.
+            considered = _considered(earlier, at, params)
+            payload["history"] = {
+                "backfilled": sum(1 for o in considered if not o.observed),
+                "observed": sum(1 for o in considered if o.observed),
+            }
+            if seeding is not None:
+                payload["seeded"] = seeding.report
             # False on a second run inside the same settled period: measured again for this
             # result, but the stored point is the one written when the period was first judged.
             payload["recorded"] = persist and not already_recorded
@@ -598,6 +701,40 @@ def build_anomaly_executor(
         elif not persist:
             payload["dry_run"] = True
         return monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
+
+    def _seed_if_empty(
+        params: AnomalyParams, observations: list[Observation], settled: tuple[date, date] | None
+    ) -> _Seeding | None:
+        """Seed a per-period check that has no usable history (a first run, a dropped
+        baseline, or points bucketed another way). ``None`` when there is nothing to do."""
+        spec = params.period
+        if spec is None or settled is None or observations:
+            return None
+        if not spec.backfill:
+            return _Seeding([], {"status": "off"})
+        try:
+            points = seed_history(
+                connection,
+                table=target_table,
+                schema=target_schema,
+                catalog=target_catalog,
+                params=params,
+                secret_store=secret_store,
+                before=settled[0],
+            )
+        except Exception as exc:
+            # The check still judges this period; it starts with no history, as with
+            # backfill off, and says why. Dropping the baseline tries again.
+            log.warning(
+                "anomaly_history_seed_failed",
+                connection_type=connection.type,
+                error_type=type(exc).__name__,
+            )
+            return _Seeding([], {"status": "failed", "reason": safe_failure_reason(exc)})
+        report: dict[str, Any] = {"status": "done", "points": len(points)}
+        if points:
+            report["from"] = points[0].ts.date().isoformat()
+        return _Seeding(points, report)
 
     def _column_profile_outcome(
         check: Check, config: dict[str, Any], params: AnomalyParams, now: datetime

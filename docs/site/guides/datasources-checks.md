@@ -1256,6 +1256,19 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
 - A period with no rows counts as 0, for the sum as well.
 - Changing `date_column`, `period` or `value_column` starts the history again, because the
   earlier points measured something else. Changing `timezone` or `settle_hours` does not.
+- **The history is seeded on the first run.** One query reads up to three years of past
+  periods from the table's own rows, so the check scores on its first run instead of waiting
+  for `min_points` runs. Seeded points are marked `backfilled` and points a run measured are
+  `observed`, and that mark never changes: a backfilled point is what the table says today
+  about the past, which a restatement or a purge can have altered. Each result's `history`
+  says how many of each it was scored against, and the first result's `seeded` says what the
+  seeding found.
+- Seeding starts at the first period that has rows and counts a later period with none as 0.
+  It is one scan of the table: set `backfill` to `false` for a warehouse that bills per
+  query, or where old rows are archived, and the check starts empty and waits. If the
+  seeding query fails, the check still runs, starts empty and reports `seeded.status:
+  failed`. Dropping the check's baseline seeds it again.
+- A per-period check keeps three years of periods on top of its window.
 
 For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
 "amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges

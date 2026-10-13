@@ -890,6 +890,15 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
       {
+        name: 'backfill',
+        label: 'Seed history from the table',
+        type: 'boolean',
+        optional: true,
+        defaultValue: true,
+        help: 'On its first run the check reads up to three years of past periods from the table’s own rows, in one query, so it can score straight away. Switch off for a warehouse that bills per query or a table whose old rows are archived; the check then starts empty.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
+      },
+      {
         name: 'column',
         label: 'Timestamp column',
         type: 'string',
