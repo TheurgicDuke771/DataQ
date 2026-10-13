@@ -1,0 +1,1 @@
+import{Rt as e,i as t}from"./antd-RGG79qBw.js";import{l as n,t as r}from"./react-XKeT_0Ah.js";var i=r();function a({assetId:r}){let a=n();return r?(0,i.jsx)(t,{icon:(0,i.jsx)(e,{}),color:`blue`,onClick:()=>a(`/assets/${r}`),style:{cursor:`pointer`,marginInlineEnd:0},children:`Asset`}):null}export{a as t};

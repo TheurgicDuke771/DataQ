@@ -1,0 +1,1 @@
+import{r as e,t}from"./react-XKeT_0Ah.js";var n=t();function r({to:t,children:r,block:i=!1,current:a=!1}){return(0,n.jsx)(e,{to:t,className:i?`dq-row-link dq-row-link--block`:`dq-row-link`,"aria-current":a?`page`:void 0,onClick:e=>e.stopPropagation(),children:r})}export{r as t};
