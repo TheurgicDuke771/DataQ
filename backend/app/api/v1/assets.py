@@ -345,8 +345,9 @@ class AssetMetadataUpdate(ApiRequestModel):
 
 class AssetCoverageSettingsRead(ApiModel):
     """One table's sensitivity for its automatic baselines. `override` is what this table
-    stores itself (`null` = none); `effective` is what the hierarchy resolves to for it, with
-    the level each group came from."""
+    stores itself (`null` = none); `effective` is what its automatic checks run on while they
+    still inherit, with the level each group came from. A check a person has edited runs on its
+    own values instead, which this does not show: read the check."""
 
     override: dict[str, Any] | None
     effective: EffectiveCoverageRead

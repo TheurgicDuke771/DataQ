@@ -23,7 +23,12 @@ from backend.app.db.models import (
     Connection,
     Suite,
 )
-from backend.app.services import audit_service, check_service, suite_service
+from backend.app.services import (
+    audit_service,
+    check_service,
+    coverage_settings_service,
+    suite_service,
+)
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     CheckConfigInvalidError,
@@ -66,16 +71,15 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
         session.scalars(select(Check).where(Check.suite_id == suite.id).order_by(*CHECK_ORDER))
     )
     docs: list[dict[str, Any]] = []
+    inherited = coverage_settings_service.inherited_settings(session, checks)
     for c in checks:
         doc: dict[str, Any] = {
             "name": c.name,
             "kind": c.kind,
             "expectation_type": c.expectation_type,
             "dimension": c.dimension,
-            "config": c.config,
-            "warn_threshold": c.warn_threshold,
-            "fail_threshold": c.fail_threshold,
-            "critical_threshold": c.critical_threshold,
+            # An inheriting automatic baseline is written with the values it runs on.
+            **coverage_settings_service.document_fields(c, inherited.get(c.id)),
         }
         # Emitted only when non-default (ADR 0036), like `source_connection` below: pre-engine
         # documents and consumers stay byte-identical.
@@ -294,7 +298,8 @@ def import_suite(
                 else derive_dimension(expectation_type=c["expectation_type"], kind=c["kind"])
             ),
             source_connection_id=source_id,
-            config=c["config"],
+            # An imported check is a person's: it cannot inherit coverage settings (ADR 0047).
+            config=coverage_settings_service.strip_flag(c["config"]),
             warn_threshold=c["warn_threshold"],
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
@@ -360,11 +365,17 @@ def _duplicates(names: list[str]) -> list[str]:
     return sorted({n for n in names if n in seen or seen.add(n)})  # type: ignore[func-returns-value]
 
 
-def _check_diff(existing: Check, doc: dict[str, Any], source_id: uuid.UUID | None) -> list[str]:
-    fields = [
+def _check_diff(
+    existing: Check,
+    doc: dict[str, Any],
+    source_id: uuid.UUID | None,
+    settings: coverage_settings_service.CheckSettings | None = None,
+) -> list[str]:
+    fields = ["expectation_type"] if existing.expectation_type != doc["expectation_type"] else []
+    fields += [
         name
-        for name in ("expectation_type", "config", *_THRESHOLDS)
-        if getattr(existing, name) != doc[name]
+        for name in ("config", *_THRESHOLDS)
+        if coverage_settings_service.document_differs(existing, settings, doc, name)
     ]
     if (existing.engine or GX_ENGINE) != doc.get("engine", GX_ENGINE):
         fields.append("engine")
@@ -418,6 +429,7 @@ def apply_document(
             detail={"duplicate_names": repeated[:20]},
         )
     by_name = {c.name: c for c in existing}
+    inherited = coverage_settings_service.inherited_settings(session, existing)
 
     # (change, document check, resolved comparison source, the suite's check)
     planned: list[tuple[CheckChange, dict[str, Any] | None, uuid.UUID | None, Check | None]] = []
@@ -426,6 +438,17 @@ def apply_document(
             _resolve_source_connection(session, doc) if doc["kind"] == COMPARISON_KIND else None
         )
         current = by_name.get(doc["name"])
+        flag = doc["config"].get(coverage_settings_service.INHERIT_KEY)
+        if current is None or not coverage_settings_service.can_inherit(current):
+            # The flag describes the suite the document came from; a check here that cannot
+            # inherit takes the document's numbers as its own.
+            doc = {**doc, "config": coverage_settings_service.strip_flag(doc["config"])}
+        elif flag is not None and not isinstance(flag, bool):
+            raise SuiteImportInvalidError(
+                f"check {doc['name']!r}: {coverage_settings_service.INHERIT_KEY} must be "
+                "true or false",
+                detail={"check_name": doc["name"]},
+            )
         if current is None:
             planned.append((CheckChange(doc["name"], "create", []), doc, source_id, None))
             continue
@@ -436,7 +459,7 @@ def apply_document(
                 "give the new check a different name",
                 detail={"check_name": doc["name"]},
             )
-        fields = _check_diff(current, doc, source_id)
+        fields = _check_diff(current, doc, source_id, inherited.get(current.id))
         action = "update" if fields else "unchanged"
         planned.append((CheckChange(doc["name"], action, fields), doc, source_id, current))
     unmanaged = [c for c in existing if c.name not in wanted]

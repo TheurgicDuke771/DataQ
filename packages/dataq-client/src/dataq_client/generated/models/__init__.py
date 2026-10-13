@@ -154,6 +154,9 @@ from .incident_read import IncidentRead
 from .incident_resolve_request import IncidentResolveRequest
 from .incident_resolve_request_resolution_type_0 import IncidentResolveRequestResolutionType0
 from .inherited_classification_read import InheritedClassificationRead
+from .inherited_from import InheritedFrom
+from .inherited_from_baseline import InheritedFromBaseline
+from .inherited_from_sensitivity import InheritedFromSensitivity
 from .inherited_source_read import InheritedSourceRead
 from .inventory_sync_read import InventorySyncRead
 from .inventory_sync_read_status import InventorySyncReadStatus
@@ -443,6 +446,9 @@ __all__ = (
     "IncidentResolveRequest",
     "IncidentResolveRequestResolutionType0",
     "InheritedClassificationRead",
+    "InheritedFrom",
+    "InheritedFromBaseline",
+    "InheritedFromSensitivity",
     "InheritedSourceRead",
     "InventorySyncRead",
     "InventorySyncReadStatus",

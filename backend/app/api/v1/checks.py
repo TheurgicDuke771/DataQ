@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -16,9 +17,15 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
-from backend.app.db.models import Connection, User
+from backend.app.db.models import Check, Connection, User
 from backend.app.db.session import get_db
-from backend.app.services import audit_service, live_probe, monitor_baseline, run_service
+from backend.app.services import (
+    audit_service,
+    coverage_settings_service,
+    live_probe,
+    monitor_baseline,
+    run_service,
+)
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
 from backend.app.services.check_service import CheckConfigInvalidError
@@ -81,6 +88,14 @@ class CheckUpdate(ApiRequestModel):
         return value
 
 
+class InheritedFrom(ApiModel):
+    """The level each inherited group came from: this table's override (`asset`), the
+    workspace setting, or the built-in default."""
+
+    sensitivity: coverage_settings_service.Level
+    baseline: coverage_settings_service.Level
+
+
 class CheckRead(ApiModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -108,6 +123,38 @@ class CheckRead(ApiModel):
     # no incident, and it does not count toward dimension coverage. Not the same as a
     # snooze, which still runs the check and only mutes its alerts.
     enabled: bool = True
+    # Non-null on an automatic baseline that takes its thresholds and baseline shape from the
+    # coverage settings (ADR 0047). The three thresholds and the `window` / `min_points` /
+    # `seasonality` in `config` above are then the values in effect now, not the check's own:
+    # they change when an Admin changes the workspace setting or this table's override.
+    # Editing any of them gives the check its own values and makes this null.
+    inherited: InheritedFrom | None = None
+
+
+def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
+    """Checks as the API returns them: an inheriting automatic baseline shows the thresholds
+    and shape it runs on, never the stored snapshot."""
+    inherited = coverage_settings_service.inherited_settings(db, checks)
+    out: list[CheckRead] = []
+    for check in checks:
+        read = CheckRead.model_validate(check)
+        settings = inherited.get(check.id)
+        # The flag is server-owned and never shown: `inherited` says it instead.
+        update: dict[str, Any] = {"config": coverage_settings_service.strip_flag(read.config)}
+        if settings is not None:
+            update = {
+                "config": settings.shown(dict(check.config)),
+                "warn_threshold": settings.sensitivity.warn,
+                "fail_threshold": settings.sensitivity.fail,
+                "critical_threshold": settings.sensitivity.critical,
+                "inherited": InheritedFrom(**settings.levels()),
+            }
+        out.append(read.model_copy(update=update))
+    return out
+
+
+def _read(db: Session, check: Check) -> CheckRead:
+    return _read_all(db, [check])[0]
 
 
 @router.post(
@@ -139,7 +186,7 @@ def create_check(
         enabled=payload.enabled,
         actor_id=current_user.id,
     )
-    return CheckRead.model_validate(check)
+    return _read(db, check)
 
 
 @router.get(
@@ -153,7 +200,7 @@ def list_checks(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[CheckRead]:
     require_permission(db, suite_id, current_user.id, minimum="view")
-    return [CheckRead.model_validate(c) for c in svc.list_checks(db, suite_id)]
+    return _read_all(db, svc.list_checks(db, suite_id))
 
 
 @router.get(
@@ -168,7 +215,7 @@ def get_check(
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckRead:
     require_permission(db, suite_id, current_user.id, minimum="view")
-    return CheckRead.model_validate(svc.get_check(db, suite_id, check_id))
+    return _read(db, svc.get_check(db, suite_id, check_id))
 
 
 @router.patch(
@@ -200,7 +247,7 @@ def update_check(
         enabled=payload.enabled,
         actor_id=current_user.id,
     )
-    return CheckRead.model_validate(check)
+    return _read(db, check)
 
 
 @router.delete(
@@ -281,7 +328,7 @@ def snooze_check(
 ) -> CheckRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.snooze_check(db, suite_id, check_id, hours=payload.hours, actor_id=current_user.id)
-    return CheckRead.model_validate(check)
+    return _read(db, check)
 
 
 @router.delete(
@@ -297,7 +344,7 @@ def clear_check_snooze(
 ) -> CheckRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.clear_check_snooze(db, suite_id, check_id, actor_id=current_user.id)
-    return CheckRead.model_validate(check)
+    return _read(db, check)
 
 
 # ───────────────────────── bulk operations (#1669) ─────────────────
@@ -349,9 +396,7 @@ def bulk_snooze_checks(
     checks = svc.bulk_snooze_checks(
         db, suite_id, payload.check_ids, hours=payload.hours, actor_id=current_user.id
     )
-    return BulkChecksResult(
-        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
-    )
+    return BulkChecksResult(affected=len(checks), checks=_read_all(db, checks))
 
 
 class BulkEnabledRequest(BulkChecksRequest):
@@ -378,7 +423,7 @@ def bulk_set_checks_enabled(
     checks, changed = svc.bulk_set_enabled(
         db, suite_id, payload.check_ids, enabled=payload.enabled, actor_id=current_user.id
     )
-    return BulkChecksResult(affected=changed, checks=[CheckRead.model_validate(c) for c in checks])
+    return BulkChecksResult(affected=changed, checks=_read_all(db, checks))
 
 
 @router.post(
@@ -397,9 +442,7 @@ def bulk_unsnooze_checks(
     checks = svc.bulk_snooze_checks(
         db, suite_id, payload.check_ids, hours=None, actor_id=current_user.id
     )
-    return BulkChecksResult(
-        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
-    )
+    return BulkChecksResult(affected=len(checks), checks=_read_all(db, checks))
 
 
 @router.post(
@@ -469,9 +512,7 @@ def bulk_set_thresholds(
         critical_threshold=payload.threshold("critical_threshold"),
         actor_id=current_user.id,
     )
-    return BulkChecksResult(
-        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
-    )
+    return BulkChecksResult(affected=len(checks), checks=_read_all(db, checks))
 
 
 # ───────────────────────── version history (#280) ──────────────────
@@ -544,7 +585,7 @@ def restore_check_version(
     """
     require_permission(db, suite_id, current_user.id, minimum="edit")
     check = svc.restore_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
-    return CheckRead.model_validate(check)
+    return _read(db, check)
 
 
 # ───────────────────────── result history (trend, ADR 0022) ─────────

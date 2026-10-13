@@ -83,7 +83,9 @@ class EffectiveCoverageRead(ApiModel):
 class CoverageSettingsRead(ApiModel):
     """The workspace's sensitivity for automatic baselines. `setting` is exactly what is
     stored (a group it omits falls to the built-in default); `effective` is the result for a
-    table with no override of its own. `is_default` means nothing is stored."""
+    table with no override of its own. `is_default` means nothing is stored. A change reaches
+    every automatic check that still inherits on its next run; a check a person has edited
+    keeps its own values."""
 
     setting: dict[str, Any]
     effective: EffectiveCoverageRead

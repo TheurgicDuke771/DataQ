@@ -168,13 +168,6 @@ def test_the_ceiling_is_the_deviation_a_never_varying_value_reports() -> None:
         svc.validate({"sensitivity": {"volume": {**at_ceiling, "critical": 99.5}}})
 
 
-def test_automatic_checks_are_created_with_the_built_in_defaults() -> None:
-    from backend.app.services import coverage_service
-
-    assert coverage_service._ANOMALY_THRESHOLDS == svc.DEFAULT_SENSITIVITY.as_dict()
-    assert coverage_service._ANOMALY_WINDOW == svc.DEFAULT_SHAPE.as_dict()
-
-
 def test_a_refused_save_stores_nothing(db_session: Any) -> None:
     admin = _admin(db_session)
 

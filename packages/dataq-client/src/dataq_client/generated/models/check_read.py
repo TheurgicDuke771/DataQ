@@ -13,6 +13,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.check_read_config import CheckReadConfig
+    from ..models.inherited_from import InheritedFrom
 
 
 T = TypeVar("T", bound="CheckRead")
@@ -35,6 +36,7 @@ class CheckRead:
         alert_snoozed_until (datetime.datetime | None | Unset):
         dimension (None | str | Unset):
         enabled (bool | Unset):  Default: True.
+        inherited (InheritedFrom | None | Unset):
         origin (str | Unset):  Default: 'user'.
         source_connection_id (None | Unset | UUID):
     """
@@ -52,11 +54,14 @@ class CheckRead:
     alert_snoozed_until: datetime.datetime | None | Unset = UNSET
     dimension: None | str | Unset = UNSET
     enabled: bool | Unset = True
+    inherited: InheritedFrom | None | Unset = UNSET
     origin: str | Unset = "user"
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.inherited_from import InheritedFrom
+
         config = self.config.to_dict()
 
         critical_threshold: float | None
@@ -96,6 +101,14 @@ class CheckRead:
 
         enabled = self.enabled
 
+        inherited: dict[str, Any] | None | Unset
+        if isinstance(self.inherited, Unset):
+            inherited = UNSET
+        elif isinstance(self.inherited, InheritedFrom):
+            inherited = self.inherited.to_dict()
+        else:
+            inherited = self.inherited
+
         origin = self.origin
 
         source_connection_id: None | str | Unset
@@ -128,6 +141,8 @@ class CheckRead:
             field_dict["dimension"] = dimension
         if enabled is not UNSET:
             field_dict["enabled"] = enabled
+        if inherited is not UNSET:
+            field_dict["inherited"] = inherited
         if origin is not UNSET:
             field_dict["origin"] = origin
         if source_connection_id is not UNSET:
@@ -138,6 +153,7 @@ class CheckRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_read_config import CheckReadConfig
+        from ..models.inherited_from import InheritedFrom
 
         d = dict(src_dict)
         config = CheckReadConfig.from_dict(d.pop("config"))
@@ -203,6 +219,23 @@ class CheckRead:
 
         enabled = d.pop("enabled", UNSET)
 
+        def _parse_inherited(data: object) -> InheritedFrom | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                inherited_type_0 = InheritedFrom.from_dict(data)
+
+                return inherited_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(InheritedFrom | None | Unset, data)
+
+        inherited = _parse_inherited(d.pop("inherited", UNSET))
+
         origin = d.pop("origin", UNSET)
 
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
@@ -236,6 +269,7 @@ class CheckRead:
             alert_snoozed_until=alert_snoozed_until,
             dimension=dimension,
             enabled=enabled,
+            inherited=inherited,
             origin=origin,
             source_connection_id=source_connection_id,
         )

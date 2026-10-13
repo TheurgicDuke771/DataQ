@@ -105,8 +105,18 @@ and a wrong claim is a false alert on every run.
    >   server-owned: `true` on every check the reconciler creates from now on, carried over
    >   unchanged by an edit that does not touch these values, and refused on a check that is not
    >   automatic. Editing any threshold, the window, the minimum points or seasonality sets it to
-   >   `false` and pins all of them at the values then in effect. Restoring a version restores
-   >   that version's flag, and a suite document carries it.
+   >   `false` and pins all of them at the values then in effect. "Editing" means sending a value
+   >   that differs from the one in effect, which is what every read surface shows. The read
+   >   surfaces do not return the flag (they report inheritance in a field of their own), so a
+   >   client that edits what it read and sends it back is making an ordinary edit. A sent flag
+   >   decides outright: `false` pins, and `true` makes the check inherit, in which case the
+   >   numbers sent beside it are a snapshot that no run uses. Restoring a version restores that
+   >   version's flag.
+   > - **Suite documents.** An inheriting check is exported with the flag and the values it
+   >   runs on. Applying a document follows the edit rule, and its plan reports no change for
+   >   numbers it would not apply. A check that cannot inherit (a new suite made by import, or
+   >   a person's suite a document is applied to) drops the flag and takes the numbers as its
+   >   own, so it alerts where the source did.
    > - **Checks created before this amendment** have no flag. One inherits while its stored
    >   values equal the values the reconciler wrote then (3 / 4 / 6; window 8, minimum 4,
    >   seasonality on), which is the set nobody has tuned. That signature is fixed here, apart

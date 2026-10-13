@@ -73,6 +73,7 @@ from backend.app.services import (
     check_service,
     connection_service,
     coverage_service,
+    coverage_settings_service,
     credential_health,
     dashboard_service,
     dryrun_service,
@@ -92,6 +93,7 @@ from backend.app.services import (
     suite_service,
     trigger_binding_service,
 )
+from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -913,7 +915,11 @@ def get_adf_pipeline_status(
     return get_pipeline_status(provider=provider, status=status, limit=limit, offset=offset)
 
 
-def _check_summary(check: Check) -> dict[str, Any]:
+def _one_inherited(session: Session, check: Check) -> CheckSettings | None:
+    return coverage_settings_service.inherited_settings(session, [check]).get(check.id)
+
+
+def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict[str, Any]:
     """The LLM-shaped view of one check — shared by `list_checks`/`get_check` so
     the two can't describe the same row differently.
 
@@ -946,10 +952,20 @@ def _check_summary(check: Check) -> dict[str, Any]:
         "source_connection_id": (
             str(check.source_connection_id) if check.source_connection_id else None
         ),
-        "config": check.config,
-        "warn_threshold": _num(check.warn_threshold),
-        "fail_threshold": _num(check.fail_threshold),
-        "critical_threshold": _num(check.critical_threshold),
+        # An automatic baseline that inherits (ADR 0047) runs on the coverage settings, not on
+        # its stored columns: show what it runs on, and say so, or "what does this check alert
+        # at?" would be answered from numbers no run uses.
+        "config": (
+            inherited.shown(dict(check.config))
+            if inherited
+            else coverage_settings_service.strip_flag(check.config)
+        ),
+        "warn_threshold": inherited.sensitivity.warn if inherited else _num(check.warn_threshold),
+        "fail_threshold": inherited.sensitivity.fail if inherited else _num(check.fail_threshold),
+        "critical_threshold": (
+            inherited.sensitivity.critical if inherited else _num(check.critical_threshold)
+        ),
+        "inherited_from": inherited.levels() if inherited else None,
         # Operational, not config: an LLM asked "why did nobody get alerted?"
         # needs to see a live snooze (#370). Null = alerts are active.
         #
@@ -989,6 +1005,15 @@ def list_checks(
     alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
     for how those checks last performed, use ``get_suite_results``.
 
+    **A non-null ``inherited_from`` means the thresholds are not the check's own.** It
+    appears on the automatic baselines of a system-created suite (row count, freshness
+    and column profile anomaly checks). The three thresholds and the ``window`` /
+    ``min_points`` / ``seasonality`` in ``config`` are then the values in effect *now*,
+    taken from this table's override (``asset``), the workspace coverage setting
+    (``workspace``) or the built-in default (``default``), and they change whenever an
+    admin changes that setting. This tool cannot show the setting itself or who changed
+    it. Null means the check runs on its own stored values.
+
     **``enabled: false`` means the check is switched off and no run evaluates it.**
     Do not describe such a check as something the suite verifies. It still appears
     here, and its last result from before it was switched off still appears in older
@@ -1014,12 +1039,14 @@ def list_checks(
         # cost this cap actually targets is the CONFIG payload crossing the wire
         # into a context window, not the fetch. `total` keeps the truncation
         # honest — a bare list would let an LLM report "the suite has 200 checks".
+        page = checks[:limit]
+        inherited = coverage_settings_service.inherited_settings(session, page)
         return {
             "suite_id": suite_id,
             "total": len(checks),
             "returned": min(len(checks), limit),
             "truncated": len(checks) > limit,
-            "checks": [_check_summary(c) for c in checks[:limit]],
+            "checks": [_check_summary(c, inherited.get(c.id)) for c in page],
         }
 
 
@@ -1032,7 +1059,8 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
     explain what a failing check was actually asserting. Returns the same fields
     as ``list_checks`` (including ``source_connection_id`` — the baseline a
     comparison check diffs against) plus when the check was created and last
-    modified.
+    modified. As there, a non-null ``inherited_from`` means the thresholds and window
+    shown are the coverage settings in effect now, not values stored on the check.
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -1041,7 +1069,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
         require_permission(session, sid, user.id, minimum="view")
         check = check_service.get_check(session, sid, cid)
         return {
-            **_check_summary(check),
+            **_check_summary(check, _one_inherited(session, check)),
             "suite_id": suite_id,
             "created_at": check.created_at.isoformat(),
             "updated_at": check.updated_at.isoformat(),
@@ -1148,6 +1176,15 @@ def list_check_versions(
     ``changed_by_name`` is null when the editor was a system actor or a user who
     has since been removed — read that as "the author is not recorded", not as
     "nobody edited it".
+
+    **For an automatic baseline these are stored values, not what runs used.** A
+    snapshot whose ``config`` has ``inherit_coverage_settings: true`` belongs to a
+    check that was taking its thresholds and window from the coverage settings at
+    the time (see ``inherited_from`` on ``get_check``). Its thresholds here are the
+    numbers stored when the check was created, and a change to the workspace or
+    table setting creates **no version**. So identical thresholds across versions do
+    not show that the alerting level never changed. What each past run was scored
+    against is on its result (``expected_value.thresholds`` in ``get_run_results``).
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -1981,6 +2018,13 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     "the whole suite", pair this with ``list_schedules``,
     ``list_trigger_bindings`` and ``get_notification_config``.
 
+    **An automatic baseline that inherits its thresholds** (``inherited_from`` on
+    ``get_check``) is written with the values in effect at the moment of export and
+    ``inherit_coverage_settings: true`` in its config. Re-applied to the same suite
+    it keeps inheriting. Imported as a new suite, or applied to a suite a person
+    authored, the check cannot inherit: it is fixed at the exported numbers and
+    later changes to the coverage settings do not reach it.
+
     A comparison check's baseline connection appears as its ``(name, env)``
     pair, never as an id or anything resolvable to a secret. Requires view
     access to the suite.
@@ -2340,6 +2384,29 @@ def update_check(
     tier comes back ``null``. The result still has to be a valid check: a kind that needs a
     fail or critical threshold refuses to lose its last one, and nothing changes.
 
+    **Editing an inherited threshold detaches the check from the coverage settings.**
+    When ``get_check`` shows a non-null ``inherited_from``, the thresholds and the
+    ``window`` / ``min_points`` / ``seasonality`` in its config come from the workspace
+    or table coverage setting. Changing any one of them here gives the check its own
+    values from then on: all of them are fixed at what was in effect, with your change
+    applied, and later changes to the setting no longer reach it. Tell the user that
+    before making the change. The result comes back with ``inherited_from: null``.
+    Renaming or disabling the check does not detach it, and neither does sending back a
+    value equal to the one in effect. Leaving ``window`` / ``min_points`` /
+    ``seasonality`` out of a replacement ``config`` leaves them inherited; it does not
+    reset them.
+
+    To hand a detached automatic check back to the settings, send its config with
+    ``"inherit_coverage_settings": true`` added. Any thresholds or window values sent in
+    that same call are **not applied**: the check runs on the settings, and the result
+    shows those values with ``inherited_from`` set. That key is accepted only on the
+    automatic baselines. ``list_checks``, ``get_check`` and this tool do not return it in
+    ``config`` (``inherited_from`` says the same thing); ``export_suite`` and
+    ``list_check_versions`` do, because they show the stored definition. If the check
+    was detached, the numbers sent with ``true`` are stored and appear in its version
+    history, but no run uses them. This tool cannot change the setting itself, which is
+    an admin action in the app.
+
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
     empty string, which would set that value, not clear it. If an earlier version
@@ -2405,7 +2472,7 @@ def update_check(
             enabled=enabled,
             actor_id=user.id,
         )
-        return _check_summary(check)
+        return _check_summary(check, _one_inherited(session, check))
 
 
 @mcp.tool
@@ -2443,6 +2510,14 @@ def restore_check_version(
     exactly as it was. That is deliberate: it prevents reinstating a definition
     the authoring path would no longer accept.
 
+    **On an automatic baseline a restore puts back whether it inherited, not
+    necessarily its numbers.** If the snapshot was taken while the check inherited
+    its thresholds from the coverage settings, the check inherits again and runs on
+    today's setting, whatever thresholds the snapshot shows; if the snapshot was a
+    detached one, the check is detached again at the snapshot's numbers. Read
+    ``inherited_from`` and the thresholds in the result and report those, not the
+    snapshot's.
+
     A check's kind is immutable and is never changed by a restore. Requires edit
     access to the suite.
     """
@@ -2451,7 +2526,10 @@ def restore_check_version(
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.restore_check_version(session, sid, cid, version_no, actor_id=user.id)
-        return {**_check_summary(check), "restored_from_version": version_no}
+        return {
+            **_check_summary(check, _one_inherited(session, check)),
+            "restored_from_version": version_no,
+        }
 
 
 @mcp.tool
