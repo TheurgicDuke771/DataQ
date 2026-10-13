@@ -527,7 +527,11 @@ def _dry_run_anomaly(
                 secret_store=secret_store,
                 now=now,
             )
-            payload = anomaly_service.build_score_payload(value, [], params)
+            payload = {
+                **anomaly_service.build_score_payload(value, [], params),
+                # Which period a per-period metric measured (ADR 0048).
+                **anomaly_service.observation_time(params, now)[1],
+            }
     except MonitorConfigError as exc:
         # DataQ-authored and safe to echo (a bad column, a non-SQL datasource, an
         # empty table) — the actionable half of a failed preview.

@@ -246,7 +246,8 @@ def test_a_bad_anomaly_target_metric_is_echoed_bounded() -> None:
     # The dry-run door reaches anomaly_params with no size cap in front of it.
     with pytest.raises(MonitorConfigError) as exc_info:
         monitors.anomaly_params({"target_metric": "x" * 100_000})
-    assert len(str(exc_info.value)) < 300
+    # The echo is capped at 200 characters; the rest is the list of accepted metrics.
+    assert len(str(exc_info.value)) < 400
 
 
 def test_unknown_kind_raises() -> None:

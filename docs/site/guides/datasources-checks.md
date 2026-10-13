@@ -1231,6 +1231,33 @@ For example, with `{"target_metric": "column_profile", "window": 8, "min_points"
 the next run reports `customer_email` · `null_pct` · value `100` against a mean of about
 `2`, and fails.
 
+**Per-period metrics** watch a value for each calendar day or week instead of the whole
+table: `period_row_count` is the rows whose date falls in the period, and `period_sum` is
+the sum of a numeric column over them. Use them for a table that only grows, where the
+whole-table row count has no "normal" to return to: orders per day, sales amount per week.
+
+- `date_column` says which column dates a row, `period` is `day` or `week` (Monday to
+  Sunday), and `period_sum` also names a `value_column`.
+- Only **complete** periods are judged. `timezone` (an IANA name, default `UTC`) decides
+  when a day ends, and a period is judged once it has been closed for `settle_hours`
+  (default 6), so a suite that runs just after midnight does not judge yesterday before the
+  nightly load has landed. Raise it for a table that fills in slowly.
+- Each period gets **one** stored point, written the first time it is judged. Running the
+  suite again the same day measures the period again and reports it, but the baseline keeps
+  the first value, and rows that arrive later do not revise it. The result's `recorded` field
+  says whether this run stored a point.
+- A row is placed by the date the warehouse returns for `date_column`. A timestamp with a
+  time zone is read in the warehouse session's zone, which DataQ does not set, so for such a
+  column `timezone` only decides when a period counts as complete.
+- A period with no rows counts as 0, for the sum as well.
+- Changing `date_column`, `period`, `value_column` or `timezone` starts the history again,
+  because the earlier points measured something else.
+
+For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
+"amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges
+yesterday's sales each morning against the fourteen days before it. The check editor does
+not offer these two metrics yet; create them through the API or MCP.
+
 ### Comparison check (all datasources — ADR 0015)
 
 *Does this dataset reconcile against that one?* A comparison check diffs the suite's

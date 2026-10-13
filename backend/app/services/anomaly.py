@@ -6,7 +6,7 @@ import math
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from backend.app.datasources.monitors import (
     VOLUME,
     AnomalyParams,
     MonitorConfigError,
+    aggregate_value,
     anomaly_params,
     build_monitor_statement,
     column_distinct_probe,
@@ -32,6 +33,7 @@ from backend.app.datasources.monitors import (
     freshness_age_hours,
     monitor_expectation_type,
     monitor_outcome,
+    period_statement,
     qualified_table,
     row_count_from_scalar,
 )
@@ -74,11 +76,20 @@ def measure_metric(
     secret_store: SecretStore,
     now: datetime,
 ) -> float:
-    """This run's raw measurement of the configured ``target_metric``."""
+    """This run's raw measurement of the configured ``target_metric``. A per-period metric
+    measures the most recent settled period as of ``now`` (ADR 0048)."""
     try:
         with _open_connection(connection, secret_store) as conn:
             dialect = conn.dialect if catalog is not None else None
-            if params.target_metric == ROW_COUNT_METRIC:
+            if params.period is not None:
+                start, end = params.period.settled(now)
+                statement = period_statement(
+                    qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect),
+                    params.period,
+                    start=start,
+                    end=end,
+                )
+            elif params.target_metric == ROW_COUNT_METRIC:
                 statement = build_monitor_statement(
                     VOLUME, table=table, schema=schema, catalog=catalog, config={}, dialect=dialect
                 )
@@ -96,6 +107,12 @@ def measure_metric(
         raise MonitorConfigError(
             f"anomaly monitors need a SQL datasource, not {connection.type!r}"
         ) from exc
+    if params.period is not None:
+        if params.period.value_column is None:
+            return float(row_count_from_scalar(scalar))
+        # SUM over no rows is NULL: nothing was sold in the period, which is a zero.
+        summed = aggregate_value(scalar, source=f"SUM({params.period.value_column})")
+        return 0.0 if summed is None else summed
     if params.target_metric == ROW_COUNT_METRIC:
         return float(row_count_from_scalar(scalar))
     source = f"MAX({params.column})"
@@ -332,6 +349,10 @@ def load_observations(row: MonitorBaseline | None, params: AnomalyParams) -> lis
         return []
     if payload.get("target_metric") != params.target_metric:
         return []
+    # Points bucketed another way (a different date column, days against weeks) are not this
+    # check's history.
+    if payload.get("period") != _period_signature(params):
+        return []
     raw = payload.get("observations")
     if not isinstance(raw, list):
         return []
@@ -359,7 +380,40 @@ def dump_baseline(observations: list[Observation], params: AnomalyParams) -> dic
         "target_metric": params.target_metric,
         "window": params.window,
         "seasonality": params.seasonality,
+        **({"period": signature} if (signature := _period_signature(params)) else {}),
         "observations": [{"ts": o.ts.isoformat(), "value": o.value} for o in observations],
+    }
+
+
+def _period_signature(params: AnomalyParams) -> dict[str, Any] | None:
+    """What a per-period check's stored points were bucketed by; ``None`` for other metrics
+    (absent from their payload, so baselines written before this stay readable)."""
+    spec = params.period
+    if spec is None:
+        return None
+    return {
+        "date_column": spec.date_column,
+        "unit": spec.unit,
+        "value_column": spec.value_column,
+        "timezone": spec.timezone,
+    }
+
+
+def observation_time(params: AnomalyParams, now: datetime) -> tuple[datetime, dict[str, Any]]:
+    """When this run's point is dated, and the period fields its result carries. A per-period
+    point is dated at the start of its period (a calendar label, stored as midnight UTC)."""
+    spec = params.period
+    if spec is None:
+        return now, {}
+    start, end = spec.settled(now)
+    return datetime.combine(start, time.min, tzinfo=UTC), {
+        "period": {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "unit": spec.unit,
+            "timezone": spec.timezone,
+            "settle_hours": spec.settle_hours,
+        }
     }
 
 
@@ -437,6 +491,7 @@ def build_anomaly_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Callable[[Check], CheckOutcome]:
     """A per-run executor for `anomaly` checks (the #592/#794 stateful pattern).
 
@@ -456,7 +511,7 @@ def build_anomaly_executor(
         config = dict(check.config)
         if inherited is not None:
             config = inherited.config(config)
-        now = datetime.now(UTC)
+        now = clock()
         try:
             params = anomaly_params(config)
             if inherited is not None:
@@ -498,8 +553,15 @@ def build_anomaly_executor(
         # concurrent run of the same check, or one measurement is silently lost.
         row = get_baseline(session, check.id, for_update=persist)
         observations = load_observations(row, params)
-        priors = eligible_values(observations, now=now, params=params)
-        payload = build_score_payload(value, priors, params)
+        # A per-period metric is about a period, not about when the run happened: its point
+        # is stamped with the period, scored against earlier periods only, and written once.
+        at, period_fields = observation_time(params, now)
+        earlier = (
+            [o for o in observations if o.ts < at] if params.period is not None else observations
+        )
+        already_recorded = params.period is not None and any(o.ts == at for o in observations)
+        priors = eligible_values(earlier, now=at, params=params)
+        payload = {**build_score_payload(value, priors, params), **period_fields}
         if row is not None:
             # BOTH timestamps, because they answer different questions and only one of them moves:
             # `captured_at` is when learning STARTED (the row's first capture — no `onupdate`,
@@ -507,8 +569,12 @@ def build_anomaly_executor(
             # written.
             payload["baseline_captured_at"] = row.captured_at.isoformat()
             payload["baseline_updated_at"] = row.updated_at.isoformat()
-        if persist:
-            kept = trim([*observations, Observation(ts=now, value=value)], params)
+        if params.period is not None:
+            # False on a second run inside the same settled period: measured again for this
+            # result, but the stored point is the one written when the period was first judged.
+            payload["recorded"] = persist and not already_recorded
+        if persist and not already_recorded:
+            kept = trim([*observations, Observation(ts=at, value=value)], params)
             baseline = dump_baseline(kept, params)
             if row is None:
                 insert_baseline_if_absent(
@@ -516,7 +582,7 @@ def build_anomaly_executor(
                 )
             else:
                 row.baseline = baseline
-        else:
+        elif not persist:
             payload["dry_run"] = True
         return monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
 

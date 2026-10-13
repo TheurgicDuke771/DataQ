@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
@@ -314,7 +314,22 @@ FRESHNESS_AGE_METRIC = "freshness_age_hours"
 COLUMN_PROFILE_METRIC = "column_profile"
 # RAW quantities, not other monitors' banded metrics — an anomaly check is
 # self-contained and never depends on a sibling check.
-ANOMALY_TARGET_METRICS = (ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC, COLUMN_PROFILE_METRIC)
+# A value per calendar period, bucketed by a date column (ADR 0048): the rows in the period,
+# or the sum of a numeric column over them.
+PERIOD_ROW_COUNT_METRIC = "period_row_count"
+PERIOD_SUM_METRIC = "period_sum"
+PERIOD_METRICS = (PERIOD_ROW_COUNT_METRIC, PERIOD_SUM_METRIC)
+ANOMALY_TARGET_METRICS = (
+    ROW_COUNT_METRIC,
+    FRESHNESS_AGE_METRIC,
+    COLUMN_PROFILE_METRIC,
+    *PERIOD_METRICS,
+)
+PERIOD_UNITS = ("day", "week")
+_PERIOD_KEYS = ("date_column", "period", "value_column", "timezone", "settle_hours")
+_SETTLE_HOURS_DEFAULT = 6
+#: A week: a longer wait is a different check schedule, not a settle delay.
+_SETTLE_HOURS_MAX = 168
 #: Columns one column_profile run measures (first N by table order; the rest are reported).
 COLUMN_PROFILE_MAX_COLUMNS = 100
 
@@ -330,6 +345,40 @@ ANOMALY_DEGENERATE_Z = 99.0
 
 
 @dataclass(frozen=True)
+class PeriodSpec:
+    """How a per-period metric buckets its table (ADR 0048)."""
+
+    date_column: str
+    #: ``day`` or ``week`` (Monday to Sunday).
+    unit: str
+    #: The summed column for ``period_sum``; ``None`` counts rows.
+    value_column: str | None
+    #: Decides which periods are complete. Rows are bucketed by the date the warehouse
+    #: returns, which this does not change.
+    timezone: str
+    #: A period is judged only once it has been closed this long.
+    settle_hours: int
+
+    @property
+    def length(self) -> timedelta:
+        return timedelta(days=7 if self.unit == "week" else 1)
+
+    def start_of(self, day: date) -> date:
+        """The first day of the period ``day`` falls in."""
+        return day - timedelta(days=day.weekday()) if self.unit == "week" else day
+
+    def settled(self, now: datetime) -> tuple[date, date]:
+        """``[start, end)`` of the most recent period closed for at least ``settle_hours``."""
+        from zoneinfo import ZoneInfo
+
+        # The delay is taken off in absolute time, then read on the local calendar, so a
+        # daylight-saving change cannot move the cut by an hour.
+        cutoff = (now - timedelta(hours=self.settle_hours)).astimezone(ZoneInfo(self.timezone))
+        end = self.start_of(cutoff.date())
+        return end - self.length, end
+
+
+@dataclass(frozen=True)
 class AnomalyParams:
     """A validated `anomaly` check config."""
 
@@ -338,6 +387,8 @@ class AnomalyParams:
     window: int
     min_points: int
     seasonality: bool
+    #: Set exactly for the per-period metrics.
+    period: PeriodSpec | None = None
     #: Keep the seasonal horizon even with seasonality off (ADR 0047): a check that inherits its
     #: shape must not lose history when an Admin switches seasonality off and on again.
     retain_seasonal_horizon: bool = False
@@ -405,6 +456,88 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
         window=window,
         min_points=min_points,
         seasonality=seasonality,
+        period=_period_spec(config, str(target_metric)),
+    )
+
+
+def _period_spec(config: dict[str, Any], target_metric: str) -> PeriodSpec | None:
+    """The bucketing of a per-period metric; its keys are refused on any other metric, where
+    silently ignoring one would mislead the author about what is watched."""
+    if target_metric not in PERIOD_METRICS:
+        stray = [key for key in _PERIOD_KEYS if config.get(key) is not None]
+        if stray:
+            raise MonitorConfigError(
+                f"anomaly {stray[0]} applies only to target_metric "
+                f"{' or '.join(repr(m) for m in PERIOD_METRICS)}; {target_metric!r} takes none"
+            )
+        return None
+    date_column = _ident(config.get("date_column"), what="anomaly date_column")
+    unit = config.get("period", "day")
+    if unit not in PERIOD_UNITS:
+        raise MonitorConfigError(
+            f"anomaly period must be one of {', '.join(PERIOD_UNITS)}: {_echo(unit)}"
+        )
+    value_column = config.get("value_column")
+    if target_metric == PERIOD_SUM_METRIC:
+        value_column = _ident(value_column, what="anomaly value_column")
+    elif value_column is not None:
+        raise MonitorConfigError(
+            f"anomaly value_column applies only to target_metric={PERIOD_SUM_METRIC!r}; "
+            f"{target_metric!r} counts rows"
+        )
+    timezone = config.get("timezone", "UTC")
+    if not isinstance(timezone, str) or not _is_timezone(timezone):
+        raise MonitorConfigError(
+            f"anomaly timezone must be an IANA time zone such as UTC or Europe/London: "
+            f"{_echo(timezone)}"
+        )
+    settle_hours = _anomaly_int(
+        config, "settle_hours", _SETTLE_HOURS_DEFAULT, low=0, high=_SETTLE_HOURS_MAX
+    )
+    return PeriodSpec(
+        date_column=date_column,
+        unit=str(unit),
+        value_column=value_column,
+        timezone=timezone,
+        settle_hours=settle_hours,
+    )
+
+
+def _is_timezone(name: str) -> bool:
+    from zoneinfo import ZoneInfo
+
+    try:
+        ZoneInfo(name)
+    except (KeyError, ValueError, OSError):  # unknown key, a path-like name, an unreadable file
+        return False
+    return True
+
+
+def period_statement(
+    target: TableClause, spec: PeriodSpec, *, start: date, end: date
+) -> Select[Any]:
+    """One scalar: the rows, or the summed column, whose date falls in ``[start, end)``.
+
+    The column is compared to the dates directly, not cast, so a partition or an index on it
+    is still used; a timestamp column is compared from midnight in the warehouse session's
+    zone.
+    """
+    from sqlalchemy import Date, bindparam, func, select
+    from sqlalchemy import column as sql_column
+
+    when: Any = sql_column(folding_identifier(spec.date_column))
+    measure = (
+        func.count()
+        if spec.value_column is None
+        else func.sum(sql_column(folding_identifier(spec.value_column)))
+    )
+    return (
+        select(measure)
+        .select_from(target)
+        .where(
+            when >= bindparam("period_start", start, type_=Date),
+            when < bindparam("period_end", end, type_=Date),
+        )
     )
 
 
@@ -460,6 +593,11 @@ def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Chec
     }
     if params.column is not None:
         expected["column"] = params.column
+    if params.period is not None:
+        expected["date_column"] = params.period.date_column
+        expected["period"] = params.period.unit
+        if params.period.value_column is not None:
+            expected["value_column"] = params.period.value_column
     if scalar.get("insufficient_history"):
         return CheckOutcome(
             expectation_type=expectation_type,
