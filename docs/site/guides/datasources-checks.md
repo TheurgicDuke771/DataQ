@@ -746,6 +746,15 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
   last 30 days **and said what they were**, the share marked false positive. Both show the counts
   behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
+  Under it the same rate is split **by automatic check** (row count, freshness, column profile,
+  schema, and other checks in the automatic suite) and **by connection**, each as "false
+  positives of stated". Only a check or connection with a stated resolution is listed; one that
+  is missing was not measured. This is where to look before loosening a threshold: if the column
+  profile accounts for most of the false positives, loosen that check's sensitivity in the
+  coverage settings and leave the others alone. The settings govern row count, freshness and
+  column profile only, and only checks that still inherit them. A schema check has no
+  threshold, and "other checks" (accepted suggestions and checks someone added to the suite)
+  are tuned on the check itself.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 

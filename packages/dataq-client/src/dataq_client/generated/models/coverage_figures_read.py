@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from ..models.false_positive_group_read import FalsePositiveGroupRead
+
 
 T = TypeVar("T", bound="CoverageFiguresRead")
 
@@ -27,6 +31,11 @@ class CoverageFiguresRead:
     stated — which is "not measured", not "no false positives". Auto-resolved incidents
     are in none of these numbers.
 
+    `false_positives_by_baseline` and `false_positives_by_connection` split that same rate
+    by which automatic check the incident was on and by connection. Each lists only slices
+    with a stated resolution and sums to `stated`. A slice over one or two incidents is an
+    anecdote; read `stated` beside its `rate`.
+
         Attributes:
             assets_total (int):
             assets_watched (int):
@@ -37,6 +46,8 @@ class CoverageFiguresRead:
             false_positive (int):
             false_positive_rate (float | None):
             false_positive_window_days (int):
+            false_positives_by_baseline (list[FalsePositiveGroupRead]):
+            false_positives_by_connection (list[FalsePositiveGroupRead]):
             resolved (int):
             stated (int):
             unstated (int):
@@ -51,6 +62,8 @@ class CoverageFiguresRead:
     false_positive: int
     false_positive_rate: float | None
     false_positive_window_days: int
+    false_positives_by_baseline: list[FalsePositiveGroupRead]
+    false_positives_by_connection: list[FalsePositiveGroupRead]
     resolved: int
     stated: int
     unstated: int
@@ -77,6 +90,16 @@ class CoverageFiguresRead:
 
         false_positive_window_days = self.false_positive_window_days
 
+        false_positives_by_baseline = []
+        for false_positives_by_baseline_item_data in self.false_positives_by_baseline:
+            false_positives_by_baseline_item = false_positives_by_baseline_item_data.to_dict()
+            false_positives_by_baseline.append(false_positives_by_baseline_item)
+
+        false_positives_by_connection = []
+        for false_positives_by_connection_item_data in self.false_positives_by_connection:
+            false_positives_by_connection_item = false_positives_by_connection_item_data.to_dict()
+            false_positives_by_connection.append(false_positives_by_connection_item)
+
         resolved = self.resolved
 
         stated = self.stated
@@ -96,6 +119,8 @@ class CoverageFiguresRead:
                 "false_positive": false_positive,
                 "false_positive_rate": false_positive_rate,
                 "false_positive_window_days": false_positive_window_days,
+                "false_positives_by_baseline": false_positives_by_baseline,
+                "false_positives_by_connection": false_positives_by_connection,
                 "resolved": resolved,
                 "stated": stated,
                 "unstated": unstated,
@@ -106,6 +131,8 @@ class CoverageFiguresRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.false_positive_group_read import FalsePositiveGroupRead
+
         d = dict(src_dict)
         assets_total = d.pop("assets_total")
 
@@ -135,6 +162,24 @@ class CoverageFiguresRead:
 
         false_positive_window_days = d.pop("false_positive_window_days")
 
+        false_positives_by_baseline = []
+        _false_positives_by_baseline = d.pop("false_positives_by_baseline")
+        for false_positives_by_baseline_item_data in _false_positives_by_baseline:
+            false_positives_by_baseline_item = FalsePositiveGroupRead.from_dict(
+                false_positives_by_baseline_item_data
+            )
+
+            false_positives_by_baseline.append(false_positives_by_baseline_item)
+
+        false_positives_by_connection = []
+        _false_positives_by_connection = d.pop("false_positives_by_connection")
+        for false_positives_by_connection_item_data in _false_positives_by_connection:
+            false_positives_by_connection_item = FalsePositiveGroupRead.from_dict(
+                false_positives_by_connection_item_data
+            )
+
+            false_positives_by_connection.append(false_positives_by_connection_item)
+
         resolved = d.pop("resolved")
 
         stated = d.pop("stated")
@@ -151,6 +196,8 @@ class CoverageFiguresRead:
             false_positive=false_positive,
             false_positive_rate=false_positive_rate,
             false_positive_window_days=false_positive_window_days,
+            false_positives_by_baseline=false_positives_by_baseline,
+            false_positives_by_connection=false_positives_by_connection,
             resolved=resolved,
             stated=stated,
             unstated=unstated,

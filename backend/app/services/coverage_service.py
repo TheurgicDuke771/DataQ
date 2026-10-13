@@ -441,9 +441,66 @@ COVERAGE_WINDOW_DAYS = 7
 
 
 @dataclass(frozen=True)
+class FalsePositiveGroup:
+    """One slice of the false-positive rate: the same ``false_positive / stated`` over the
+    stated resolutions that fall in it. ``rate`` is never null here, because a slice with
+    nothing stated is not listed."""
+
+    key: str
+    label: str
+    stated: int
+    false_positive: int
+    rate: float
+
+
+#: The automatic checks an incident can be on, in the order they are listed: the three
+#: baselines the coverage settings govern, then the two they do not.
+_BASELINE_LABELS = {
+    "volume": "Row count",
+    "freshness": "Freshness",
+    "profile": "Column profile",
+    "schema": "Schema",
+    "other": "Other checks",
+}
+
+
+def _baseline_key(origin: str, kind: str, target_metric: str | None) -> str:
+    """Which automatic check an incident was on. Only a check the coverage loop created is
+    one of its baselines: an accepted suggestion, or a check a person added to the automatic
+    suite (even an anomaly check on the same metric), is an "other" check."""
+    if origin != "auto":
+        return "other"
+    if kind == "schema_drift":
+        return "schema"
+    if kind == "anomaly":
+        return coverage_settings_service.BASELINE_BY_METRIC.get(target_metric or "", "other")
+    return "other"
+
+
+def _groups(
+    counts: dict[tuple[str, str], list[int]], *, order: list[str] | None = None
+) -> list[FalsePositiveGroup]:
+    groups = [
+        FalsePositiveGroup(
+            key=key,
+            label=label,
+            stated=stated,
+            false_positive=false_positive,
+            rate=round(100.0 * false_positive / stated, 1),
+        )
+        for (key, label), (stated, false_positive) in counts.items()
+    ]
+    if order is not None:
+        return sorted(groups, key=lambda g: order.index(g.key))
+    # Noisiest first; the name settles ties so the list does not reorder between reads.
+    return sorted(groups, key=lambda g: (-g.false_positive, -g.stated, g.label))
+
+
+@dataclass(frozen=True)
 class CoverageFigures:
     """Workspace-wide (ADR 0037): the same for every member, and counts only — no asset,
-    suite or incident is named.
+    suite or incident is named. Connections are named in the per-connection breakdown;
+    every member can already list them.
 
     ``false_positive_rate`` is ``false_positive / stated``: of the automatic-suite
     incidents a person resolved AND classified in the window, the share marked
@@ -467,6 +524,11 @@ class CoverageFigures:
     unstated: int
     false_positive: int
     false_positive_rate: float | None
+    #: The same rate split by which automatic check the incident was on, and by connection.
+    #: Each lists only slices with a stated resolution, and each sums to ``stated``: the
+    #: slices say where to loosen a threshold (ADR 0047, sensitivity is set per baseline).
+    false_positives_by_baseline: list[FalsePositiveGroup] = field(default_factory=list)
+    false_positives_by_connection: list[FalsePositiveGroup] = field(default_factory=list)
 
 
 def coverage_figures(
@@ -494,24 +556,41 @@ def coverage_figures(
     watched = len(origins)
 
     since = now - timedelta(days=false_positive_window_days)
-    counts = dict(
-        session.execute(
-            select(Incident.resolution, func.count())
-            .join(Suite, Suite.id == Incident.suite_id)
-            .where(
-                Suite.origin == "auto",
-                Incident.status == "resolved",
-                Incident.resolved_by == "user",
-                Incident.resolved_at >= since,
-            )
-            .group_by(Incident.resolution)
+    # ONE grouped read for the headline and both breakdowns, so they cannot disagree: two
+    # statements could see different incidents under READ COMMITTED.
+    metric = Check.config["target_metric"].astext
+    grouping = (Check.origin, Check.kind, metric, Connection.id, Connection.name, Connection.env)
+    unstated = stated = false_positive = 0
+    by_baseline: dict[tuple[str, str], list[int]] = {}
+    by_connection: dict[tuple[str, str], list[int]] = {}
+    for origin, kind, target, connection_id, name, env, resolution, n in session.execute(
+        select(*grouping, Incident.resolution, func.count())
+        .join(Suite, Suite.id == Incident.suite_id)
+        .join(Check, Check.id == Incident.check_id)
+        .join(Connection, Connection.id == Suite.connection_id)
+        .where(
+            Suite.origin == "auto",
+            Incident.status == "resolved",
+            Incident.resolved_by == "user",
+            Incident.resolved_at >= since,
         )
-        .tuples()
-        .all()
-    )
-    unstated = counts.pop(None, 0)
-    stated = sum(counts.values())
-    false_positive = counts.get("false_positive", 0)
+        .group_by(*grouping, Incident.resolution)
+    ).tuples():
+        if resolution is None:
+            unstated += n
+            continue
+        wolf = n if resolution == "false_positive" else 0
+        stated += n
+        false_positive += wolf
+        baseline = _baseline_key(origin, kind, target)
+        for bucket, slot in (
+            (by_baseline, (baseline, _BASELINE_LABELS[baseline])),
+            # Names are unique per environment only, so the label carries both.
+            (by_connection, (str(connection_id), f"{name} ({env})")),
+        ):
+            totals = bucket.setdefault(slot, [0, 0])
+            totals[0] += n
+            totals[1] += wolf
     return CoverageFigures(
         assets_total=assets_total,
         assets_watched=watched,
@@ -525,4 +604,6 @@ def coverage_figures(
         unstated=unstated,
         false_positive=false_positive,
         false_positive_rate=round(100.0 * false_positive / stated, 1) if stated else None,
+        false_positives_by_baseline=_groups(by_baseline, order=list(_BASELINE_LABELS)),
+        false_positives_by_connection=_groups(by_connection),
     )

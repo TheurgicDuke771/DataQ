@@ -1,8 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type CoverageFigures, getCoverageFigures } from '../../src/api/dashboard';
+import { MeContext } from '../../src/auth/meContext';
 import { CoveragePanel } from '../../src/components/dashboard/CoveragePanel';
+import { meAt } from '../pages/admin/adminFixtures';
 
 vi.mock('../../src/api/dashboard', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/api/dashboard')>()),
@@ -25,12 +29,31 @@ const FIGURES: CoverageFigures = {
   false_positive_rate: 25,
 };
 
+function renderAs(role: 'admin' | 'member', node: ReactElement = <CoveragePanel />) {
+  return render(
+    <MemoryRouter>
+      <MeContext.Provider value={meAt(role)}>{node}</MeContext.Provider>
+    </MemoryRouter>,
+  );
+}
+
+const BREAKDOWN: CoverageFigures = {
+  ...FIGURES,
+  false_positives_by_baseline: [
+    { key: 'volume', label: 'Row count', stated: 1, false_positive: 0, rate: 0 },
+    { key: 'profile', label: 'Column profile', stated: 3, false_positive: 1, rate: 33.3 },
+  ],
+  false_positives_by_connection: [
+    { key: 'c1', label: 'warehouse (prod)', stated: 4, false_positive: 1, rate: 25 },
+  ],
+};
+
 afterEach(() => vi.clearAllMocks());
 
 describe('CoveragePanel', () => {
   it('shows both figures with their denominators', async () => {
     mockGet.mockResolvedValue(FIGURES);
-    render(<CoveragePanel />);
+    renderAs('member');
 
     expect(await screen.findByText('Coverage, across the workspace')).toBeInTheDocument();
     expect(
@@ -54,7 +77,7 @@ describe('CoveragePanel', () => {
       false_positive: 0,
       false_positive_rate: null,
     });
-    render(<CoveragePanel />);
+    renderAs('member');
 
     expect(
       await screen.findByText(
@@ -78,7 +101,7 @@ describe('CoveragePanel', () => {
       false_positive: 0,
       false_positive_rate: null,
     });
-    render(<CoveragePanel />);
+    renderAs('member');
 
     expect(await screen.findByText('No assets in the inventory yet.')).toBeInTheDocument();
     expect(
@@ -88,9 +111,70 @@ describe('CoveragePanel', () => {
 
   it('degrades to a line of text when the figures cannot be loaded', async () => {
     mockGet.mockRejectedValue(new Error('boom'));
-    render(<CoveragePanel />);
+    renderAs('member');
     expect(
       await screen.findByText('Coverage figures are unavailable right now.'),
     ).toBeInTheDocument();
+  });
+
+  it('splits the rate by check and by connection, each with its denominator', async () => {
+    mockGet.mockResolvedValue(BREAKDOWN);
+    renderAs('admin');
+
+    const profile = (await screen.findByText('Column profile')).closest('tr') as HTMLElement;
+    expect(within(profile).getByText('1 of 3')).toBeInTheDocument();
+    expect(within(profile).getByText('33.3%')).toBeInTheDocument();
+    const prod = screen.getByText('warehouse (prod)').closest('tr') as HTMLElement;
+    expect(within(prod).getByText('1 of 4')).toBeInTheDocument();
+    // Freshness had nothing stated: absent, and the note says absent means not measured.
+    expect(screen.queryByText('Freshness')).not.toBeInTheDocument();
+    expect(screen.getByText(/the rest were not measured/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Admin → Settings → Automatic coverage' }),
+    ).toHaveAttribute('href', '/admin/settings');
+  });
+
+  it('gives a member no link to settings they cannot open', async () => {
+    mockGet.mockResolvedValue(BREAKDOWN);
+    renderAs('member');
+
+    expect(await screen.findByText('Column profile')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText(/A workspace admin can make row count/)).toBeInTheDocument();
+  });
+
+  it('does not point at the settings when only checks they do not govern are noisy', async () => {
+    mockGet.mockResolvedValue({
+      ...BREAKDOWN,
+      false_positives_by_baseline: [
+        { key: 'volume', label: 'Row count', stated: 1, false_positive: 0, rate: 0 },
+        { key: 'schema', label: 'Schema', stated: 2, false_positive: 1, rate: 50 },
+        { key: 'other', label: 'Other checks', stated: 1, false_positive: 1, rate: 100 },
+      ],
+    });
+    renderAs('admin');
+
+    expect(await screen.findByText('Schema')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText(/the rest were not measured/)).toBeInTheDocument();
+  });
+
+  it('shows no breakdown, and no caption, when the lists are empty or absent', async () => {
+    mockGet.mockResolvedValue({
+      ...FIGURES,
+      false_positives_by_baseline: [],
+      false_positives_by_connection: [],
+    });
+    const { unmount } = renderAs('admin');
+    expect(await screen.findByText('Coverage, across the workspace')).toBeInTheDocument();
+    expect(screen.queryByText(/were not measured/)).not.toBeInTheDocument();
+    unmount();
+
+    // An API that predates the breakdown: figures stated, no lists at all.
+    mockGet.mockResolvedValue(FIGURES);
+    renderAs('admin');
+    expect(await screen.findByText('Coverage, across the workspace')).toBeInTheDocument();
+    expect(screen.queryByText('By automatic check')).not.toBeInTheDocument();
+    expect(screen.queryByText(/were not measured/)).not.toBeInTheDocument();
   });
 });

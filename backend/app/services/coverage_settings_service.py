@@ -211,7 +211,7 @@ def resolve(workspace: dict[str, Any] | None, asset: dict[str, Any] | None = Non
 #: stored values apply.
 INHERIT_KEY: Final = "inherit_coverage_settings"
 
-_BASELINE_BY_METRIC: Final[dict[str, str]] = {
+BASELINE_BY_METRIC: Final[dict[str, str]] = {
     ROW_COUNT_METRIC: "volume",
     FRESHNESS_AGE_METRIC: "freshness",
     COLUMN_PROFILE_METRIC: "profile",
@@ -257,7 +257,7 @@ def baseline_of(check: Check) -> str | None:
     """Which automatic baseline an anomaly check is, by the metric it watches."""
     if check.kind != ANOMALY:
         return None
-    return _BASELINE_BY_METRIC.get(str((check.config or {}).get("target_metric")))
+    return BASELINE_BY_METRIC.get(str((check.config or {}).get("target_metric")))
 
 
 def _number(value: Any) -> float | None:
@@ -331,7 +331,7 @@ def validate_new_check(config: dict[str, Any], *, kind: str, origin: str) -> Non
         return
     if not isinstance(config[INHERIT_KEY], bool):
         raise InheritEditError(f"{INHERIT_KEY} must be true or false")
-    is_baseline = kind == ANOMALY and str(config.get("target_metric")) in _BASELINE_BY_METRIC
+    is_baseline = kind == ANOMALY and str(config.get("target_metric")) in BASELINE_BY_METRIC
     if origin != "auto" or not is_baseline:
         raise InheritEditError(
             f"{INHERIT_KEY} applies only to an automatic baseline check; remove it"
@@ -382,7 +382,7 @@ def settle_edit(
     is_baseline = (
         check.origin == "auto"
         and check.kind == ANOMALY
-        and str(config.get("target_metric")) in _BASELINE_BY_METRIC
+        and str(config.get("target_metric")) in BASELINE_BY_METRIC
     )
     if not is_baseline or coverage is None:
         if sent_flag is not None:

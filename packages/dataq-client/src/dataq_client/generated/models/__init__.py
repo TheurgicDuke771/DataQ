@@ -134,6 +134,7 @@ from .effective_shape_source import EffectiveShapeSource
 from .event_ack import EventAck
 from .export_suite_format import ExportSuiteFormat
 from .external_transfer import ExternalTransfer
+from .false_positive_group_read import FalsePositiveGroupRead
 from .file_browse_read import FileBrowseRead
 from .gate_read import GateRead
 from .gate_read_state import GateReadState
@@ -426,6 +427,7 @@ __all__ = (
     "EventAck",
     "ExportSuiteFormat",
     "ExternalTransfer",
+    "FalsePositiveGroupRead",
     "FileBrowseRead",
     "GateRead",
     "GateReadState",
