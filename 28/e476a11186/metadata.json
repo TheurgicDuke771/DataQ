@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "28e476a11186",
+  "strategy": "manual-commit",
+  "branch": "feature/coverage-inherit-at-run-time-1661",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/coverage_service.py",
+    "backend/app/services/coverage_settings_service.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_checks_inherited.py",
+    "backend/tests/services/test_coverage_inheritance.py",
+    "docs/site/adr/0047-automated-coverage-loop.md",
+    "docs/site/guides/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/28/e476a11186/0/metadata.json",
+      "transcript": "/28/e476a11186/0/full.jsonl",
+      "compact_transcript": "/28/e476a11186/0/transcript.jsonl",
+      "content_hash": "/28/e476a11186/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 31106,
+    "cache_read_tokens": 4377595,
+    "output_tokens": 23630,
+    "api_call_count": 12
+  }
+}
