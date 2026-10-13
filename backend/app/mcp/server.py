@@ -1059,7 +1059,8 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
     explain what a failing check was actually asserting. Returns the same fields
     as ``list_checks`` (including ``source_connection_id`` — the baseline a
     comparison check diffs against) plus when the check was created and last
-    modified.
+    modified. As there, a non-null ``inherited_from`` means the thresholds and window
+    shown are the coverage settings in effect now, not values stored on the check.
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -1175,6 +1176,15 @@ def list_check_versions(
     ``changed_by_name`` is null when the editor was a system actor or a user who
     has since been removed — read that as "the author is not recorded", not as
     "nobody edited it".
+
+    **For an automatic baseline these are stored values, not what runs used.** A
+    snapshot whose ``config`` has ``inherit_coverage_settings: true`` belongs to a
+    check that was taking its thresholds and window from the coverage settings at
+    the time (see ``inherited_from`` on ``get_check``). Its thresholds here are the
+    numbers stored when the check was created, and a change to the workspace or
+    table setting creates **no version**. So identical thresholds across versions do
+    not show that the alerting level never changed. What each past run was scored
+    against is on its result (``expected_value.thresholds`` in ``get_run_results``).
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -2008,6 +2018,13 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     "the whole suite", pair this with ``list_schedules``,
     ``list_trigger_bindings`` and ``get_notification_config``.
 
+    **An automatic baseline that inherits its thresholds** (``inherited_from`` on
+    ``get_check``) is written with the values in effect at the moment of export and
+    ``inherit_coverage_settings: true`` in its config. Re-applied to the same suite
+    it keeps inheriting. Imported as a new suite, or applied to a suite a person
+    authored, the check cannot inherit: it is fixed at the exported numbers and
+    later changes to the coverage settings do not reach it.
+
     A comparison check's baseline connection appears as its ``(name, env)``
     pair, never as an id or anything resolvable to a secret. Requires view
     access to the suite.
@@ -2383,8 +2400,12 @@ def update_check(
     ``"inherit_coverage_settings": true`` added. Any thresholds or window values sent in
     that same call are **not applied**: the check runs on the settings, and the result
     shows those values with ``inherited_from`` set. That key is accepted only on the
-    automatic baselines and is never returned in ``config``. This tool cannot change the
-    setting itself, which is an admin action in the app.
+    automatic baselines. ``list_checks``, ``get_check`` and this tool do not return it in
+    ``config`` (``inherited_from`` says the same thing); ``export_suite`` and
+    ``list_check_versions`` do, because they show the stored definition. If the check
+    was detached, the numbers sent with ``true`` are stored and appear in its version
+    history, but no run uses them. This tool cannot change the setting itself, which is
+    an admin action in the app.
 
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
@@ -2488,6 +2509,14 @@ def restore_check_version(
     shipped may be rejected — the error names what is wrong and the check is left
     exactly as it was. That is deliberate: it prevents reinstating a definition
     the authoring path would no longer accept.
+
+    **On an automatic baseline a restore puts back whether it inherited, not
+    necessarily its numbers.** If the snapshot was taken while the check inherited
+    its thresholds from the coverage settings, the check inherits again and runs on
+    today's setting, whatever thresholds the snapshot shows; if the snapshot was a
+    detached one, the check is detached again at the snapshot's numbers. Read
+    ``inherited_from`` and the thresholds in the result and report those, not the
+    snapshot's.
 
     A check's kind is immutable and is never changed by a restore. Requires edit
     access to the suite.
