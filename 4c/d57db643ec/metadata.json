@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "4cd57db643ec",
+  "strategy": "manual-commit",
+  "branch": "feature/period-metrics-2440",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/monitors.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/anomaly.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "backend/tests/fixtures/expectation_catalog.json",
+    "backend/tests/services/test_period_metrics.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/check-types.md",
+    "frontend/src/components/checks/CheckTrend.tsx",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/tests/components/CheckTrend.test.tsx",
+    "frontend/tests/components/checkForm.test.ts",
+    "frontend/tests/components/expectationCatalog.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4c/d57db643ec/0/metadata.json",
+      "transcript": "/4c/d57db643ec/0/full.jsonl",
+      "compact_transcript": "/4c/d57db643ec/0/transcript.jsonl",
+      "content_hash": "/4c/d57db643ec/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 46566,
+    "cache_read_tokens": 15236916,
+    "output_tokens": 30732,
+    "api_call_count": 24
+  }
+}
