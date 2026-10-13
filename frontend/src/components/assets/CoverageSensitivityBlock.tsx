@@ -17,7 +17,7 @@ import { CoverageSettingsForm } from '../coverage-settings/CoverageSettingsForm'
  * the workspace setting for this table's automatic checks; what it leaves alone follows it.
  */
 export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
-  const { state } = useAsyncData(async () => {
+  const { state, reload } = useAsyncData(async () => {
     const [asset, workspace] = await Promise.all([
       getAssetCoverageSettings(assetId),
       getCoverageSettings(),
@@ -40,10 +40,24 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
   }
   const asset = saved ?? state.data.asset;
   const overridden = asset.override !== null;
+  // With no override the table follows the workspace, which may itself set nothing.
+  const follows = [
+    ...Object.values(asset.effective.sensitivity).map((group) => group.source),
+    asset.effective.baseline.source,
+  ].includes('workspace')
+    ? 'Workspace setting'
+    : 'Built-in default';
   const save = (config: AssetCoverageSettings['override']) =>
     void run(async () => {
       await updateAsset(assetId, { auto_coverage_config: config });
-      setSaved(await getAssetCoverageSettings(assetId));
+      try {
+        setSaved(await getAssetCoverageSettings(assetId));
+      } catch {
+        // The override is stored; only the re-read failed. Load the block again rather than
+        // report a failed save.
+        setSaved(null);
+        reload();
+      }
     });
 
   return (
@@ -57,7 +71,7 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
             <Flex gap={8} align="center" wrap>
               <Typography.Text>Sensitivity of this table’s automatic checks</Typography.Text>
               <Tag color={overridden ? 'blue' : 'default'}>
-                {overridden ? 'Set for this table' : 'Workspace setting'}
+                {overridden ? 'Set for this table' : follows}
               </Tag>
             </Flex>
           ),
@@ -68,6 +82,7 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
               below={state.data.workspace.effective}
               current={asset.effective}
               scope="Set for this table"
+              clearLabel="Use the workspace setting"
               saving={loading}
               onSave={save}
               onClear={() => save(null)}

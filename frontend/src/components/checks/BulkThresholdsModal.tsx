@@ -25,12 +25,15 @@ const MODE_OPTIONS: { value: Mode; label: string }[] = [
 export function BulkThresholdsModal({
   open,
   count,
+  inheriting = 0,
   onCancel,
   onApply,
 }: {
   open: boolean;
   /** How many checks are selected. */
   count: number;
+  /** How many of them take their thresholds from the coverage settings (ADR 0047). */
+  inheriting?: number;
   onCancel: () => void;
   /** Rejects on failure so the modal stays open. */
   onApply: (thresholds: BulkThresholds) => Promise<void>;
@@ -102,6 +105,14 @@ export function BulkThresholdsModal({
             )}
           </Flex>
         ))}
+        {inheriting > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            title={`${inheriting} of these follow${inheriting === 1 ? 's' : ''} the coverage settings`}
+            description="Setting a threshold here gives each of them its own values, and later changes to the coverage settings will no longer reach them."
+          />
+        )}
         <Alert
           type="info"
           showIcon

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 // The read-only Assets view (ADR 0034 gap G-d phase 2, #760; hierarchical browse #802).
 test.describe('Assets page', () => {
@@ -57,7 +57,17 @@ test.describe('Assets page', () => {
     request,
   }) => {
     const assets = (await (await request.get('/api/v1/assets')).json()) as { id: string }[];
-    await page.goto(`/assets/${assets[0].id}`);
+    const assetId = assets[0].id;
+    try {
+      await overrideAndRemove(page, assetId);
+    } finally {
+      // Seeded state shared by every spec: remove the override even when the test fails.
+      await request.patch(`/api/v1/assets/${assetId}`, { data: { auto_coverage_config: null } });
+    }
+  });
+
+  async function overrideAndRemove(page: Page, assetId: string) {
+    await page.goto(`/assets/${assetId}`);
     await page.getByText('Sensitivity of this table’s automatic checks').click();
     const block = page.getByTestId('coverage-sensitivity');
 
@@ -70,7 +80,7 @@ test.describe('Assets page', () => {
     await expect(critical).toHaveValue('10.0');
 
     await block.getByRole('button', { name: 'Use the workspace setting' }).click();
-    await expect(block.locator('.ant-tag', { hasText: 'Workspace setting' }).first()).toBeVisible();
+    await expect(block.locator('.ant-tag', { hasText: 'Set for this table' })).toHaveCount(0);
     await expect(critical).toBeDisabled();
-  });
+  }
 });

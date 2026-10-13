@@ -158,6 +158,50 @@ describe('CoveragePanel', () => {
     expect(await screen.findByText('Defaults')).toBeInTheDocument();
   });
 
+  it('keeps what was typed when the save fails', async () => {
+    mockGet.mockResolvedValue(DEFAULTS);
+    mockPut.mockRejectedValue(new Error('boom'));
+    renderSubPage(<CoveragePanel />);
+    await screen.findByText('Defaults');
+    await userEvent.click(screen.getByRole('switch', { name: 'Set for the workspace: history' }));
+    setNumber('Runs compared', '14');
+
+    await userEvent.click(save());
+
+    await waitFor(() => expect(mockPut).toHaveBeenCalled());
+    expect(await screen.findByText(/Could not save the coverage settings/)).toBeInTheDocument();
+    // antd leaves its spinner in the button's accessible name while it animates out.
+    await waitFor(() => expect(screen.getByRole('button', { name: /Save$/ })).toBeEnabled());
+    expect(screen.getByRole('spinbutton', { name: 'Runs compared' })).toHaveValue('14');
+  });
+
+  it('asks before a reset that shortens the window, and warns when history is switched off', async () => {
+    const longWindow: CoverageSettings = {
+      ...CUSTOM,
+      setting: { baseline: { window: 30, min_points: 4, seasonality: true } },
+      effective: {
+        ...BUILT_IN,
+        baseline: { window: 30, min_points: 4, seasonality: true, source: 'workspace' },
+      },
+    };
+    mockGet.mockResolvedValue(longWindow);
+    mockReset.mockResolvedValue(DEFAULTS);
+    renderSubPage(<CoveragePanel />);
+    await screen.findByText('Customised');
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Set for the workspace: history' }));
+    expect(await screen.findByText('A shorter window trims history')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
+    expect(await screen.findByText('This shortens the window')).toBeInTheDocument();
+    expect(mockReset).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(screen.getByRole('tooltip')).getByRole('button', { name: 'Reset to defaults' }),
+    );
+
+    await waitFor(() => expect(mockReset).toHaveBeenCalled());
+  });
+
   it('says so when the settings cannot be loaded', async () => {
     mockGet.mockRejectedValue(new Error('boom'));
     renderSubPage(<CoveragePanel />);

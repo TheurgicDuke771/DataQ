@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, InputNumber, Space, Switch, Tag, Typography } from 'antd';
+import { Alert, Button, Flex, InputNumber, Popconfirm, Space, Switch, Tag, Typography } from 'antd';
 import { useState } from 'react';
 
 import type { CoverageDocument, EffectiveCoverage } from '../../api/coverage';
@@ -10,6 +10,9 @@ import {
   invalidReason,
   isEmpty,
   LEVEL_LABEL,
+  MAX_DEVIATIONS,
+  MAX_WINDOW,
+  MIN_WINDOW,
   sensitivityFrom,
   shapeFrom,
   shortensWindow,
@@ -25,6 +28,8 @@ interface Props {
   current: EffectiveCoverage;
   /** Names this level in the switches: "Set for the workspace" / "Set for this table". */
   scope: string;
+  /** The button that removes everything this level sets. */
+  clearLabel: string;
   saving: boolean;
   onSave: (doc: CoverageDocument) => void;
   /** Remove everything this level sets. */
@@ -40,6 +45,7 @@ export function CoverageSettingsForm({
   below,
   current,
   scope,
+  clearLabel,
   saving,
   onSave,
   onClear,
@@ -49,6 +55,11 @@ export function CoverageSettingsForm({
   const draft = edited ?? saved;
   const reason = invalidReason(draft);
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  // The draft is kept until the parent shows the stored result (it remounts this form on
+  // success), so a save that fails leaves what was typed.
+  const clearShortens = shortensWindow(draftOf(null), below, current);
+  const TRIM =
+    'Automatic checks drop their older observations on their next run. If the window is lengthened again later, they wait for that history to build back up before scoring.';
   const set = (next: CoverageDraft) => setEdited(next);
 
   return (
@@ -84,8 +95,8 @@ export function CoverageSettingsForm({
                   <Typography.Text type="secondary">{tier.label}</Typography.Text>
                   <InputNumber
                     aria-label={`${label} ${tier.label.toLowerCase()} deviations`}
-                    min={0.1}
-                    max={99}
+                    min={0}
+                    max={MAX_DEVIATIONS}
                     step={0.5}
                     value={shown[tier.key]}
                     disabled={group === null || saving}
@@ -122,8 +133,8 @@ export function CoverageSettingsForm({
             <Typography.Text type="secondary">Runs compared</Typography.Text>
             <InputNumber
               aria-label="Runs compared"
-              min={3}
-              max={90}
+              min={MIN_WINDOW}
+              max={MAX_WINDOW}
               precision={0}
               value={(draft.baseline ?? below.baseline).window}
               disabled={draft.baseline === null || saving}
@@ -136,8 +147,8 @@ export function CoverageSettingsForm({
             <Typography.Text type="secondary">Runs before scoring</Typography.Text>
             <InputNumber
               aria-label="Runs before scoring"
-              min={3}
-              max={90}
+              min={MIN_WINDOW}
+              max={MAX_WINDOW}
               precision={0}
               value={(draft.baseline ?? below.baseline).min_points}
               disabled={draft.baseline === null || saving}
@@ -162,13 +173,8 @@ export function CoverageSettingsForm({
       </Flex>
 
       {reason && <Alert type="warning" showIcon title={reason} />}
-      {!reason && dirty && shortensWindow(draft, current) && (
-        <Alert
-          type="warning"
-          showIcon
-          title="A shorter window trims history"
-          description="Automatic checks drop their older observations on their next run. If the window is lengthened again later, they wait for that history to build back up before scoring."
-        />
+      {!reason && dirty && shortensWindow(draft, below, current) && (
+        <Alert type="warning" showIcon title="A shorter window trims history" description={TRIM} />
       )}
       <Space>
         <Button
@@ -179,20 +185,25 @@ export function CoverageSettingsForm({
             // A form that sets nothing is "remove what this level sets", not an empty save.
             if (isEmpty(draft)) onClear();
             else onSave(documentOf(draft));
-            setEdited(null);
           }}
         >
           Save
         </Button>
-        <Button
-          disabled={isEmpty(saved) || saving}
-          onClick={() => {
-            onClear();
-            setEdited(null);
-          }}
-        >
-          {scope === 'Set for this table' ? 'Use the workspace setting' : 'Reset to defaults'}
-        </Button>
+        {clearShortens ? (
+          <Popconfirm
+            title="This shortens the window"
+            description={TRIM}
+            okText={clearLabel}
+            onConfirm={onClear}
+            disabled={isEmpty(saved) || saving}
+          >
+            <Button disabled={isEmpty(saved) || saving}>{clearLabel}</Button>
+          </Popconfirm>
+        ) : (
+          <Button disabled={isEmpty(saved) || saving} onClick={onClear}>
+            {clearLabel}
+          </Button>
+        )}
       </Space>
     </Flex>
   );

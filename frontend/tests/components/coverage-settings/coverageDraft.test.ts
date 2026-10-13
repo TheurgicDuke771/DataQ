@@ -78,9 +78,18 @@ describe('coverageDraft', () => {
   it('flags only a window shorter than the one in effect', () => {
     const withWindow = (window: number) =>
       draftOf({ baseline: { window, min_points: 3, seasonality: true } });
-    expect(shortensWindow(withWindow(7), EFFECTIVE)).toBe(true);
-    expect(shortensWindow(withWindow(8), EFFECTIVE)).toBe(false);
-    expect(shortensWindow(withWindow(9), EFFECTIVE)).toBe(false);
-    expect(shortensWindow(draftOf(null), EFFECTIVE)).toBe(false);
+    expect(shortensWindow(withWindow(7), EFFECTIVE, EFFECTIVE)).toBe(true);
+    expect(shortensWindow(withWindow(8), EFFECTIVE, EFFECTIVE)).toBe(false);
+    expect(shortensWindow(withWindow(9), EFFECTIVE, EFFECTIVE)).toBe(false);
+    expect(shortensWindow(draftOf(null), EFFECTIVE, EFFECTIVE)).toBe(false);
+  });
+
+  it('flags a level that stops setting a window longer than the one below', () => {
+    const longer: EffectiveCoverage = {
+      ...EFFECTIVE,
+      baseline: { window: 30, min_points: 4, seasonality: true, source: 'workspace' },
+    };
+    // Switching History off falls from 30 to the built-in 8.
+    expect(shortensWindow(draftOf(null), EFFECTIVE, longer)).toBe(true);
   });
 });

@@ -55,6 +55,7 @@ export function CoveragePanel() {
             below={current.defaults}
             current={current.effective}
             scope="Set for the workspace"
+            clearLabel="Reset to defaults"
             saving={loading}
             onSave={(doc) => void run(async () => setSaved(await putCoverageSettings(doc)))}
             onClear={() => void run(async () => setSaved(await resetCoverageSettings()))}

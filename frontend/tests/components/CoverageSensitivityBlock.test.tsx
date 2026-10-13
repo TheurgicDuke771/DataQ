@@ -115,6 +115,32 @@ describe('CoverageSensitivityBlock (ADR 0047)', () => {
     );
   });
 
+  it('names the built-in default when neither the table nor the workspace sets anything', async () => {
+    const builtIn: EffectiveCoverage = {
+      ...WORKSPACE_EFFECTIVE,
+      sensitivity: { ...WORKSPACE_EFFECTIVE.sensitivity, volume: D },
+    };
+    mockWorkspace.mockResolvedValue({ effective: builtIn } as CoverageSettings);
+    mockAsset.mockResolvedValue({ override: null, effective: builtIn });
+    await open();
+
+    expect(screen.queryByText('Workspace setting')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Built-in default').length).toBeGreaterThan(1);
+  });
+
+  it('a stored override whose re-read fails is not reported as a failed save', async () => {
+    mockAsset
+      .mockResolvedValueOnce(OVERRIDDEN)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue(NO_OVERRIDE);
+    await open();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Use the workspace setting' }));
+
+    await waitFor(() => expect(mockAsset).toHaveBeenCalledTimes(3));
+    expect(screen.queryByText(/Could not save/)).not.toBeInTheDocument();
+  });
+
   it('says so when the settings cannot be loaded', async () => {
     mockAsset.mockRejectedValue(new Error('boom'));
     render(

@@ -25,6 +25,12 @@ export const LEVEL_LABEL: Record<CoverageLevel, string> = {
   default: 'Built-in default',
 };
 
+/** The server's bounds (`coverage_settings_service` and the anomaly kind's window limits),
+ *  in one place for the inputs and the reasons below. A threshold must be above 0. */
+export const MAX_DEVIATIONS = 99;
+export const MIN_WINDOW = 3;
+export const MAX_WINDOW = 90;
+
 type Nullable<T> = { [K in keyof T]: T[K] | null };
 
 /** What the form holds: each group is either set here (a value) or left to the level below (null). */
@@ -71,7 +77,9 @@ export function invalidReason(draft: CoverageDraft): string | null {
     if (warn === null || fail === null || critical === null) {
       return `${label}: every threshold needs a value.`;
     }
-    if (warn <= 0 || critical > 99) return `${label}: thresholds must be above 0 and at most 99.`;
+    if (warn <= 0 || critical > MAX_DEVIATIONS) {
+      return `${label}: thresholds must be above 0 and at most ${MAX_DEVIATIONS}.`;
+    }
     if (!(warn <= fail && fail <= critical)) {
       return `${label}: keep the order warn ≤ fail ≤ critical.`;
     }
@@ -81,9 +89,11 @@ export function invalidReason(draft: CoverageDraft): string | null {
     if (shape.window === null || shape.min_points === null) {
       return 'History: the window and the minimum both need a value.';
     }
-    if (shape.window < 3 || shape.window > 90) return 'History: the window must be 3 to 90 runs.';
-    if (shape.min_points < 3 || shape.min_points > shape.window) {
-      return 'History: the minimum must be at least 3 and no more than the window.';
+    if (shape.window < MIN_WINDOW || shape.window > MAX_WINDOW) {
+      return `History: the window must be ${MIN_WINDOW} to ${MAX_WINDOW} runs.`;
+    }
+    if (shape.min_points < MIN_WINDOW || shape.min_points > shape.window) {
+      return `History: the minimum must be at least ${MIN_WINDOW} and no more than the window.`;
     }
   }
   return null;
@@ -101,10 +111,15 @@ export function shapeFrom(effective: EffectiveCoverage): BaselineShape {
 }
 
 /**
- * True when saving would shorten the window automatic checks run on: older history is trimmed
- * on their next run and has to build up again if the window is lengthened later.
+ * True when saving `draft` would shorten the window automatic checks run on: older history is
+ * trimmed on their next run and has to build up again if the window is lengthened later. A
+ * level that stops setting the window falls to the level below, which can be shorter too.
  */
-export function shortensWindow(draft: CoverageDraft, current: EffectiveCoverage): boolean {
-  const next = draft.baseline?.window;
+export function shortensWindow(
+  draft: CoverageDraft,
+  below: EffectiveCoverage,
+  current: EffectiveCoverage,
+): boolean {
+  const next = draft.baseline ? draft.baseline.window : below.baseline.window;
   return typeof next === 'number' && next < current.baseline.window;
 }

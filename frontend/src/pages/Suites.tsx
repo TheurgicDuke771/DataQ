@@ -795,6 +795,7 @@ function ChecksList({
         <BulkThresholdsModal
           open={thresholdsOpen}
           count={selectedIds.length}
+          inheriting={checks.filter((c) => selected.has(c.id) && c.inherited).length}
           onCancel={() => setThresholdsOpen(false)}
           onApply={async (thresholds) => {
             await runBulk(

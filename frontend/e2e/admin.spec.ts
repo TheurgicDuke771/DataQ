@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 // Workspace-admin surfaces (#289 + ADR 0027): the dev-bypass identity is in WORKSPACE_ADMIN_EMAILS
 // (compose + CI), so /admin is reachable and the admin-only footer nav renders.
@@ -165,7 +165,19 @@ test.describe('Admin control centre', () => {
       .click();
   }
 
-  test('sets the automatic-coverage sensitivity for one check and resets it', async ({ page }) => {
+  test('sets the automatic-coverage sensitivity for one check and resets it', async ({
+    page,
+    request,
+  }) => {
+    try {
+      await setAndResetCoverage(page);
+    } finally {
+      // Workspace state shared by every spec: put it back even when the test fails part-way.
+      await request.delete('/api/v1/admin/coverage');
+    }
+  });
+
+  async function setAndResetCoverage(page: Page) {
     await page.goto('/admin/settings');
     const card = page.locator('.ant-card', { hasText: 'Sensitivity of automatic checks' });
     await expect(card.getByText('Defaults', { exact: true })).toBeVisible();
@@ -197,7 +209,7 @@ test.describe('Admin control centre', () => {
     await card.getByRole('button', { name: 'Reset to defaults' }).click();
     await expect(card.getByText('Defaults', { exact: true })).toBeVisible();
     await expect(warn).toBeDisabled();
-  });
+  }
 
   test('edits a member’s workspace role and reflects the server’s answer', async ({ page }) => {
     await page.goto('/admin/members');
