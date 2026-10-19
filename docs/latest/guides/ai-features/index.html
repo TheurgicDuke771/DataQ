@@ -2537,7 +2537,7 @@ comes back, and what the model is never shown.</p>
   <source src="../../assets/videos/configure-llm.mp4" type="video/mp4">
 </video>
 
-<p><em>Admin → Settings → LLM provider: point DataQ at a model, press </em><em>Test</em><em>, save. Here it is a local
+<p><em>Admin → Settings → LLM provider: point DataQ at a model, press <strong>Test</strong>, save. Here it is a local
 Ollama server; the same form takes Anthropic, Azure OpenAI, Bedrock or any
 OpenAI-compatible endpoint.</em></p>
 <h2 id="turn-it-on">Turn it on<a class="headerlink" href="#turn-it-on" title="Permanent link">¶</a></h2>
@@ -2548,7 +2548,7 @@ but the probe itself is recorded like any other call, and it runs whether or not
 enable switch is on. Then <strong>Save</strong> and switch on <em>Enable outbound LLM calls</em>. Saving with
 calls enabled runs the same test first and saves nothing if it fails; saving with them disabled
 skips the test, so a provider that stopped working can always be switched off.</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/admin-llm-settings.png" data-desc-position="bottom"><img alt="The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch" class="screenshot" src="../../assets/screenshots/admin-llm-settings.png"></a></p>
+<p></p>
 <p><em>The key is write-only: it is stored in your secret store, never shown again, and never
 forwarded if you later change the provider or endpoint — you re-enter it on purpose.</em></p>
 <table>
@@ -2623,7 +2623,7 @@ configured on <strong>Admin → Settings</strong>.</p>
 moment: the failing result, the metric's recent trend, the other checks in the same run,
 the upstream pipeline run if one triggered it, and the downstream tables that depend on the
 asset. Open it from the asset page:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/incident-evidence.png" data-desc-position="bottom"><img alt="The incident evidence drawer on an asset: the failing result, expected vs observed values, the metric trend and the sibling checks from the same run" class="screenshot" src="../../assets/screenshots/incident-evidence.png"></a></p>
+<p></p>
 <p>Click <strong>Explain this failure</strong> (or <strong>Regenerate</strong>, once one exists) at the top of the
 Root-cause narrative section:</p>
 <video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/explain-failure.jpg">
@@ -2674,7 +2674,7 @@ pick <strong>Custom SQL</strong>, and describe the rule instead of writing it. <
 description</strong> sits beside the hand-written Custom SQL card — same check type underneath,
 just a different starting point. The description box appears only when you start from that
 card; the Custom SQL card opens the plain SQL editor:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-custom-sql-picker.png" data-desc-position="bottom"><img alt="The Custom SQL category with two cards: &quot;Custom SQL&quot; for hand-written queries and &quot;Generate from a description&quot; for the model to translate" class="screenshot" src="../../assets/screenshots/check-editor-custom-sql-picker.png"></a></p>
+<p></p>
 <video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/generate-sql.jpg">
   <source src="../../assets/videos/generate-sql.mp4" type="video/mp4">
 </video>
@@ -2684,7 +2684,7 @@ tick <strong>Include column profile</strong>, and asks for <strong>one read-only
 then passes the same validator a human's custom SQL does — a single <code>SELECT</code> / <code>WITH</code>
 statement, nothing chained after a <code>;</code>, no write or DDL keywords — before it lands in the
 editor:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-sql-generate.png" data-desc-position="bottom"><img alt="The Custom SQL check editor after Generate SQL: the description, the generated SQL in the editor, and the AI-generated caveat" class="screenshot" src="../../assets/screenshots/check-editor-sql-generate.png"></a></p>
+<p></p>
 <p>Nothing is saved yet — review the SQL, <strong>dry-run it</strong>, then create the check like any
 hand-written one. For a rule that spans several tables on the <em>same</em> connection, add
 <code>additional_tables</code> (up to four) via the API; cross-connection joins are refused
@@ -2719,7 +2719,7 @@ card:</p>
 <strong>closed vocabulary of check types</strong> — a subset of the check editor's catalog: column-level
 value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
 types — and gets back candidate checks, each with a name, a rationale and a full config:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suggest-checks.png" data-desc-position="bottom"><img alt="The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining" class="screenshot" src="../../assets/screenshots/suggest-checks.png"></a></p>
+<p></p>
 <p>A <strong>freshness</strong> suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
 column profile. Every candidate goes through the same validator <code>create_check</code> uses — a

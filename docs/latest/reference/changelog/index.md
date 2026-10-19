@@ -1,7 +1,12 @@
 # Changelog
 
 Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
-the per-PR history lives in the repo's commit log and pull requests.
+the per-PR history lives in the repo's commit log and pull requests. Changes since the last
+release are recorded one small file per change in the repository's `changelog.d/` directory
+and listed under **Unreleased** when this site is built; a release gathers them into a dated
+section below.
+
+<!-- changelog.d:unreleased -->
 
 ## Unreleased
 
@@ -20,23 +25,6 @@ the per-PR history lives in the repo's commit log and pull requests.
   against it, and a peak that fails to arrive is flagged. It applies once the history
   reaches back a year, which seeding supplies at once, and each result says whether it was
   applied and what was expected.
-- **Tune automatic coverage in one place.** The thresholds and history window of the
-  automatic row-count, freshness and column-profile checks are now settings, not fixed
-  numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
-  (`PUT /admin/coverage`) and can override them for one table on its asset page
-  (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
-  level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
-  deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
-  column profile can be loosened without loosening the others. Automatic checks inherit the
-  settings on every run, so a change needs no check edited, and each result records what it
-  was scored against. Editing a threshold or the window on an automatic check gives it its
-  own values and stops it inheriting. Check responses show the values in effect and an
-  `inherited` field (`inherited_from` over MCP) naming the level they came from.
-- **See which automatic check cries wolf.** The Dashboard's coverage panel now splits the
-  false-positive rate by automatic check and by connection, each with the count behind it, so
-  a noisy column profile can be told apart from a noisy row count before any threshold is
-  changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
-  breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
   selected**. A disabled check keeps its results, version history and baseline and is left
@@ -57,6 +45,31 @@ the per-PR history lives in the repo's commit log and pull requests.
   the deployment sets a workspace default for that destination, the suite alerts it as well
   afterwards, and the app says so. In the API,
   `POST /suites/{id}/notifications/promote`.
+- **Tune automatic coverage in one place.** The thresholds and history window of the
+  automatic row-count, freshness and column-profile checks are now settings, not fixed
+  numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
+  (`PUT /admin/coverage`) and can override them for one table on its asset page
+  (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
+  level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
+  deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
+  column profile can be loosened without loosening the others. Automatic checks inherit the
+  settings on every run, so a change needs no check edited, and each result records what it
+  was scored against. Editing a threshold or the window on an automatic check gives it its
+  own values and stops it inheriting. Check responses show the values in effect and an
+  `inherited` field (`inherited_from` over MCP) naming the level they came from.
+- **See which automatic check cries wolf.** The Dashboard's coverage panel now splits the
+  false-positive rate by automatic check and by connection, each with the count behind it, so
+  a noisy column profile can be told apart from a noisy row count before any threshold is
+  changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
+  breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
+
+### Changed
+
+- **Changelog entries are collected one file per change.** The **Unreleased** section of
+  this page is now assembled from small per-change files in the repository's `changelog.d/`
+  directory when the site is built, and a release gathers them into a dated section. The
+  list a reader sees is unchanged; what changed is that two pull requests can each record
+  an entry without conflicting with each other.
 
 ## v1.2.0 — 2026-10-04
 

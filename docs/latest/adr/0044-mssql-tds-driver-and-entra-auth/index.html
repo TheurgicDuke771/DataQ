@@ -2529,7 +2529,7 @@
 <li>Supply-chain risk moves to two single-maintainer packages. Mitigations: exact pins, the rule-39 quarterly audit, and the option to vendor the dialect.</li>
 <li>Pure-Python TDS is slower than ODBC on large row transfers. DataQ pushes aggregates down and caps samples, so the spike should measure this but it is not expected to decide anything.</li>
 <li>
-<p><strong>Test harness:*- </strong>Testing:<strong> SQL Server Developer and Express images carry a proprietary EULA, so they stay out of the test tooling. A hosted Azure SQL database runs no licensed binary on our side. For Azure-free CI of the SQL-auth path, </strong>Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is a possible stand-in; it cannot stand in for Entra or Fabric.considered</p>
+<p>**Test harness:*- <strong>Testing:</strong> SQL Server Developer and Express images carry a proprietary EULA, so they stay out of the test tooling. A hosted Azure SQL database runs no licensed binary on our side. For Azure-free CI of the SQL-auth path, <strong>Babelfish for PostgreSQL</strong> (Apache-2.0, speaks TDS on 1433) is a possible stand-in; it cannot stand in for Entra or Fabric.considered</p>
 </li>
 <li>
 <p><strong>(a) <code>pyodbc</code> + msodbcsql18 in the published image.</strong> The most proven path, first-class in GX, and the one Microsoft documents for Fabric. Rejected as the <em>default</em> for the licence reasons above. It remains the documented fallback if the spike fails, under its own ADR.</p>

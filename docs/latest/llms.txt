@@ -73,7 +73,7 @@ lists which).
 - [Deployment parity (Azure · AWS · Local)](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment-parity/index.md): How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
 - [Deployment](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/index.md): How to stand DataQ up in production. This is the operator's overview; the exhaustive
 - [Observability](https://theurgicduke771.github.io/DataQ/docs/latest/operate/observability/index.md): FastAPI → Celery → Great Expectations. **PII is redacted at the logger level**, so
-- [Runbook & FAQ](https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/index.md): security-relevant — see the policy in
+- [Runbook & FAQ](https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/index.md): `python scripts/changelog.py assemble --version X.Y.Z --date YYYY-MM-DD`: it moves every
 - [Troubleshooting](https://theurgicduke771.github.io/DataQ/docs/latest/operate/troubleshooting/index.md): Common problems and where to look. For deeper telemetry (logs, traces, where they land) see
 - [Upgrading](https://theurgicduke771.github.io/DataQ/docs/latest/operate/upgrading/index.md): How to move a running DataQ to a newer release without losing data.
 

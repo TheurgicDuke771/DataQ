@@ -2631,7 +2631,7 @@ tutorial walks through (connect a data source, create a suite, add a check, run 
 panel offers the next step you are allowed to take, is the same for everyone in the
 workspace, and goes away once all four are done. Once suites have run the dashboard looks
 like this:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/dashboard.png" data-desc-position="bottom"><img alt="The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance" class="screenshot" src="../../assets/screenshots/dashboard.png"></a></p>
+<p></p>
 <h2 id="1-connect-a-datasource">1. Connect a datasource<a class="headerlink" href="#1-connect-a-datasource" title="Permanent link">¶</a></h2>
 <blockquote>
 <p><strong>This step needs the Admin role.</strong> Connections are shared infrastructure holding
@@ -2651,8 +2651,8 @@ to set the connection up — then pick this tutorial back up at
 <li>
 <p>Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Apache Iceberg,
    PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connection-type-picker.png" data-desc-position="bottom"><img alt="Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers" class="screenshot" src="../../assets/screenshots/connection-type-picker.png"></a></p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connection-form-snowflake.png" data-desc-position="bottom"><img alt="The Snowflake connection form asks only for what Snowflake needs" class="screenshot" src="../../assets/screenshots/connection-form-snowflake.png"></a></p>
+<p></p>
+<p></p>
 </li>
 <li>
 <p>Fill it in with a <strong>read-only</strong> credential (for Snowflake, key-pair auth is recommended),
@@ -2675,7 +2675,7 @@ changed without it.</p>
 </li>
 <li>
 <p>Save. The suite is empty — let's add checks. A finished suite looks like this:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suite-detail.png" data-desc-position="bottom"><img alt="A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel" class="screenshot" src="../../assets/screenshots/suite-detail.png"></a></p>
+<p></p>
 </li>
 </ol>
 <h2 id="3-add-your-first-checks">3. Add your first checks<a class="headerlink" href="#3-add-your-first-checks" title="Permanent link">¶</a></h2>
@@ -2686,8 +2686,8 @@ run?"</em> and <em>"did it land whole?"</em> — before any value-level rule.</p
 <p><strong>A freshness monitor.</strong> Add a check → <strong>Freshness</strong>, on the table's load/updated
    timestamp column. Set a <strong>fail</strong> threshold (e.g. <em>fail if &gt; 26 hours old</em> for a daily
    load). Freshness/volume monitors require a fail or critical threshold.</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-picker.png" data-desc-position="bottom"><img alt="Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL" class="screenshot" src="../../assets/screenshots/check-editor-picker.png"></a></p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-freshness.png" data-desc-position="bottom"><img alt="A freshness monitor: timestamp column plus warn / fail / critical age thresholds" class="screenshot" src="../../assets/screenshots/check-editor-freshness.png"></a></p>
+<p></p>
+<p></p>
 </li>
 <li>
 <p><strong>A value check.</strong> Add a check → a GX expectation like
@@ -2701,7 +2701,7 @@ run?"</em> and <em>"did it land whole?"</em> — before any value-level rule.</p
 <p>Before saving the value check, click <strong>Dry-run</strong> to preview it against live data — you'll
    see the observed unexpected-% so you can set a <strong>warn</strong> threshold just above today's
    baseline (so it's green now, loud only when reality changes).</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-expectation.png" data-desc-position="bottom"><img alt="A value check: the expectation, its column, severity thresholds and the dry-run preview button" class="screenshot" src="../../assets/screenshots/check-editor-expectation.png"></a></p>
+<p></p>
 </li>
 </ol>
 <p><em>Tip:</em> use the <strong>column profiler</strong> on a column to see nulls / distinct / min-max / top values
@@ -2725,8 +2725,8 @@ You can <strong>cancel</strong> a run mid-flight.</p>
 </ul>
 <p>If a run <em>failed to execute</em> (bad credential, unreachable store), it shows a plain-language
 <strong>failure reason</strong>, not just "failed".</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/results-list.png" data-desc-position="bottom"><img alt="The Results page: every run with its outcome, trigger and duration" class="screenshot" src="../../assets/screenshots/results-list.png"></a></p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/run-detail.png" data-desc-position="bottom"><img alt="A run: per-check status, the measured metric and the observed value; a critical check has opened an incident" class="screenshot" src="../../assets/screenshots/run-detail.png"></a></p>
+<p></p>
+<p></p>
 <h2 id="6-get-alerted">6. Get alerted<a class="headerlink" href="#6-get-alerted" title="Permanent link">¶</a></h2>
 <p>The short version is below; the full walk-through with screenshots is
 <a href="../first-alert/">Your first alert</a>.</p>

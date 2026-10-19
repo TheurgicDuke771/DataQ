@@ -2507,6 +2507,13 @@
 <h2 id="release-checklist">Release checklist<a class="headerlink" href="#release-checklist" title="Permanent link">¶</a></h2>
 <ul>
 <li>All CI gates green on <code>main</code>; no open release-blocking issues on the current milestone.</li>
+<li><strong>Assemble the changelog fragments.</strong> On a branch off <code>main</code>, run
+  <code>python scripts/changelog.py assemble --version X.Y.Z --date YYYY-MM-DD</code>: it moves every
+  file in <code>changelog.d/</code> into a new <code>vX.Y.Z</code> section at the top of the docs changelog
+  (Breaking, Security, Added, Changed, Fixed) and deletes the fragments. Read the section
+  once as a whole, then open the PR (it needs no fragment of its own — label it
+  <code>no-changelog</code>) and merge it <strong>before</strong> the tag, so the tag's docs build publishes the
+  release section and an empty Unreleased.</li>
 <li><strong>CHANGELOG updated at tag time</strong> (minor/major releases; patch only if user-visible or
   security-relevant — see the policy in
   <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/CHANGELOG.md">CHANGELOG.md</a>):

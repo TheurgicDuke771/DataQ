@@ -2433,7 +2433,7 @@ the value — closing the "credential-rotation events are unrecorded" hole in <e
 below without weakening the rule.</p>
 </blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
-<p>The internal Postgres data has no general history/versioning framework. <strong>Alembic versions the <em>schema<em> (DDL), not the </em>data</em></strong> — it cannot answer "what was this connection's config last Tuesday." A consistency/SCD review (2026-06-20) found:</p>
+<p>The internal Postgres data has no general history/versioning framework. <strong>Alembic versions the <em>schema</em> (DDL), not the <em>data</em></strong> — it cannot answer "what was this connection's config last Tuesday." A consistency/SCD review (2026-06-20) found:</p>
 <ul>
 <li><strong>One real history mechanism exists:</strong> <code>check_versions</code> — an immutable snapshot of a check's editable state written on create + every successful update (effectively <strong>SCD Type 4</strong>, a separate history table). It backs the check version-history drawer.</li>
 <li>Everything else is <strong>SCD Type 1</strong> (overwrite + <code>updated_at</code>): <code>connections</code> (config/credential changes), <code>suites</code>, <code>trigger_bindings</code>, <code>shares</code>. No prior-value retention.</li>
