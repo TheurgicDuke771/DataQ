@@ -300,15 +300,17 @@ jobs:
       # A PR that touches user-facing paths adds a changelog.d/ fragment, unless it carries the
       # `no-changelog` label or comes from Dependabot. Lives in this required job on purpose:
       # a new job name would need the `main protection` ruleset edited.
+      # HEAD is the PR's merge ref, so HEAD^1 is the exact base it was merged onto —
+      # `pull_request.base.sha` is a snapshot that goes stale as main moves (and a
+      # labeled/unlabeled run would blame the PR for main's newer commits).
       - name: User-facing change carries a changelog fragment
         if: github.event_name == 'pull_request'
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.actor == 'dependabot[bot]' }}
+          EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           extra=""
           [ "$EXEMPT" = "true" ] && extra="--allow-none"
-          python scripts/changelog.py check --base "$BASE" $extra
+          python scripts/changelog.py check --base HEAD^1 $extra
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:

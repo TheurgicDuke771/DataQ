@@ -12,10 +12,11 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[3]
 _SCRIPT = _ROOT / "scripts" / "changelog.py"
+_HOOK = _ROOT / "docs" / "hooks" / "changelog_fragments.py"
 
 
-def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("dataq_changelog_under_test", _SCRIPT)
+def _load_hook() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("dataq_changelog_hook_under_test", _HOOK)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -23,7 +24,8 @@ def _load() -> ModuleType:
     return module
 
 
-changelog = _load()
+hook = _load_hook()
+changelog = hook._changelog_module()  # the hook's loader is the one loader
 
 _INTRO = "# Changelog\n\nIntro.\n\n"
 _OLD = "## v1.2.0 — 2026-10-04\n\n### Added\n\n- **Old.** Entry.\n"
@@ -88,8 +90,10 @@ class TestFragmentBody:
             ("   \n", "empty"),
             ("- **Lead.** text", "leading '- '"),
             ("### Added\n**Lead.**", "heading"),
-            ("**Lead.** fixes #2395", "cites an issue"),
-            ("**Lead.** see github.com/x/y/pull/12", "cites an issue"),
+            ("**Lead.** fixes #2395", "issue/PR shorthand"),
+            ("**Lead.** fixes #35;2395", "Mermaid-escaped"),
+            ("**Lead.** see github.com/x/y/pull/12", "issue/PR link"),
+            ("**Lead.** see [the rules](../../CONTRIBUTING.md)", "unpublished internal doc"),
         ],
     )
     def test_rejects_a_malformed_body(self, tmp_path: Path, body: str, why: str) -> None:
@@ -312,6 +316,23 @@ class TestCheck:
         _commit(repo, "changelog.d/9.fixed.md", "**F.** f\n")
         assert changelog.check("main", False, repo) == []
 
+    def test_editing_an_existing_fragment_counts_too(self, repo: Path) -> None:
+        _git(repo, "checkout", "-q", "main")
+        _commit(repo, "changelog.d/9.added.md", "**A.** a\n")
+        _git(repo, "checkout", "-q", "-b", "phase-2")
+        _commit(repo, "backend/app/a.py", "a = 2\n")
+        _commit(repo, "changelog.d/9.added.md", "**A.** a, and more\n")
+        assert changelog.check("main", False, repo) == []
+
+    def test_against_a_merge_ref_only_the_branch_side_counts(self, repo: Path) -> None:
+        """CI diffs HEAD^1...HEAD on the PR's merge commit; main's newer commits stay out."""
+        _commit(repo, "docs/progress.md", "x\n")
+        _git(repo, "checkout", "-q", "main")
+        _commit(repo, "backend/app/a.py", "a = 3\n")
+        _git(repo, "checkout", "-q", "-b", "merge-ref")
+        _git(repo, "merge", "-q", "--no-ff", "-m", "merge", "feature")
+        assert changelog.check("HEAD^1", False, repo) == []
+
     def test_the_exemption_waives_the_missing_fragment(self, repo: Path) -> None:
         _commit(repo, "backend/app/a.py", "a = 2\n")
         assert changelog.check("main", True, repo) == []
@@ -348,14 +369,14 @@ class TestCheck:
 class TestCli:
     def test_lint_passes_on_the_repo(self) -> None:
         result = subprocess.run(
-            ["python", str(_SCRIPT), "lint"], capture_output=True, text=True, check=False
+            [sys.executable, str(_SCRIPT), "lint"], capture_output=True, text=True, check=False
         )
         assert result.returncode == 0, result.stderr
         assert "OK" in result.stdout
 
     def test_render_unreleased_prints_the_section(self) -> None:
         result = subprocess.run(
-            ["python", str(_SCRIPT), "render-unreleased"],
+            [sys.executable, str(_SCRIPT), "render-unreleased"],
             capture_output=True,
             text=True,
             check=False,
@@ -365,7 +386,7 @@ class TestCli:
 
     def test_check_against_a_nonexistent_ref_fails_loudly(self) -> None:
         result = subprocess.run(
-            ["python", str(_SCRIPT), "check", "--base", "no-such-ref-xyz"],
+            [sys.executable, str(_SCRIPT), "check", "--base", "no-such-ref-xyz"],
             capture_output=True,
             text=True,
             check=False,

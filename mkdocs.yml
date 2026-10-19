@@ -98,8 +98,10 @@ plugins:
 
 # Every page also published as raw Markdown + llms.txt / llms-full.txt.
 hooks:
-  - docs/hooks/llm_export.py
+  # Order matters: llm_export snapshots each page's Markdown, so the changelog hook runs first
+  # or the raw-Markdown copy and llms-full.txt would carry the bare marker.
   - docs/hooks/changelog_fragments.py # "Unreleased" on the changelog page, from changelog.d/
+  - docs/hooks/llm_export.py
 
 extra_javascript:
   - assets/clips.js

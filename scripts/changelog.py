@@ -17,6 +17,7 @@ bullet's text without the leading "- " (continuation lines unindented). Stdlib o
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import subprocess
 import sys
@@ -42,8 +43,28 @@ FRAGMENT_NAME = re.compile(
 NON_FRAGMENTS = {"README.md"}
 EMPTY_UNRELEASED = "_No changes recorded since the last release._"
 
-# Published docs never cite tickets (CONTRIBUTING rule 41); the fragments ARE published text.
-TICKET_REF = re.compile(r"#(?!35;)[0-9]{2,5}\b|github\.com/[^)\s]*?/(?:issues|pull)/[0-9]+")
+# The fragments ARE published text, but live outside docs/site/ where the rule-41 guard
+# scans, so its patterns are applied here (loaded from the guard — one copy).
+_DOCS_GUARD = ROOT / "scripts" / "check-docs-references.py"
+_PUBLISHED_TEXT_RULES = (
+    ("ISSUE_OR_PR_SHORTHAND", "issue/PR shorthand"),
+    ("MERMAID_ESCAPED_SHORTHAND", "issue/PR shorthand (Mermaid-escaped)"),
+    ("ISSUE_OR_PR_LINK", "issue/PR link"),
+    ("UNPUBLISHED_DOC_LINK", "link to an unpublished internal doc"),
+)
+
+
+def _published_text_problem(text: str) -> str | None:
+    spec = importlib.util.spec_from_file_location("dataq_check_docs_references", _DOCS_GUARD)
+    assert spec and spec.loader
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    for attr, label in _PUBLISHED_TEXT_RULES:
+        hit = getattr(guard, attr).search(text)
+        if hit:
+            return f"{label} {hit.group(0)!r}"
+    return None
+
 
 USER_FACING_PREFIXES = (
     "backend/app/",
@@ -98,11 +119,11 @@ def load_fragment(path: Path) -> Fragment:
         raise FragmentError(f"{path.name}: the body is the bullet text — drop the leading '- '")
     if body.lstrip().startswith("#"):
         raise FragmentError(f"{path.name}: a fragment is one bullet, not a heading")
-    hit = TICKET_REF.search(body)
-    if hit:
+    problem = _published_text_problem(body)
+    if problem:
         raise FragmentError(
-            f"{path.name}: {hit.group(0)!r} — published text never cites an issue or PR "
-            "(CONTRIBUTING rule 41); state the behaviour instead"
+            f"{path.name}: {problem} — published text never cites an issue or PR nor links "
+            "an internal doc (CONTRIBUTING rule 41); state the behaviour instead"
         )
     return Fragment(path, number, suffix, section, body)
 
@@ -212,7 +233,7 @@ def changed_files(base: str, cwd: Path = ROOT) -> list[tuple[str, str]]:
 def check(base: str, allow_none: bool, cwd: Path = ROOT) -> list[str]:
     """Problems with the branch's changelog bookkeeping; empty means it passes."""
     changes = changed_files(base, cwd)
-    added = [p for s, p in changes if s == "A" and p.startswith("changelog.d/")]
+    added = [p for s, p in changes if s in "AM" and p.startswith("changelog.d/")]
     problems = []
     for path in added:
         name = Path(path).name

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from functools import cache
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -19,6 +20,7 @@ _SCRIPT = _ROOT / "scripts" / "changelog.py"
 _PAGE = "reference/changelog.md"
 
 
+@cache
 def _changelog_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("dataq_changelog", _SCRIPT)
     assert spec and spec.loader
