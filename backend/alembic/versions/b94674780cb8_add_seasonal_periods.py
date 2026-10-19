@@ -23,12 +23,17 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # A recurring entry is a month-and-day range, every year (it may wrap the year end); a dated
-# one is an explicit start and end. Each kind carries exactly its own columns.
+# one is an explicit start and end. Each kind carries exactly its own columns, and a day must
+# exist in its month in some year (29 February is allowed).
 # Every column of the kind is tested for NULL by name: a NULL inside BETWEEN or >= makes the
 # whole expression NULL, which a CHECK accepts.
 _SHAPE = (
     "(kind = 'recurring' AND start_month BETWEEN 1 AND 12 AND start_day BETWEEN 1 AND 31 "
     "AND end_month BETWEEN 1 AND 12 AND end_day BETWEEN 1 AND 31 "
+    "AND start_day <= (CASE start_month WHEN 2 THEN 29 WHEN 4 THEN 30 WHEN 6 THEN 30 "
+    "WHEN 9 THEN 30 WHEN 11 THEN 30 ELSE 31 END) "
+    "AND end_day <= (CASE end_month WHEN 2 THEN 29 WHEN 4 THEN 30 WHEN 6 THEN 30 "
+    "WHEN 9 THEN 30 WHEN 11 THEN 30 ELSE 31 END) "
     "AND start_month IS NOT NULL AND start_day IS NOT NULL "
     "AND end_month IS NOT NULL AND end_day IS NOT NULL "
     "AND start_date IS NULL AND end_date IS NULL AND series IS NULL) "

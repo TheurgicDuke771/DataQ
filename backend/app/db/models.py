@@ -1415,6 +1415,10 @@ class SeasonalPeriod(Base):
         CheckConstraint(
             "(kind = 'recurring' AND start_month BETWEEN 1 AND 12 AND start_day BETWEEN 1 AND 31 "
             "AND end_month BETWEEN 1 AND 12 AND end_day BETWEEN 1 AND 31 "
+            "AND start_day <= (CASE start_month WHEN 2 THEN 29 WHEN 4 THEN 30 WHEN 6 THEN 30 "
+            "WHEN 9 THEN 30 WHEN 11 THEN 30 ELSE 31 END) "
+            "AND end_day <= (CASE end_month WHEN 2 THEN 29 WHEN 4 THEN 30 WHEN 6 THEN 30 "
+            "WHEN 9 THEN 30 WHEN 11 THEN 30 ELSE 31 END) "
             "AND start_month IS NOT NULL AND start_day IS NOT NULL "
             "AND end_month IS NOT NULL AND end_day IS NOT NULL "
             "AND start_date IS NULL AND end_date IS NULL AND series IS NULL) "

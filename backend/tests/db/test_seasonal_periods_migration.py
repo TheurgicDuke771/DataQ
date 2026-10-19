@@ -73,11 +73,40 @@ def test_downgrade_drops_the_table_and_upgrade_restores_it_holding_both_kinds(
     _run(db_session, "upgrade")
     _insert(db_session, **_RECURRING)
     _insert(db_session, **_DATED)
+    # Boundaries that must be accepted: 29 February, a wrap over the year end, a one-day
+    # dated entry.
+    _insert(
+        db_session,
+        name="Leap day",
+        kind="recurring",
+        start_month=2,
+        start_day=29,
+        end_month=2,
+        end_day=29,
+    )
+    _insert(
+        db_session,
+        name="Year end",
+        kind="recurring",
+        start_month=12,
+        start_day=20,
+        end_month=1,
+        end_day=5,
+    )
+    _insert(
+        db_session, name="One day", kind="dated", start_date="2026-05-01", end_date="2026-05-01"
+    )
 
     rows = db_session.execute(text("SELECT name, kind FROM seasonal_periods ORDER BY name")).all()
 
     assert (gone, _has_table(db_session)) == (False, True)
-    assert rows == [("Black Friday week", "recurring"), ("Spring sale 2026", "dated")]
+    assert [r[0] for r in rows] == [
+        "Black Friday week",
+        "Leap day",
+        "One day",
+        "Spring sale 2026",
+        "Year end",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -97,6 +126,11 @@ def test_downgrade_drops_the_table_and_upgrade_restores_it_holding_both_kinds(
         # A NULL inside BETWEEN makes the branch NULL, which a CHECK would accept: each column
         # is tested for NULL by name.
         {**_RECURRING, "name": "n9", "end_month": None},
+        {**_RECURRING, "name": "n10", "start_month": None},
+        {**_RECURRING, "name": "n11", "kind": None},
+        # A day that exists in no year of its month.
+        {**_RECURRING, "name": "n12", "start_month": 2, "start_day": 30},
+        {**_RECURRING, "name": "n13", "end_month": 4, "end_day": 31},
     ],
 )
 def test_the_table_refuses_a_row_of_the_wrong_shape(db_session: Any, row: dict[str, Any]) -> None:
