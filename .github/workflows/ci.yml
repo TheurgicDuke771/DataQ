@@ -177,6 +177,9 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The upgrade-path gate below needs the release tags and origin/main.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -229,6 +232,15 @@ jobs:
           python -m backend.scripts.perf_baseline create-db
           (cd backend && DATABASE_URL="$PERF_DATABASE_URL" alembic upgrade head)
           python -m backend.scripts.perf_baseline check --gate exact --gate strict
+
+      # Version-to-version upgrade path (#1704): the previous release tag's schema, seeded with
+      # that release's own demo data, upgraded to the current head, downgraded back and upgraded
+      # again — the sequence an operator's rollback follows. Inside this job for the same
+      # required-check-name reason as the perf budget above.
+      - name: Upgrade path from the previous release
+        env:
+          UPGRADE_PATH_DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_upgrade_ci
+        run: python -m backend.scripts.upgrade_path
 
   # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ───────────── The job keeps its
   # original NAME because that string is the required-status-check context in the `main` ruleset.
