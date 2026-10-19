@@ -15,6 +15,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 import { AddMemberModal } from './AddMemberModal';
 import { DataTable, Section } from './parts';
+import { useAppModal } from '../../hooks/useAppModal';
 
 /** Who is admitted to the workspace (ADR 0043) — the axis beside the role editor. */
 export function MembershipPanel() {
@@ -22,7 +23,8 @@ export function MembershipPanel() {
   const me = useMe();
   // `App.useApp()`, not the static `Modal`/`message` — the static ones render
   // outside the theme provider, which is the rule RoleEditor already follows.
-  const { modal, message } = App.useApp();
+  const { message } = App.useApp();
+  const modal = useAppModal();
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 

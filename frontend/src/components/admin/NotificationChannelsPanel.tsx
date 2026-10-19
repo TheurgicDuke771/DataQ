@@ -9,7 +9,6 @@ import {
   Flex,
   Form,
   Input,
-  Modal,
   Select,
   Table,
   Tag,
@@ -34,6 +33,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { useConfirmDelete } from '../../hooks/useConfirmDelete';
 import { AsyncBody } from '../AsyncBody';
 import { errorMessage } from '../../utils/errors';
+import { Modal } from '../shared/Modal';
 
 /**
  * Admin → Settings: reusable notification channels (#1514/#1662/#1663/#1761) — a destination

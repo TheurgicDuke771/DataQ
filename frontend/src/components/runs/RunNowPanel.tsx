@@ -1,16 +1,5 @@
 import { PlayCircleOutlined } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Empty,
-  Flex,
-  Modal,
-  Select,
-  Spin,
-  Tag,
-  Typography,
-} from 'antd';
+import { Alert, Button, Descriptions, Empty, Flex, Select, Spin, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import {
@@ -26,6 +15,7 @@ import { summarizeTarget } from '../suites/suiteTarget';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { useRunTrigger } from '../../hooks/useRunTrigger';
 import { LiveRunProgress } from './LiveRunProgress';
+import { Modal } from '../shared/Modal';
 
 /** Run-now panel — a cross-suite run launcher (suite picker + env/datasource readout). */
 export function RunNowPanel({ open, onClose }: { open: boolean; onClose: () => void }) {

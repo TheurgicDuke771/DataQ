@@ -88,4 +88,35 @@ module.exports = tseslint.config(
       '@typescript-eslint/no-deprecated': 'off',
     },
   },
+  {
+    // #2466: every dialog opens with a fade, not antd's zoom. A Select inside a zooming
+    // modal sizes its dropdown from the half-scaled trigger and opens as a sliver. These
+    // two files are where the fade is applied; everything else goes through them.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/shared/Modal.tsx', 'src/hooks/useAppModal.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'antd',
+              importNames: ['Modal'],
+              message:
+                "Use Modal from 'components/shared/Modal' (fades instead of zooming, #2466).",
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "VariableDeclarator[init.callee.object.name='App'][init.callee.property.name='useApp'] > ObjectPattern > Property[key.name='modal']",
+          message:
+            'Use useAppModal() instead of App.useApp().modal (fades instead of zooming, #2466).',
+        },
+      ],
+    },
+  },
 );

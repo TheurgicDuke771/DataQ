@@ -27,6 +27,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
+import { useAppModal } from '../../hooks/useAppModal';
 
 /** Suite-detail panel for cron-driven run schedules (A7). */
 export function SchedulesPanel({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
@@ -88,7 +89,8 @@ function ScheduleTable({
   canManage: boolean;
   onChanged: () => void;
 }) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const modal = useAppModal();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // cron is not unique per row (the same cron can run in two timezones), so
