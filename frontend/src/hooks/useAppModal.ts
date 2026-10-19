@@ -9,8 +9,8 @@ export function useAppModal() {
   const { modal } = App.useApp();
   return useMemo(() => {
     const withFade = (config: ModalFuncProps): ModalFuncProps => ({
-      transitionName: MODAL_TRANSITION,
       ...config,
+      transitionName: config.transitionName ?? MODAL_TRANSITION,
     });
     return {
       confirm: (config: ModalFuncProps) => modal.confirm(withFade(config)),

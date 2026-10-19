@@ -10,5 +10,5 @@ export const MODAL_TRANSITION = 'ant-fade';
  *  rejects importing `Modal` from antd directly. For `confirm()`-style dialogs, use
  *  `useAppModal`. */
 export function Modal(props: ModalProps) {
-  return <AntModal transitionName={MODAL_TRANSITION} {...props} />;
+  return <AntModal {...props} transitionName={props.transitionName ?? MODAL_TRANSITION} />;
 }

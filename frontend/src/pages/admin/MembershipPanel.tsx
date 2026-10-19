@@ -21,8 +21,8 @@ import { useAppModal } from '../../hooks/useAppModal';
 export function MembershipPanel() {
   const { state, reload } = useAsyncData(listWorkspaceMembers);
   const me = useMe();
-  // `App.useApp()`, not the static `Modal`/`message` — the static ones render
-  // outside the theme provider, which is the rule RoleEditor already follows.
+  // `App.useApp()` / `useAppModal()`, not the static `Modal`/`message` — the static ones
+  // render outside the theme provider, which is the rule RoleEditor already follows.
   const { message } = App.useApp();
   const modal = useAppModal();
   const [adding, setAdding] = useState(false);

@@ -8,7 +8,14 @@ import { useAppModal } from '../../src/hooks/useAppModal';
 // Capture what reaches antd: jsdom does no layout, so the transition is checked as the prop
 // antd receives, not as an animation.
 const antModalProps = vi.fn<(props: ModalProps) => void>();
-const confirm = vi.fn<(config: ModalFuncProps) => void>();
+// One spy per dialog kind, so a method wired to the wrong antd call fails its own test.
+const modalApi = {
+  confirm: vi.fn<(config: ModalFuncProps) => void>(),
+  info: vi.fn<(config: ModalFuncProps) => void>(),
+  success: vi.fn<(config: ModalFuncProps) => void>(),
+  error: vi.fn<(config: ModalFuncProps) => void>(),
+  warning: vi.fn<(config: ModalFuncProps) => void>(),
+};
 
 vi.mock('antd', async (importOriginal) => {
   const actual = await importOriginal<typeof import('antd')>();
@@ -16,7 +23,7 @@ vi.mock('antd', async (importOriginal) => {
     antModalProps(props);
     return null;
   };
-  const App = { useApp: () => ({ modal: { confirm, info: confirm } }) };
+  const App = { useApp: () => ({ modal: modalApi }) };
   return { ...actual, Modal, App };
 });
 
@@ -37,22 +44,35 @@ describe('shared Modal (#2466)', () => {
       expect.objectContaining({ transitionName: 'ant-zoom' }),
     );
   });
+
+  it('keeps the fade when a wrapper forwards an undefined transitionName', () => {
+    render(<Modal open transitionName={undefined} />);
+    expect(antModalProps).toHaveBeenCalledWith(
+      expect.objectContaining({ transitionName: 'ant-fade' }),
+    );
+  });
 });
 
 describe('useAppModal (#2466)', () => {
-  it('adds the fade transition to confirm dialogs and keeps the rest of the config', () => {
-    const { result } = renderHook(() => useAppModal());
-    result.current.confirm({ title: 'Delete “orders”?', okType: 'danger' });
-    expect(confirm).toHaveBeenCalledWith({
-      transitionName: 'ant-fade',
-      title: 'Delete “orders”?',
-      okType: 'danger',
-    });
-  });
+  it.each(['confirm', 'info', 'success', 'error', 'warning'] as const)(
+    '%s() opens with the fade and keeps the rest of the config',
+    (kind) => {
+      const { result } = renderHook(() => useAppModal());
+      result.current[kind]({ title: 'Delete “orders”?', okType: 'danger' });
+      expect(modalApi[kind]).toHaveBeenCalledWith({
+        transitionName: 'ant-fade',
+        title: 'Delete “orders”?',
+        okType: 'danger',
+      });
+      for (const other of Object.keys(modalApi) as (keyof typeof modalApi)[]) {
+        if (other !== kind) expect(modalApi[other]).not.toHaveBeenCalled();
+      }
+    },
+  );
 
-  it('applies the fade to the other dialog kinds too', () => {
+  it('keeps the fade when a caller forwards an undefined transitionName', () => {
     const { result } = renderHook(() => useAppModal());
-    result.current.info({ title: 'Heads up' });
-    expect(confirm).toHaveBeenCalledWith({ transitionName: 'ant-fade', title: 'Heads up' });
+    result.current.confirm({ title: 'Sure?', transitionName: undefined });
+    expect(modalApi.confirm).toHaveBeenCalledWith({ title: 'Sure?', transitionName: 'ant-fade' });
   });
 });

@@ -106,13 +106,27 @@ module.exports = tseslint.config(
                 "Use Modal from 'components/shared/Modal' (fades instead of zooming, #2466).",
             },
           ],
+          patterns: [
+            {
+              group: ['antd/es/modal', 'antd/es/modal/*', 'antd/lib/modal', 'antd/lib/modal/*'],
+              message:
+                "Use Modal from 'components/shared/Modal' (fades instead of zooming, #2466).",
+            },
+          ],
         },
       ],
       'no-restricted-syntax': [
         'error',
         {
+          // Any `X.useApp()` (App or an alias like AntApp), destructured or chained. A
+          // `const app = X.useApp(); app.modal` split needs type information to catch.
           selector:
-            "VariableDeclarator[init.callee.object.name='App'][init.callee.property.name='useApp'] > ObjectPattern > Property[key.name='modal']",
+            "VariableDeclarator[init.callee.property.name='useApp'] > ObjectPattern > Property[key.name='modal']",
+          message:
+            'Use useAppModal() instead of App.useApp().modal (fades instead of zooming, #2466).',
+        },
+        {
+          selector: "MemberExpression[property.name='modal'][object.callee.property.name='useApp']",
           message:
             'Use useAppModal() instead of App.useApp().modal (fades instead of zooming, #2466).',
         },
