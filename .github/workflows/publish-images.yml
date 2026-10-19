@@ -51,6 +51,9 @@ jobs:
   publish:
     name: Build + push ${{ matrix.name }} (amd64 + arm64)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # attach the notices + SBOM to the tag's release (publish-client.yml does the same)
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -120,6 +123,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build + push (multi-arch)
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
@@ -134,3 +138,50 @@ jobs:
           # qualifying merge rather than on the occasional dispatch.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # ── Distribution compliance (ADR 0031): notices + SPDX SBOM per image ──────
+      - name: Pin the pushed image by digest
+        id: pushed
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "ref=${REGISTRY}/${OWNER}/dataq-${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract THIRD-PARTY-NOTICES.md from the image
+        # The Dockerfile generated it from the exact dependency set this build installed.
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          IMAGE_REF: ${{ steps.pushed.outputs.ref }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint cat "$IMAGE_REF" /THIRD-PARTY-NOTICES.md \
+            > "THIRD-PARTY-NOTICES-${IMAGE_NAME}.md"
+          grep -q '^# Third-party notices' "THIRD-PARTY-NOTICES-${IMAGE_NAME}.md"
+
+      - name: SPDX SBOM (syft over the pushed image — OS packages included)
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          image: ${{ steps.pushed.outputs.ref }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: sbom-dataq-${{ matrix.name }}.spdx.json
+          artifact-name: sbom-dataq-${{ matrix.name }}.spdx.json
+          upload-release-assets: false
+
+      - name: Attach notices + SBOM to the GitHub Release
+        # Same shape as publish-client.yml: create the tag's release as a DRAFT if nothing has
+        # yet (a lost create race falls back to the existing one); --clobber keeps re-runs idempotent.
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes "Draft: add the curated notes, then publish." \
+              || gh release view "$GITHUB_REF_NAME" >/dev/null
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "THIRD-PARTY-NOTICES-${IMAGE_NAME}.md" "sbom-dataq-${IMAGE_NAME}.spdx.json" --clobber
