@@ -24,7 +24,8 @@ the documents a privacy or security review will ask for.
     [DPIA input sheet](compliance/dpia-input-sheet.md) ·
     [Data-subject rights](compliance/data-subject-rights-runbook.md) ·
     [Breach notification](compliance/breach-notification-runbook.md) ·
-    [DPA / BAA templates](compliance/dpa-baa-templates.md)
+    [DPA / BAA templates](compliance/dpa-baa-templates.md) ·
+    [Third-party notices & SBOM](compliance/third-party-notices.md)
 
 </div>
 

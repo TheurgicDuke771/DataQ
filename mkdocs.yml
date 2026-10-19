@@ -182,6 +182,7 @@ nav:
           - Data-subject-rights runbook: security/compliance/data-subject-rights-runbook.md
           - Breach-notification runbook: security/compliance/breach-notification-runbook.md
           - DPA / BAA templates (counsel-gated): security/compliance/dpa-baa-templates.md
+          - Third-party notices & SBOM: security/compliance/third-party-notices.md
   - Operate:
       - operate/index.md
       - Deployment: operate/deployment.md
