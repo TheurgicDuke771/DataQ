@@ -190,6 +190,11 @@ jobs:
           python -m pip install -U pip
           pip install -r backend/requirements-dev.txt
 
+      - name: Dependency licences (rule 40 allowlist over the installed set)
+        # Folded in here rather than a new job: this is the one job with requirements-dev.txt
+        # installed, and a new job name would need the main ruleset's required-check list edited.
+        run: python scripts/check-licenses.py backend
+
       - name: mypy (tests)
         # The slim `Backend — type check` job mypies backend/app against the typed subset; this
         # gates backend/tests too — run here.
@@ -312,6 +317,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Dependency licences (rule 40 allowlist over the lockfile)
+        working-directory: .
+        run: python3 scripts/check-licenses.py frontend
 
       - name: Prettier (format check)
         run: pnpm format:check

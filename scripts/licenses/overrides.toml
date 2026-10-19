@@ -1,0 +1,12 @@
+# Reviewed licence overrides for scripts/check-licenses.py (CONTRIBUTING rule 40).
+#
+# Only for a package whose packaging metadata misstates or omits a licence that is known and
+# permissive. Every entry needs `license` (SPDX id), `evidence` (URL to the upstream licence
+# file) and `reason`; an optional `version` pins the override to one release so a bump is
+# re-reviewed. Never use this to admit a strong-copyleft or source-available licence — that
+# needs an ADR-level exception.
+
+[backend.caio]
+license = "Apache-2.0"
+evidence = "https://github.com/mosquito/caio/blob/master/COPYING"
+reason = "no License / License-Expression / classifier in the wheel metadata; the shipped COPYING is the Apache-2.0 text (transitive: fastmcp -> py-key-value-aio -> aiofile -> caio)"
