@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata as metadata
 import importlib.util
 import json
 import subprocess
@@ -36,6 +37,9 @@ _SPEC.loader.exec_module(cl)
         "The Unlicense (Unlicense)",
         "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
         "OFL-1.1",
+        "Historical Permission Notice and Disclaimer (HPND)",
+        "GNU Lesser General Public License v2 (LGPLv2)",
+        "MIT-CMU",
     ],
 )
 def test_allowed_expressions(expression: str) -> None:
@@ -57,6 +61,9 @@ def test_allowed_expressions(expression: str) -> None:
         "Artistic License; GNU General Public License (GPL)",
         "Something-Nobody-Reviewed-1.0",
         "Proprietary",
+        "MIT (see LICENSE)",
+        "MIT ) AND GPL-3.0-only",
+        "Apache-2.0 (GPL-3.0 for the bundled parts)",
     ],
 )
 def test_rejected_expressions(expression: str) -> None:
@@ -116,6 +123,8 @@ def test_override_is_side_and_version_scoped(tmp_path: Path) -> None:
     assert cl.check("frontend", [_pkg("other", "UNKNOWN")], overrides) == 0
     assert cl.check("frontend", [_pkg("pkg", "UNKNOWN", version="1.0")], overrides) == 1
     assert cl.check("frontend", [_pkg("pkg", "UNKNOWN", version="2.0")], overrides) == 0
+    # pnpm reports a package installed in several versions as one row.
+    assert cl.check("frontend", [_pkg("pkg", "UNKNOWN", version="1.0, 2.0")], overrides) == 0
 
 
 def test_override_is_inert_once_the_metadata_is_fixed(tmp_path: Path) -> None:
@@ -151,11 +160,22 @@ def test_committed_overrides_file_is_well_formed() -> None:
 
 def test_backend_closure_follows_extras_and_requirement_includes(tmp_path: Path) -> None:
     child = tmp_path / "child.txt"
-    child.write_text("pytest==9.1.1  # comment\n", encoding="utf-8")
+    child.write_text(f"pytest=={metadata.version('pytest')}  # comment\n", encoding="utf-8")
     parent = tmp_path / "parent.txt"
-    parent.write_text("-r child.txt\n\n# only a comment\ncelery[redis]\n", encoding="utf-8")
+    parent.write_text(
+        "-r child.txt\n\n# only a comment\ncelery[redis]\n"
+        "dataq-no-such-package-xyz; sys_platform == 'nonesuch'\n",
+        encoding="utf-8",
+    )
     names = {p.name.lower() for p in cl.backend_closure(cl.read_requirements(parent))}
     assert {"pytest", "pluggy", "celery", "redis"} <= names
+
+
+def test_backend_closure_refuses_a_pin_the_env_has_not_installed(tmp_path: Path) -> None:
+    req = tmp_path / "r.txt"
+    req.write_text("pytest==0.0.1\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"pinned ==0\.0\.1, installed"):
+        cl.backend_closure(cl.read_requirements(req))
 
 
 def test_backend_closure_refuses_a_missing_distribution(tmp_path: Path) -> None:

@@ -47,6 +47,7 @@ ALLOWED = {
     "Python-2.0",
     "MPL-2.0",
     "LGPL",
+    "LGPL-2.0",
     "LGPL-2.1",
     "LGPL-2.1-only",
     "LGPL-2.1-or-later",
@@ -60,6 +61,7 @@ ALLOWED = {
     "BlueOak-1.0.0",
     "OFL-1.1",
     "HPND",
+    "MIT-CMU",
 }
 
 FORBIDDEN = re.compile(
@@ -97,9 +99,12 @@ _SPELLINGS = {
     "the unlicense (unlicense)": "Unlicense",
     "unlicense": "Unlicense",
     "gnu library or lesser general public license (lgpl)": "LGPL",
+    "gnu lesser general public license v2 (lgplv2)": "LGPL-2.0",
+    "gnu lesser general public license v2.1 (lgplv2.1)": "LGPL-2.1",
     "gnu lesser general public license v3 (lgplv3)": "LGPL-3.0",
     "gnu lesser general public license v2 or later (lgplv2+)": "LGPL-2.1-or-later",
     "gnu lesser general public license v3 or later (lgplv3+)": "LGPL-3.0-or-later",
+    "historical permission notice and disclaimer (hpnd)": "HPND",
     "zlib/libpng license": "Zlib",
     "zlib": "Zlib",
     "cc0 1.0 universal (cc0 1.0) public domain dedication": "CC0-1.0",
@@ -161,7 +166,8 @@ def allowed(expression: str, allow: set[str] = ALLOWED) -> bool:
             pos += 2  # exceptions (e.g. LLVM-exception) do not change the base grant
         return normalise(piece) in allow
 
-    return bool(tokens) and parse_or()
+    result = parse_or()
+    return bool(tokens) and result and pos == len(tokens)
 
 
 @dataclass
@@ -193,7 +199,7 @@ def apply_override(pkg: Package, side: str, overrides: dict[str, dict[str, str]]
     entry = overrides.get(f"{side}:{canonicalize_name(pkg.name)}")
     if entry is None or allowed(pkg.licence):
         return  # inert once upstream fixes its metadata, so the notice stays what the wheel says
-    if entry.get("version") and entry["version"] != pkg.version:
+    if entry.get("version") and entry["version"] not in pkg.version.split(", "):
         return
     pkg.override = f"declared {pkg.licence!r}; {entry['reason']} — {entry['evidence']}"
     pkg.licence = entry["license"]
@@ -267,9 +273,22 @@ def _homepage(dist: metadata.Distribution) -> str:
 def backend_closure(requirements: list[Requirement]) -> list[Package]:
     from packaging.requirements import Requirement
 
-    pending: list[tuple[str, frozenset[str]]] = [
-        (r.name, frozenset(r.extras)) for r in requirements
-    ]
+    pending: list[tuple[str, frozenset[str]]] = []
+    stale: list[str] = []
+    for req in requirements:
+        if req.marker is not None and not req.marker.evaluate():
+            continue
+        pending.append((req.name, frozenset(req.extras)))
+        try:
+            installed = metadata.version(req.name)
+        except metadata.PackageNotFoundError:
+            continue
+        if not req.specifier.contains(installed, prereleases=True):
+            stale.append(f"{req.name}: pinned {req.specifier}, installed {installed}")
+    if stale:
+        raise SystemExit(
+            "installed versions differ from the pins (install them first): " + "; ".join(stale)
+        )
     seen: dict[str, Package] = {}
     extras_seen: set[tuple[str, str]] = set()
     missing: list[str] = []
@@ -354,7 +373,8 @@ def render_notices(title: str, packages: list[Package]) -> str:
     ]
     for p in packages:
         note = " (reviewed override: see below)" if p.override else ""
-        lines.append(f"| {p.name} | {p.version} | {p.licence}{note} | {p.homepage} |")
+        cells = (p.name, p.version, f"{p.licence}{note}", p.homepage)
+        lines.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
     lines += ["", "## Licence texts", ""]
     for p in packages:
         lines += [f"### {p.name} {p.version} — {p.licence}", ""]

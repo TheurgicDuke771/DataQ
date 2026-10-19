@@ -28,6 +28,16 @@ function texts(dir) {
     .sort()
     .map((f) => [f, readFileSync(join(dir, f), 'utf8')]);
 }
+// One entry per installed copy: a package present in two versions may carry two licence texts.
+function copies(p) {
+  const seen = new Map();
+  for (const dir of p.paths) {
+    const { version } = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    if (!seen.has(version)) seen.set(version, texts(dir));
+  }
+  return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+const cell = (v) => String(v ?? '').replace(/\|/g, '\\|');
 
 const unknown = packages.filter((p) => !p.license || /unknown/i.test(p.license));
 if (unknown.length) {
@@ -48,21 +58,24 @@ const lines = [
   '|---|---|---|---|',
 ];
 for (const p of packages) {
-  lines.push(`| ${p.name} | ${p.versions.join(', ')} | ${p.license} | ${p.homepage ?? ''} |`);
+  lines.push(
+    `| ${cell(p.name)} | ${cell(p.versions.join(', '))} | ${cell(p.license)} | ${cell(p.homepage)} |`,
+  );
 }
 lines.push('', '## Licence texts', '');
 for (const p of packages) {
   lines.push(`### ${p.name} ${p.versions.join(', ')} — ${p.license}`, '');
   if (p.author) lines.push(`Author: ${p.author}`, '');
-  const files = texts(p.paths[0]);
-  if (!files.length) {
-    lines.push(
-      `No licence text is shipped in the package; see ${p.homepage || "the project's repository"}.`,
-      '',
-    );
-  }
-  for (const [name, text] of files) {
-    lines.push(`#### ${name}`, '', '```text', text.replace(/\n+$/, ''), '```', '');
+  for (const [version, files] of copies(p)) {
+    if (!files.length) {
+      lines.push(
+        `No licence text is shipped in ${p.name}@${version}; see ${p.homepage || "the project's repository"}.`,
+        '',
+      );
+    }
+    for (const [name, text] of files) {
+      lines.push(`#### ${name} (${version})`, '', '```text', text.replace(/\n+$/, ''), '```', '');
+    }
   }
 }
 writeFileSync(out, lines.join('\n') + '\n');
