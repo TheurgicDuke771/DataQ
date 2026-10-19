@@ -1,62 +1,12 @@
 # Changelog
 
 Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
-the per-PR history lives in the repo's commit log and pull requests.
+the per-PR history lives in the repo's commit log and pull requests. Changes since the last
+release are recorded one small file per change in the repository's `changelog.d/` directory
+and listed under **Unreleased** when this site is built; a release gathers them into a dated
+section below.
 
-## Unreleased
-
-### Added
-
-- **Anomaly checks on a value per day or week.** Two new anomaly metrics,
-  `period_row_count` and `period_sum`, watch the rows or the summed amount in each calendar
-  period of a date column, for tables whose whole-table row count only grows. A period is
-  judged once it is complete and has settled (`timezone`, `settle_hours`), and each period
-  gets one stored point. On its first run a check seeds up to three years of history from
-  the table's own rows (marked `backfilled`, apart from what later runs observe), so it
-  scores at once; `backfill: false` turns that off.
-- **Yearly seasonality for anomaly checks.** With `yearly` on, a per-period anomaly check
-  also compares with the same time in earlier years: a peak that came last year is expected
-  this year and gets room in proportion to its size, the days after it are not judged
-  against it, and a peak that fails to arrive is flagged. It applies once the history
-  reaches back a year, which seeding supplies at once, and each result says whether it was
-  applied and what was expected.
-- **Tune automatic coverage in one place.** The thresholds and history window of the
-  automatic row-count, freshness and column-profile checks are now settings, not fixed
-  numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
-  (`PUT /admin/coverage`) and can override them for one table on its asset page
-  (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
-  level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
-  deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
-  column profile can be loosened without loosening the others. Automatic checks inherit the
-  settings on every run, so a change needs no check edited, and each result records what it
-  was scored against. Editing a threshold or the window on an automatic check gives it its
-  own values and stops it inheriting. Check responses show the values in effect and an
-  `inherited` field (`inherited_from` over MCP) naming the level they came from.
-- **See which automatic check cries wolf.** The Dashboard's coverage panel now splits the
-  false-positive rate by automatic check and by connection, each with the count behind it, so
-  a noisy column profile can be told apart from a noisy row count before any threshold is
-  changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
-  breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
-- **Disable a check without deleting it.** A check can be switched off from its row on the
-  suite page, from its editor, or many at once with **Disable selected** and **Enable
-  selected**. A disabled check keeps its results, version history and baseline and is left
-  out of every run until it is switched back on: it records no result and raises no alert
-  or incident, and it stops counting toward dimension coverage. Until now the only ways to
-  stop a check were to delete it, which erases its history, or to snooze it, which still
-  runs it. Disabling does not close an incident already open on the check. In the API,
-  `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
-  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`, and
-  applying a file that does not mention `enabled` leaves each check's switch alone; over
-  MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
-  `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
-- **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
-  Teams or Slack webhook or recipient list from before channels existed now offers a
-  workspace admin **Promote to channel** on the suite's notification panel. It creates a
-  channel from the existing value, links it to the suite and removes the inline value; the
-  webhook URL is moved without being shown, so it works when nobody still has the URL. If
-  the deployment sets a workspace default for that destination, the suite alerts it as well
-  afterwards, and the app says so. In the API,
-  `POST /suites/{id}/notifications/promote`.
+<!-- changelog.d:unreleased -->
 
 ## v1.2.0 — 2026-10-04
 
