@@ -1,17 +1,19 @@
 import uuid
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -126,6 +128,9 @@ SUGGESTION_SOURCES = ("profile", "llm")
 SUGGESTION_STATUSES = ("pending", "accepted", "rejected")
 # Who resolved: a user, or the engine on the first passing result. NULL until resolved.
 INCIDENT_RESOLVED_BY = ("user", "auto")
+# Declared seasonal periods (ADR 0048 decision 5): a month-and-day range every year, or one
+# explicit date range.
+SEASONAL_PERIOD_KINDS = ("recurring", "dated")
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -1393,6 +1398,53 @@ class CoverageSetting(Base):
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class SeasonalPeriod(Base):
+    """One entry of the workspace calendar of declared seasonal periods (ADR 0048 decision 5).
+
+    `recurring` is a month-and-day range every year (it may wrap the year end); `dated` is an
+    explicit start and end. Dated entries sharing a `series` are occurrences of one period
+    across years. A check attaches entries by id in its config; nothing applies by default.
+    """
+
+    __tablename__ = "seasonal_periods"
+    __table_args__ = (
+        _in_check("kind", SEASONAL_PERIOD_KINDS, "kind_valid"),
+        CheckConstraint(
+            "(kind = 'recurring' AND start_month BETWEEN 1 AND 12 AND start_day BETWEEN 1 AND 31 "
+            "AND end_month BETWEEN 1 AND 12 AND end_day BETWEEN 1 AND 31 "
+            "AND start_month IS NOT NULL AND start_day IS NOT NULL "
+            "AND end_month IS NOT NULL AND end_day IS NOT NULL "
+            "AND start_date IS NULL AND end_date IS NULL AND series IS NULL) "
+            "OR (kind = 'dated' AND start_date IS NOT NULL AND end_date IS NOT NULL "
+            "AND end_date >= start_date "
+            "AND start_month IS NULL AND start_day IS NULL AND end_month IS NULL "
+            "AND end_day IS NULL)",
+            name="shape",
+        ),
+        Index("uq_seasonal_periods_name_lower", text("lower(name)"), unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    start_month: Mapped[int | None] = mapped_column(SmallInteger)
+    start_day: Mapped[int | None] = mapped_column(SmallInteger)
+    end_month: Mapped[int | None] = mapped_column(SmallInteger)
+    end_day: Mapped[int | None] = mapped_column(SmallInteger)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    series: Mapped[str | None] = mapped_column(String(128))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
 
