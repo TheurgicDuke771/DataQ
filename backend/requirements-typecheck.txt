@@ -14,7 +14,7 @@
 #     scripts/run-pinned-tool.py fails it if the env's versions differ from these
 #     pins. No second list to keep in step (#2080).
 
-anthropic==1.8.0
+anthropic==1.15.0
 fastapi==0.142.2
 fastapi-azure-auth==5.3.0
 fastmcp==4.0.10
