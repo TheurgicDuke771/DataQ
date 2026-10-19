@@ -11,6 +11,9 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build
+# Licence notices for the runtime dependencies the bundle ships (ADR 0031); the allowlist gate
+# itself runs in CI (scripts/check-licenses.py).
+RUN node scripts/third-party-notices.mjs /THIRD-PARTY-NOTICES.md
 
 FROM nginx:1.27-alpine AS serve
 # Link the GHCR package to this repo (shows under the repo's Packages, lets the repo's Actions
@@ -20,6 +23,9 @@ LABEL org.opencontainers.image.source="https://github.com/TheurgicDuke771/DataQ"
 LABEL org.opencontainers.image.description="DataQ frontend (React SPA served by nginx)"
 LABEL org.opencontainers.image.licenses="MIT"
 COPY --from=build /app/dist /usr/share/nginx/html
+# Bundled third-party licence notices (ADR 0031): in the image root, served at /third-party-notices,
+# and attached to each GitHub release.
+COPY --from=build /THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 # Template (not a static conf): the nginx entrypoint envsubst's it at startup so
 # the API upstream + auth config are runtime-configurable.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template

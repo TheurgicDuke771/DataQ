@@ -91,6 +91,12 @@ server {
         return 200 'window.__DATAQ_CONFIG__={"auth":{"mode":"${DATAQ_AUTH_MODE}","authority":"${DATAQ_AUTH_AUTHORITY}","clientId":"${DATAQ_AUTH_CLIENT_ID}","apiScope":"${DATAQ_AUTH_API_SCOPE}","scope":"${DATAQ_AUTH_SCOPE}","logoutStyle":"${DATAQ_AUTH_LOGOUT_STYLE}"}};';
     }
 
+    # Third-party licence notices bundled in the image (ADR 0031).
+    location = /third-party-notices {
+        alias /THIRD-PARTY-NOTICES.md;
+        default_type "text/markdown; charset=utf-8";
+    }
+
     # Runtime DNS resolver from the running container's /etc/resolv.conf.
     resolver ${NGINX_LOCAL_RESOLVERS} ipv6=off valid=10s;
 
