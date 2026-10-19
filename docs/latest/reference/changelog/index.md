@@ -71,6 +71,12 @@ section below.
   list a reader sees is unchanged; what changed is that two pull requests can each record
   an entry without conflicting with each other.
 
+### Fixed
+
+- **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
+  Critical picker while the dialog was still animating in produced a dropdown about 30px wide
+  with unreadable options; it now always opens at the picker's full width.
+
 ## v1.2.0 — 2026-10-04
 
 ### Breaking
