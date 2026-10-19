@@ -336,6 +336,28 @@ enforced", with a `membership_table_missing` WARNING per process), so the
 symptom is a log line, not an outage. Roll through the workflow anyway; the
 fail-safe is a floor, not a plan.
 
+## Release checklist
+
+A release is a `vX.Y.Z` tag on `main`. Beyond the pre-deploy checklist below (which applies to
+the tagged SHA), every release:
+
+- [ ] **States its rollback line** in the GitHub Release notes and the changelog's release
+  heading (CONTRIBUTING rule 31a):
+  `Rollback: previous images on this schema — yes | no · DB restore needed — yes | no · downgrade target <previous head>`.
+  The previous head is `alembic heads` on the previous tag's tree (the upgrade-path CI step
+  prints it as `<tag> head: <rev>`). "Yes / no" is what the two-step migration discipline
+  guarantees; anything else is a **Breaking** entry with the reason and a migration docstring
+  saying what `downgrade` loses.
+- [ ] **The upgrade-path CI step is green on the tagged SHA** — `Backend — tests` → "Upgrade
+  path from the previous release" — so the previous tag's schema, seeded with that release's
+  demo data, upgrades to this release, downgrades back and upgrades again. Run it locally the
+  same way: `UPGRADE_PATH_DATABASE_URL=… python -m backend.scripts.upgrade_path`.
+- [ ] **Names every one-time backfill** (`backend/scripts/…`, see the post-deploy smoke list)
+  and every `MANDATORY PRE-DEPLOY` migration step in the release notes, so an operator
+  upgrading across several releases finds them in one place.
+- [ ] **Operators have a backup to roll back to** — the runbook
+  (`docs/site/operate/backup-restore-upgrade.md`) is what the release notes point at.
+
 ## Pre-deploy checklist
 
 Confirm the change is *ready and green* before you push it to prod:
