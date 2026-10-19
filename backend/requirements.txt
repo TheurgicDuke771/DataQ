@@ -58,7 +58,7 @@ snowflake-connector-python==4.8.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps →
 cryptography==50.0.1               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past PYSEC-2026-3552 (49.0.0). Needs pyOpenSSL≥26.4.0, which lifts its cryptography<50 cap to <51
 azure-storage-blob==12.31.0       # ADLS Gen2
 boto3==1.43.103                    # S3, AWS Secrets Manager (SecretStore)
-databricks-sql-connector==4.5.0   # Unity Catalog
+databricks-sql-connector==4.6.0   # Unity Catalog
 databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
 pyarrow==25.0.1                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
 pandas==3.0.6                     # every frame lane + GX's own. Pinned like GX (CLAUDE.md §11): it arrived transitively, so the image/CI (3.0.6) and a dev env (2.2.3) ran different MAJORS — pandas 3 changed the default string dtype and datetime units (#2148). BSD-3-Clause
