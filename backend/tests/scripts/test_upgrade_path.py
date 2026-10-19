@@ -108,6 +108,39 @@ def test_lost_rows_ignores_new_tables_and_growth() -> None:
     assert up.lost_rows(before, after) == {"checks": (8, 7)}
 
 
+def test_scratch_name_must_carry_the_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(up.UpgradePathError, match="refusing to drop"):
+        up.scratch_database_name("postgresql+psycopg2://u:p@localhost:5432/dataq")
+    assert up.scratch_database_name("postgresql+psycopg2://u:p@h/dataq_upgrade_ci") == (
+        "dataq_upgrade_ci"
+    )
+
+
+def test_scratch_name_must_differ_from_the_live_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://u:p@localhost:5432/dataq_upgrade")
+    with pytest.raises(up.UpgradePathError, match="differ from DATABASE_URL"):
+        up.scratch_database_name("postgresql+psycopg2://u:p@localhost:5432/dataq_upgrade")
+
+
+def test_a_failed_step_survives_a_failed_drop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(up, "extract_tree", lambda tag, path, dest, **_: _REPO_VERSIONS)
+    monkeypatch.setattr(up, "recreate_database", lambda url, *, echo: None)
+
+    def failing_cycle(url: str, **_: object) -> None:
+        raise up.UpgradePathError("alembic upgrade head failed (exit 1)")
+
+    def failing_drop(url: str, *, echo: up.Echo) -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(up, "_cycle", failing_cycle)
+    monkeypatch.setattr(up, "drop_database", failing_drop)
+    with pytest.raises(up.UpgradePathError, match="alembic upgrade head failed"):
+        up.run(url="postgresql+psycopg2://u:p@h/x_upgrade", tag="v0", keep_db=False, skip_seed=True)
+
+
 def test_maintenance_url_keeps_credentials_and_swaps_the_database() -> None:
     url = up._maintenance_url("postgresql+psycopg2://u:p%40ss@db:5432/dataq_upgrade")
     assert url == "postgresql+psycopg2://u:p%40ss@db:5432/postgres"

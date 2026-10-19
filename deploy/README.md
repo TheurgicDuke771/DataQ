@@ -348,10 +348,13 @@ the tagged SHA), every release:
   prints it as `<tag> head: <rev>`). "Yes / no" is what the two-step migration discipline
   guarantees; anything else is a **Breaking** entry with the reason and a migration docstring
   saying what `downgrade` loses.
-- [ ] **The upgrade-path CI step is green on the tagged SHA** — `Backend — tests` → "Upgrade
-  path from the previous release" — so the previous tag's schema, seeded with that release's
-  demo data, upgrades to this release, downgrades back and upgrades again. Run it locally the
-  same way: `UPGRADE_PATH_DATABASE_URL=… python -m backend.scripts.upgrade_path`.
+- [ ] **The upgrade-path CI step is green on the last `main` run before the tag** —
+  `Backend — tests` → "Upgrade path from the previous release" — so the previous tag's
+  schema, seeded with that release's demo data, upgrades to this release, downgrades back
+  and upgrades again. On the tagged commit itself `git describe` returns the new tag, so
+  that run only proves re-runnability (the step says so); the cross-release proof is the
+  run just before. Run it locally the same way against the previous tag explicitly:
+  `UPGRADE_PATH_DATABASE_URL=… python -m backend.scripts.upgrade_path --tag <previous tag>`.
 - [ ] **Names every one-time backfill** (`backend/scripts/…`, see the post-deploy smoke list)
   and every `MANDATORY PRE-DEPLOY` migration step in the release notes, so an operator
   upgrading across several releases finds them in one place.

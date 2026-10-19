@@ -119,10 +119,27 @@ def _maintenance_url(url: str) -> str:
     return make_url(url).set(database="postgres").render_as_string(hide_password=False)
 
 
-def recreate_database(url: str, *, echo: Echo) -> None:
+SCRATCH_MARKER = "upgrade"
+
+
+def scratch_database_name(url: str) -> str:
+    """The database the cycle may drop: its name must carry `upgrade`, and it must not be
+    the one `DATABASE_URL` names — the drop is `WITH (FORCE)`."""
     name = make_url(url).database
     if not name:
         raise UpgradePathError(f"{ENV_VAR} must name a database")
+    live = os.environ.get("DATABASE_URL", "")
+    live_name = make_url(live).database if live else None
+    if SCRATCH_MARKER not in name or name == live_name:
+        raise UpgradePathError(
+            f"refusing to drop and recreate {name!r}: the scratch database's name must contain "
+            f"{SCRATCH_MARKER!r} and differ from DATABASE_URL's (it is dropped WITH (FORCE))"
+        )
+    return name
+
+
+def recreate_database(url: str, *, echo: Echo) -> None:
+    name = scratch_database_name(url)
     engine = create_engine(_maintenance_url(url), isolation_level="AUTOCOMMIT")
     try:
         with engine.connect() as conn:
@@ -134,7 +151,7 @@ def recreate_database(url: str, *, echo: Echo) -> None:
 
 
 def drop_database(url: str, *, echo: Echo) -> None:
-    name = make_url(url).database
+    name = scratch_database_name(url)
     engine = create_engine(_maintenance_url(url), isolation_level="AUTOCOMMIT")
     try:
         with engine.connect() as conn:
@@ -202,11 +219,7 @@ def _expect_revision(url: str, expected: str, *, step: str) -> None:
         raise UpgradePathError(f"after {step}: alembic_version is {actual}, expected {expected}")
 
 
-def seed_at_tag(tag: str, url: str, workdir: Path, *, echo: Echo) -> None:
-    """Run the release's own `seed_dev` against the release-schema database."""
-    tree = workdir / "tree"
-    tree.mkdir()
-    extract_tree(tag, "backend", tree)
+def _seed(tree: Path, url: str, *, label: str, echo: Echo) -> None:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("DATAQ_", "AUTH_", "SECRET_"))}
     env.update(
         {
@@ -220,9 +233,23 @@ def seed_at_tag(tag: str, url: str, workdir: Path, *, echo: Echo) -> None:
         [sys.executable, "-m", "backend.scripts.seed_dev"],
         cwd=tree,
         env=env,
-        label=f"seed_dev at {tag}",
+        label=label,
         echo=echo,
     )
+
+
+def seed_at_tag(tag: str, url: str, workdir: Path, *, echo: Echo) -> None:
+    """Run the release's own `seed_dev` against the release-schema database."""
+    tree = workdir / "tree"
+    tree.mkdir()
+    extract_tree(tag, "backend", tree)
+    _seed(tree, url, label=f"seed_dev at {tag}", echo=echo)
+
+
+def seed_current(url: str, *, echo: Echo) -> None:
+    """Run HEAD's `seed_dev` on the upgraded schema: the rows a real rollback downgrades
+    include what the new release wrote, not only what the old one had."""
+    _seed(REPO_ROOT, url, label="seed_dev at HEAD", echo=echo)
 
 
 def run(*, url: str, tag: str | None, keep_db: bool, skip_seed: bool, echo: Echo = print) -> int:
@@ -235,37 +262,71 @@ def run(*, url: str, tag: str | None, keep_db: bool, skip_seed: bool, echo: Echo
         if edited:
             raise UpgradePathError(
                 f"migrations shipped in {tag} are missing or edited at HEAD: {', '.join(edited)}"
+                " — on a branch older than the tag, merge origin/main; otherwise a shipped "
+                "migration was rewritten, which a deployed database already ran"
             )
         tag_head = single_head(tag_versions)
         head = single_head(REPO_ROOT / VERSIONS_REL)
         echo(f"{tag} head: {tag_head}; current head: {head}")
+        if tag_head == head:
+            echo(
+                f"HEAD carries no migration beyond {tag}: the cycle proves re-runnability only; "
+                "the cross-release proof is the last run on main before the tag"
+            )
 
         recreate_database(url, echo=echo)
+        failure: UpgradePathError | None = None
         try:
-            _alembic(tag_head, "upgrade", url, echo=echo)
-            _expect_revision(url, tag_head, step=f"upgrade to {tag}")
-            if not skip_seed:
-                seed_at_tag(tag, url, workdir, echo=echo)
-            baseline = row_counts(url)
-            echo(f"seeded {sum(baseline.values())} rows across {len(baseline)} tables")
-
-            _alembic("head", "upgrade", url, echo=echo)
-            _expect_revision(url, head, step="upgrade head")
-            if lost := lost_rows(baseline, row_counts(url)):
-                raise UpgradePathError(f"upgrade head lost rows: {lost}")
-
-            _alembic(tag_head, "downgrade", url, echo=echo)
-            _expect_revision(url, tag_head, step=f"downgrade to {tag}")
-            if lost := lost_rows(baseline, row_counts(url)):
-                raise UpgradePathError(f"downgrade to {tag_head} lost rows: {lost}")
-
-            _alembic("head", "upgrade", url, echo=echo)
-            _expect_revision(url, head, step="re-upgrade head")
-        finally:
-            if not keep_db:
+            _cycle(
+                url,
+                tag=tag,
+                tag_head=tag_head,
+                head=head,
+                workdir=workdir,
+                skip_seed=skip_seed,
+                echo=echo,
+            )
+        except UpgradePathError as exc:
+            failure = exc
+        if not keep_db:
+            try:
                 drop_database(url, echo=echo)
+            except Exception as exc:
+                if failure is None:
+                    raise UpgradePathError(f"could not drop the scratch database: {exc}") from exc
+                echo(f"scratch database not dropped after the failure below: {exc}")
+        if failure is not None:
+            raise failure
     echo(f"upgrade path {tag} ({tag_head}) -> {head} -> {tag_head} -> {head}: OK")
     return 0
+
+
+def _cycle(
+    url: str, *, tag: str, tag_head: str, head: str, workdir: Path, skip_seed: bool, echo: Echo
+) -> None:
+    _alembic(tag_head, "upgrade", url, echo=echo)
+    _expect_revision(url, tag_head, step=f"upgrade to {tag}")
+    if not skip_seed:
+        seed_at_tag(tag, url, workdir, echo=echo)
+    baseline = row_counts(url)
+    echo(f"{tag} data: {sum(baseline.values())} rows across {len(baseline)} tables")
+
+    _alembic("head", "upgrade", url, echo=echo)
+    _expect_revision(url, head, step="upgrade head")
+    if lost := lost_rows(baseline, row_counts(url)):
+        raise UpgradePathError(f"upgrade head lost rows: {lost}")
+    if not skip_seed:
+        seed_current(url, echo=echo)
+    upgraded = row_counts(url)
+    echo(f"HEAD data: {sum(upgraded.values())} rows across {len(upgraded)} tables")
+
+    _alembic(tag_head, "downgrade", url, echo=echo)
+    _expect_revision(url, tag_head, step=f"downgrade to {tag}")
+    if lost := lost_rows(upgraded, row_counts(url)):
+        raise UpgradePathError(f"downgrade to {tag_head} lost rows: {lost}")
+
+    _alembic("head", "upgrade", url, echo=echo)
+    _expect_revision(url, head, step="re-upgrade head")
 
 
 def build_parser() -> argparse.ArgumentParser:

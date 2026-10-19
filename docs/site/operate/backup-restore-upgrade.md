@@ -8,7 +8,7 @@ how to move between releases on it, and how to undo a release that went wrong.
 
 | Deployment | Database | Stored credentials | Also |
 |---|---|---|---|
-| Prebuilt-image stack (`docker-compose.ghcr.yml`) | `pg_dump` of the `dataq` database, **or** the `postgres/` directory under `DATAQ_DATA_DIR` with the stack stopped | the `openbao/` directory under `DATAQ_DATA_DIR` — the vault's raft data **and** its seal key live there together | the compose file and `.env` you started it with. The generated CA is rebuilt from the data directory on the next start; a copy of the `ghcr_local_ca` volume saves re-trusting it |
+| Prebuilt-image stack (`docker-compose.ghcr.yml`) | `pg_dump` of the `dataq` database, **or** the `postgres/` directory under `DATAQ_DATA_DIR` with the stack stopped | the `openbao/` directory under `DATAQ_DATA_DIR` — the vault's raft data **and** its seal key live there together | the compose file and `.env` you started it with. The generated CA is **not** in `DATAQ_DATA_DIR`: it lives in the `ghcr_local_ca` (certificate) and `ghcr_local_ca_key` (private key) Docker volumes, and the stack keeps it only when **both** are present — otherwise it mints a new CA and new service certificates, and every client that trusted the old one must trust the new one (`scripts/local-ca.sh`). Back up both volumes, or plan to re-trust |
 | Cloud deployment with Azure Key Vault, AWS Secrets Manager or a managed OpenBao / Vault | a Postgres snapshot or `pg_dump` | **nothing to dump** — the vault is the system of record, with its own backup. What you must keep is the **list of secret names** DataQ wrote (every connection stores its `*_secret_name`, so a database restore and the vault must agree) | the OpenTofu state and the environment variables of the api, worker and beat |
 | `SECRET_STORE=env` (evaluation only) | `pg_dump` | the environment itself — it is the secret store | — |
 
@@ -87,9 +87,11 @@ It does **not** contain:
       see [Rolling back](#rolling-back).
     - `GET /healthz` returns 200 with the api up.
     - Sign in; connections, suites and run history are what you expect.
-    - As a workspace admin, `GET /api/v1/admin/audit-events/verify` returns `status: ok`.
-      The chain restores intact — the head pointer and the events are in the same snapshot —
-      and events written after the restore chain on from the restored head.
+    - As a workspace admin, `GET /api/v1/admin/audit-events/verify` returns `status: ok`
+      (`empty` is also fine: a workspace that has not written a chained event yet; `broken`
+      is the failure). The chain restores intact — the head pointer and the events are in
+      the same snapshot — and events written after the restore chain on from the restored
+      head.
 5. **Start the worker and beat**, then **run one suite** end to end. That exercises the secret
    store, the datasource and the results path together; a restore whose credentials are
    missing fails here, not at 03:00 when the first schedule fires.
@@ -134,16 +136,19 @@ property is what makes rollback cheap.
 
 The upgrade path is tested, not assumed: on every change, CI builds a database at the
 previous release's schema, fills it with that release's own demo data, upgrades it to the
-current head, downgrades it back to the previous release and upgrades it again. A migration
-that cannot do that round trip does not merge. You can run the same check against your own
-Postgres before an upgrade:
+current head, adds what the new release writes, downgrades it back to the previous release
+and upgrades it again. A migration that cannot do that round trip does not merge. You can
+run the same check against your own Postgres server before an upgrade:
 
 ```bash
-UPGRADE_PATH_DATABASE_URL="postgresql+psycopg2://dataq:<password>@<host>:5432/dataq_upgrade_check" \
+UPGRADE_PATH_DATABASE_URL="postgresql+psycopg2://<role with CREATEDB>:<password>@<host>:5432/dataq_upgrade_check" \
   python -m backend.scripts.upgrade_path --tag <your current release>
 ```
 
-It creates and drops the named scratch database and never touches `dataq`.
+It creates and drops the named scratch database (`DROP DATABASE … WITH (FORCE)`), so the
+role needs `CREATEDB` and access to the `postgres` maintenance database — more than the
+application role has. As a guard, the scratch name must contain `upgrade` and must differ
+from the database `DATABASE_URL` names; anything else is refused before any statement runs.
 
 ## Rolling back
 
