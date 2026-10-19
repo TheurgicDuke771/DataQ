@@ -16,6 +16,8 @@ const TIERS = [
 ] as const;
 type TierKey = (typeof TIERS)[number]['key'];
 
+const SELECT_WIDTH = 150;
+
 const MODE_OPTIONS: { value: Mode; label: string }[] = [
   { value: 'keep', label: 'Leave as it is' },
   { value: 'set', label: 'Set to' },
@@ -90,7 +92,11 @@ export function BulkThresholdsModal({
             </Typography.Text>
             <Select<Mode>
               aria-labelledby={`bulk-${tier.key}-label`}
-              style={{ width: 150 }}
+              style={{ width: SELECT_WIDTH }}
+              // A fixed popup width, not the trigger's measured one: opened while the modal is
+              // still zooming in, the trigger measures ~30px and the options render 0px wide
+              // (#2443).
+              popupMatchSelectWidth={SELECT_WIDTH}
               value={modes[tier.key]}
               options={MODE_OPTIONS}
               onChange={(mode) => setModes((prev) => ({ ...prev, [tier.key]: mode }))}
