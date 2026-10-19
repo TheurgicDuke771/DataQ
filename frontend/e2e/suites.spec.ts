@@ -103,6 +103,12 @@ test.describe('Suites page', () => {
     await selectBoth();
     await page.getByRole('button', { name: 'Set thresholds', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Set thresholds on 2 checks' });
+    // Let the modal's zoom-in finish first (#2443). A Select opened mid-animation sizes its
+    // dropdown to the still-scaled trigger (~30px of 150px), so the option renders 0px wide and
+    // Playwright waits on it as "not visible" until the test times out.
+    await dialog.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)),
+    );
     await dialog.getByRole('combobox', { name: 'Fail' }).click();
     await page.locator('.ant-select-dropdown').last().getByText('Set to', { exact: true }).click();
     await dialog.getByRole('spinbutton', { name: 'Fail threshold' }).fill('5');
