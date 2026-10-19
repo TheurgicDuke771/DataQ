@@ -1308,6 +1308,43 @@ October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the s
 expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
 2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.
 
+**Declared seasonal periods** line up the peaks the weekday matching cannot: a sale that
+moves by more than a few days, or a fixed date such as 25 December. They live in one
+workspace calendar (**Admin → Seasonal periods**, `GET /api/v1/admin/seasonal-periods`;
+anyone signed in can read it, workspace admins change it, every change is audited). An entry
+is either **recurring**, a month-and-day range every year that may wrap the year end (20
+December to 5 January; a 29 February bound is taken as 28 February in a year without one),
+or **dated**, an explicit start and end. Dated entries that share a **series** (compared
+case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
+"Spring sale 2026" with series "Spring sale".
+
+An entry changes no check until it is attached: a per-period anomaly check with `yearly` on
+lists the entries that apply to its table in `seasonal_periods` (their ids; an unknown id is
+refused when the check is saved, and an entry that any check still names cannot be deleted —
+the refusal names the checks). While attached:
+
+- A day inside the period is compared with the same offset into the period's **previous
+  occurrence** (recurring: the same range the year before, then two and three years back;
+  dated: the earlier entries of its series), instead of the nearest weekday. The result's
+  `declared.inside` names the entry and the occurrence, and `declared.inside.matched` the
+  earlier days it was compared with.
+- Days inside any attached period are left out of the level, so the weeks after a sale are
+  not judged against it (`declared.excluded_from_level` counts them), and an ordinary day is
+  not matched to an earlier year's sale day.
+- **First year.** With no earlier occurrence in the history, the check knows a rise is
+  expected but not how large. A value **above** the level is reported as within the declared
+  period and not banded (the run reads `skipped`, with `reason: within_declared_period`); a
+  value **below** it is judged against the ordinary level as usual, so a load that fails
+  during a first-year sale still alerts. `declared.inside.first_year` says when this applied.
+- Every result on an attached check also carries `declared.z_score_without`,
+  `declared.verdict_without` and `declared.verdict_changed`: what the run would have scored
+  with no calendar, so it is always possible to tell whether the calendar changed the
+  verdict. An attached id with no entry behind it (which the delete refusal prevents) is
+  listed in `declared.missing`; the check keeps running.
+
+A suite export carries the ids; importing it into a workspace whose calendar does not hold
+them is refused with the ids named.
+
 ### Comparison check (all datasources — ADR 0015)
 
 *Does this dataset reconcile against that one?* A comparison check diffs the suite's

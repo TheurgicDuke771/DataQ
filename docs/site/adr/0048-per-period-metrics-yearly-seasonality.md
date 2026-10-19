@@ -133,6 +133,23 @@ this time of year usually looks like.
      the rolling baseline expects is reported as within the declared period and not banded,
      while a value **below** it is judged as usual. A load that fails during a first-year
      sale still alerts.
+   > **Amended 2026-10-19 (phase 4).** Three decisions the build had to make. (1) *A dated
+   > entry's previous occurrence.* A dated entry is one-off by itself; the schema makes
+   > "occurrences of one period" explicit with a `series` on dated entries, matched
+   > case-insensitively, and a check attaches each year's entry it wants compared. A dated
+   > entry with no earlier entry of its series among the check's attachments is a first
+   > year. (2) *29 February.* A recurring bound may be 29 February; in a year without one it
+   > is 28 February. The same offset into a previous occurrence that was shorter (a leap-year
+   > sale that ran a day longer) has no match in that occurrence and the next earlier one is
+   > tried. (3) *Attachments live in the check's config* (`seasonal_periods`, a list of ids)
+   > rather than a join table, because every surface that carries a check's definition —
+   > `check_versions`, export/import, apply, the audit snapshot and a dry run that has no
+   > check row — is config-shaped. Deleting an entry a check still names is refused by the
+   > service, naming the checks, under a row lock the attaching save shares. A calendar
+   > entry applies only with `yearly` on, since lining a day up with an earlier occurrence
+   > is the yearly comparison; attaching one without it is refused rather than ignored.
+   > Each result on an attached check reports what it would have scored with no calendar.
+
    - **Detected.** Read from a check's own history when someone asks: a run of periods at or
      above 1.5 times the level. Seen at the same time in two or more years it is *recurring*;
      in one year, *seen once*. Detected periods are shown on the check's trend so a person

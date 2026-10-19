@@ -218,6 +218,7 @@ def test_monitor_fields_match_engine_config_keys() -> None:
         "date_column",
         "min_points",
         "period",
+        "seasonal_periods",
         "seasonality",
         "settle_hours",
         "target_metric",

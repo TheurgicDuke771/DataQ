@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import uuid
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -326,7 +327,17 @@ ANOMALY_TARGET_METRICS = (
     *PERIOD_METRICS,
 )
 PERIOD_UNITS = ("day", "week")
-_PERIOD_KEYS = ("date_column", "period", "value_column", "timezone", "settle_hours", "backfill")
+_PERIOD_KEYS = (
+    "date_column",
+    "period",
+    "value_column",
+    "timezone",
+    "settle_hours",
+    "backfill",
+    "seasonal_periods",
+)
+#: Declared calendar entries one check may attach (ADR 0048 decision 5).
+SEASONAL_PERIODS_MAX = 20
 #: How much history a per-period check keeps, and how far back its seeding reads (ADR 0048).
 PERIOD_HISTORY_YEARS = 3
 _SETTLE_HOURS_DEFAULT = 6
@@ -401,6 +412,8 @@ class AnomalyParams:
     period: PeriodSpec | None = None
     #: Compare with the same time in earlier years as well (ADR 0048). Per-period metrics.
     yearly: bool = False
+    #: Declared calendar entries attached to the check (ADR 0048 decision 5); needs ``yearly``.
+    seasonal_periods: tuple[uuid.UUID, ...] = ()
 
     #: Keep the seasonal horizon even with seasonality off (ADR 0047): a check that inherits its
     #: shape must not lose history when an Admin switches seasonality off and on again.
@@ -479,15 +492,46 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
             f"anomaly yearly is available only for target_metric "
             f"{' or '.join(repr(m) for m in PERIOD_METRICS)}, not {target_metric!r}"
         )
+    period = _period_spec(config, str(target_metric), authoring=authoring)
     return AnomalyParams(
         target_metric=str(target_metric),
         column=column,
         window=window,
         min_points=min_points,
         seasonality=seasonality,
-        period=_period_spec(config, str(target_metric), authoring=authoring),
+        period=period,
         yearly=yearly,
+        seasonal_periods=_seasonal_period_ids(config, yearly=yearly) if period else (),
     )
+
+
+def _seasonal_period_ids(config: dict[str, Any], *, yearly: bool) -> tuple[uuid.UUID, ...]:
+    """The calendar entries a per-period check attaches: a short list of ids, in order,
+    without repeats. Whether each id names a row is the authoring service's question."""
+    raw = config.get("seasonal_periods")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise MonitorConfigError(f"anomaly seasonal_periods must be a list of ids: {_echo(raw)}")
+    if len(raw) > SEASONAL_PERIODS_MAX:
+        raise MonitorConfigError(
+            f"anomaly seasonal_periods takes at most {SEASONAL_PERIODS_MAX} entries, got {len(raw)}"
+        )
+    ids: list[uuid.UUID] = []
+    for item in raw:
+        try:
+            parsed = item if isinstance(item, uuid.UUID) else uuid.UUID(str(item))
+        except (TypeError, ValueError, AttributeError):
+            raise MonitorConfigError(
+                f"anomaly seasonal_periods must hold calendar entry ids: {_echo(item)}"
+            ) from None
+        if parsed not in ids:
+            ids.append(parsed)
+    if ids and not yearly:
+        # The calendar lines a day up with the period's earlier occurrence, which is the
+        # yearly comparison; without it an attachment would silently do nothing.
+        raise MonitorConfigError("anomaly seasonal_periods needs yearly: true")
+    return tuple(ids)
 
 
 def _period_spec(
@@ -686,12 +730,14 @@ def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Chec
         expected["column"] = params.column
     if params.yearly:
         expected["yearly"] = True
+    if params.seasonal_periods:
+        expected["seasonal_periods"] = [str(i) for i in params.seasonal_periods]
     if params.period is not None:
         expected["date_column"] = params.period.date_column
         expected["period"] = params.period.unit
         if params.period.value_column is not None:
             expected["value_column"] = params.period.value_column
-    if scalar.get("insufficient_history"):
+    if scalar.get("insufficient_history") or scalar.get("within_declared_period"):
         return CheckOutcome(
             expectation_type=expectation_type,
             success=True,  # not a verdict — `skipped` is what the status reads

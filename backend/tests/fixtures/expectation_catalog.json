@@ -346,7 +346,8 @@
       "window",
       "min_points",
       "seasonality",
-      "yearly"
+      "yearly",
+      "seasonal_periods"
     ],
     "noThresholds": false,
     "dataframeOnly": false

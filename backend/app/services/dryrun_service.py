@@ -28,6 +28,7 @@ from backend.app.db.models import GX_ENGINE, Connection
 from backend.app.services import credential_health, privacy_settings_service, run_target
 from backend.app.services.check_service import (
     reject_thresholds_on_unbanded,
+    require_seasonal_periods,
     validate_engine,
     validate_engine_compatibility,
     validate_expectation_check,
@@ -130,7 +131,7 @@ def dry_run_check(
             )
         if kind == ANOMALY:
             return _dry_run_anomaly(
-                connection, config=config, target=target, secret_store=secret_store
+                session, connection, config=config, target=target, secret_store=secret_store
             )
         if kind not in (_EXPECTATION_KIND, AGGREGATE):
             raise DryRunUnsupportedError(
@@ -481,6 +482,7 @@ def _dry_run_schema_drift(
 
 
 def _dry_run_anomaly(
+    session: Session,
     connection: Connection,
     *,
     config: dict[str, Any],
@@ -504,6 +506,7 @@ def _dry_run_anomaly(
         params = anomaly_params(config, authoring=True)
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": ANOMALY}) from exc
+    require_seasonal_periods(session, config)
     resolved = run_target.resolve_target(connection.type, target)
     now = datetime.now(UTC)
     try:

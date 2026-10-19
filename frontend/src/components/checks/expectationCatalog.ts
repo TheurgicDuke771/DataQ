@@ -947,6 +947,14 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It applies once the history reaches back a year, which seeding from the table can supply at once; until then the check scores as usual and each result says so.',
         showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
+      {
+        name: 'seasonal_periods',
+        label: 'Declared seasonal periods',
+        type: 'list',
+        optional: true,
+        help: 'Comma-separated ids of workspace calendar entries (Admin → seasonal periods) that apply to this table. A day inside one is compared with the same day of the period’s previous occurrence; needs yearly seasonality on.',
+        showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
+      },
     ],
     thresholds: {
       help: 'Band the anomaly z-score — how many standard deviations this run is from the learned baseline (higher = worse). A fail or critical threshold is required. The check reports skip (not a verdict) until the minimum points of history accrue.',

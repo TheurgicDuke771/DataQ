@@ -38,6 +38,7 @@ from backend.app.datasources.monitors import (
     MONITOR_KINDS,
     SCHEMA_DRIFT,
     MonitorConfigError,
+    anomaly_params,
     monitor_expectation_type,
     validate_monitor_config,
 )
@@ -368,8 +369,11 @@ def validate_monitor_check(
     warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
+    session: Session | None = None,
 ) -> None:
-    """Validate a monitor check of any kind at author time (create/update)."""
+    """Validate a monitor check of any kind at author time (create/update). ``session`` lets
+    an anomaly check's attached seasonal periods be looked up; without it only their shape
+    is checked."""
     # Same #651 string-size cap as expectation/comparison checks (#1787).
     _reject_oversized_config(config)
     capable = _CAPABLE_TYPES_BY_KIND.get(kind, MONITOR_CAPABLE_TYPES)
@@ -415,11 +419,29 @@ def validate_monitor_check(
             "fail (no threshold) or always fails (zero)",
             detail={"kind": kind},
         )
+    if kind == ANOMALY and session is not None:
+        require_seasonal_periods(session, config)
     if kind == AGGREGATE:
         _validate_aggregate_check(
             config,
             connection_type=connection_type,
             thresholds=(warn_threshold, fail_threshold, critical_threshold),
+        )
+
+
+def require_seasonal_periods(session: Session, config: dict[str, Any]) -> None:
+    """Every calendar entry an anomaly config attaches must exist (ADR 0048 decision 5). The
+    rows are share-locked for the caller's transaction, so a delete cannot land between
+    this check and the save."""
+    from backend.app.services import seasonal_period_service
+
+    ids = anomaly_params(config, authoring=True).seasonal_periods
+    unknown = seasonal_period_service.unknown_ids(session, ids)
+    if unknown:
+        raise CheckConfigInvalidError(
+            "seasonal_periods names calendar entries that do not exist: "
+            + ", ".join(str(i) for i in unknown),
+            detail={"kind": ANOMALY, "unknown_seasonal_periods": [str(i) for i in unknown]},
         )
 
 
@@ -945,6 +967,7 @@ def create_check(
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
+            session=session,
         )
     elif kind == COMPARISON_KIND:
         validate_comparison_check(
@@ -1079,6 +1102,7 @@ def _validate_kind_specific_config(
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
+            session=session,
         )
     elif check.kind == COMPARISON_KIND:
         suite = get_suite(session, suite_id)

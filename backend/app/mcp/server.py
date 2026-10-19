@@ -2265,6 +2265,23 @@ def create_check(
       cannot tell a yearly event from a one-off, and ``ratios`` that disagree
       (two years with a peak, one without) make the comparison loose: say how
       many years stand behind it.
+    - ``seasonal_periods`` (optional, with ``yearly`` on a per-period metric): a
+      list of ids of the workspace's declared seasonal calendar entries (a sale
+      that moves, a fixed date) that apply to this table. A day inside one is
+      compared with the same day of that period's previous occurrence instead of
+      the nearest weekday, and days inside any attached period are kept out of
+      the level. The ids are not readable over MCP yet (the calendar's read
+      tools are a later phase), so take them from the user or the REST calendar
+      (``GET /api/v1/admin/seasonal-periods``); an unknown id is refused here.
+      A check's config read back carries the ids only, not the names.
+      ``observed_value.declared`` on each result says which entry the judged
+      period fell ``inside`` (or null), the earlier occurrences it was
+      ``matched`` to, whether the ``first_year`` rule applied (a rise with no
+      earlier occurrence to size it by is reported as within the period and not
+      banded, so the run reads ``skipped``), how many points the calendar left
+      out of the level, and ``z_score_without`` / ``verdict_without`` /
+      ``verdict_changed``: what the run would have scored with no calendar.
+      Read ``verdict_changed`` before saying the calendar explains a result.
 
     **Per-period metrics** are for a table that only grows, where a whole-table
     ``row_count`` has no normal to return to ('alert me when daily orders look
