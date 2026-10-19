@@ -37,6 +37,11 @@ function renderPanel(canManage = true) {
   );
 }
 
+// Resolves once the policy has loaded and the form is on screen. Wait on a form-only label: the
+// card's subtitle ("Which column locates a failing row…") also renders during the loading spinner,
+// so waiting on it raced the mocked fetch and flaked on slow CI runners (#2464).
+const waitForForm = () => screen.findByText('PII columns (always masked)');
+
 afterEach(() => vi.clearAllMocks());
 
 describe('SamplePolicyPanel', () => {
@@ -89,7 +94,7 @@ describe('SamplePolicyPanel', () => {
     mockListColumns.mockResolvedValue(['ORDER_NUMBER', 'EMAIL', 'SKU']);
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
 
     // Not fetched on mount — only when a dropdown first opens (live round-trip).
     expect(mockListColumns).not.toHaveBeenCalled();
@@ -114,7 +119,7 @@ describe('SamplePolicyPanel', () => {
     mockListColumns.mockResolvedValue(['ORDER_NUMBER', 'SKU']);
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
 
     const [identifierCombo, piiCombo] = screen.getAllByRole('combobox');
     await user.click(identifierCombo); // open identifier → the one fetch
@@ -129,7 +134,7 @@ describe('SamplePolicyPanel', () => {
     mockListColumns.mockRejectedValue(new Error('warehouse unreachable'));
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
 
     await user.click(screen.getAllByRole('combobox')[0]); // open → fetch rejects
     await waitFor(() => expect(mockListColumns).toHaveBeenCalled());
@@ -151,7 +156,7 @@ describe('SamplePolicyPanel', () => {
         />
       </AntApp>,
     );
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
     await user.click(screen.getAllByRole('combobox')[0]);
     // A pattern target has no fixed table/file → never introspects.
     expect(mockListColumns).not.toHaveBeenCalled();
@@ -160,8 +165,9 @@ describe('SamplePolicyPanel', () => {
   it('hides the mutation controls without manage rights', async () => {
     mockGet.mockResolvedValue({ identifier_column: null, pii_columns: [] });
     renderPanel(false);
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Auto-detect' })).not.toBeInTheDocument();
   });
 
   it('flows an iceberg namespace into both the column-introspection and suggest requests (#721)', async () => {
@@ -185,7 +191,7 @@ describe('SamplePolicyPanel', () => {
         />
       </AntApp>,
     );
-    await screen.findByText(/Which column locates a failing row/);
+    await waitForForm();
 
     await user.click(screen.getAllByRole('combobox')[0]); // open the identifier Select
     await waitFor(() =>
