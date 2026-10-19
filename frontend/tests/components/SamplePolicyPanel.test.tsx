@@ -168,6 +168,10 @@ describe('SamplePolicyPanel', () => {
     await waitForForm();
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Auto-detect' })).not.toBeInTheDocument();
+    // Both column pickers are read-only too, not just the buttons.
+    const pickers = screen.getAllByRole('combobox');
+    expect(pickers).toHaveLength(2);
+    for (const picker of pickers) expect(picker).toBeDisabled();
   });
 
   it('flows an iceberg namespace into both the column-introspection and suggest requests (#721)', async () => {
