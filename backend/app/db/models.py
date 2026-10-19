@@ -1428,6 +1428,11 @@ class SeasonalPeriod(Base):
             "AND end_day IS NULL)",
             name="shape",
         ),
+        CheckConstraint(
+            "name = btrim(name) AND name <> '' "
+            "AND (series IS NULL OR (series = btrim(series) AND series <> ''))",
+            name="trimmed",
+        ),
         Index("uq_seasonal_periods_name_lower", text("lower(name)"), unique=True),
     )
 

@@ -41,6 +41,12 @@ _SHAPE = (
     "AND end_date >= start_date "
     "AND start_month IS NULL AND start_day IS NULL AND end_month IS NULL AND end_day IS NULL)"
 )
+# Uniqueness is case-folded, so a name or series that differs only by padding must not be a
+# second row.
+_TRIMMED = (
+    "name = btrim(name) AND name <> '' "
+    "AND (series IS NULL OR (series = btrim(series) AND series <> ''))"
+)
 
 
 def upgrade() -> None:
@@ -81,8 +87,10 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
-        sa.CheckConstraint("kind IN ('recurring', 'dated')", name="ck_seasonal_periods_kind_valid"),
-        sa.CheckConstraint(_SHAPE, name="ck_seasonal_periods_shape"),
+        # Short names: the env's naming convention prefixes `ck_<table>_`, as for the model.
+        sa.CheckConstraint("kind IN ('recurring', 'dated')", name="kind_valid"),
+        sa.CheckConstraint(_SHAPE, name="shape"),
+        sa.CheckConstraint(_TRIMMED, name="trimmed"),
     )
     # Expression index, mirroring `uq_users_email_lower`: Postgres cannot express a unique
     # CONSTRAINT over an expression.
