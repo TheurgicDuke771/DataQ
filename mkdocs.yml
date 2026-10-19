@@ -99,6 +99,7 @@ plugins:
 # Every page also published as raw Markdown + llms.txt / llms-full.txt.
 hooks:
   - docs/hooks/llm_export.py
+  - docs/hooks/changelog_fragments.py # "Unreleased" on the changelog page, from changelog.d/
 
 extra_javascript:
   - assets/clips.js
