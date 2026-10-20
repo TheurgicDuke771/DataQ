@@ -2016,7 +2016,10 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     created from this document is not runnable until ``update_suite`` gives it a
     target, and none of its automation comes with it. When the user asks to see
     "the whole suite", pair this with ``list_schedules``,
-    ``list_trigger_bindings`` and ``get_notification_config``.
+    ``list_trigger_bindings`` and ``get_notification_config``. Declared seasonal
+    calendar entries are not exported either: an anomaly check keeps their ids
+    in ``seasonal_periods``, which resolve only in the same workspace (an import
+    elsewhere is refused naming them).
 
     **An automatic baseline that inherits its thresholds** (``inherited_from`` on
     ``get_check``) is written with the values in effect at the moment of export and
@@ -2270,18 +2273,29 @@ def create_check(
       that moves, a fixed date) that apply to this table. A day inside one is
       compared with the same day of that period's previous occurrence instead of
       the nearest weekday, and days inside any attached period are kept out of
-      the level. The ids are not readable over MCP yet (the calendar's read
-      tools are a later phase), so take them from the user or the REST calendar
+      the level. A recurring entry's previous occurrence is the same range the
+      year before; a **dated** entry has one only if an earlier entry sharing
+      its ``series`` is attached to this check too, otherwise it is a first
+      year. The ids are not readable over MCP yet (the calendar's read tools
+      are a later phase), so take them from the user or the REST calendar
       (``GET /api/v1/admin/seasonal-periods``); an unknown id is refused here.
       A check's config read back carries the ids only, not the names.
-      ``observed_value.declared`` on each result says which entry the judged
-      period fell ``inside`` (or null), the earlier occurrences it was
-      ``matched`` to, whether the ``first_year`` rule applied (a rise with no
-      earlier occurrence to size it by is reported as within the period and not
-      banded, so the run reads ``skipped``), how many points the calendar left
-      out of the level, and ``z_score_without`` / ``verdict_without`` /
-      ``verdict_changed``: what the run would have scored with no calendar.
-      Read ``verdict_changed`` before saying the calendar explains a result.
+      ``observed_value.declared`` is present on every result of a check with
+      attachments. **Read ``observed_value.yearly.applied`` first**: when it is
+      false (too little history) the calendar was not consulted, ``inside`` is
+      null and ``verdict_changed`` is false by construction. When it is true,
+      ``declared.inside`` names the entry the judged period fell in (or null),
+      with ``inside.matched`` (the earlier occurrences' days it was compared
+      with), ``inside.first_year`` (no earlier occurrence in the history: a rise
+      is expected and its size unknown) and ``inside.banded`` (false when the
+      first-year rule withheld the band: the value was above the level, the
+      run reads ``skipped`` with ``reason: within_declared_period``; a value
+      below the level is judged as usual). ``declared.excluded_from_level`` is
+      how many earlier points the calendar left out; ``declared.missing`` lists
+      attached ids that no longer resolve (the run still scores without them);
+      ``z_score_without`` / ``verdict_without`` / ``verdict_changed`` are what
+      the run would have scored with no calendar. Read ``verdict_changed``
+      before saying the calendar explains a result.
 
     **Per-period metrics** are for a table that only grows, where a whole-table
     ``row_count`` has no normal to return to ('alert me when daily orders look

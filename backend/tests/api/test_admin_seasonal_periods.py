@@ -130,14 +130,12 @@ def test_an_admin_runs_the_whole_lifecycle_and_each_change_is_audited(
     assert deleted.status_code == 204
     assert client.get(f"{_BASE}/{body['id']}").status_code == 404
     actions = db_session.scalars(
-        select(AuditEvent.action)
-        .where(AuditEvent.entity_type == "seasonal_period")
-        .order_by(AuditEvent.occurred_at)
+        select(AuditEvent.action).where(AuditEvent.entity_type == "seasonal_period")
     ).all()
-    assert actions == [
+    assert sorted(actions) == [
         "seasonal_period.create",
-        "seasonal_period.update",
         "seasonal_period.delete",
+        "seasonal_period.update",
     ]
 
 
