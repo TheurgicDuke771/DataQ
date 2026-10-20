@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # Azure exporter.
     otel_exporter_otlp_endpoint: str | None = None
 
+    # Product-usage telemetry (ADR 0050): the operator's gate, beside the admin's stored opt-in.
+    # `file` appends OTel-shaped JSON lines to TELEMETRY_FILE_PATH; `otlp` exports usage metrics +
+    # log events through the exporters above (OTLP endpoint and/or App Insights).
+    telemetry_sink: Literal["off", "file", "otlp"] = "off"
+    telemetry_file_path: str = ""
+    telemetry_export_interval_s: int = Field(default=60, ge=1, le=3600)
+
     # OpenLineage emission (ADR 0034, #758) — dark by default.
     openlineage_url: str | None = None
     openlineage_disabled: bool = False
@@ -274,6 +281,9 @@ class Settings(BaseSettings):
     )
     rate_limit_ip_per_minute: int = (
         1200  # per-IP ceiling across all bearer buckets (rotated-token backstop)
+    )
+    rate_limit_telemetry_per_minute: int = (
+        60  # per-principal browser usage-event reports (ADR 0050); shares the per-IP ceiling
     )
     rate_limit_xff_trusted_hops: int = (
         1  # count of trusted proxies appending XFF; pick entry hops-from-right
@@ -624,6 +634,21 @@ class Settings(BaseSettings):
                     "OIDC_ISSUER/OIDC_AUDIENCE and AZURE_TENANT_ID/AZURE_API_CLIENT_ID are "
                     "mutually exclusive — configure one real-IdP auth mode, not both."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_telemetry_sink(self) -> "Settings":
+        """A sink that cannot deliver fails at boot, not silently: `file` needs a path, `otlp`
+        needs an exporter target."""
+        if self.telemetry_sink == "file" and not self.telemetry_file_path.strip():
+            raise ValueError("TELEMETRY_SINK=file requires TELEMETRY_FILE_PATH")
+        if self.telemetry_sink == "otlp" and not (
+            self.otel_exporter_otlp_endpoint or self.applicationinsights_connection_string
+        ):
+            raise ValueError(
+                "TELEMETRY_SINK=otlp requires OTEL_EXPORTER_OTLP_ENDPOINT or "
+                "APPLICATIONINSIGHTS_CONNECTION_STRING"
+            )
         return self
 
     @model_validator(mode="after")
