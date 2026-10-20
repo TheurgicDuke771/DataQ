@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field, model_validator
@@ -25,6 +25,7 @@ from backend.app.services import (
     live_probe,
     monitor_baseline,
     run_service,
+    seasonal_detection_service,
 )
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
@@ -657,6 +658,101 @@ def get_check_baseline(
     require_permission(db, suite_id, current_user.id, minimum="view")
     point = svc.get_check_baseline(db, suite_id, check_id)
     return CheckBaselineRead.model_validate(point) if point is not None else None
+
+
+# ───────────── detected seasonal periods (ADR 0048 decision 5) ─────
+
+
+class DetectedOccurrenceRead(ApiModel):
+    year: int
+    start: date
+    #: Inclusive; a weekly check's occurrence ends on a Sunday.
+    end: date
+    #: The highest value-to-level ratio among its periods.
+    peak_ratio: float
+    periods: int
+    #: Periods in it whose point was seeded from the table rather than seen by a run.
+    backfilled_periods: int
+
+
+class DetectedRangeRead(ApiModel):
+    start_month: int
+    start_day: int
+    end_month: int
+    end_day: int
+
+
+class DeclaredRefRead(ApiModel):
+    id: uuid.UUID
+    name: str
+
+
+class DetectedPeriodRead(ApiModel):
+    #: `recurring` (the same time in two or more years) or `seen_once`.
+    kind: Literal["recurring", "seen_once"]
+    #: The most recent season (every run in it: a sale split by an ordinary day is one).
+    start: date
+    end: date
+    peak_ratio: float
+    years_seen: int
+    #: The month/day span every occurrence covers, for a recurring period; what promoting
+    #: it would put on the calendar.
+    range: DetectedRangeRead | None
+    occurrences: list[DetectedOccurrenceRead]
+    #: Declared calendar entries attached to the check that overlap it.
+    declared: list[DeclaredRefRead]
+
+
+class DetectionThresholdsRead(ApiModel):
+    ratio: float
+    min_consecutive: int
+    same_time_days: int
+    #: How the level is taken, as scoring takes it: `median` with `yearly`, `mean` without.
+    level: Literal["median", "mean"] | None
+
+
+class DetectionHistoryRead(ApiModel):
+    unit: str | None
+    points: int
+    backfilled: int
+    #: Periods with enough history before them to have a level.
+    evaluated: int
+    first: date | None
+    last: date | None
+    years: float
+
+
+class DetectedSeasonalPeriodsRead(ApiModel):
+    """Periods the check's own history shows running at or above `thresholds.ratio` times
+    the level of the periods its scoring uses (`thresholds.level`). Computed on request and
+    stored nowhere: a detected period changes no verdict until an admin promotes it to the
+    calendar and it is attached.
+    `reason` is set when there was nothing to look at (`not_a_per_period_metric`,
+    `invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no
+    reason means the history was read and nothing qualified."""
+
+    reason: str | None
+    periods: list[DetectedPeriodRead]
+    thresholds: DetectionThresholdsRead
+    history: DetectionHistoryRead
+
+
+@router.get(
+    "/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected",
+    response_model=DetectedSeasonalPeriodsRead,
+    summary="Seasonal periods detected in an anomaly check's per-period history",
+)
+def get_detected_seasonal_periods(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DetectedSeasonalPeriodsRead:
+    require_permission(db, suite_id, current_user.id, minimum="view")
+    check = svc.get_check(db, suite_id, check_id)
+    return DetectedSeasonalPeriodsRead.model_validate(
+        seasonal_detection_service.detected_periods(db, check).as_dict()
+    )
 
 
 # ───────────────────────── dry-run (preview, no persistence) ────────

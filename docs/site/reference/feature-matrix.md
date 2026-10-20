@@ -358,4 +358,4 @@ risk that carries.
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin (incl. workspace Settings) (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
 | Python client + `dataq` CLI | Generated from the OpenAPI spec, attached to each GitHub Release ([Python client](../guides/python-client.md)) |
-| MCP | 54 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
+| MCP | 56 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |

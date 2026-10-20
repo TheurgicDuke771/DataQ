@@ -1345,8 +1345,10 @@ expects about 2.4 times the last fortnight's level because Wednesday 27 November
 
 **Declared seasonal periods** line up the peaks the weekday matching cannot: a sale that
 moves by more than a few days, or a fixed date such as 25 December. They live in one
-workspace calendar (**Admin → Seasonal periods**, `GET /api/v1/admin/seasonal-periods`;
-anyone signed in can read it, workspace admins change it, every change is audited). An entry
+workspace calendar, managed through the REST API under `/api/v1/admin/seasonal-periods`
+(there is no calendar screen in the app yet; anyone signed in can read it, workspace
+admins change it, every change is audited, and AI assistants read it with the
+`list_seasonal_periods` MCP tool). An entry
 is either **recurring**, a month-and-day range every year that may wrap the year end (20
 December to 5 January; a 29 February bound is taken as 28 February in a year without one),
 or **dated**, an explicit start and end. Dated entries that share a **series** (compared
@@ -1382,6 +1384,40 @@ the refusal names the checks). While attached:
 
 A suite export carries the ids; importing it into a workspace whose calendar does not hold
 them is refused with the ids named.
+
+**Detected seasonal periods** are what a per-period check's own history shows, read when
+someone asks: `GET /api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`
+(view access to the suite), or the `get_detected_seasonal_periods` MCP tool. A period is
+detected where the value ran at **1.5 times** its level or more (taken as scoring takes it: the
+median of the window before it with `yearly` on, attached declared periods left out, and the
+mean of the window without `yearly`) for at least **two days
+in a row**, or one week on a weekly check. A single day is a spike, not a period, and a day
+with no point ends a run. Seen at the same time of year in two or more years (within a week
+of each other, so a sale that moves a few days still matches) it is **recurring**; in one
+year, **seen once**. The response lists each period's occurrences by year, with their peak
+ratio and how many of their points were seeded from the table rather than seen by a run, the
+month-and-day span a recurring one covers, any attached entry that overlaps it, and how much
+history stood behind it (points, first and last day, years).
+
+A detected period is a description. It is not stored and **changes no verdict**: only an
+entry on the calendar, attached to the check, does. An empty list says less than it seems:
+`reason` is set when nothing could be looked at (`not_a_per_period_metric`, `no_history`,
+`insufficient_history`, `invalid_config`); with no reason, the history was read and nothing
+reached 1.5 times for long enough (or the stored history was discarded because the
+check's metric, date column or day/week setting was edited). A peak that lasts more than
+about half the check's window of prior periods (same-weekday periods when seasonality is
+on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
+a calendar entry over it fixes that, for detection as for scoring.
+
+A workspace admin turns a detected period into a calendar entry with
+`POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
+most recent occurrence, as the detection returned it) and a `name`. The history is read
+again, so a period it no longer shows is refused, and so is a season an entry on the
+calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring
+entry over the month-and-day span; one seen once becomes a dated entry, optionally in a
+`series`. With `attach: true` the check names the new entry too, in the same change, so a
+check that cannot take it (one without `yearly`) leaves no entry behind. The new entry is
+audited as created, with the period it came from.
 
 ### Comparison check (all datasources — ADR 0015)
 
