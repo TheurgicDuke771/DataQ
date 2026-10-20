@@ -1,5 +1,6 @@
+import { App as AntApp } from 'antd';
 import { render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type CheckBaseline,
@@ -7,15 +8,56 @@ import {
   getCheckBaseline,
   listCheckHistory,
 } from '../../src/api/suites';
+import {
+  type DetectedSeasonalPeriods,
+  getDetectedSeasonalPeriods,
+  listSeasonalPeriods,
+  promoteDetectedPeriod,
+  type SeasonalPeriod,
+} from '../../src/api/seasonalPeriods';
 import { CheckTrend } from '../../src/components/checks/CheckTrend';
+import { WithMe } from '../support/me';
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
   return { ...actual, listCheckHistory: vi.fn(), getCheckBaseline: vi.fn() };
 });
 
+vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/seasonalPeriods')>();
+  return {
+    ...actual,
+    getDetectedSeasonalPeriods: vi.fn(),
+    listSeasonalPeriods: vi.fn(),
+    promoteDetectedPeriod: vi.fn(),
+  };
+});
+
 const mockHistory = vi.mocked(listCheckHistory);
 const mockBaseline = vi.mocked(getCheckBaseline);
+const mockDetected = vi.mocked(getDetectedSeasonalPeriods);
+const mockCalendar = vi.mocked(listSeasonalPeriods);
+const mockPromote = vi.mocked(promoteDetectedPeriod);
+
+const NO_DETECTION: DetectedSeasonalPeriods = {
+  reason: null,
+  periods: [],
+  thresholds: { ratio: 1.5, min_consecutive: 2, same_time_days: 7, level: 'median' },
+  history: {
+    unit: 'day',
+    points: 0,
+    backfilled: 0,
+    evaluated: 0,
+    first: null,
+    last: null,
+    years: 0,
+  },
+};
+
+beforeEach(() => {
+  mockDetected.mockResolvedValue(NO_DETECTION);
+  mockCalendar.mockResolvedValue([]);
+});
 
 // recharts' SVG doesn't lay out under jsdom (zero-size container, same lesson as
 // QualityTrends.test.tsx) — these assert the chrome, empty/error states.
@@ -257,9 +299,8 @@ describe('CheckTrend', () => {
       />,
     );
 
-    // The band drawn is the recent window; with yearly on, the caption must not pass it off
-    // as what the run is scored against.
-    expect(await screen.findByText(/this band is the recent window only/)).toBeInTheDocument();
+    // No period has a result, so there is no scored-against band to draw or describe.
+    expect(await screen.findByText(/No shown period has a result yet/)).toBeInTheDocument();
     expect(
       await screen.findByText(
         /399 of the 400 stored points were seeded.*the chart shows the most recent 180/,
@@ -391,5 +432,295 @@ describe('CheckTrend', () => {
     expect(await screen.findByText('Anomaly baseline points, newest first')).toBeInTheDocument();
     expect(screen.getByText('Dated')).toBeInTheDocument();
     expect(screen.getByText('100')).toBeInTheDocument();
+  });
+});
+
+describe('CheckTrend — per-period seasonal overlays', () => {
+  const day = (i: number) => new Date(Date.UTC(2026, 10, 20 + i)).toISOString();
+  const yearlyCheck = {
+    ...anomalyCheck,
+    config: {
+      target_metric: 'period_row_count',
+      date_column: 'ordered_at',
+      yearly: true,
+      seasonal_periods: ['bf'],
+    },
+  };
+  const BLACK_FRIDAY: SeasonalPeriod = {
+    id: 'bf',
+    name: 'Black Friday',
+    kind: 'recurring',
+    start_month: 11,
+    start_day: 27,
+    end_month: 11,
+    end_day: 30,
+    start_date: null,
+    end_date: null,
+    series: null,
+    note: null,
+    attached_checks: 1,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  function seed() {
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: day(0),
+      baseline: {
+        version: 1,
+        target_metric: 'period_row_count',
+        window: 14,
+        observations: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
+          ts: day(i),
+          value: i === 7 ? 5100 : 1000 + i,
+          ...(i < 5 ? { source: 'backfilled' } : {}),
+        })),
+      },
+    });
+    mockHistory.mockResolvedValue([
+      {
+        run_id: 'r6',
+        status: 'pass',
+        metric_value: 0.1,
+        created_at: day(7),
+        seasonal: {
+          period_start: day(6).slice(0, 10),
+          mean: 1003,
+          stddev: 10,
+          yearly_applied: false,
+          yearly_reason: 'no_earlier_year',
+          expected: null,
+          declared_name: null,
+          banded: true,
+          verdict_changed: false,
+        },
+      },
+      {
+        run_id: 'r7',
+        status: 'pass',
+        metric_value: 0.4,
+        created_at: day(8),
+        seasonal: {
+          period_start: day(7).slice(0, 10),
+          mean: 5050,
+          stddev: 125,
+          yearly_applied: true,
+          yearly_reason: null,
+          expected: 5000,
+          declared_name: 'Black Friday',
+          banded: true,
+          verdict_changed: true,
+        },
+      },
+    ]);
+  }
+
+  it('reads 180 results so every plotted period can show what it was scored against', async () => {
+    seed();
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    await screen.findByTestId('seasonal-caption');
+    expect(mockHistory).toHaveBeenCalledWith('s1', 'c1', 180);
+    expect(mockDetected).toHaveBeenCalledWith('s1', 'c1');
+  });
+
+  it('says the band follows the expected value where yearly applied, and why it did not elsewhere', async () => {
+    seed();
+    mockCalendar.mockResolvedValue([BLACK_FRIDAY]);
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+
+    const caption = await screen.findByTestId('seasonal-caption');
+    expect(caption).toHaveTextContent(/Where the yearly comparison applied \(1 of 2\)/);
+    expect(caption).toHaveTextContent(/centred on the expected value, the dashed line/);
+    expect(caption).toHaveTextContent(
+      /Not applied on 1, so those bands are the recent window.*no earlier year in the history \(1\)/,
+    );
+    expect(caption).toHaveTextContent(/attached calendar entries \(Black Friday\)/);
+    expect(caption).toHaveTextContent(/Hollow points were seeded/);
+    // The superseded claim that a yearly band is only ever the recent window is gone.
+    expect(screen.queryByText(/this band is the recent window only/)).not.toBeInTheDocument();
+  });
+
+  it('describes a non-yearly per-period band as the recent window each period was scored against', async () => {
+    seed();
+    render(
+      <CheckTrend
+        suiteId="s1"
+        check={{ ...anomalyCheck, config: { target_metric: 'period_sum', date_column: 'd' } }}
+      />,
+    );
+    const caption = await screen.findByTestId('seasonal-caption');
+    expect(caption).toHaveTextContent(/the recent window it was scored against, mean ± 3σ/);
+    expect(caption).not.toHaveTextContent(/expected value/);
+  });
+
+  it('says when a declared period withheld the band', async () => {
+    seed();
+    mockHistory.mockResolvedValue([
+      {
+        run_id: 'r7',
+        status: 'skip',
+        metric_value: null,
+        created_at: day(8),
+        seasonal: {
+          period_start: day(7).slice(0, 10),
+          mean: 1000,
+          stddev: 10,
+          yearly_applied: true,
+          yearly_reason: null,
+          expected: 1000,
+          declared_name: 'Launch',
+          banded: false,
+          verdict_changed: true,
+        },
+      },
+    ]);
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    expect(await screen.findByTestId('seasonal-caption')).toHaveTextContent(
+      /1 judged period fell inside a declared period with no earlier occurrence/,
+    );
+  });
+
+  it('lists the scored-against band, expected value and declared period in the table view', async () => {
+    seed();
+    const { default: userEvent } = await import('@testing-library/user-event');
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    await screen.findByTestId('seasonal-caption');
+    await userEvent.setup().click(screen.getByText('Table'));
+    expect(await screen.findByText('Scored against (centre ± spread)')).toBeInTheDocument();
+    expect(screen.getByText('5050.00 ± 125.00')).toBeInTheDocument();
+    expect(screen.getByText('5000.00')).toBeInTheDocument();
+    expect(screen.getByText('not applied: no earlier year in the history')).toBeInTheDocument();
+    expect(screen.getAllByText('Black Friday').length).toBeGreaterThan(0);
+  });
+
+  const DETECTED: DetectedSeasonalPeriods = {
+    ...NO_DETECTION,
+    periods: [
+      {
+        kind: 'recurring',
+        start: '2026-11-27',
+        end: '2026-11-30',
+        peak_ratio: 5.1,
+        years_seen: 3,
+        range: { start_month: 11, start_day: 26, end_month: 11, end_day: 30 },
+        occurrences: [
+          {
+            year: 2026,
+            start: '2026-11-27',
+            end: '2026-11-30',
+            peak_ratio: 5.1,
+            periods: 4,
+            backfilled_periods: 0,
+          },
+        ],
+        declared: [],
+      },
+    ],
+  };
+
+  it('offers an admin to promote a detected period and attaches it to a yearly check', async () => {
+    seed();
+    mockDetected.mockResolvedValue(DETECTED);
+    mockPromote.mockResolvedValue({ ...BLACK_FRIDAY, id: 'new' });
+    const onCheckChanged = vi.fn();
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <WithMe role="admin">
+          <CheckTrend suiteId="s1" check={yearlyCheck} onCheckChanged={onCheckChanged} />
+        </WithMe>
+      </AntApp>,
+    );
+    expect(await screen.findByText('Recurring, 3 years')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Promote to calendar' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: /Also attach/ })).toBeChecked();
+    await user.type(within(dialog).getByLabelText('Name'), 'Black Friday');
+    await user.click(within(dialog).getByRole('button', { name: 'Add to calendar' }));
+    await vi.waitFor(() =>
+      expect(mockPromote).toHaveBeenCalledWith({
+        suite_id: 's1',
+        check_id: 'c1',
+        start: '2026-11-27',
+        name: 'Black Friday',
+        series: null,
+        note: null,
+        attach: true,
+      }),
+    );
+    await vi.waitFor(() => expect(onCheckChanged).toHaveBeenCalled());
+  });
+
+  it('does not attach when the check has no yearly seasonality, and says why', async () => {
+    seed();
+    mockDetected.mockResolvedValue(DETECTED);
+    mockPromote.mockResolvedValue({ ...BLACK_FRIDAY, id: 'new' });
+    const onCheckChanged = vi.fn();
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <WithMe role="admin">
+          <CheckTrend
+            suiteId="s1"
+            check={{ ...anomalyCheck, config: { target_metric: 'period_sum', date_column: 'd' } }}
+            onCheckChanged={onCheckChanged}
+          />
+        </WithMe>
+      </AntApp>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: /Also attach/ })).toBeDisabled();
+    expect(within(dialog).getByText(/Attaching needs yearly seasonality/)).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('Name'), 'Spring');
+    await user.click(within(dialog).getByRole('button', { name: 'Add to calendar' }));
+    await vi.waitFor(() =>
+      expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ attach: false })),
+    );
+    expect(onCheckChanged).not.toHaveBeenCalled();
+  });
+
+  it('shows detected periods to a member without the promote action', async () => {
+    seed();
+    mockDetected.mockResolvedValue(DETECTED);
+    render(
+      <WithMe role="member">
+        <CheckTrend suiteId="s1" check={yearlyCheck} />
+      </WithMe>,
+    );
+    expect(await screen.findByText('Recurring, 3 years')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Promote to calendar' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer to promote a period an attached entry already covers', async () => {
+    seed();
+    mockDetected.mockResolvedValue({
+      ...DETECTED,
+      periods: [{ ...DETECTED.periods[0], declared: [{ id: 'bf', name: 'Black Friday' }] }],
+    });
+    render(
+      <WithMe role="admin">
+        <CheckTrend suiteId="s1" check={yearlyCheck} />
+      </WithMe>,
+    );
+    expect(await screen.findByText(/Covered by Black Friday on the calendar/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Promote to calendar' })).not.toBeInTheDocument();
+  });
+
+  it('never asks a whole-table anomaly check for detected periods', async () => {
+    mockHistory.mockResolvedValue([]);
+    mockBaseline.mockResolvedValue(null);
+    render(
+      <CheckTrend
+        suiteId="s1"
+        check={{ ...anomalyCheck, config: { target_metric: 'row_count' } }}
+      />,
+    );
+    await screen.findByText(/no observations captured yet/);
+    expect(mockDetected).not.toHaveBeenCalled();
+    expect(mockCalendar).not.toHaveBeenCalled();
   });
 });

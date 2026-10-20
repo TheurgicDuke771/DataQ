@@ -379,7 +379,7 @@ function CheckEditForm({
         onClose={() => setTrendOpen(false)}
         size={520}
       >
-        {trendOpen && <CheckTrend suiteId={suiteId} check={check} />}
+        {trendOpen && <CheckTrend suiteId={suiteId} check={check} onCheckChanged={onRestored} />}
       </Drawer>
     </>
   );

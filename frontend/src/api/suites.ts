@@ -379,6 +379,22 @@ export interface CheckResultPoint {
   status: string;
   metric_value: number | null;
   created_at: string;
+  /** A per-period anomaly result's period and what it was scored against. */
+  seasonal?: SeasonalPoint | null;
+}
+
+/** Mirrors `SeasonalPointRead`: `mean` ± `stddev` is the band a judged period was scored against,
+ *  `expected` the level × seasonal index where the yearly comparison applied. */
+export interface SeasonalPoint {
+  period_start: string | null;
+  mean: number | null;
+  stddev: number | null;
+  yearly_applied: boolean | null;
+  yearly_reason: string | null;
+  expected: number | null;
+  declared_name: string | null;
+  banded: boolean;
+  verdict_changed: boolean | null;
 }
 
 /** A check's recent results in chronological order (oldest→newest) for the trend chart. */
