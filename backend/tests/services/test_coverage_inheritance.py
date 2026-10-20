@@ -777,7 +777,8 @@ def test_an_untouched_edit_carries_the_yearly_in_effect_so_a_calendar_can_be_att
     """Workspace switched yearly on after the check was made (no key, or a stale false):
     attaching a calendar entry and echoing yearly true keeps it inheriting, and the config
     the author-time checks see has yearly on."""
-    for stored in ({}, {"yearly": False}):
+    stored_configs: list[dict[str, Any]] = [{}, {"yearly": False}]
+    for stored in stored_configs:
         check = _check(**stored, **_flag(True))
         sent = {
             **svc.strip_flag(check.config),
