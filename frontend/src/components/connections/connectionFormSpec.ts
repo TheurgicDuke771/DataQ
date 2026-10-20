@@ -303,6 +303,70 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
   },
+  bigquery: {
+    // Google BigQuery (#1681) on the generic SQL base: a project, an optional default dataset and a
+    // service-account key file. Every check is a billed query, capped by maximum_bytes_billed.
+    textFields: [
+      { name: 'project_id', label: 'Project ID', extra: 'Where query jobs run and are billed' },
+      {
+        name: 'schema',
+        label: 'Default dataset',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — names are case-sensitive',
+      },
+      {
+        name: 'location',
+        label: 'Location',
+        optional: true,
+        extra: 'e.g. US, EU or us-central1 — blank lets BigQuery infer it from the data',
+      },
+      {
+        name: 'maximum_bytes_billed',
+        label: 'Maximum bytes billed per query',
+        optional: true,
+        extra:
+          'Defaults to 10737418240 (10 GiB). A query that would bill more is refused before it ' +
+          'runs, uncharged. At least 10485760 (10 MiB, the minimum BigQuery bills).',
+      },
+      {
+        name: 'endpoint_url',
+        label: 'Endpoint URL',
+        optional: true,
+        extra:
+          'Emulator endpoint, e.g. http://bigquery-emulator:9050 — leave blank for Google Cloud',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra:
+          'Daily sync of every table this service account can see into the asset view (free ' +
+          'metadata calls, not queries).',
+      },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few billed queries a day.',
+      },
+    ],
+    auth: [
+      {
+        value: 'service_account_key',
+        label: 'Service account key',
+        secretLabel: 'Service account key file (JSON)',
+        multilineSecret: true,
+        expiryNotReadable:
+          'A service-account key has no expiry DataQ can read — rotate it in IAM and re-authenticate here.',
+      },
+    ],
+    destinationFields: ['endpoint_url', 'auth_type'],
+  },
   redshift: {
     // Amazon Redshift (#1682) — provisioned clusters and Serverless workgroups — on the generic
     // SQL base. Every TLS mode verifies against Amazon's CAs.

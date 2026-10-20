@@ -32,7 +32,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
 | Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
-| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena and Redshift need the cloud service itself) |
+| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift, BigQuery | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena, Redshift and BigQuery need the cloud service itself — BigQuery also runs against an emulator) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |

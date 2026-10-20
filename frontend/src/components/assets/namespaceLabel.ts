@@ -16,6 +16,7 @@ export type DatasourceKind =
   | 'mssql'
   | 'athena'
   | 'redshift'
+  | 'bigquery'
   | 'other';
 
 interface SchemeSpec {
@@ -76,7 +77,12 @@ const SCHEMES: SchemeSpec[] = [
   },
   // `redshift://<cluster or workgroup>.<region>:5439` — the OpenLineage Redshift namespace (#1682).
   { prefix: 'redshift://', kind: 'redshift', source: 'Redshift', instance: (rest) => rest },
+  // An emulator's `bigquery://host:port`; Google's own namespace is the bare `bigquery` (#1681).
+  { prefix: 'bigquery://', kind: 'bigquery', source: 'BigQuery', instance: (rest) => rest },
 ];
+
+/** OpenLineage's BigQuery namespace names no server. */
+const BIGQUERY_NAMESPACE = 'bigquery';
 
 /** Catalog schemes whose URI has no *database* in it — the host itself is the catalog. */
 const HOST_IS_THE_CATALOG = new Set(['http', 'https', 'thrift', 'grpc']);
@@ -84,6 +90,7 @@ const HOST_IS_THE_CATALOG = new Set(['http', 'https', 'thrift', 'grpc']);
 /** Classify an OL namespace by its scheme, for the root-node icon. */
 export function datasourceKind(namespace: string): DatasourceKind {
   const raw = namespace.trim().toLowerCase();
+  if (raw === BIGQUERY_NAMESPACE) return 'bigquery';
   const spec = SCHEMES.find((s) => raw.startsWith(s.prefix));
   // An Iceberg namespace is the catalog URI verbatim (thrift://…, http://…, a driver DSN, or the
   // bare token "file") — no stable scheme.
@@ -105,6 +112,7 @@ export function namespaceLabel(namespace: string): string {
   if (!raw) return namespace;
 
   const lower = raw.toLowerCase();
+  if (lower === BIGQUERY_NAMESPACE) return 'BigQuery · Google Cloud';
   const spec = SCHEMES.find((s) => lower.startsWith(s.prefix));
   if (spec) {
     const instance = spec.instance(raw.slice(spec.prefix.length));

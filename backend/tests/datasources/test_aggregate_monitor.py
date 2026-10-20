@@ -45,6 +45,7 @@ def _dialects() -> dict[str, Any]:
         "trino": "trino",
         "awsathena": "awsathena+rest",
         "redshift": "redshift+psycopg2",
+        "bigquery": "bigquery",
     }
     return {name: make_url(f"{driver}://").get_dialect()() for name, driver in drivers.items()}
 
@@ -275,7 +276,7 @@ def test_the_author_gate_and_the_compiler_agree_on_median() -> None:
     refused = {
         conn
         for conn, spec in SQL_ENGINES.items()
-        if spec.drivername.split("+")[0] in {"mysql", "trino", "awsathena"}
+        if spec.drivername.split("+")[0] in {"mysql", "trino", "awsathena", "bigquery"}
     }
     assert refused == {c for c, s in SQL_ENGINES.items() if not s.exact_median}
     for conn in SQL_ENGINES:

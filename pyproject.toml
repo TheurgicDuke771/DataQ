@@ -85,6 +85,9 @@ module = [
     "pyodbc",
     # Google Cloud Storage client + its auth stack (#1683): typed in places, absent from CI.
     "google.*",
+    # The BigQuery dialect (#1681): untyped.
+    "sqlalchemy_bigquery",
+    "sqlalchemy_bigquery.*",
 ]
 ignore_missing_imports = true
 # None of these are in the slim CI typecheck deps, so CI sees them as Any. Several do

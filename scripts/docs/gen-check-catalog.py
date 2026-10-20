@@ -178,7 +178,7 @@ def runs_on(entry: dict, cap: str | None, pushdown: set[str], ds: dict) -> str:
     if entry["kind"] == "aggregate":
         note += (
             " — median not on "
-            + ", ".join(labels[t] for t in ("mysql", "trino", "athena"))
+            + ", ".join(labels[t] for t in ("mysql", "trino", "athena", "bigquery"))
             + " (no exact median; refused at author time)"
         )
     if entry["type"] in pushdown and "unity_catalog" in types:
