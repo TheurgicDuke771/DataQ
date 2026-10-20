@@ -2034,6 +2034,8 @@
       
         
       
+        
+      
     
     
     
@@ -2206,6 +2208,34 @@
     
   
     DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/third-party-notices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Third-party notices &amp; SBOM
   
 
     
@@ -2729,6 +2759,7 @@ section below.</p>
   against it, and a peak that fails to arrive is flagged. It applies once the history
   reaches back a year, which seeding supplies at once, and each result says whether it was
   applied and what was expected.</li>
+<li><strong>Third-party notices and an SPDX SBOM ship with every image and release.</strong> Both container images carry <code>/THIRD-PARTY-NOTICES.md</code> (the frontend also serves it at <code>/third-party-notices</code>), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (<code>scripts/check-licenses.py</code>, with reviewed overrides in <code>scripts/licenses/overrides.toml</code>).</li>
 <li><strong>Disable a check without deleting it.</strong> A check can be switched off from its row on the
   suite page, from its editor, or many at once with <strong>Disable selected</strong> and <strong>Enable
   selected</strong>. A disabled check keeps its results, version history and baseline and is left

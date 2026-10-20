@@ -25,6 +25,7 @@ section below.
   against it, and a peak that fails to arrive is flagged. It applies once the history
   reaches back a year, which seeding supplies at once, and each result says whether it was
   applied and what was expected.
+- **Third-party notices and an SPDX SBOM ship with every image and release.** Both container images carry `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (`scripts/check-licenses.py`, with reviewed overrides in `scripts/licenses/overrides.toml`).
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
   selected**. A disabled check keeps its results, version history and baseline and is left
