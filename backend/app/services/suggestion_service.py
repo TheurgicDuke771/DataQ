@@ -178,6 +178,13 @@ def _classify_before_proposing(
     session.refresh(suite)
 
 
+def _resolve_asset(session: Session, suite: Suite) -> Asset | None:
+    # Imported here like `_known_sensitive` below: `run_service` is the heavier module.
+    from backend.app.services.run_service import resolve_asset
+
+    return resolve_asset(session, suite)
+
+
 def refresh_from_profile(session: Session, suite: Suite, *, secret_store: SecretStore) -> int:
     """Profile the suite's table once and queue what it supports; returns how many were new."""
     connection = session.get(Connection, suite.connection_id)
@@ -201,6 +208,8 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
         schema=target.get("schema"),
         catalog=target.get("catalog"),
         secret_store=secret_store,
+        # The suite's own target — the profile feeds the classification source (ADR 0049).
+        asset=_resolve_asset(session, suite),
     )
     created = sum(
         propose(session, suite, source="profile", **rule)

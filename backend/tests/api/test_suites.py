@@ -3291,3 +3291,61 @@ def test_apply_creates_a_check_switched_off_when_the_document_says_so(
 
     assert resp.status_code == 200, resp.text
     assert _stored_enabled(db_session, sid)["parked"] is False
+
+
+# ── the profile feeds the profiler classification source only on the suite's own target ──────
+# (ADR 0049)
+
+
+def _capture_profile(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    from backend.app.services.profile_service import ProfileResult
+
+    seen: dict[str, Any] = {}
+
+    def _fake(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(row_count=0, table=kwargs.get("table"), columns=[])
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake)
+    return seen
+
+
+def _suite_with_asset(client: TestClient, db_session: Any) -> tuple[str, Asset]:
+    conn = _connection(db_session)
+    sid = client.post(
+        "/api/v1/suites", json=_payload(conn.id, target={"table": "ORDERS", "schema": "SALES"})
+    ).json()["id"]
+    asset = Asset(namespace="snowflake://a", name="SALES.ORDERS")
+    db_session.add(asset)
+    db_session.flush()
+    suite = db_session.get(Suite, uuid.UUID(sid))
+    suite.asset_id = asset.id
+    db_session.flush()
+    return sid, asset
+
+
+def test_profiling_the_suites_own_target_hands_the_profiler_its_asset(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _capture_profile(monkeypatch)
+    sid, asset = _suite_with_asset(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "orders", "schema": "sales", "columns": ["amount"]},
+    )
+    assert resp.status_code == 200
+    assert seen["asset"] is not None and seen["asset"].id == asset.id
+
+
+def test_profiling_another_table_hands_the_profiler_no_asset(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another table's `email` column must never be persisted against THIS asset."""
+    seen = _capture_profile(monkeypatch)
+    sid, _asset = _suite_with_asset(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"table": "returns", "schema": "sales", "columns": ["amount"]},
+    )
+    assert resp.status_code == 200
+    assert seen["asset"] is None

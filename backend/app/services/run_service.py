@@ -58,6 +58,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
+from backend.app.services.column_tags import DETECTED
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
@@ -877,6 +878,18 @@ def _tag_non_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
     return str(tag).strip().lower() in _NON_SENSITIVE_TAG_VALUES
 
 
+def _detected_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
+    """Level 2 (ADR 0049) — the profiler has detected PII-shaped VALUES in this column and the
+    verdict is persisted. Below the warehouse floor and the suite override: `pii_columns`
+    masks it regardless, `identifier_column` clears it, and it never satisfies fail-closed
+    clearance — the value is deliberately in neither tag set above.
+    """
+    if not tags:
+        return False
+    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
+    return str(tag).strip().lower() == DETECTED
+
+
 def _policy_pii(column: str, policy: Mapping[str, Any] | None) -> bool:
     """Level 3 — the suite override explicitly lists the column as PII."""
     if not policy:
@@ -914,6 +927,10 @@ def _known_sensitive(
         if not cleared:
             return True
         return is_sensitive(column, values, value_signal_summary=value_signal_summary)
+    # A persisted profiler detection masks unless the operator named THIS column as the shown
+    # identifier — on a datasource with no warehouse tag that is a false positive's only exit.
+    if _detected_sensitive(column, tags) and not _policy_identifier(column, policy):
+        return True
     return is_sensitive(column, values, value_signal_summary=value_signal_summary)
 
 
@@ -939,6 +956,8 @@ def _may_show_incidental(
         return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
     if _policy_identifier(column, policy):
         return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
+    if _detected_sensitive(column, tags):
+        return False
     return (
         classify_column(column, list(values), value_signal_summary=value_signal_summary)
         is not ColumnClass.PII
@@ -950,13 +969,17 @@ def value_signal_decides(
 ) -> bool:
     """Whether a column's failing-row VALUES can change its masking — the negation of every
     rung that decides without them: a sensitive tag or `pii_columns` (masked), a PII-shaped
-    name (masked by `is_sensitive` either way), or fail-closed mode without clearance (masked).
+    name (masked by `is_sensitive` either way), a persisted profiler detection the operator has
+    not overridden with `identifier_column` (masked, ADR 0049), or fail-closed mode without
+    clearance (masked).
     Mirrors `_known_sensitive` / `_may_show_incidental`, which share those rungs; the SQL lanes
     pay for a population sample only when this is True (#2014).
     """
     if _tag_sensitive(column, tags) or _policy_pii(column, policy):
         return False
     if is_sensitive(column, ()):
+        return False
+    if _detected_sensitive(column, tags) and not _policy_identifier(column, policy):
         return False
     if _policy_requires_classification(policy):
         return _tag_non_sensitive(column, tags) or _policy_identifier(column, policy)

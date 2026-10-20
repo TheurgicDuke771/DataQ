@@ -4839,6 +4839,8 @@ def profile_column(
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),
+            # The suite's own asset feeds the profiler classification source (ADR 0049).
+            asset=None if probed_other else run_service.resolve_asset(session, suite),
         )
         # Only the SQL path (Snowflake / Unity Catalog / generic SQL) aggregates the whole
         # table; ADLS / S3 / Iceberg read at most `_SAMPLE_ROWS` rows into pandas

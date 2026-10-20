@@ -50,7 +50,7 @@ from backend.app.datasources.sql_engines import (
     default_schema,
 )
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
-from backend.app.db.models import Connection
+from backend.app.db.models import Asset, Connection
 from backend.app.services import credential_health
 from backend.app.services.column_classification import ColumnClass, classify_column
 
@@ -1103,8 +1103,51 @@ def profile_connection(
     path: str | None = None,
     file_format: str | None = None,
     secret_store: SecretStore,
+    asset: Asset | None = None,
 ) -> ProfileResult:
-    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type."""
+    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type.
+
+    ``asset`` is the asset this probe reads — pass it ONLY when the target is the suite's own
+    (never on an explicit table/path override, whose columns may collide by name) — and the
+    profile then feeds the profiler classification source (ADR 0049): the email / encoded
+    value detectors' verdicts are persisted against it, fail-soft, so a column that starts
+    carrying PII-shaped values is masked everywhere from the next profile on.
+    """
+    result = _profile_connection(
+        connection,
+        session=session,
+        columns=columns,
+        top_n=top_n,
+        table=table,
+        schema=schema,
+        catalog=catalog,
+        namespace=namespace,
+        path=path,
+        file_format=file_format,
+        secret_store=secret_store,
+    )
+    if asset is not None:
+        # Imported here: `column_detections` is a read-path module and must not pull this one in.
+        from backend.app.services.column_detections import record_profile_detections_safely
+
+        record_profile_detections_safely(session, asset, result.columns)
+    return result
+
+
+def _profile_connection(
+    connection: Connection,
+    *,
+    session: Session,
+    columns: list[str],
+    top_n: int,
+    table: str | None = None,
+    schema: str | None = None,
+    catalog: str | None = None,
+    namespace: str | None = None,
+    path: str | None = None,
+    file_format: str | None = None,
+    secret_store: SecretStore,
+) -> ProfileResult:
     # Credential-health seam (#1697) — every profiler branch reads live data with this
     # connection's stored credential.
     with credential_health.credential_use(session, connection):
@@ -1269,9 +1312,10 @@ def suggest_policy_for_target(
     file_format: str | None = None,
     top_n: int = 20,
     secret_store: SecretStore,
+    asset: Asset | None = None,
 ) -> dict[str, Any]:
     """List → profile → classify a target's columns into a redaction-policy suggestion,
-    under one warehouse login (#1645).
+    under one warehouse login (#1645). ``asset``: see `profile_connection`.
     """
     with shared_connection():
         columns = list_columns(
@@ -1297,5 +1341,6 @@ def suggest_policy_for_target(
             path=path,
             file_format=file_format,
             secret_store=secret_store,
+            asset=asset,
         )
     return derive_column_policy(result.columns)

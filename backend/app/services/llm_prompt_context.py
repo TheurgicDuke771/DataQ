@@ -230,6 +230,8 @@ def masked_profile_for_target(
             schema=schema,
             catalog=catalog,
             namespace=namespace,
+            # Only the suite's own target feeds the classification source (ADR 0049).
+            asset=None if probed_other_target else run_service.resolve_asset(session, suite),
         )
     except SecretStoreUnavailableError:
         raise

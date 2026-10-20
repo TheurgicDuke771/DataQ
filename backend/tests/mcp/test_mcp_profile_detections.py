@@ -1,0 +1,59 @@
+"""MCP `profile_column` feeds the profiler classification source only on the suite's own
+target (ADR 0049) — the default location is the suite's target; an explicit one is not."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from backend.app.db.models import Asset
+from backend.app.mcp import server
+from backend.app.services import profile_service
+from backend.app.services.profile_service import ProfileResult
+from backend.tests.mcp.test_mcp_tools import _as, _suite, _user
+
+
+def _capture(monkeypatch: Any) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    def _fake(connection: Any, **kwargs: Any) -> ProfileResult:
+        seen.update(kwargs)
+        return ProfileResult(row_count=0, table=kwargs.get("table"), columns=[])
+
+    monkeypatch.setattr(profile_service, "profile_connection", _fake)
+    return seen
+
+
+def _attach_asset(db_session: Any, suite: Any) -> Asset:
+    asset = Asset(namespace="snowflake://a", name="PUBLIC.ORDERS")
+    db_session.add(asset)
+    db_session.flush()
+    suite.asset_id = asset.id
+    db_session.commit()
+    return asset
+
+
+def test_the_default_location_feeds_the_suites_asset(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)  # target={"table": "ORDERS"}
+    asset = _attach_asset(db_session, suite)
+    seen = _capture(monkeypatch)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["revenue"])
+
+    assert seen["table"] == "ORDERS"
+    assert seen["asset"] is not None and seen["asset"].id == asset.id
+
+
+def test_an_explicit_location_feeds_nothing(db_session: Any, monkeypatch: Any) -> None:
+    """Even one spelling the same table: an explicit override may name a different table whose
+    columns collide by name, and MCP keeps the conservative rule the tag floor already uses."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _attach_asset(db_session, suite)
+    seen = _capture(monkeypatch)
+    _as(monkeypatch, db_session, user)
+
+    server.profile_column(str(suite.id), columns=["revenue"], table="ORDERS")
+
+    assert seen["asset"] is None
