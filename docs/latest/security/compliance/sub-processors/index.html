@@ -2652,6 +2652,13 @@ a third-party endpoint.</p>
 <td>No — table/job names and check outcomes, not row data</td>
 <td>Pull: when <code>LINEAGE_PROVIDER</code> is configured. Emission: when <code>OPENLINEAGE_URL</code> (or the library's own transport config) is set</td>
 </tr>
+<tr>
+<td>11</td>
+<td><strong>Audit tamper anchor</strong> — an HMAC-signed webhook, or an immutable object store (S3 Object Lock / S3-compatible, Azure immutable blob)</td>
+<td>The audit hash-chain head: a SHA-256 hash, a label, the hashed-event count and a timestamp — daily and before every retention purge</td>
+<td>No — never an audit event's actor, action or payload</td>
+<td><code>TAMPER_ANCHOR=webhook</code> or <code>object_lock</code> (off by default)</td>
+</tr>
 </tbody>
 </table>
 <p>Cloud-platform services that <em>host</em> a deployment (the managed Postgres, Redis,
@@ -2669,7 +2676,7 @@ maintained as code review discipline, not a calendar:</p>
 <li>The <strong>LLM row flips from "not built"</strong> in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.</li>
 </ol>
-<p>Last reviewed: 2026-09-01 (originally 2026-08-21).</p>
+<p>Last reviewed: 2026-10-20 (originally 2026-08-21).</p>
 
 
 

@@ -489,6 +489,136 @@
         "title": "AdminWebhookRead",
         "type": "object"
       },
+      "AnchorFinding": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "head_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Hash"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "match": {
+            "enum": [
+              "present",
+              "purged",
+              "missing",
+              "malformed"
+            ],
+            "title": "Match",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "head_hash",
+          "as_of",
+          "match"
+        ],
+        "title": "AnchorFinding",
+        "type": "object"
+      },
+      "AnchorVerificationRead": {
+        "properties": {
+          "checked_count": {
+            "title": "Checked Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/AnchorFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "malformed_count": {
+            "title": "Malformed Count",
+            "type": "integer"
+          },
+          "missing_count": {
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "present_count": {
+            "title": "Present Count",
+            "type": "integer"
+          },
+          "purged_count": {
+            "title": "Purged Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "mismatch",
+              "empty",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "checked_count",
+          "present_count",
+          "purged_count",
+          "missing_count",
+          "malformed_count",
+          "findings",
+          "truncated",
+          "error"
+        ],
+        "title": "AnchorVerificationRead",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1025,10 +1155,21 @@
           "anchor_mode": {
             "enum": [
               "none",
-              "webhook"
+              "webhook",
+              "object_lock"
             ],
             "title": "Anchor Mode",
             "type": "string"
+          },
+          "anchors": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnchorVerificationRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "chain_head_hash": {
             "anyOf": [

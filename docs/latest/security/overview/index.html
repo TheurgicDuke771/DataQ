@@ -3986,7 +3986,14 @@ considered:</p>
   relay: account identifiers rather than warehouse content, relay operator-chosen.
 - <strong>Secret store</strong> — warehouse credentials in Key Vault / Secrets Manager /
   OpenBao. Not customer data, but a remote store is a location, and the
-  credentials it holds unlock the systems the customer data lives in.</p>
+  credentials it holds unlock the systems the customer data lives in.
+- <strong>OpenLineage emission</strong> — when configured, a START and a terminal RunEvent per
+  suite run to an operator-chosen catalog: dataset and job names, check names,
+  statuses and aggregate counts. Never a failing-row sample or an observed value.
+- <strong>Tamper anchor</strong> — when configured, the audit hash-chain head leaves the
+  database daily and before every retention purge: a SHA-256 hash, a label, the
+  hashed-event count and a timestamp, to an operator-chosen webhook or immutable
+  object store. Never an audit event's actor, action or payload.</p>
 <p>Deploying into another jurisdiction is a variable change, not a fork: the same
 images and the same IaC take a different region. What DataQ does <strong>not</strong> do is
 verify the result — that remains the deploying organization's attestation, which
@@ -4066,10 +4073,32 @@ they create before deleting, so a documented purge reads as clean rather than as
 <p><strong>The chain alone is not the tamper-evidence claim — an external anchor is.</strong> An actor with
 write access to the <em>whole</em> table could recompute the chain forward from wherever they
 edited, proving nothing to that specific adversary. An optional <code>TamperAnchor</code> publishes the
-chain head, HMAC-signed, to an operator-controlled endpoint outside the database (a webhook
-to a separate log sink or append-only object store) — DataQ never reads it back, which is
-the whole point. It is <strong>off by default</strong>; an operator whose regime requires a provably
-unaltered log must configure it.</p>
+chain head outside the database, daily and before every retention purge. It is <strong>off by
+default</strong>; an operator whose regime requires a provably unaltered log must configure one of
+the two classes:</p>
+<ul>
+<li><strong><code>TAMPER_ANCHOR=webhook</code></strong> — the head, HMAC-signed, POSTed to an operator-controlled
+  endpoint (a separate log sink, an append-only store's ingest). DataQ never reads it back,
+  which is the whole point: the anchor's value is that DataQ does not control it.</li>
+<li><strong><code>TAMPER_ANCHOR=object_lock</code></strong> — the head written as its own write-once object:
+  <strong>S3 Object Lock</strong> (AWS, or any S3-compatible store that implements it, such as MinIO)
+  in <code>COMPLIANCE</code> or <code>GOVERNANCE</code> mode, or an <strong>Azure immutable blob</strong> (a <code>Locked</code> or
+  <code>Unlocked</code> version-level immutability policy, optionally with a legal hold), each
+  retained <code>TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS</code>. The bucket or container must have
+  object lock / version-level immutability enabled; the credential (S3 secret access key,
+  Azure SAS or service-principal secret) lives in the secret store under
+  <code>TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME</code>, never in the environment, and an incomplete
+  configuration refuses to boot. Unlike the webhook, DataQ <em>can</em> read this anchor back:
+  <code>GET /admin/audit-events/verify</code> lists the published heads (every object version, so a
+  delete marker cannot hide one) and reports each as <strong>present</strong> in the chain, <strong>purged</strong>
+  (older than the last retention sweep — expected), or <strong>missing</strong> — the signature of a
+  database restored to before that head was published, or of a rewritten chain. A store
+  outage is reported as <strong>unavailable</strong>, never as "nothing published". The daily verification task runs the same check and logs a mismatch or an unreadable store at ERROR. The S3 path is
+  verified against MinIO with object lock; real AWS Object Lock and Azure immutability
+  are exercised only through the SDKs' documented call shapes, not a live account.</li>
+</ul>
+<p>A failed publish, in either class, is logged at ERROR and recorded on the purge
+checkpoint as not anchored — it never blocks the retention sweep.</p>
 <h3 id="organizational-artifacts">Organizational artifacts<a class="headerlink" href="#organizational-artifacts" title="Permanent link">¶</a></h3>
 <p>Templates and reference documents for the parts of compliance that are genuinely
 organizational, published alongside this page:</p>

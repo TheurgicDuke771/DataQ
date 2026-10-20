@@ -3606,6 +3606,13 @@ rows written before hashing shipped — real audit history that the chain simply
 cover, never folded into the verified count. <strong>External anchor</strong> reports whether the chain
 head is published outside the database: without one, the chain is only <em>internally</em>
 consistent, because anyone able to rewrite the whole table could rewrite the hashes with it.</p>
+<p>With an <strong>immutable object store</strong> anchor (<code>TAMPER_ANCHOR=object_lock</code> — S3 Object Lock or an
+Azure immutable blob), the card adds <strong>Anchors read back</strong>: the published heads are listed
+from the store and matched against the chain. Each is <em>present</em>, <em>explained by retention</em>
+(older than the last purge, so expected to be gone), <em>missing</em> — the database was restored
+to before that head was published, or the chain was rewritten — or <em>not an anchor</em> (an
+object under the prefix DataQ did not write). An unreachable store reads as <strong>not checked</strong>,
+never as "nothing published".</p>
 <h3 id="data-subject-rights">Data-subject rights<a class="headerlink" href="#data-subject-rights" title="Permanent link">¶</a></h3>
 <p>The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)
 request against the sample data DataQ itself has captured. <strong>They never touch your

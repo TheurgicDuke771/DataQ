@@ -3399,7 +3399,7 @@ an outbound model request.</p>
 <tr>
 <td>GET</td>
 <td><code>/admin/audit-events/verify</code></td>
-<td>Verify the audit log's hash chain for tampering.</td>
+<td>Verify the audit log's hash chain for tampering. With an <code>object_lock</code> anchor, <code>anchors</code> reads the published heads back and reports each as present / purged / missing / malformed (<code>unavailable</code> when the store cannot be read).</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -3424,7 +3424,7 @@ an outbound model request.</p>
 <tr>
 <td>GET</td>
 <td><code>/admin/deployment</code></td>
-<td>Declared residency / deployment posture (<code>DEPLOYMENT_REGION</code>); <code>zero_sample_mode</code> is the effective value and <code>zero_sample_source</code> says which of env / setting turned it on.</td>
+<td>Declared residency / deployment posture (<code>DEPLOYMENT_REGION</code>); <code>zero_sample_mode</code> is the effective value and <code>zero_sample_source</code> says which of env / setting turned it on; <code>external_transfers</code> enumerates every way data can leave, on or off, including OpenLineage emission and the tamper anchor.</td>
 </tr>
 <tr>
 <td>GET</td>

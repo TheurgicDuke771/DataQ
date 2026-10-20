@@ -2902,10 +2902,13 @@ pg_restore<span class="w"> </span>--no-owner<span class="w"> </span>--no-privile
 edited, members added, audit events. Decide quickly whether to restore — the older the
 backup relative to the failure, the more you re-create by hand.</p>
 <p>The <strong>audit chain</strong> deserves one note. The chain itself verifies clean after a restore. If
-you publish the chain head to an external anchor (<code>TAMPER_ANCHOR=webhook</code>), the anchor holds
-heads that the restored database never reaches: that is the restore, visible from outside,
-which is exactly what the anchor is for. Record the restore (when, from which backup) where
-you keep the anchor, so a later audit can tell a restore from tampering.</p>
+you publish the chain head to an external anchor (<code>TAMPER_ANCHOR=webhook</code> or
+<code>object_lock</code>), the anchor holds heads that the restored database never reaches: that is
+the restore, visible from outside, which is exactly what the anchor is for. With the
+object-lock anchor, <strong>Verify now</strong> on the admin Compliance page (or
+<code>GET /api/v1/admin/audit-events/verify</code>) reads those heads back and reports each one the
+restored chain no longer contains as <em>missing</em>. Record the restore (when, from which
+backup) where you keep the anchor, so a later audit can tell a restore from tampering.</p>
 <h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">¶</a></h2>
 <p>The sequence, for any deployment:</p>
 <ol>

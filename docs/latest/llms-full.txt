@@ -1393,6 +1393,14 @@ cover, never folded into the verified count. **External anchor** reports whether
 head is published outside the database: without one, the chain is only *internally*
 consistent, because anyone able to rewrite the whole table could rewrite the hashes with it.
 
+With an **immutable object store** anchor (`TAMPER_ANCHOR=object_lock` — S3 Object Lock or an
+Azure immutable blob), the card adds **Anchors read back**: the published heads are listed
+from the store and matched against the chain. Each is *present*, *explained by retention*
+(older than the last purge, so expected to be gone), *missing* — the database was restored
+to before that head was published, or the chain was rewritten — or *not an anchor* (an
+object under the prefix DataQ did not write). An unreachable store reads as **not checked**,
+never as "nothing published".
+
 ### Data-subject rights
 
 The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)
@@ -4926,6 +4934,18 @@ section below.
   applying a file that does not mention `enabled` leaves each check's switch alone; over
   MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
   `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
+- **A second audit tamper-anchor class: write-once objects.** `TAMPER_ANCHOR=object_lock`
+  writes each audit hash-chain head as its own immutable object — S3 Object Lock (AWS or any
+  S3-compatible store with lock enabled, such as MinIO) in COMPLIANCE or GOVERNANCE mode, or an
+  Azure immutable blob with a Locked or Unlocked policy and an optional legal hold — retained
+  for a configured number of days, with the credential read from the secret store and an
+  incomplete configuration refused at boot. Unlike the webhook, these anchors are read back:
+  `GET /admin/audit-events/verify` and the admin Compliance card now list the published heads
+  and report each as present in the chain, explained by a retention purge, missing (the
+  signature of a database restored to before it was published, or a rewritten chain) or not an
+  anchor at all; an unreachable store is reported as unavailable, never as "nothing
+  published". `GET /admin/deployment` now also lists the tamper anchor and OpenLineage
+  emission among the external-transfer vectors, on or off.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -7258,12 +7278,12 @@ an outbound model request.
 | GET | `/admin/offboarding/{user_id}/preview` | What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing. |
 | POST | `/admin/offboarding/{user_id}` | Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; `confirm_email` must match. A step that cannot run is reported in `skipped` with its reason. Authored history is kept (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
-| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. |
+| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. With an `object_lock` anchor, `anchors` reads the published heads back and reports each as present / purged / missing / malformed (`unavailable` when the store cannot be read). |
 | POST | `/admin/data-subject-requests/export` · `…/erase` | Export or erase every captured sample cell naming `column` = `value` (GDPR/CCPA subject requests; erase is audited). |
 | GET | `/admin/health` | Workspace health — poll staleness, beat heartbeat, queue depth, and per-connection credential health. |
 | GET / PUT | `/admin/llm` · POST `/admin/llm/test` | Outbound-LLM provider config; the test probes a draft without saving it. |
 | POST | `/admin/auth-email/test` | Send a test email to the caller over the configured `AUTH_EMAIL_*` transport (throttled per admin). |
-| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
+| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on; `external_transfers` enumerates every way data can leave, on or off, including OpenLineage emission and the tamper anchor. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
 | GET | `/admin/scoring` | Health-score penalty weights in force, whether they are the defaults, and the defaults themselves. |
@@ -11029,6 +11049,13 @@ considered:
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /
   OpenBao. Not customer data, but a remote store is a location, and the
   credentials it holds unlock the systems the customer data lives in.
+- **OpenLineage emission** — when configured, a START and a terminal RunEvent per
+  suite run to an operator-chosen catalog: dataset and job names, check names,
+  statuses and aggregate counts. Never a failing-row sample or an observed value.
+- **Tamper anchor** — when configured, the audit hash-chain head leaves the
+  database daily and before every retention purge: a SHA-256 hash, a label, the
+  hashed-event count and a timestamp, to an operator-chosen webhook or immutable
+  object store. Never an audit event's actor, action or payload.
 
 Deploying into another jurisdiction is a variable change, not a fork: the same
 images and the same IaC take a different region. What DataQ does **not** do is
@@ -11100,10 +11127,32 @@ they create before deleting, so a documented purge reads as clean rather than as
 **The chain alone is not the tamper-evidence claim — an external anchor is.** An actor with
 write access to the *whole* table could recompute the chain forward from wherever they
 edited, proving nothing to that specific adversary. An optional `TamperAnchor` publishes the
-chain head, HMAC-signed, to an operator-controlled endpoint outside the database (a webhook
-to a separate log sink or append-only object store) — DataQ never reads it back, which is
-the whole point. It is **off by default**; an operator whose regime requires a provably
-unaltered log must configure it.
+chain head outside the database, daily and before every retention purge. It is **off by
+default**; an operator whose regime requires a provably unaltered log must configure one of
+the two classes:
+
+- **`TAMPER_ANCHOR=webhook`** — the head, HMAC-signed, POSTed to an operator-controlled
+  endpoint (a separate log sink, an append-only store's ingest). DataQ never reads it back,
+  which is the whole point: the anchor's value is that DataQ does not control it.
+- **`TAMPER_ANCHOR=object_lock`** — the head written as its own write-once object:
+  **S3 Object Lock** (AWS, or any S3-compatible store that implements it, such as MinIO)
+  in `COMPLIANCE` or `GOVERNANCE` mode, or an **Azure immutable blob** (a `Locked` or
+  `Unlocked` version-level immutability policy, optionally with a legal hold), each
+  retained `TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS`. The bucket or container must have
+  object lock / version-level immutability enabled; the credential (S3 secret access key,
+  Azure SAS or service-principal secret) lives in the secret store under
+  `TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME`, never in the environment, and an incomplete
+  configuration refuses to boot. Unlike the webhook, DataQ *can* read this anchor back:
+  `GET /admin/audit-events/verify` lists the published heads (every object version, so a
+  delete marker cannot hide one) and reports each as **present** in the chain, **purged**
+  (older than the last retention sweep — expected), or **missing** — the signature of a
+  database restored to before that head was published, or of a rewritten chain. A store
+  outage is reported as **unavailable**, never as "nothing published". The daily verification task runs the same check and logs a mismatch or an unreadable store at ERROR. The S3 path is
+  verified against MinIO with object lock; real AWS Object Lock and Azure immutability
+  are exercised only through the SDKs' documented call shapes, not a live account.
+
+A failed publish, in either class, is logged at ERROR and recorded on the purge
+checkpoint as not anchored — it never blocks the retention sweep.
 
 ### Organizational artifacts
 
@@ -11657,6 +11706,7 @@ a third-party endpoint.
 | 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 54 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows) | No — table/job names and check outcomes, not row data | Pull: when `LINEAGE_PROVIDER` is configured. Emission: when `OPENLINEAGE_URL` (or the library's own transport config) is set |
+| 11 | **Audit tamper anchor** — an HMAC-signed webhook, or an immutable object store (S3 Object Lock / S3-compatible, Azure immutable blob) | The audit hash-chain head: a SHA-256 hash, a label, the hashed-event count and a timestamp — daily and before every retention purge | No — never an audit event's actor, action or payload | `TAMPER_ANCHOR=webhook` or `object_lock` (off by default) |
 
 Cloud-platform services that *host* a deployment (the managed Postgres, Redis,
 container runtime, object storage of your chosen cloud) are your cloud provider
@@ -11675,7 +11725,7 @@ maintained as code review discipline, not a calendar:
 3. The **LLM row flips from "not built"** in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.
 
-Last reviewed: 2026-09-01 (originally 2026-08-21).
+Last reviewed: 2026-10-20 (originally 2026-08-21).
 
 
 ---
@@ -11862,10 +11912,13 @@ edited, members added, audit events. Decide quickly whether to restore — the o
 backup relative to the failure, the more you re-create by hand.
 
 The **audit chain** deserves one note. The chain itself verifies clean after a restore. If
-you publish the chain head to an external anchor (`TAMPER_ANCHOR=webhook`), the anchor holds
-heads that the restored database never reaches: that is the restore, visible from outside,
-which is exactly what the anchor is for. Record the restore (when, from which backup) where
-you keep the anchor, so a later audit can tell a restore from tampering.
+you publish the chain head to an external anchor (`TAMPER_ANCHOR=webhook` or
+`object_lock`), the anchor holds heads that the restored database never reaches: that is
+the restore, visible from outside, which is exactly what the anchor is for. With the
+object-lock anchor, **Verify now** on the admin Compliance page (or
+`GET /api/v1/admin/audit-events/verify`) reads those heads back and reports each one the
+restored chain no longer contains as *missing*. Record the restore (when, from which
+backup) where you keep the anchor, so a later audit can tell a restore from tampering.
 
 ## Upgrading
 
@@ -12742,7 +12795,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0038](0038-dq-dimension-classification.md) | DQ-dimension classification on checks — **seven canonical dimensions** (accuracy/completeness/consistency/integrity/timeliness/uniqueness/validity) as a **closed** vocabulary via table `CHECK`, not a Postgres ENUM (no `ALTER TYPE` friction) and not free text (unbounded values destroy coverage reporting); **derived default → stored → overridable at any time** (stored so the scorecard aggregates in SQL and an override survives); derivation is **deliberately partial** — `accuracy`/`integrity` are never derived and custom SQL has no answer, so **NULL means unclassified** and the scorecard must render it as a gap; **existing rows ARE backfilled** (migration `a7b8c9d0e1f2`; §5 **amended 2026-07-19** — the backfill cannot overwrite a human decision because none existed yet when it ran, while leaving them NULL made the scorecard useless on day one; unmapped types stay NULL); `dimension` ⊥ `kind` ⊥ `engine`; narrows 0036 §4 — lands the derivation map as the backend catalog's seed without moving the frontend catalog server-side, since no native engine exists yet | Accepted |
 | [0039](0039-openbao-self-hosted-secret-backend.md) | Self-hosted secret backend — a fourth `SecretStore` speaking the **KV v2 HTTP API, not a vendor SDK** (one mode serves OpenBao / Vault Community / Enterprise / HCP; no HashiCorp lock-in traded for the Azure one); **OpenBao** (MPL-2.0, LF fork of pre-BUSL Vault 1.14) is the shipped/tested/pinned server — Vault Community is BUSL-1.1 and rule-40-forbidden as a *distributed* component, supported as a *target*; **`SECRET_STORE=openbao` replaces `redis` and `RedisSecretStore` is deleted** (plaintext credentials were the default of the published eval stack), with a loud one-cycle `RuntimeError` shim, **Redis stays** for broker + rate-limit counters; token auth phase 1 (AppRole deferred/filed), dev-mode token generated into the gitignored `.env`; Azure Key Vault remains the prod default (managed identity beats a held token), OpenBao is the BYOL/cloud-neutral option; **an outage is never reportable as a state** — new `SecretStoreUnavailableError`, deliberately NOT a `SecretNotFoundError` subclass, since every caller branches on the TYPE and none reads the message (a sealed vault otherwise renders "not set" on the admin page, skips alert delivery silently, and runs connections with the credential omitted); no status is silent (400=KV v1 mount, 401=gateway, 429=HCP throttle); **`AzureKeyVaultStore` had the same defect since Week 2** and is fixed too (the same invisible-degradation shape seen before); `delete` purges via KV v2 **metadata** delete, fail-soft | Accepted |
 | [0040](0040-warehouse-inventory-sync-table-enumeration-seam.md) | Warehouse inventory sync + the **table-enumeration seam** — one per-datasource `enumerate_tables` capability (Snowflake/UC `information_schema`, engine-native case = the identity-safe path, connection-database scoping, ephemera/system schemas excluded) feeding three consumers: **inventory sync** (opt-in per connection, daily crontab beat, `upsert_assets(preserve_provenance=True)` so `last_seen` advancement keeps live tables out of the orphan sweep and dropped tables age out through it — no new column, no new guard; no "discovered" badge, ADR 0037's neutral unmonitored rendering IS the marker), **GET_LINEAGE seeds**, and future pickers; `ASSET_INVENTORY_MAX_TABLES` cap (default 2000) with loud truncation; **decided**: S3 namespace stays `s3://{bucket}` for AWS, becomes `s3://{host[:port]}/{bucket}` only when `endpoint_url` is set | Accepted |
-| [0041](0041-history-audit-strategy.md) | History & audit posture for v1.x+ (amends 0020) — **one append-only `audit_events` table** (actor/action/entity/before/after/ts) recording **deliberate acts by a principal only**, with `entity_id` deliberately **FK-less** so the row outlives the entity it describes (an FK would either cascade the audit away or block the delete); the data-**read** audit (gap G1) is **phase 2 on the same table**, discriminated by `action_class` — not a second table — with the opposite latency contract (phase 1 writes inside the mutation's transaction, fail-closed; phase-2 reads must stay off the critical path); **(a) preserving `check_versions` past delete rejected** — `RESTRICT` makes checks undeletable, `SET NULL` orphans rows needing self-contained identity (a worse audit log scoped to one entity), tombstone = soft-delete for one table — the audit log's delete event answers it instead and **cascade stands**; **(b) soft-delete re-deferred** on a narrowed argument (its headline motivation is already met — an earlier 409 guard means a connection can no longer be deleted out from under its runs; the column is the easy part vs. "deleted means inert" for live credentials/bindings/schedules; and a delete-that-doesn't-delete fights the G2 Art-17 erasure work), mitigated by a follow-up blast-radius confirmation; **(d) SCD-2 closed permanently**, not deferred; Type-4 tables stay the **product** surface (version drawer/restore), the audit log is the **durable record**; payloads are **per-entity allow-lists** reusing the snapshot builders, never `dict(row)`, never a secret value, never `sample_failures`/`observed_value`, and reuse only the **credential subset** of `_PII_KEYS` (the full set redacts `name`/`display_name`/`user_id` — the very content of a rename and the point of the actor record); append-only via `REVOKE UPDATE, DELETE` — **a guard against accidental in-app mutation, explicitly NOT tamper-resistance** (`dataq_app` owns the table and can re-grant; splitting the role is rejected because the single-role model is the whole mitigation for the unpatched Postgres RI owner-cast escalation, so real tamper-evidence needs the G1 external anchor); coverage guarded off FastAPI's **route table**, not an audit registry (the ADR-0039 tautology) | Accepted (phase-1 build; follow-ups filed) |
+| [0041](0041-history-audit-strategy.md) | History & audit posture for v1.x+ (amends 0020) — **one append-only `audit_events` table** (actor/action/entity/before/after/ts) recording **deliberate acts by a principal only**, with `entity_id` deliberately **FK-less** so the row outlives the entity it describes (an FK would either cascade the audit away or block the delete); the data-**read** audit (gap G1) is **phase 2 on the same table**, discriminated by `action_class` — not a second table — with the opposite latency contract (phase 1 writes inside the mutation's transaction, fail-closed; phase-2 reads must stay off the critical path); **(a) preserving `check_versions` past delete rejected** — `RESTRICT` makes checks undeletable, `SET NULL` orphans rows needing self-contained identity (a worse audit log scoped to one entity), tombstone = soft-delete for one table — the audit log's delete event answers it instead and **cascade stands**; **(b) soft-delete re-deferred** on a narrowed argument (its headline motivation is already met — an earlier 409 guard means a connection can no longer be deleted out from under its runs; the column is the easy part vs. "deleted means inert" for live credentials/bindings/schedules; and a delete-that-doesn't-delete fights the G2 Art-17 erasure work), mitigated by a follow-up blast-radius confirmation; **(d) SCD-2 closed permanently**, not deferred; Type-4 tables stay the **product** surface (version drawer/restore), the audit log is the **durable record**; payloads are **per-entity allow-lists** reusing the snapshot builders, never `dict(row)`, never a secret value, never `sample_failures`/`observed_value`, and reuse only the **credential subset** of `_PII_KEYS` (the full set redacts `name`/`display_name`/`user_id` — the very content of a rename and the point of the actor record); append-only via `REVOKE UPDATE, DELETE` — **a guard against accidental in-app mutation, explicitly NOT tamper-resistance** (`dataq_app` owns the table and can re-grant; splitting the role is rejected because the single-role model is the whole mitigation for the unpatched Postgres RI owner-cast escalation, so real tamper-evidence needs the G1 external anchor); coverage guarded off FastAPI's **route table**, not an audit registry (the ADR-0039 tautology) | Accepted (phase-1 build; follow-ups filed; amended 2026-10-20 — the second `TamperAnchor` class, S3 Object Lock / Azure immutable blob, with read-back verification) |
 | [0042](0042-llm-provider-seam.md) | `LLMProvider` seam — outbound LLM for authoring assistance (NL→SQL generation, check suggestions, future RCA narrative), **admin-configured, BYO credential, default-OFF**; two wire impls only (`anthropic` official SDK + `openai_compatible` httpx — the latter covers Azure OpenAI, Bedrock chat-completions, and local Ollama/vLLM/TGI; no model server in the image per 0025); structured output is a `native \| prompt_json` capability ladder and **never a trust boundary** — callers re-validate, generated SQL rides the 0019 validator + dry-run, suggestions the server-side allowlist; config = `llm_settings` DB singleton behind `require_workspace_admin`, API key write-only in `SecretStore` with the credential-destination re-supply rule on `base_url`; execution worker-side through `llm_invocations` (poll + audit + token/cost record; G4 posture reads it); prompt context = schema + masked aggregate profiler stats only, never sample rows; rejected: proxying a vendor key we own, bundling weights, MCP exposure, per-feature providers | Accepted |
 | [0043](0043-in-app-workspace-membership.md) | In-app workspace membership — one `workspace_members` table an admin manages from Admin → Members; **empty table = today's behaviour, non-empty = member if in the env allowlist OR the table**, checked on every request at four points (`_upsert_user`, OTP session resolve, PAT resolve, OTP eligibility) so removing someone stops their browser session and their PATs on the next request; env allowlists become a starting seed plus an emergency way in that can only grant (OTP mode still needs a non-empty one to boot); the first row imports every existing user as a **provisional** member shown for review, never a silent backfill; last-admin removal refused, self-removal confirmed; `initial_role` applies only when the user row is first created; the IdP account stays a prerequisite — DataQ controls its own door only; REST denies with 403, `/mcp` with 401 | Accepted |
 | [0044](0044-mssql-tds-driver-and-entra-auth.md) | MSSQL / T-SQL adapter driver + auth — **`python-tds` + `sqlalchemy-pytds` (MIT, pure Python, FEDAUTH token) by default** for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); **Fabric SQL endpoints via an optional ODBC lane** (`mssql+pyodbc` when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic `mssql` type with `sql` / `entra_service_principal` auth, `destination_fields` host/port/tenant_id/auth_type | Accepted |
@@ -17581,10 +17634,63 @@ ERROR on a detected break; does not, and cannot, auto-remediate).
 
 **Explicitly out of scope**, recorded rather than silently narrowed: no
 backfill of pre-existing rows into the chain (reasoned above); no alerting
-integration for a detected break beyond the structured ERROR log; no second
-anchor implementation beyond the one HMAC-signed webhook (S3 Object Lock /
-immutable blob would be a new class behind the same `TamperAnchor` seam, not a
-redesign).
+integration for a detected break beyond the structured ERROR log; ~~no second
+anchor implementation beyond the one HMAC-signed webhook~~ — the second class
+shipped 2026-10-20, see the amendment below.
+
+### Amendment (2026-10-20) — the object-lock anchor class
+
+The seam held: `ObjectLockAnchor` is a second class behind `TamperAnchor`, not a
+redesign. `TAMPER_ANCHOR=object_lock` writes each published head — the same
+payload the webhook signs, plus `published_at` and `retain_until` — as its own
+write-once object, `<prefix>/<utc-ts>-<head-hash>.json`, under **S3 Object Lock**
+(`COMPLIANCE` or `GOVERNANCE` retention of `TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS`,
+via boto3 `put_object` with `ObjectLockMode` / `ObjectLockRetainUntilDate`; AWS or
+any S3-compatible store that implements it, through the shared S3-compatible `endpoint_url` +
+addressing-style seam) or as an **Azure immutable blob** (`upload_blob` with a
+version-level `ImmutabilityPolicy` — `Locked` for COMPLIANCE, `Unlocked` for
+GOVERNANCE — and an optional legal hold; the client comes from the ADLS
+datasource's one credential-to-client door). The credential is read from the
+`SecretStore` on every call under `TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME`, handed
+to the SDK as a connect argument and never placed in a URL; an incomplete
+configuration fails the boot, the `_validate_secret_store` posture.
+
+**What this class adds that the webhook cannot: read-back.** The webhook's value
+is that DataQ does not control the sink, so DataQ never reads it. An object store
+DataQ writes with retention is still outside the database's control — the lock is
+enforced by the store, not by DataQ — and *can* be listed. `verify_anchors`
+(surfaced as the `anchors` section of `GET /admin/audit-events/verify`, null for
+`none`/`webhook`) reads the newest anchors and matches each head against the live
+rows' `row_hash` plus the purge checkpoints' `last_deleted_row_hash`: **present**,
+**purged** (its `as_of` predates the latest checkpoint cutoff a real sweep could
+have written — one no later than `now - AUDIT_RETENTION_DAYS`, so a forged
+far-future checkpoint row cannot launder missing anchors; with retention off,
+nothing is purged), **missing** (a head the local chain never reaches — the restore the
+backup/restore runbook relies on this to detect, or a rewritten chain) or
+**malformed** (an object under the prefix DataQ did not write). Two honesty rules
+carried over from ADR 0039: a store outage is its own state, `unavailable`, never
+folded into `empty`; and the S3 listing walks **every object version**, because a
+versionless `delete_object` on a locked bucket succeeds by writing a delete marker
+that hides the current version from a plain listing while the locked version
+underneath survives — verification must read the version, not the listing. The Azure
+store lists blob versions for the same reason. The daily `verify_audit_chain`
+task runs the same read-back and logs `audit_anchor_mismatch` (or
+`audit_anchor_unverified`) at ERROR, so a restore is caught unattended; the
+endpoint's top-level `status` stays the chain's own verdict and the anchor
+verdict sits beside it in `anchors.status`, keeping the existing contract.
+
+**Verification posture.** The S3 path was live-verified against MinIO with object
+lock (bucket created `ObjectLockEnabledForBucket=True`): the object carries the
+retention, `delete_object(VersionId=…)` inside the window is refused, a delete
+marker does not hide it from read-back, and verify matches a real head and flags
+a foreign one. `backend/tests/integration/test_object_lock_anchor.py` is the
+opt-in lane (`OBJECT_LOCK_TEST_ENDPOINT`). Real AWS Object Lock and Azure
+immutability are unverifiable without a cloud account; the Azure store is
+unit-tested against the SDK's documented call shape only, and the docs say so.
+
+Still out of scope: alerting on a detected break or mismatch beyond the ERROR
+log and the admin surface; a per-object retention read-back (the payload records
+`retain_until`, the store's own retention is not re-queried).
 
 
 ---

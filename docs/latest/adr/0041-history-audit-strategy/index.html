@@ -2547,6 +2547,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="9. Addendum — tamper-evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#amendment-2026-10-20-the-object-lock-anchor-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-10-20) — the object-lock anchor class
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2888,10 +2905,58 @@ gated) reports chain status, plus two daily beat tasks: <code>anchor_audit_chain
 ERROR on a detected break; does not, and cannot, auto-remediate).</p>
 <p><strong>Explicitly out of scope</strong>, recorded rather than silently narrowed: no
 backfill of pre-existing rows into the chain (reasoned above); no alerting
-integration for a detected break beyond the structured ERROR log; no second
-anchor implementation beyond the one HMAC-signed webhook (S3 Object Lock /
-immutable blob would be a new class behind the same <code>TamperAnchor</code> seam, not a
-redesign).</p>
+integration for a detected break beyond the structured ERROR log; ~~no second
+anchor implementation beyond the one HMAC-signed webhook~~ — the second class
+shipped 2026-10-20, see the amendment below.</p>
+<h3 id="amendment-2026-10-20-the-object-lock-anchor-class">Amendment (2026-10-20) — the object-lock anchor class<a class="headerlink" href="#amendment-2026-10-20-the-object-lock-anchor-class" title="Permanent link">¶</a></h3>
+<p>The seam held: <code>ObjectLockAnchor</code> is a second class behind <code>TamperAnchor</code>, not a
+redesign. <code>TAMPER_ANCHOR=object_lock</code> writes each published head — the same
+payload the webhook signs, plus <code>published_at</code> and <code>retain_until</code> — as its own
+write-once object, <code>&lt;prefix&gt;/&lt;utc-ts&gt;-&lt;head-hash&gt;.json</code>, under <strong>S3 Object Lock</strong>
+(<code>COMPLIANCE</code> or <code>GOVERNANCE</code> retention of <code>TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS</code>,
+via boto3 <code>put_object</code> with <code>ObjectLockMode</code> / <code>ObjectLockRetainUntilDate</code>; AWS or
+any S3-compatible store that implements it, through the shared S3-compatible <code>endpoint_url</code> +
+addressing-style seam) or as an <strong>Azure immutable blob</strong> (<code>upload_blob</code> with a
+version-level <code>ImmutabilityPolicy</code> — <code>Locked</code> for COMPLIANCE, <code>Unlocked</code> for
+GOVERNANCE — and an optional legal hold; the client comes from the ADLS
+datasource's one credential-to-client door). The credential is read from the
+<code>SecretStore</code> on every call under <code>TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME</code>, handed
+to the SDK as a connect argument and never placed in a URL; an incomplete
+configuration fails the boot, the <code>_validate_secret_store</code> posture.</p>
+<p><strong>What this class adds that the webhook cannot: read-back.</strong> The webhook's value
+is that DataQ does not control the sink, so DataQ never reads it. An object store
+DataQ writes with retention is still outside the database's control — the lock is
+enforced by the store, not by DataQ — and <em>can</em> be listed. <code>verify_anchors</code>
+(surfaced as the <code>anchors</code> section of <code>GET /admin/audit-events/verify</code>, null for
+<code>none</code>/<code>webhook</code>) reads the newest anchors and matches each head against the live
+rows' <code>row_hash</code> plus the purge checkpoints' <code>last_deleted_row_hash</code>: <strong>present</strong>,
+<strong>purged</strong> (its <code>as_of</code> predates the latest checkpoint cutoff a real sweep could
+have written — one no later than <code>now - AUDIT_RETENTION_DAYS</code>, so a forged
+far-future checkpoint row cannot launder missing anchors; with retention off,
+nothing is purged), <strong>missing</strong> (a head the local chain never reaches — the restore the
+backup/restore runbook relies on this to detect, or a rewritten chain) or
+<strong>malformed</strong> (an object under the prefix DataQ did not write). Two honesty rules
+carried over from ADR 0039: a store outage is its own state, <code>unavailable</code>, never
+folded into <code>empty</code>; and the S3 listing walks <strong>every object version</strong>, because a
+versionless <code>delete_object</code> on a locked bucket succeeds by writing a delete marker
+that hides the current version from a plain listing while the locked version
+underneath survives — verification must read the version, not the listing. The Azure
+store lists blob versions for the same reason. The daily <code>verify_audit_chain</code>
+task runs the same read-back and logs <code>audit_anchor_mismatch</code> (or
+<code>audit_anchor_unverified</code>) at ERROR, so a restore is caught unattended; the
+endpoint's top-level <code>status</code> stays the chain's own verdict and the anchor
+verdict sits beside it in <code>anchors.status</code>, keeping the existing contract.</p>
+<p><strong>Verification posture.</strong> The S3 path was live-verified against MinIO with object
+lock (bucket created <code>ObjectLockEnabledForBucket=True</code>): the object carries the
+retention, <code>delete_object(VersionId=…)</code> inside the window is refused, a delete
+marker does not hide it from read-back, and verify matches a real head and flags
+a foreign one. <code>backend/tests/integration/test_object_lock_anchor.py</code> is the
+opt-in lane (<code>OBJECT_LOCK_TEST_ENDPOINT</code>). Real AWS Object Lock and Azure
+immutability are unverifiable without a cloud account; the Azure store is
+unit-tested against the SDK's documented call shape only, and the docs say so.</p>
+<p>Still out of scope: alerting on a detected break or mismatch beyond the ERROR
+log and the admin surface; a per-object retention read-back (the payload records
+<code>retain_until</code>, the store's own retention is not re-queried).</p>
 
 
 

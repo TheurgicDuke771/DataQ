@@ -39,6 +39,18 @@ section below.
   applying a file that does not mention `enabled` leaves each check's switch alone; over
   MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
   `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
+- **A second audit tamper-anchor class: write-once objects.** `TAMPER_ANCHOR=object_lock`
+  writes each audit hash-chain head as its own immutable object — S3 Object Lock (AWS or any
+  S3-compatible store with lock enabled, such as MinIO) in COMPLIANCE or GOVERNANCE mode, or an
+  Azure immutable blob with a Locked or Unlocked policy and an optional legal hold — retained
+  for a configured number of days, with the credential read from the secret store and an
+  incomplete configuration refused at boot. Unlike the webhook, these anchors are read back:
+  `GET /admin/audit-events/verify` and the admin Compliance card now list the published heads
+  and report each as present in the chain, explained by a retention purge, missing (the
+  signature of a database restored to before it was published, or a rewritten chain) or not an
+  anchor at all; an unreachable store is reported as unavailable, never as "nothing
+  published". `GET /admin/deployment` now also lists the tamper anchor and OpenLineage
+  emission among the external-transfer vectors, on or off.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
