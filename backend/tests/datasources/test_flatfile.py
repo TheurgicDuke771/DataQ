@@ -3,6 +3,7 @@
 import io
 import statistics
 import time
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -4074,7 +4075,8 @@ class _GcsBlobStub:
     def _not_found(self) -> Exception:
         from google.api_core.exceptions import NotFound
 
-        return NotFound(f"404 GET …/o/{self.name}: Not Found")
+        error: Exception = NotFound(f"404 GET …/o/{self.name}: Not Found")
+        return error
 
     def reload(self, **kwargs: Any) -> None:
         self.calls.append(("reload", kwargs))
@@ -4106,7 +4108,7 @@ class _GcsListing:
 
 
 class _GcsClientStub:
-    def __init__(self, blobs: list[_GcsBlobStub], *, prefixes: set[str] = frozenset()) -> None:
+    def __init__(self, blobs: list[_GcsBlobStub], *, prefixes: Iterable[str] = ()) -> None:
         self._blobs = {b.name: b for b in blobs}
         self._prefixes = set(prefixes)
         self.list_calls: list[dict[str, Any]] = []

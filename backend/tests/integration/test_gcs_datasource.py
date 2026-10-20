@@ -305,6 +305,7 @@ def test_anonymous_runner_needs_no_secret(bucket: str) -> None:
         secret_ref=None,
         secret_store=FakeSecretStore(),
     )
+    assert isinstance(runner, flatfile.FlatFileCheckRunner)
     (outcome,) = runner.run_monitors(
         table="orders/orders_2026-01-02.csv",
         schema=None,
