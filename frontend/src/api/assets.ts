@@ -191,6 +191,23 @@ export interface AssetDetail {
   inherited_classifications?: InheritedClassification[] | null;
   /** The lineage walk hit its depth cap, so columns further upstream were not considered. */
   inherited_classifications_truncated?: boolean;
+  /**
+   * Columns a profile found PII-shaped VALUES in (ADR 0049), dismissed ones included. `null` =
+   * could not be read; absent = an API predating the profiler classification source.
+   */
+  detected_classifications?: DetectedClassification[] | null;
+  /** When a profile of this asset's own target last fed the source; `null` = never looked. */
+  detected_classifications_refreshed_at?: string | null;
+}
+
+/** One profiler detection: masked as sensitive everywhere unless dismissed by a workspace admin. */
+export interface DetectedClassification {
+  column: string;
+  detector: 'email' | 'encoded';
+  first_detected_at: string;
+  last_detected_at: string;
+  dismissed: boolean;
+  dismissed_at: string | null;
 }
 
 export interface InheritedClassification {
@@ -272,5 +289,21 @@ export async function updateAsset(
   payload: AssetMetadataUpdate,
 ): Promise<AssetSummary> {
   const { data } = await api.patch<AssetSummary>(`/assets/${assetId}`, payload);
+  return data;
+}
+
+/**
+ * Dismiss (`true`) or restore (`false`) one profiler detection — workspace-admin only (the
+ * backend 403s others); the one way a detection stops masking, and an audited one.
+ */
+export async function setAssetClassificationDismissed(
+  assetId: string,
+  column: string,
+  dismissed: boolean,
+): Promise<DetectedClassification> {
+  const { data } = await api.patch<DetectedClassification>(
+    `/assets/${assetId}/classifications/${encodeURIComponent(column)}`,
+    { dismissed },
+  );
   return data;
 }
