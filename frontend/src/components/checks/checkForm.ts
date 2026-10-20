@@ -24,6 +24,7 @@ function numOrNull(v: unknown): number | null {
 function formToConfig(
   spec: ExpectationSpec | undefined,
   raw: Record<string, unknown>,
+  stored?: Record<string, unknown>,
 ): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   if (!spec) return config;
@@ -33,6 +34,15 @@ function formToConfig(
     if (!fieldVisible(field, raw)) continue;
     const value = raw[field.name];
     if (value === undefined || value === null || value === '') continue;
+    // A switch the editor shows at its default is not a change to a check that never set it.
+    if (
+      stored &&
+      field.type === 'boolean' &&
+      !(field.name in stored) &&
+      value === (field.defaultValue ?? false)
+    ) {
+      continue;
+    }
     if (field.type === 'list') {
       const items = parseList(value);
       if (items.length > 0) config[field.name] = items;
@@ -63,8 +73,12 @@ export function configToForm(
   return form;
 }
 
-/** Assemble the create/update payload from validated form values. */
-export function buildCheckPayload(values: Record<string, unknown>): CheckCreate {
+/** Assemble the create/update payload from validated form values. On an edit, `stored` is the
+ *  check's saved config: a boolean it never set is left out while it is still at its default. */
+export function buildCheckPayload(
+  values: Record<string, unknown>,
+  stored?: Record<string, unknown>,
+): CheckCreate {
   const spec = EXPECTATION_BY_TYPE[values.expectation_type as string];
   return {
     name: values.name as string,
@@ -74,7 +88,7 @@ export function buildCheckPayload(values: Record<string, unknown>): CheckCreate 
     // engine: 'gx' unless Freshness's picker (values.engine) or the spec fixes otherwise.
     engine: (values.engine as string | undefined) ?? spec?.engine ?? 'gx',
     expectation_type: values.expectation_type as string,
-    config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>),
+    config: formToConfig(spec, (values.config ?? {}) as Record<string, unknown>, stored),
     // ADR 0038.
     dimension: (values.dimension as DqDimension | undefined) ?? undefined,
     // A noThresholds type never submits thresholds — stale form values from a

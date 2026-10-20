@@ -206,7 +206,10 @@ function CheckEditForm({
               typeof values.critical_threshold === 'number' ? values.critical_threshold : null,
           }
         : (() => {
-            const u = buildCheckPayload(values);
+            const u = buildCheckPayload(
+              values,
+              values.expectation_type === check.expectation_type ? check.config : undefined,
+            );
             delete u.kind;
             return u;
           })();

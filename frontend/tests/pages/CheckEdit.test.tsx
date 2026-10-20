@@ -845,8 +845,8 @@ describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const config = mockUpdate.mock.calls[0][2].config ?? {};
     expect(config).not.toHaveProperty('seasonal_periods');
-    // The switch's default is what the backend assumes for a missing key.
-    expect(config.yearly).toBe(false);
+    // The switch shows its default, but a key the check never had is not added on save.
+    expect(config).not.toHaveProperty('yearly');
   });
 
   it('warns before a save that turns yearly off detaches the entries', async () => {
