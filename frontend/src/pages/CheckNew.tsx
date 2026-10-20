@@ -167,7 +167,9 @@ export function CheckNew() {
               ))
           )}
           <DimensionField spec={spec} initialValue={spec.dimension} />
-          {!spec.noThresholds && <SeverityThresholdFields monitor={spec.thresholds} />}
+          {!spec.noThresholds && (
+            <SeverityThresholdFields monitor={spec.thresholds} applyDefaults />
+          )}
           {suiteId && spec.kind !== 'comparison' && (
             <>
               <Form.Item>

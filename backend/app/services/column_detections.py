@@ -77,9 +77,13 @@ def record_profile_detections(
     *,
     full_profile: bool = False,
     now: datetime | None = None,
+    commit: bool = True,
 ) -> int:
     """Persist the detections a profile of ``asset``'s own target produced; returns how many
     are NEW rows (the figure the `pii_drift` monitor counts).
+
+    ``commit=False`` leaves the rows pending in the caller's transaction (still written inside
+    their own SAVEPOINT): the worker's stateful phase must ride the run's terminal commit (#318).
 
     A column detected before keeps its ``first_detected_at`` and moves ``last_detected_at``
     (also when it was dismissed — the dismissal stands, the page can still say "still
@@ -126,9 +130,11 @@ def record_profile_detections(
                 created += 1
         if full_profile:
             asset.detected_classifications_refreshed_at = stamp
-    session.commit()
-    # The upserts bypassed the identity map; a row loaded earlier in this session must re-read.
-    session.expire_all()
+    if commit:
+        session.commit()
+        # The upserts bypassed the identity map; a row loaded earlier in this session must
+        # re-read.
+        session.expire_all()
     if detections:
         log.info(
             "column_detections_recorded",
@@ -140,13 +146,18 @@ def record_profile_detections(
 
 
 def record_profile_detections_safely(
-    session: Session, asset: Asset, columns: Sequence[Any], *, full_profile: bool = False
+    session: Session,
+    asset: Asset,
+    columns: Sequence[Any],
+    *,
+    full_profile: bool = False,
+    commit: bool = True,
 ) -> None:
     """`record_profile_detections` for the profile paths: a failure to persist is logged and
     never fails the profile that produced the evidence. The writes run in their own SAVEPOINT,
     so a failure leaves whatever the caller had pending untouched."""
     try:
-        record_profile_detections(session, asset, columns, full_profile=full_profile)
+        record_profile_detections(session, asset, columns, full_profile=full_profile, commit=commit)
     except Exception as exc:
         log.warning(
             "column_detections_record_failed",
@@ -164,6 +175,19 @@ def active_detected_columns(session: Session, asset: Asset) -> list[str]:
         )
     )
     return sorted({fold_key(name) for name in rows})
+
+
+def dismissed_detected_columns(session: Session, asset: Asset) -> set[str]:
+    """Folded names of the columns whose detection a steward dismissed. A dismissal stands even
+    when a later profile detects the column again (ADR 0049 §4), so a caller overlaying a fresh
+    profile's detections must leave these out."""
+    rows = session.scalars(
+        select(AssetColumnClassification.column_name).where(
+            AssetColumnClassification.asset_id == asset.id,
+            AssetColumnClassification.dismissed_at.is_not(None),
+        )
+    )
+    return {fold_key(name) for name in rows}
 
 
 def list_classifications(session: Session, asset_id: uuid.UUID) -> list[AssetColumnClassification]:

@@ -302,6 +302,7 @@ def test_resolve_status_custom_sql_zero_rows_without_thresholds_is_plain_pass() 
         ("expectation", "dmf:null_count", "NULL_COUNT"),
         ("freshness", "monitor:freshness", "in hours"),
         ("anomaly", "monitor:anomaly", "z-score"),
+        ("pii_drift", "monitor:pii_drift", "newly look like personal data"),
         ("comparison", "comparison:columns", "don't match"),
         ("something_new", "monitor:new", None),
         (None, None, None),
@@ -315,3 +316,13 @@ def test_metric_meaning_names_what_each_kind_measures(
 
     meaning = metric_meaning(kind, etype)
     assert meaning is None if expected is None else expected in (meaning or "")
+
+
+def test_every_registered_monitor_kind_names_its_metric() -> None:
+    """A kind added to the registry without a meaning hands an LLM reader a bare number — the
+    gap the field exists to close — so the table must grow with the registry."""
+    from backend.app.datasources.monitors import MONITOR_KINDS
+    from backend.app.services.severity import metric_meaning
+
+    for kind in MONITOR_KINDS:
+        assert metric_meaning(kind, f"monitor:{kind}") is not None, kind
