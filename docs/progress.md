@@ -82,10 +82,10 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 | Status | Task |
 |---|---|
 | ⬜ | [#1681](https://github.com/TheurgicDuke771/DataQ/issues/1681) feat(datasource): Google BigQuery adapter — the biggest warehouse omission |
-| ⬜ | [#1683](https://github.com/TheurgicDuke771/DataQ/issues/1683) feat(datasource): Google Cloud Storage flat-file adapter — completes the object-store trio |
+| ✅ | [#1683](https://github.com/TheurgicDuke771/DataQ/issues/1683) feat(datasource): Google Cloud Storage flat-file adapter — completes the object-store trio — [PR #2484](https://github.com/TheurgicDuke771/DataQ/pull/2484): `gcs` type on the shared flat-file runner via `google-cloud-storage` (gcsfs rejected: its gRPC probe stalls ~60 s per bucket off Google), service-account key or anonymous, optional endpoint; live-verified on fake-gcs-server, real GCS unverified |
 | ⬜ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) Post-v1: AWS + GCP deploy IaC (behind the provider-agnostic seams) |
 | ⬜ | [#2309](https://github.com/TheurgicDuke771/DataQ/issues/2309) feat(datasources): keyless auth — managed identity / IAM role / workload identity |
-| 🟡 | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) — PR open: `TAMPER_ANCHOR=object_lock` + read-back `anchors` section on verify, live-verified on MinIO with lock; real AWS/Azure unverifiable (#2224). Also closes #2397 (both posture vectors). Filed #2473, #2474 |
+| ✅ | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) — PR open: `TAMPER_ANCHOR=object_lock` + read-back `anchors` section on verify, live-verified on MinIO with lock; real AWS/Azure unverifiable (#2224). Also closes #2397 (both posture vectors). Filed #2473, #2474 — [PR #2480](https://github.com/TheurgicDuke771/DataQ/pull/2480) |
 | ⬜ | [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Revisit Iceberg v3 support (deletion vectors, row lineage) behind a capability gate — ADR 0030 |
 
 ### v1.3 Week 4 — product surfaces (due 2026-11-01)

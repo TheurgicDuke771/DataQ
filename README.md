@@ -102,9 +102,9 @@ docker-compose up     # backend :8000 · frontend :3000 · mail :8025
 
 ## AI assistants (MCP)
 
-DataQ serves **54 curated MCP tools** at `https://<your-dataq-host>/mcp/`:
+DataQ serves **56 curated MCP tools** at `https://<your-dataq-host>/mcp/`:
 
-- 30 read-only
+- 32 read-only
 - 18 that change state
 - 6 that open a live datasource connection (gated like writes)
 
