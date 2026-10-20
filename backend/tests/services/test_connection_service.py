@@ -2294,6 +2294,39 @@ def test_a_trino_connection_that_authenticates_needs_its_secret_at_create(db_ses
     assert _trino(db_session, store, config=_TRINO_OPEN, secret=None).secret_ref is None
 
 
+# ────────── a GCS connection's secret is required per auth mode (#1683) ────────
+
+_GCS_KEYED: dict[str, Any] = {"bucket": "landing", "auth_type": "service_account_key"}
+_GCS_PUBLIC: dict[str, Any] = {"bucket": "public-data", "auth_type": "anonymous"}
+
+
+def test_a_gcs_connection_that_authenticates_needs_its_key_file_at_create(db_session: Any) -> None:
+    store = FakeSecretStore()
+    with pytest.raises(svc.ConnectionConfigInvalidError) as exc:
+        svc.create_connection(
+            db_session,
+            name="gcs-landing",
+            conn_type="gcs",
+            env="dev",
+            config=dict(_GCS_KEYED),
+            secret=None,
+            created_by=_user(db_session).id,
+            secret_store=store,
+        )
+    assert exc.value.detail["required"] == ["secret"]
+    public = svc.create_connection(
+        db_session,
+        name="gcs-public",
+        conn_type="gcs",
+        env="dev",
+        config=dict(_GCS_PUBLIC),
+        secret=None,
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+    assert public.secret_ref is None and store.data == {}
+
+
 def test_switching_to_password_auth_without_a_password_is_refused(db_session: Any) -> None:
     store = FakeSecretStore()
     conn = _trino(db_session, store, config=_TRINO_OPEN, secret=None)

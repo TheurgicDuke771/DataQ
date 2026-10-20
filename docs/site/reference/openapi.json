@@ -13748,7 +13748,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List the folders and files under a prefix of an ADLS Gen2 / S3 connection",
+        "summary": "List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection",
         "tags": [
           "connections"
         ]

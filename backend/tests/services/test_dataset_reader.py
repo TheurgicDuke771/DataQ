@@ -271,6 +271,39 @@ def test_flatfile_read_and_cap(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
 
+def test_an_invalid_gcs_config_is_not_reported_as_a_missing_credential() -> None:
+    """Only a missing credential reads as "no stored credential"; a config the store's model
+    refuses must surface as what it is, not send the user off to re-authenticate."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        read_dataset(
+            _conn("gcs", secret_ref=None, bucket="Not A Bucket", auth_type="anonymous"),
+            DatasetSpec(path="orders.csv"),
+            max_rows=5,
+            secret_store=FakeSecretStore(default="s3cret"),
+        )
+
+
+def test_an_anonymous_gcs_side_reads_with_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def _read(**kwargs: Any) -> pd.DataFrame:
+        seen.update(kwargs)
+        return _frame(2)
+
+    monkeypatch.setattr(dataset_reader, "read_flatfile_dataframe", _read)
+    monkeypatch.setattr(dataset_reader, "file_stat", lambda **_k: flatfile.FileStat(size=10))
+    store = FakeSecretStore(default="s3cret")
+    df = read_dataset(
+        _conn("gcs", secret_ref=None, bucket="public-data", auth_type="anonymous"),
+        DatasetSpec(path="orders.csv"),
+        max_rows=5,
+        secret_store=store,
+    )
+    assert len(df) == 2 and seen["secret"] is None and store.requested == []
+
+
 def test_flatfile_requires_secret_and_path() -> None:
     with pytest.raises(DatasetReadUnsupportedError, match="credential"):
         read_dataset(

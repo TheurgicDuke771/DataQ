@@ -17,7 +17,7 @@ CUSTOM_SQL_EXPECTATION_TYPE = "unexpected_rows_expectation"
 # The GX kwarg holding the user's query.
 QUERY_KEY = "unexpected_rows_query"
 
-# Datasources GX can run SQL against (ADR 0019). Flat files (adls_gen2 / s3) are
+# Datasources GX can run SQL against (ADR 0019). Flat files (adls_gen2 / s3 / gcs) are
 # DataFrame assets; orchestration types (adf / airflow) aren't datasources at all.
 SQL_QUERYABLE_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
 

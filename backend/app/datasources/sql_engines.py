@@ -48,8 +48,9 @@ def default_schema(conn_type: str, config: dict[str, Any]) -> str | None:
 
 
 def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
-    """Whether a generic SQL connection of this config needs no stored secret at all (Trino
-    ``auth_type: none``) — so a missing ``secret_ref`` is its normal state, not a broken one.
+    """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
+    none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
     """
-    spec = SQL_ENGINES.get(conn_type)
-    return spec is not None and not spec.validate_config(config).requires_secret()
+    from backend.app.datasources.registry import authenticates_without_secret as answer
+
+    return answer(conn_type, config)

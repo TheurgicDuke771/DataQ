@@ -567,7 +567,7 @@ def browse_connection_catalog(
 @router.get(
     "/connections/{connection_id}/browse/files",
     response_model=FileBrowseRead,
-    summary="List the folders and files under a prefix of an ADLS Gen2 / S3 connection",
+    summary="List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection",
 )
 def browse_connection_files(
     connection_id: uuid.UUID,

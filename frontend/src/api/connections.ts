@@ -6,6 +6,7 @@ export const CONNECTION_TYPES = [
   'snowflake',
   'adls_gen2',
   's3',
+  'gcs',
   'unity_catalog',
   'iceberg',
   'postgres',
@@ -31,6 +32,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   snowflake: 'datasource',
   adls_gen2: 'datasource',
   s3: 'datasource',
+  gcs: 'datasource',
   unity_catalog: 'datasource',
   iceberg: 'datasource',
   postgres: 'datasource',
@@ -57,8 +59,8 @@ export const DATASOURCE_TYPES = typesOfKind('datasource');
 export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
 
 /**
- * Coarser datasource grouping for the Results datasource-type filter (ADR 0022): the two flat-file
- * types (ADLS Gen2 + S3) share a runner shape and read as one "Flat file" choice.
+ * Coarser datasource grouping for the Results datasource-type filter (ADR 0022): the three flat-file
+ * types (ADLS Gen2 + S3 + GCS) share a runner shape and read as one "Flat file" choice.
  */
 export const DATASOURCE_CATEGORIES = [
   'snowflake',
@@ -78,6 +80,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   snowflake: 'snowflake',
   adls_gen2: 'flatfile',
   s3: 'flatfile',
+  gcs: 'flatfile',
   unity_catalog: 'unity_catalog',
   iceberg: 'iceberg',
   postgres: 'postgres',
@@ -123,7 +126,7 @@ export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_T
 
 /** The flat-file datasources — the only ones with a native per-object arrival
  *  time, so the only ones that can measure freshness without a column (#520). */
-export const FILE_TYPES: ConnectionType[] = ['adls_gen2', 's3'];
+export const FILE_TYPES: ConnectionType[] = ['adls_gen2', 's3', 'gcs'];
 
 export const isFileDatasource = (type: ConnectionType): boolean => FILE_TYPES.includes(type);
 
@@ -278,6 +281,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   snowflake: 'Snowflake',
   adls_gen2: 'ADLS Gen2',
   s3: 'AWS S3',
+  gcs: 'Google Cloud Storage',
   unity_catalog: 'Unity Catalog',
   iceberg: 'Apache Iceberg',
   postgres: 'PostgreSQL',
@@ -450,7 +454,7 @@ export interface BrowseFile {
 
 /** Mirrors `GET /connections/{id}/browse/files` — the folders + files directly under `prefix`. */
 export interface FileBrowse {
-  /** The connection's container (ADLS) or bucket (S3). */
+  /** The connection's container (ADLS) or bucket (S3 / GCS). */
   root: string;
   prefix: string;
   folders: string[];
