@@ -25,7 +25,7 @@ const mockReset = vi.mocked(resetCoverageSettings);
 const D = { warn: 3, fail: 4, critical: 6, source: 'default' as const };
 const BUILT_IN: EffectiveCoverage = {
   sensitivity: { volume: D, freshness: D, profile: D },
-  baseline: { window: 8, min_points: 4, seasonality: true, source: 'default' },
+  baseline: { window: 8, min_points: 4, seasonality: true, yearly: false, source: 'default' },
 };
 const DEFAULTS: CoverageSettings = {
   setting: {},
@@ -99,6 +99,27 @@ describe('CoveragePanel', () => {
     );
     expect(await screen.findByText('Customised')).toBeInTheDocument();
     expect(screen.getByText(/by ada@example.com/)).toBeInTheDocument();
+  });
+
+  it('saves the yearly switch with the history group', async () => {
+    mockGet.mockResolvedValue(DEFAULTS);
+    mockPut.mockResolvedValue(CUSTOM);
+    renderSubPage(<CoveragePanel />);
+    await screen.findByText('Defaults');
+    const yearly = screen.getByRole('switch', {
+      name: 'Compare with the same time in earlier years',
+    });
+    expect(yearly).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Set for the workspace: history' }));
+    await userEvent.click(yearly);
+    await userEvent.click(save());
+
+    await waitFor(() =>
+      expect(mockPut).toHaveBeenCalledWith({
+        baseline: { window: 8, min_points: 4, seasonality: true, yearly: true },
+      }),
+    );
   });
 
   it('blocks an out-of-order group with the reason', async () => {
@@ -181,7 +202,13 @@ describe('CoveragePanel', () => {
       setting: { baseline: { window: 30, min_points: 4, seasonality: true } },
       effective: {
         ...BUILT_IN,
-        baseline: { window: 30, min_points: 4, seasonality: true, source: 'workspace' },
+        baseline: {
+          window: 30,
+          min_points: 4,
+          seasonality: true,
+          yearly: false,
+          source: 'workspace',
+        },
       },
     };
     mockGet.mockResolvedValue(longWindow);

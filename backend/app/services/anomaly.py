@@ -6,7 +6,7 @@ import math
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -22,6 +22,7 @@ from backend.app.datasources.monitors import (
     COLUMN_PROFILE_MAX_COLUMNS,
     COLUMN_PROFILE_METRIC,
     FRESHNESS,
+    PERIOD_HISTORY_YEARS,
     ROW_COUNT_METRIC,
     VOLUME,
     AnomalyParams,
@@ -390,11 +391,16 @@ def load_observations(row: MonitorBaseline | None, params: AnomalyParams) -> lis
 
 
 def dump_baseline(
-    observations: list[Observation], params: AnomalyParams, seed: dict[str, Any] | None = None
+    observations: list[Observation],
+    params: AnomalyParams,
+    seed: dict[str, Any] | None = None,
+    daily: Daily | None = None,
 ) -> dict[str, Any]:
     """The JSONB payload for a set of observations (already trimmed by the caller). ``seed``
-    is what seeding a per-period check's history came to (``stored_seed``)."""
+    is what seeding a per-period check's history came to (``stored_seed``); ``daily`` is a
+    whole-table check's one-a-day series."""
     return {
+        **({"daily": daily.as_dict()} if daily is not None and daily.points else {}),
         "version": BASELINE_VERSION,
         "target_metric": params.target_metric,
         "window": params.window,
@@ -411,6 +417,122 @@ def dump_baseline(
             for o in observations
         ],
     }
+
+
+# ───────────────────────── one-a-day series (whole-table yearly) ─────────────────────────
+
+#: Run values kept for the day in progress, from which its point is the median.
+DAILY_RUNS_KEPT = 288
+
+
+@dataclass(frozen=True)
+class DailyPoint:
+    """One calendar day of a whole-table check: the median of that day's runs. ``values`` is
+    held only for the day in progress."""
+
+    day: date
+    value: float
+    runs: int
+    values: tuple[float, ...] | None = None
+
+
+@dataclass(frozen=True)
+class Daily:
+    """A whole-table check's one-a-day series (ADR 0048 decision 4, amended): kept beside the
+    run-by-run points, only for the yearly index, and never scored against directly."""
+
+    timezone: str
+    points: tuple[DailyPoint, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "timezone": self.timezone,
+            "points": [
+                {
+                    "day": p.day.isoformat(),
+                    "value": p.value,
+                    "runs": p.runs,
+                    **({} if p.values is None else {"values": list(p.values)}),
+                }
+                for p in self.points
+            ],
+        }
+
+    def before(self, day: date) -> dict[date, float]:
+        return {p.day: p.value for p in self.points if p.day < day}
+
+
+def _finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def load_daily(row: MonitorBaseline | None, params: AnomalyParams) -> Daily | None:
+    """The stored one-a-day series, whatever ``yearly`` is now: switching it off leaves the
+    series where it is."""
+    if row is None or params.period is not None or not isinstance(row.baseline, dict):
+        return None
+    payload = row.baseline
+    if payload.get("version") != BASELINE_VERSION:
+        return None
+    if payload.get("target_metric") != params.target_metric:
+        return None
+    raw = payload.get("daily")
+    if not isinstance(raw, dict) or not isinstance(raw.get("points"), list):
+        return None
+    points: list[DailyPoint] = []
+    for entry in raw["points"]:
+        if not isinstance(entry, dict) or not _finite(entry.get("value")):
+            continue
+        try:
+            day = date.fromisoformat(str(entry.get("day")))
+        except ValueError:
+            continue
+        runs = entry.get("runs")
+        values = entry.get("values")
+        points.append(
+            DailyPoint(
+                day=day,
+                value=float(entry["value"]),
+                runs=runs if isinstance(runs, int) and not isinstance(runs, bool) else 1,
+                values=(
+                    tuple(float(v) for v in values if _finite(v))
+                    if isinstance(values, list)
+                    else None
+                ),
+            )
+        )
+    points.sort(key=lambda p: p.day)
+    timezone = raw.get("timezone")
+    return Daily(timezone=timezone if isinstance(timezone, str) else "UTC", points=tuple(points))
+
+
+def daily_retention_days(params: AnomalyParams) -> int:
+    """Three years of days plus the window the level is taken over (decision 6)."""
+    return PERIOD_HISTORY_YEARS * 366 + params.window * (7 if params.seasonality else 1)
+
+
+def record_daily(daily: Daily | None, day: date, value: float, params: AnomalyParams) -> Daily:
+    """``daily`` with this run counted in ``day``, older days closed, and days past the
+    retention dropped. A run dated before the newest day (a clock set back) changes nothing."""
+    points = list(daily.points) if daily is not None else []
+    if points and points[-1].day > day:
+        return Daily(timezone=params.timezone, points=tuple(points))
+    if points and points[-1].day == day:
+        last = points.pop()
+        values = [*(last.values if last.values else (last.value,)), value][-DAILY_RUNS_KEPT:]
+        points.append(DailyPoint(day, statistics.median(values), last.runs + 1, tuple(values)))
+    else:
+        if points and points[-1].values is not None:
+            points[-1] = replace(points[-1], values=None)
+        points.append(DailyPoint(day, value, 1, (value,)))
+    cutoff = day - timedelta(days=daily_retention_days(params))
+    return Daily(timezone=params.timezone, points=tuple(p for p in points if p.day >= cutoff))
+
+
+def local_day(ts: datetime, timezone: str) -> date:
+    from zoneinfo import ZoneInfo
+
+    return ts.astimezone(UTC if timezone == "UTC" else ZoneInfo(timezone)).date()
 
 
 #: Seeding is tried again on later runs after a failure, this many times in all: a transient
@@ -656,6 +778,42 @@ def declared_payload(
     }
 
 
+def whole_table_yearly(
+    by_day: dict[date, float],
+    params: AnomalyParams,
+    calendar: seasonal.Calendar | None,
+    *,
+    today: date,
+    value: float,
+    observations: list[Observation],
+    now: datetime,
+) -> tuple[seasonal.YearlyScore, seasonal.YearlyScore | None]:
+    """A whole-table run's yearly score, and with a calendar attached the score it would have
+    had without one. The priors are the run-by-run points the run is ordinarily scored
+    against; with a calendar, runs on a declared day are left out of them."""
+
+    dated = [(local_day(o.ts, params.timezone), o.value) for o in observations]
+
+    def considered(pool: list[tuple[date, float]]) -> list[tuple[date, float]]:
+        # Weekdays in the check's zone, as the days of the daily series are.
+        if params.seasonality:
+            pool = [(d, v) for d, v in pool if d.weekday() == today.weekday()]
+        return pool[-params.window :]
+
+    pool, excluded = dated, 0
+    if calendar is not None and calendar.entries:
+        ordinary = {d: calendar.inside(d) is None for d, _ in dated}
+        pool = [(d, v) for d, v in dated if ordinary[d]]
+        excluded = sum(1 for d, _ in considered(dated) if not ordinary[d])
+    compared = seasonal.History(by_day, params, calendar).score_runs(today, value, considered(pool))
+    without = (
+        seasonal.History(by_day, params).score_runs(today, value, considered(dated))
+        if calendar is not None
+        else None
+    )
+    return replace(compared, excluded_from_level=excluded), without
+
+
 # ───────────────────────── run executor ─────────────────────────
 
 
@@ -767,22 +925,46 @@ def build_anomaly_executor(
             **build_score_payload(value, [o.value for o in considered], params),
             **period_fields,
         }
+        daily = load_daily(row, params) if params.period is None else None
         if params.yearly:
-            by_day = {o.ts.date(): o.value for o in earlier}
             calendar = (
                 seasonal_period_service.calendar_for(session, params.seasonal_periods)
                 if params.seasonal_periods
                 else None
             )
-            compared = seasonal.History(by_day, params, calendar).score(at.date(), value)
+            if params.period is None:
+                today = local_day(now, params.timezone)
+                by_day = daily.before(today) if daily is not None else {}
+                compared, without = whole_table_yearly(
+                    by_day,
+                    params,
+                    calendar,
+                    today=today,
+                    value=value,
+                    observations=earlier,
+                    now=now,
+                )
+                payload["daily"] = {
+                    "timezone": params.timezone,
+                    "days": len(by_day),
+                    "first": min(by_day).isoformat() if by_day else None,
+                }
+            else:
+                by_day = {o.ts.date(): o.value for o in earlier}
+                compared = seasonal.History(by_day, params, calendar).score(at.date(), value)
+                without = (
+                    seasonal.History(by_day, params).score(at.date(), value)
+                    if calendar is not None
+                    else None
+                )
             payload["yearly"] = compared.as_dict()
-            if calendar is not None:
+            if calendar is not None and without is not None:
                 # What the calendar did to this run, beside what the run would have scored
                 # without it, so a reader can tell when the calendar changed the verdict.
                 payload["declared"] = declared_payload(
                     check,
                     compared,
-                    without=seasonal.History(by_day, params).score(at.date(), value),
+                    without=without,
                     ordinary_z=payload.get("z_score"),
                     calendar=calendar,
                 )
@@ -834,7 +1016,9 @@ def build_anomaly_executor(
                 # A changed settle delay can judge an older period after a newer one; scoring
                 # and trimming both take the list as oldest first.
                 points = sorted(points, key=lambda o: o.ts)
-            baseline = dump_baseline(trim(points, params), params, seed)
+            if params.yearly and params.period is None:
+                daily = record_daily(daily, local_day(now, params.timezone), value, params)
+            baseline = dump_baseline(trim(points, params), params, seed, daily)
             if row is None:
                 insert_baseline_if_absent(
                     session, check_id=check.id, kind=ANOMALY, baseline=baseline

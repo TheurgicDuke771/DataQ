@@ -127,6 +127,30 @@ and a wrong claim is a false alert on every run.
    >   does trim older observations on the next run, and lengthening it afterwards means waiting
    >   for them again; the settings surface says so before a shorter window is saved.
 
+   > **Amended 2026-10-20 (ADR 0048 phase 7).** The baseline shape gains **`yearly`**: compare
+   > with the same time in earlier years (ADR 0048 decision 4), **off by default**.
+   >
+   > - **What it reaches.** The row-count and freshness baselines. The column profile never
+   >   takes it, so it is not written into a profile check's config and a shape with it on is
+   >   still valid for the profile.
+   > - **It is part of the shape group.** Window, minimum points and seasonality must still be
+   >   set together; `yearly` may be left out, and left out it is off. So a level that sets the
+   >   shape without it switches yearly off for its tables even when the level below has it on:
+   >   the group is still set whole, and the rule needs no exception. A document stores it only
+   >   when on, so a document saved before it existed reads as it did.
+   > - **Inheritance and edits.** An inheriting row-count or freshness check runs on the
+   >   resolved `yearly` whatever its stored config says, so a stored `true` cannot outlive the
+   >   setting. Changing `yearly` on an inheriting check is an edit like the window: it pins. A
+   >   whole-table check takes declared calendar entries only with `yearly` on; when the setting
+   >   switches `yearly` off under an inheriting check that names some, they lie idle (the run
+   >   does not fail), as do the time zone keys.
+   > - **History.** A yearly whole-table baseline keeps a one-a-day series beside its run-by-run
+   >   points, three years of it, which is why it is off by default: across every covered table
+   >   that is the largest history DataQ stores. Days are UTC for automatic checks (there is no
+   >   time zone setting). Switching `yearly` off keeps both series; on again carries on from
+   >   them. It cannot be seeded, so a covered table's first yearly verdict is a year after the
+   >   switch, and each result says `no_earlier_year` until then.
+
 6. **The loop never overrides a person.** Checks carry `origin` (`user`, `auto`,
    `suggestion`). The reconciler only adds a universal check that is missing and never edits
    an existing one. A check a person deletes is recorded on the suite and not recreated. An
