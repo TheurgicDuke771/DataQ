@@ -8,11 +8,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 from structlog.testing import capture_logs
 
 from backend.app.core.auth import DEV_BYPASS_AAD_OID, DEV_BYPASS_EMAIL
 from backend.app.core.config import get_settings
-from backend.app.db.models import ADMIN_ROLE, User
+from backend.app.db.models import ADMIN_ROLE, AuditEvent, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service
@@ -287,12 +288,21 @@ def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
         }, "exactly one admin must survive, never zero"
     finally:
         setup.rollback()
+        _purge_committed_audit_rows(setup, (a_id, b_id))
         for uid in (a_id, b_id):
             row = setup.get(User, uid)
             if row is not None:
                 setup.delete(row)
         setup.commit()
         setup.close()
+
+
+def _purge_committed_audit_rows(setup: Any, user_ids: tuple[uuid.UUID, ...]) -> None:
+    """These tests commit role changes on raw sessions, outside the rolled-back test
+    transaction; the audit rows they wrote would otherwise outlive the test (the actor FK is
+    SET NULL) and fail any later test that expects an empty audit table."""
+    setup.execute(delete(AuditEvent).where(AuditEvent.entity_id.in_(user_ids)))
+    setup.commit()
 
 
 def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> None:
@@ -344,6 +354,7 @@ def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> Non
         ), "the workspace must never be left with zero stored admins"
     finally:
         setup.rollback()
+        _purge_committed_audit_rows(setup, ids)
         for uid in ids:
             row = setup.get(User, uid)
             if row is not None:

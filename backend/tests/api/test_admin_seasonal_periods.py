@@ -160,10 +160,12 @@ def test_an_invalid_entry_is_refused_and_nothing_is_stored(
 ) -> None:
     resp = client.post(_BASE, json=payload)
 
+    listed = client.get(_BASE).json()
+
     assert resp.status_code == status
     if code is not None:
         assert resp.json()["error"]["code"] == code
-    assert client.get(_BASE).json() == []
+    assert listed == []
 
 
 def test_a_case_variant_of_an_existing_name_is_a_409(client: TestClient) -> None:
@@ -308,7 +310,8 @@ def test_restoring_a_version_that_names_a_deleted_entry_is_refused(
     check = _check(client, suite_id, [entry["id"]]).json()
     base = f"/api/v1/suites/{suite_id}/checks/{check['id']}"
     client.patch(base, json={"config": dict(_CONFIG)})
-    assert client.delete(f"{_BASE}/{entry['id']}").status_code == 204
+    deleted = client.delete(f"{_BASE}/{entry['id']}")
+    assert deleted.status_code == 204
 
     restored = client.post(f"{base}/versions/1/restore")
 
