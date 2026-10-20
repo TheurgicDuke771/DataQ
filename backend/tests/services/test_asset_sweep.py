@@ -292,3 +292,32 @@ def test_referenced_by_incident_never_swept(db_session: Any) -> None:
     swept = _sweep(db_session)
     assert swept == 0
     assert db_session.get(Asset, kept) is not None
+
+
+def test_referenced_by_a_profiler_classification_never_swept(db_session: Any) -> None:
+    """ADR 0049: a classification — above all a DISMISSED one, a steward's decision — pins its
+    asset; the FK is CASCADE, so sweeping would erase the decision without a trace."""
+    from datetime import UTC, datetime
+
+    from backend.app.db.models import AssetColumnClassification
+
+    kept = _asset(db_session, last_seen=_stale(), tag="classification-ref")
+    now = datetime.now(UTC)
+    db_session.add(
+        AssetColumnClassification(
+            asset_id=kept,
+            column_name="contact",
+            source="profiler",
+            verdict="sensitive",
+            detector="email",
+            evidence={"n": 10, "email_count": 9},
+            first_detected_at=now,
+            last_detected_at=now,
+            dismissed_at=now,
+        )
+    )
+    db_session.commit()
+
+    swept = _sweep(db_session)
+    assert swept == 0
+    assert db_session.get(Asset, kept) is not None

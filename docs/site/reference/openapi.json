@@ -674,6 +674,32 @@
       "AssetDetailRead": {
         "description": "Asset detail: the workspace-true summary + the caller's per-suite breakdown\n+ upstream/downstream lineage. `suites` lists only suites the caller can view\n(ADR 0027); `restricted_suite_count` is how many more compose the asset \u2014 they\nroll into `summary` (workspace-true) but stay unnamed.",
         "properties": {
+          "detected_classifications": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DetectedClassificationRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Classifications"
+          },
+          "detected_classifications_refreshed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Classifications Refreshed At"
+          },
           "downstream": {
             "items": {
               "$ref": "#/components/schemas/LineageNodeRead"
@@ -2958,6 +2984,28 @@
         "title": "CheckVersionRead",
         "type": "object"
       },
+      "ClassificationDismissUpdate": {
+        "additionalProperties": false,
+        "description": "Dismiss (`true`) or restore (`false`) one profiler detection \u2014 the only way a detection\nis cleared, so it is workspace-Admin-only and audited (ADR 0049 \u00a74). The column travels in\nthe body: a column name may hold `/` (quoted identifiers, file headers), which a path\nsegment cannot carry.",
+        "properties": {
+          "column": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Column",
+            "type": "string"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "column",
+          "dismissed"
+        ],
+        "title": "ClassificationDismissUpdate",
+        "type": "object"
+      },
       "ColumnHopRead": {
         "properties": {
           "downstream_asset_id": {
@@ -4708,6 +4756,65 @@
           "external_transfers"
         ],
         "title": "DeploymentPostureRead",
+        "type": "object"
+      },
+      "DetectedClassificationRead": {
+        "description": "A column the profiler found PII-shaped VALUES in (ADR 0049). `effect` is what it does\nnow: `masks` (sensitive on every read path, unless a suite names the column as its own\n`identifier_column`), `overridden_by_tag` (the column's own warehouse tag decides instead,\neither way), `dismissed` (a workspace-Admin act). A dismissed row keeps `last_detected_at`\nmoving, so \"still detected\" stays visible. `detector` is a label (`email` or `encoded`\ntoday) and not a closed enum on the wire, so a new detector never breaks this page.\n`evidence` is deliberately not exposed: it is counts only, and the detector says what fired.",
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "detector": {
+            "title": "Detector",
+            "type": "string"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "dismissed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed At"
+          },
+          "effect": {
+            "enum": [
+              "masks",
+              "overridden_by_tag",
+              "dismissed"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "first_detected_at": {
+            "format": "date-time",
+            "title": "First Detected At",
+            "type": "string"
+          },
+          "last_detected_at": {
+            "format": "date-time",
+            "title": "Last Detected At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "column",
+          "detector",
+          "effect",
+          "first_detected_at",
+          "last_detected_at",
+          "dismissed",
+          "dismissed_at"
+        ],
+        "title": "DetectedClassificationRead",
         "type": "object"
       },
       "DimensionScoreRead": {
@@ -12217,6 +12324,59 @@
           }
         },
         "summary": "Update asset metadata (workspace-admin only)",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/v1/assets/{asset_id}/classifications": {
+      "patch": {
+        "operationId": "update_asset_classification",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationDismissUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectedClassificationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss or restore a profiler-detected classification (workspace-admin only)",
         "tags": [
           "assets"
         ]

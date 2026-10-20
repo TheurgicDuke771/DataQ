@@ -16,6 +16,7 @@ import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { CoverageBlock } from '../components/assets/CoverageBlock';
 import { CoverageSensitivityBlock } from '../components/assets/CoverageSensitivityBlock';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
+import { DetectedMaskingPanel } from '../components/assets/DetectedMaskingPanel';
 import { InheritedMaskingPanel } from '../components/assets/InheritedMaskingPanel';
 import { ScorecardPanel } from '../components/assets/ScorecardPanel';
 import { LineageGraph } from '../components/assets/LineageGraph';
@@ -199,6 +200,14 @@ function AssetDetailBody({
       <InheritedMaskingPanel
         entries={asset.inherited_classifications}
         truncated={asset.inherited_classifications_truncated}
+      />
+
+      <DetectedMaskingPanel
+        assetId={summary.id}
+        entries={asset.detected_classifications}
+        refreshedAt={asset.detected_classifications_refreshed_at}
+        canDismiss={isAdmin}
+        onChanged={onChanged}
       />
 
       {/* Column-grain refinement of the direct edges (#901). */}

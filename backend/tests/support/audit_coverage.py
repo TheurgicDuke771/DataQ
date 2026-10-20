@@ -93,6 +93,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── Asset metadata (owner/description only — the inventory-sync columns are
     # machine writes and are not audited).
     ("PATCH", "/api/v1/assets/{asset_id}"): "asset.update",
+    # ── Dismissing / restoring a profiler-detected classification (ADR 0049): the one act that
+    # clears a detection, so it loosens masking and is recorded with the column and both states.
+    ("PATCH", "/api/v1/assets/{asset_id}/classifications"): "asset.classification_update",
     # ── Incident lifecycle. Both verbs are deliberate acts by a principal about
     # the incident; neither changes the data or re-runs anything.
     ("POST", "/api/v1/incidents/{incident_id}/ack"): "incident.acknowledge",

@@ -341,20 +341,49 @@ def value_signal_summary(values: Iterable[object]) -> dict[str, int] | None:
     return _value_signal_counts(values)
 
 
-def _classify_counts(counts: Mapping[str, int]) -> ColumnClass | None:
-    """`_value_signal`'s ratio logic, applied to pre-computed counts (either freshly
-    derived from a sample, or a persisted `value_signal_summary`) rather than raw
-    values directly — the shared tail both paths funnel through.
+#: The value detectors that fire on data rather than on a name — the ones a profile can
+#: persist as a classification (ADR 0049). Mirrored by `db.models.CLASSIFICATION_DETECTORS`.
+DETECTOR_EMAIL = "email"
+DETECTOR_ENCODED = "encoded"
+
+
+def _identifier_shaped(counts: Mapping[str, int]) -> bool:
+    n = counts["n"]
+    return counts["id_shaped_count"] / n >= 0.8 and counts["distinct_count"] / n >= 0.8
+
+
+def value_detector(counts: Mapping[str, int]) -> str | None:
+    """Which value detector, if any, says these counts are **affirmatively** PII — ``email``
+    or ``encoded`` — or ``None`` (inconclusive, or an identifier shape, which is not PII).
+
+    The one place the ratios live: `_classify_counts` derives its PII side from this, so a
+    persisted profiler detection and a live sample verdict can never disagree on the same counts.
     """
     n = counts["n"]
     if n <= 0:
         return None
     if counts["email_count"] / n >= 0.5:
-        return ColumnClass.PII
-    if counts["id_shaped_count"] / n >= 0.8 and counts["distinct_count"] / n >= 0.8:
-        return ColumnClass.IDENTIFIER
+        return DETECTOR_EMAIL
+    if _identifier_shaped(counts):
+        # An id-shaped column is an IDENTIFIER before it is an encoded blob (uuids and hashes
+        # are hex / base64 too) — the order matters.
+        return None
     if counts["encoded_count"] / n >= 0.5:
+        return DETECTOR_ENCODED
+    return None
+
+
+def _classify_counts(counts: Mapping[str, int]) -> ColumnClass | None:
+    """`_value_signal`'s ratio logic, applied to pre-computed counts (either freshly
+    derived from a sample, or a persisted `value_signal_summary`) rather than raw
+    values directly — the shared tail both paths funnel through.
+    """
+    if counts["n"] <= 0:
+        return None
+    if value_detector(counts) is not None:
         return ColumnClass.PII
+    if _identifier_shaped(counts):
+        return ColumnClass.IDENTIFIER
     return None
 
 

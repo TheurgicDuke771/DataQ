@@ -755,6 +755,9 @@ def profile_columns(
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
+    probed_other_target = any(
+        v is not None for v in (payload.table, payload.path, payload.schema_, payload.catalog)
+    )
     result = profile.profile_connection(
         connection,
         session=db,
@@ -767,13 +770,26 @@ def profile_columns(
         path=payload.path,
         file_format=payload.file_format,
         secret_store=secret_store,
+        # The suite's own asset feeds the profiler classification source (ADR 0049). The
+        # location is always explicit here (the UI sends the suite's own target back), so it is
+        # compared with the resolved target field for field; any other table may collide by name.
+        asset=(
+            run_service.resolve_asset(db, suite)
+            if live_probe.probe_is_own_target(
+                suite,
+                connection,
+                table=payload.table,
+                schema=payload.schema_,
+                catalog=payload.catalog,
+                path=payload.path,
+                namespace=payload.namespace,
+            )
+            else None
+        ),
     )
     # Live probe: `top_values` / `min_value` / `max_value` are real cell contents, and this route
     # consulted no policy and wrote no audit event (#1419/#1479).
     policy = suite.column_policy
-    probed_other_target = any(
-        v is not None for v in (payload.table, payload.path, payload.schema_, payload.catalog)
-    )
     tags = live_probe.applicable_tags(
         run_service.asset_column_tags(db, suite), probed_other_target=probed_other_target
     )
@@ -1092,5 +1108,20 @@ def suggest_column_policy(
         file_format=payload.file_format,
         top_n=payload.top_n,
         secret_store=secret_store,
+        # Every column of the suite's own target: a full profile for the classification source
+        # (ADR 0049) — the same door the worker's auto-classify uses, so the two agree.
+        asset=(
+            run_service.resolve_asset(db, suite)
+            if live_probe.probe_is_own_target(
+                suite,
+                connection,
+                table=payload.table,
+                schema=payload.schema_,
+                catalog=payload.catalog,
+                path=payload.path,
+                namespace=payload.namespace,
+            )
+            else None
+        ),
     )
     return ColumnPolicyRead.of(policy)
