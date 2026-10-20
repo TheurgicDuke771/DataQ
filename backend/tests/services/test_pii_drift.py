@@ -11,8 +11,17 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.errors import DataQError
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
-from backend.app.db.models import Asset, AssetColumnClassification, Check, Connection, Suite, User
+from backend.app.db.models import (
+    Asset,
+    AssetColumnClassification,
+    Check,
+    Connection,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.services import column_detections, pii_drift, profile_service, stateful_monitors
 from backend.app.services.monitor_baseline import get_baseline
 from backend.app.services.pii_drift import build_pii_drift_executor
@@ -86,7 +95,7 @@ class _Fake:
         monkeypatch.setattr(profile_service, "_profile_connection", _inner)
 
 
-def _executor(g: dict[str, Any], *, persist: bool = True) -> Any:
+def _executor(g: dict[str, Any], *, persist: bool = True, run: Run | None = None) -> Any:
     return build_pii_drift_executor(
         g["session"],
         connection=g["conn"],
@@ -95,6 +104,7 @@ def _executor(g: dict[str, Any], *, persist: bool = True) -> Any:
         target_catalog=None,
         secret_store=FakeSecretStore(default="s", raise_on_write=True),
         persist=persist,
+        run=run,
     )
 
 
@@ -119,6 +129,7 @@ def test_first_run_baselines_what_already_looks_like_pii_and_skips(
     assert out.observed_value == {
         "columns_profiled": 2,
         "columns_detected": 1,
+        "columns_unclassified": 1,
         "baseline_captured": True,
         "detected_columns": ["contact"],
     }
@@ -136,7 +147,10 @@ def test_a_column_that_starts_looking_like_pii_fails_until_someone_classifies_it
     """The baseline is fixed (schema_drift's shape): rolling it forward would pass the very next
     run and auto-resolve the incident with the column still unclassified."""
     fake = _Fake(monkeypatch, _profile(contact=_EMAILS, status=_PLAIN))
-    run = _executor(graph)
+
+    def run(check: Check) -> Any:  # one executor per simulated run, as the worker builds it
+        return _executor(graph)(check)
+
     run(graph["check"])  # baseline: {contact}
 
     steady = run(graph["check"])
@@ -149,6 +163,7 @@ def test_a_column_that_starts_looking_like_pii_fails_until_someone_classifies_it
     assert drifted.observed_value["new_columns"] == ["notes"]
     assert drifted.observed_value["known_columns"] == ["contact"]
     assert drifted.observed_value["columns_detected"] == 2
+    assert drifted.observed_value["columns_unclassified"] == 2
     assert "baseline_captured_at" in drifted.observed_value
 
     # Nothing changed, nobody acted: still failing, baseline untouched.
@@ -172,7 +187,10 @@ def test_dismissing_then_restoring_a_baselined_column_is_not_drift(
     """A fixed baseline means UI clicks cannot manufacture a drift event: a column the first run
     grandfathered stays grandfathered through a dismissal and its undo."""
     _Fake(monkeypatch, _profile(contact=_EMAILS))
-    run = _executor(graph)
+
+    def run(check: Check) -> Any:  # one executor per simulated run, as the worker builds it
+        return _executor(graph)(check)
+
     run(graph["check"])  # baseline {contact}
     column_detections.set_dismissed(
         graph["session"], graph["asset"], "contact", dismissed=True, actor_id=None
@@ -219,7 +237,10 @@ def test_a_dismissed_detection_is_not_drift(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _Fake(monkeypatch, _profile(contact=_EMAILS))
-    run = _executor(graph)
+
+    def run(check: Check) -> Any:  # one executor per simulated run, as the worker builds it
+        return _executor(graph)(check)
+
     run(graph["check"])  # baseline {contact}, detection persisted
     column_detections.set_dismissed(
         graph["session"], graph["asset"], "contact", dismissed=True, actor_id=None
@@ -228,7 +249,9 @@ def test_a_dismissed_detection_is_not_drift(
     out = run(graph["check"])
     assert out.observed_value is not None
     assert out.observed_value["new_columns"] == ["notes"]
-    assert out.observed_value["columns_detected"] == 1, "the dismissed column left the set"
+    # The detectors still flag both; only the unclassified remainder dropped the dismissed one.
+    assert out.observed_value["columns_detected"] == 2
+    assert out.observed_value["columns_unclassified"] == 1, "the dismissed column left the set"
 
 
 def test_ignore_columns_are_left_out(
@@ -245,19 +268,91 @@ def test_ignore_columns_are_left_out(
 # ── dry run, failures, dispatch ──────────────────────────────────────────────────────────────
 
 
-def test_a_dry_run_persists_nothing_but_still_sees_this_profiles_detections(
+def test_a_column_since_dropped_from_the_table_is_not_drift(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The classification source deliberately keeps a detection the next profile does not repeat
+    (ADR 0049 §4); the monitor must still judge only columns the table holds NOW, or it fails
+    forever on a name nobody can tag because it is no longer there."""
+    fake = _Fake(monkeypatch, _profile(status=_PLAIN))
+
+    def run(check: Check) -> Any:  # one executor per simulated run, as the worker builds it
+        return _executor(graph)(check)
+
+    run(graph["check"])  # baseline {}
+    fake.columns = _profile(status=_PLAIN, contact2=_EMAILS)
+    assert run(graph["check"]).metric_value == 1.0  # reported while it is there
+    fake.columns = _profile(status=_PLAIN)  # dropped / renamed
+    gone = run(graph["check"])
+    assert gone.success is True and gone.metric_value == 0.0
+    assert gone.observed_value is not None and gone.observed_value["new_columns"] == []
+    # …while the classification row itself is kept, as the source documents.
+    assert [r.column_name for r in _rows(graph["session"], graph["asset"])] == ["contact2"]
+
+
+def test_the_target_is_profiled_once_per_run_however_many_checks(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every profile is a full top-values scan (billed per query on Athena): two pii_drift
+    checks in one suite must share one."""
     fake = _Fake(monkeypatch, _profile(contact=_EMAILS))
-    out = _executor(graph, persist=False)(graph["check"])
-    assert out.skipped is True
-    assert out.observed_value is not None
-    assert out.observed_value["dry_run"] is True
-    assert out.observed_value["detected_columns"] == ["contact"]
-    assert get_baseline(graph["session"], graph["check"].id) is None
+    second = Check(
+        suite_id=graph["suite"].id,
+        name="pii drift, ignoring contact",
+        kind="pii_drift",
+        expectation_type="monitor:pii_drift",
+        config={"ignore_columns": ["contact"]},
+    )
+    graph["session"].add(second)
+    graph["session"].commit()
+    run = _executor(graph)  # ONE executor: the worker builds one per run
+    first, other = run(graph["check"]), run(second)
+    assert len(fake.seen) == 1
+    assert first.observed_value is not None and other.observed_value is not None
+    assert first.observed_value["detected_columns"] == ["contact"]
+    assert other.observed_value["detected_columns"] == []  # its own config still applies
+
+
+def test_the_runs_own_asset_wins_over_the_suites(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resolve_asset` precedence: a suite retargeted between dispatch and pickup must not
+    split the detections (and the baseline diff) from the incident keyed on the run's asset."""
+    other = Asset(namespace="postgres://db", name="public.orders_v2")
+    graph["session"].add(other)
+    graph["session"].flush()
+    run_row = Run(suite_id=graph["suite"].id, status="running", asset_id=other.id)
+    graph["session"].add(run_row)
+    graph["session"].commit()
+    _Fake(monkeypatch, _profile(contact=_EMAILS))
+    _executor(graph, run=run_row)(graph["check"])
+    assert [r.column_name for r in _rows(graph["session"], other)] == ["contact"]
     assert _rows(graph["session"], graph["asset"]) == []
-    # …and the profile was NOT handed the asset, so nothing could have been stamped.
-    assert fake.seen and all("asset" not in k or k["asset"] is None for k in fake.seen)
+
+
+def test_the_profilers_own_refusals_are_not_flattened_into_an_outage(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 422-class DataQError (no schema, no credential, a bad identifier) carries a message
+    written for the author; `profile_target` must let it through intact."""
+
+    class _RefusedError(DataQError):
+        pass
+
+    def _refuse(*a: Any, **k: Any) -> Any:
+        raise _RefusedError("no schema given and the connection has none")
+
+    monkeypatch.setattr(profile_service, "list_columns", _refuse)
+    with pytest.raises(_RefusedError):
+        pii_drift.profile_target(
+            graph["conn"],
+            session=graph["session"],
+            table="orders",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="s", raise_on_write=True),
+            asset=None,
+        )
 
 
 def test_the_persisted_run_hands_the_profiler_the_asset_as_a_full_profile(

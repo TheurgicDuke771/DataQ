@@ -1084,21 +1084,31 @@ def test_kind_detail_pii_drift_lists_new_columns_and_the_baseline_flag(
         run_id=run.id,
         check_id=check.id,
         status="fail",
-        observed_value={"new_columns": ["notes"], "columns_detected": 2, "known_columns": ["c"]},
+        observed_value={
+            "new_columns": ["notes"],
+            "columns_detected": 3,
+            "columns_unclassified": 2,
+            "known_columns": ["c"],
+        },
     )
     db_session.add(result)
     db_session.commit()
     card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
     assert card["kind_detail"] == {
         "new_columns": ["notes"],
-        "columns_detected": 2,
+        "columns_detected": 3,
+        "columns_unclassified": 2,
         "baseline_captured": False,
     }
     first = Result(
         run_id=run.id,
         check_id=check.id,
         status="skip",
-        observed_value={"baseline_captured": True, "columns_detected": 2},
+        observed_value={
+            "baseline_captured": True,
+            "columns_detected": 2,
+            "columns_unclassified": 1,
+        },
     )
     db_session.add(first)
     db_session.commit()
@@ -1106,5 +1116,6 @@ def test_kind_detail_pii_drift_lists_new_columns_and_the_baseline_flag(
     assert card["kind_detail"] == {
         "new_columns": [],
         "columns_detected": 2,
+        "columns_unclassified": 1,
         "baseline_captured": True,
     }

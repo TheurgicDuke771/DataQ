@@ -298,6 +298,7 @@ def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | 
         return {
             "new_columns": observed.get("new_columns", []),
             "columns_detected": observed.get("columns_detected"),
+            "columns_unclassified": observed.get("columns_unclassified"),
             "baseline_captured": observed.get("baseline_captured", False),
         }
     return None

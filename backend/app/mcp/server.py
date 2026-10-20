@@ -4252,8 +4252,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     ``kind_detail`` names the fields specific to the failing check's monitor kind
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
-    anomaly, `new_columns`/`columns_detected`/`baseline_captured` for pii_drift
-    (column names only, never a value), `aggregate`/`column`/`breached_bound` for
+    anomaly, `new_columns`/`columns_detected`/`columns_unclassified`/
+    `baseline_captured` for pii_drift (column names only, never a value;
+    `columns_detected` is what the detectors flagged in that profile,
+    `columns_unclassified` the remainder after every classification is
+    subtracted — the number the check judges), `aggregate`/`column`/`breached_bound` for
     aggregate — its measured value is `failing_result.metric_value`, which is NOT
     column-masked the way
     `observed_value` is, so on a min/max over a policy-sensitive column it is one

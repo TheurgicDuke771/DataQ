@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import ANOMALY, PII_DRIFT, SCHEMA_DRIFT
-from backend.app.db.models import Check, Connection
+from backend.app.db.models import Check, Connection, Run
 from backend.app.services import anomaly, pii_drift, schema_drift
 from backend.app.services.coverage_settings_service import SuiteCoverage
 
@@ -27,6 +27,7 @@ class _ExecutorBuilder(Protocol):
         secret_store: SecretStore,
         persist: bool = True,
         coverage: SuiteCoverage | None = None,
+        run: Run | None = None,
     ) -> Callable[[Check], CheckOutcome]: ...
 
 
@@ -48,8 +49,13 @@ def build_stateful_monitor_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,
+    run: Run | None = None,
 ) -> Callable[[Check], CheckOutcome]:
-    """One callable covering every stateful kind, dispatching on ``check.kind``."""
+    """One callable covering every stateful kind, dispatching on ``check.kind``.
+
+    ``run`` is the run being executed, for the kinds whose state is keyed on the run's asset
+    (pii_drift); the others ignore it.
+    """
     built: dict[str, Callable[[Check], CheckOutcome]] = {}
 
     def executor(check: Check) -> CheckOutcome:
@@ -75,6 +81,7 @@ def build_stateful_monitor_executor(
                 secret_store=secret_store,
                 persist=persist,
                 coverage=coverage,
+                run=run,
             )
             built[check.kind] = cached
         return cached(check)

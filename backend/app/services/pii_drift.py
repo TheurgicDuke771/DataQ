@@ -22,12 +22,14 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import PII_DRIFT, monitor_expectation_type, monitor_outcome
-from backend.app.db.models import Asset, Check, Connection, Suite
+from backend.app.db.models import Asset, Check, Connection, Run, Suite
 from backend.app.services import profile_service
+from backend.app.services.check_service import FILE_TYPES
 from backend.app.services.classification_vocab import DETECTED, fold_key
 from backend.app.services.column_detections import detect
 from backend.app.services.column_tags import effective_column_tags
@@ -40,7 +42,6 @@ log = get_logger(__name__)
 #: Top values per column the run-time profile reads — the profiler's own default; the detectors'
 #: ratios are computed over these.
 PROFILE_TOP_N = 20
-_FILE_TYPES = frozenset({"adls_gen2", "s3"})
 
 
 class PiiDriftProfileError(Exception):
@@ -52,7 +53,7 @@ def _target_kwargs(
 ) -> dict[str, Any]:
     """The profiler's location arguments for a run's resolved target: a flat-file target is a
     path, an Iceberg one an already-folded ``namespace.table`` identifier."""
-    if connection.type in _FILE_TYPES:
+    if connection.type in FILE_TYPES:
         return {"path": table}
     if connection.type == "iceberg":
         return {"table": table}
@@ -87,6 +88,11 @@ def profile_target(
                 full_profile=asset is not None,
                 **location,
             )
+    except DataQError:
+        # The profiler's own 422-class refusals (no schema and the connection has none, no
+        # credential, a bad identifier) are authoring mistakes with a message written for the
+        # author — let them through intact rather than flattening them into an outage.
+        raise
     except Exception as exc:
         log.warning(
             "pii_drift_profile_failed",
@@ -128,15 +134,6 @@ def unclassified_detected_columns(
     return sorted(k for k, v in (tags or {}).items() if v == DETECTED and k not in decided)
 
 
-def _with_in_memory_detections(tags: dict[str, str] | None, columns: list[Any]) -> dict[str, str]:
-    """A dry run persists nothing: overlay this profile's detections the way a persisted run's
-    would have been overlaid, under every stronger verdict already in the map."""
-    merged = dict(tags or {})
-    for d in detect(columns):
-        merged.setdefault(fold_key(d.column), DETECTED)
-    return merged
-
-
 def build_pii_drift_executor(
     session: Session,
     *,
@@ -147,9 +144,19 @@ def build_pii_drift_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,  # the shared builder signature; unused here
+    run: Run | None = None,
 ) -> Callable[[Check], CheckOutcome]:
-    """A per-run executor for pii_drift checks (the schema_drift pattern)."""
+    """A per-run executor for pii_drift checks (the schema_drift pattern).
+
+    ``run`` is the run being executed: its own ``asset_id`` is the asset the detections, the
+    baseline diff and the incident are all keyed on (`resolve_asset`'s precedence), so a suite
+    retargeted between dispatch and pickup cannot split them across two assets. The target is
+    profiled ONCE per run however many pii_drift checks the suite holds — each profile is a
+    full top-values scan of the table, billed per query on Athena.
+    """
     from backend.app.services.run_service import resolve_asset  # the heavier module, lazily
+
+    profiled: dict[str, profile_service.ProfileResult] = {}
 
     def errored(message: str) -> CheckOutcome:
         return CheckOutcome(
@@ -161,35 +168,49 @@ def build_pii_drift_executor(
 
     def executor(check: Check) -> CheckOutcome:
         suite = session.get(Suite, check.suite_id)
-        asset = resolve_asset(session, suite) if suite is not None else None
+        asset = resolve_asset(session, suite, run) if suite is not None else None
         if suite is None or asset is None:
             return errored(
                 "pii_drift needs the suite's asset to hold its classifications and none is "
                 "resolved — set a run target on the suite"
             )
-        try:
-            result = profile_target(
-                connection,
-                session=session,
-                table=target_table,
-                schema=target_schema,
-                catalog=target_catalog,
-                secret_store=secret_store,
-                asset=asset if persist else None,
-            )
-        except PiiDriftProfileError as exc:
-            return errored(str(exc))
+        result = profiled.get("result")
+        if result is None:
+            try:
+                result = profile_target(
+                    connection,
+                    session=session,
+                    table=target_table,
+                    schema=target_schema,
+                    catalog=target_catalog,
+                    secret_store=secret_store,
+                    asset=asset if persist else None,
+                )
+            except PiiDriftProfileError as exc:
+                return errored(str(exc))
+            profiled["result"] = result
         config = dict(check.config)
-        tags = effective_column_tags(session, asset)
-        if not persist:
-            tags = _with_in_memory_detections(tags, result.columns)
-        current = unclassified_detected_columns(
-            tags, policy=suite.column_policy, ignore_columns=config.get("ignore_columns")
-        )
+        # Only columns the table holds NOW count: a persisted detection for a column since
+        # dropped or renamed is deliberately kept by the classification source (ADR 0049 §4)
+        # but is not a column that "started carrying personal data" — without this filter the
+        # check would fail forever on a name nobody can tag because it is no longer there.
+        present = {fold_key(c.column) for c in result.columns}
+        current = [
+            c
+            for c in unclassified_detected_columns(
+                effective_column_tags(session, asset),
+                policy=suite.column_policy,
+                ignore_columns=config.get("ignore_columns"),
+            )
+            if c in present
+        ]
         baseline_row = get_baseline(session, check.id)
         payload: dict[str, Any] = {
             "columns_profiled": len(result.columns),
-            "columns_detected": len(current),
+            # What the detectors flagged in THIS profile, before any classification is
+            # subtracted — distinct from the unclassified remainder the check judges.
+            "columns_detected": len(detect(result.columns)),
+            "columns_unclassified": len(current),
         }
         if baseline_row is None:
             payload.update({"baseline_captured": True, "detected_columns": current})
@@ -198,8 +219,6 @@ def build_pii_drift_executor(
                 insert_baseline_if_absent(
                     session, check_id=check.id, kind=PII_DRIFT, baseline={"columns": current}
                 )
-            else:
-                payload["dry_run"] = True
         else:
             # The baseline is never rewritten here (see the module docstring): the only way it
             # moves is the suite's re-baseline action deleting the row.
@@ -211,8 +230,6 @@ def build_pii_drift_executor(
                     "baseline_captured_at": baseline_row.captured_at.isoformat(),
                 }
             )
-            if not persist:
-                payload["dry_run"] = True
         return monitor_outcome(PII_DRIFT, scalar=payload, config=config, now=datetime.now(UTC))
 
     return executor
