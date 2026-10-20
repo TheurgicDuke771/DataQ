@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import get_secret_store
@@ -183,7 +184,7 @@ def _add_check(
     thresholds: dict[str, float] | None,
 ) -> Check:
     t = thresholds or {}
-    return check_service.create_check(
+    check = check_service.create_check(
         session,
         suite_id=suite.id,
         name=name,
@@ -196,6 +197,10 @@ def _add_check(
         origin="auto",
         machine_write=True,
     )
+    usage_telemetry.emit(
+        usage_telemetry.UsageEvent.COVERAGE_AUTO_CHECK_CREATED, session=session, kind=kind
+    )
+    return check
 
 
 def _ensure_checks(session: Session, suite: Suite) -> int:

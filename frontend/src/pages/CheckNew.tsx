@@ -1,8 +1,9 @@
 import { Alert, App, Button, Card, Flex, Form, Input, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { getConnection, listConnections } from '../api/connections';
+import { reportEvent } from '../api/telemetry';
 import { createCheck, getSuite } from '../api/suites';
 import { buildCheckPayload, buildComparisonPayload } from '../components/checks/checkForm';
 import { ComparisonCheckForm } from '../components/checks/ComparisonCheckForm';
@@ -50,6 +51,26 @@ export function CheckNew() {
   const configValues = Form.useWatch('config', form) as Record<string, unknown> | undefined;
   const engineChoice = Form.useWatch('engine', form) as string | undefined;
   const { run, loading: submitting } = useAsyncAction('Create failed');
+  // Leaving without a save is the authoring drop-off signal (usage telemetry): which step it
+  // happened on, nothing else.
+  const saved = useRef(false);
+  const pendingLeave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const step = useRef<'expectation' | 'config'>('expectation');
+  useEffect(() => {
+    step.current = expectationType ? 'config' : 'expectation';
+  }, [expectationType]);
+  useEffect(() => {
+    // Deferred a tick and cancelled on remount: StrictMode's mount→unmount→mount in development
+    // is not a departure.
+    clearTimeout(pendingLeave.current);
+    return () => {
+      pendingLeave.current = setTimeout(() => {
+        if (!saved.current) {
+          reportEvent({ name: 'check_editor_abandoned', attributes: { step: step.current } });
+        }
+      }, 0);
+    };
+  }, []);
   // Load the suite + its connection together: the run target (#215) drives the dry-run preview's
   // table/schema, and the connection type gates the Custom-SQL category (ADR 0019 — SQL
   // datasources only).
@@ -109,6 +130,7 @@ export function CheckNew() {
         }
         throw err;
       }
+      saved.current = true;
       message.success(`${values.name as string}: created`);
       backToSuite();
     });

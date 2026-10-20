@@ -15,6 +15,7 @@ from backend.app.alerting.base import (
     WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import CRITICAL, Route, route_for
+from backend.app.core import usage_telemetry
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.services import channel_service, notification_service
@@ -208,6 +209,9 @@ class SlackPublisher:
                 log.exception("slack_destination_send_failed", run_id=str(report.run_id))
                 continue
             delivered += 1
+            usage_telemetry.emit(
+                usage_telemetry.UsageEvent.ALERT_DELIVERED, session=session, channel="slack"
+            )
             log.info(
                 "slack_alert_sent",
                 run_id=str(report.run_id),

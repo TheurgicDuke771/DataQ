@@ -8,6 +8,7 @@ from backend.app.core.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from opentelemetry.sdk._logs.export import LogRecordExporter
+    from opentelemetry.sdk.metrics.export import MetricExporter
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace.export import SpanExporter
 
@@ -41,6 +42,26 @@ def build_span_exporters(settings: Settings | None = None) -> list[SpanExporter]
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
         exporters.append(OTLPSpanExporter(endpoint=f"{base}/v1/traces"))
+
+    return exporters
+
+
+def build_metric_exporters(settings: Settings | None = None) -> list[MetricExporter]:
+    """The configured metric exporters (ADR 0050 usage counters) — Azure Monitor and/or OTLP."""
+    settings = settings or get_settings()
+    exporters: list[MetricExporter] = []
+
+    conn = settings.applicationinsights_connection_string
+    if conn:
+        from azure.monitor.opentelemetry.exporter import AzureMonitorMetricExporter
+
+        exporters.append(AzureMonitorMetricExporter(connection_string=conn))
+
+    base = _otlp_base(settings)
+    if base:
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
+        exporters.append(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"))
 
     return exporters
 

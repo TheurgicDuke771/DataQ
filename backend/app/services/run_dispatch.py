@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.app.core import usage_telemetry
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run, Suite
 from backend.app.worker.celery_app import (
@@ -126,6 +127,11 @@ def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:
     try:
         run.celery_task_id = dispatch_run(run.id)
         session.commit()
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.SUITE_RUN_TRIGGERED,
+            session=session,
+            trigger=usage_telemetry.trigger_kind(run.triggered_by or ""),
+        )
         return True
     except Exception:
         log.exception("run_dispatch_failed", run_id=str(run.id), **log_context)

@@ -14,6 +14,7 @@ from backend.app.alerting.card import (
     render_teams_signal_message,
 )
 from backend.app.alerting.routing import route_for
+from backend.app.core import usage_telemetry
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.services import channel_service, notification_service
@@ -74,6 +75,9 @@ class TeamsPublisher:
                 log.exception("teams_destination_send_failed", run_id=str(report.run_id))
                 continue
             delivered += 1
+            usage_telemetry.emit(
+                usage_telemetry.UsageEvent.ALERT_DELIVERED, session=session, channel="teams"
+            )
             log.info(
                 "teams_alert_sent",
                 run_id=str(report.run_id),

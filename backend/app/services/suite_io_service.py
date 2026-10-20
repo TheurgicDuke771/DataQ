@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.databricks_dqx import DQX_ENGINE
@@ -324,6 +325,15 @@ def import_suite(
     )
     session.commit()
     session.refresh(suite)
+    for check in suite.checks:
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.CHECK_CREATED,
+            session=session,
+            kind=check.kind,
+            engine=check.engine,
+            datasource_type=connection.type,
+            origin="import",
+        )
     log.info(
         "suite_imported",
         suite_id=str(suite.id),
