@@ -25,8 +25,8 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Asset, AssetColumnClassification
 from backend.app.services import audit_service
+from backend.app.services.classification_vocab import SENSITIVE, fold_key
 from backend.app.services.column_classification import value_detector, value_signal_summary
-from backend.app.services.column_tags import SENSITIVE, fold_key
 
 log = get_logger(__name__)
 

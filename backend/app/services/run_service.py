@@ -57,8 +57,8 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
+from backend.app.services.classification_vocab import DETECTED, fold_key
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
-from backend.app.services.column_tags import DETECTED, fold_key
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms

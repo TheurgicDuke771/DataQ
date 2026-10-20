@@ -10,6 +10,24 @@ from sqlalchemy import text
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Asset, Connection
+from backend.app.services.classification_vocab import DETECTED, NON_SENSITIVE, SENSITIVE, fold_key
+
+__all__ = [
+    "DATAQ_TAG_KEY",
+    "DETECTED",
+    "NON_SENSITIVE",
+    "REFRESH_TTL",
+    "SENSITIVE",
+    "SNOWFLAKE_PRIVACY_TAG",
+    "TAGGABLE_TYPES",
+    "effective_column_tags",
+    "fetch_column_tags",
+    "fold_key",
+    "inherited_sensitive",
+    "inherited_sensitive_with_truncation",
+    "normalize_tag",
+    "refresh_asset_column_tags",
+]
 
 log = get_logger(__name__)
 
@@ -24,14 +42,10 @@ _SNOWFLAKE_PRIVACY_SENSITIVE: Final[frozenset[str]] = frozenset(
     {"identifier", "quasi_identifier", "sensitive"}
 )
 
-#: Normalized outputs.
-SENSITIVE: Final[str] = "sensitive"
-NON_SENSITIVE: Final[str] = "public"
-#: A profiler detection (ADR 0049), overlaid by `effective_column_tags` on columns with no
-#: warehouse verdict. Deliberately a THIRD value: it is in neither the sensitive-tag set (so it
-#: is not the floor — the suite's `identifier_column` clears it) nor the clearing set (so it
-#: never satisfies fail-closed clearance).
-DETECTED: Final[str] = "detected"
+# The normalized outputs (`SENSITIVE` / `NON_SENSITIVE` / `DETECTED`) and `fold_key` live in the
+# leaf module `classification_vocab` and are re-exported here for the read paths that import them
+# from this module; `column_detections` imports them from the leaf, which keeps the lazy edge
+# below (this module → `column_detections`) one-directional.
 
 _SENSITIVE_VALUES: Final[frozenset[str]] = frozenset(
     {"sensitive", "pii", "confidential", "restricted", "secret"}
@@ -45,12 +59,6 @@ REFRESH_TTL: Final[timedelta] = timedelta(minutes=15)
 
 #: Datasource types with a column-tag concept at all.
 TAGGABLE_TYPES: Final[frozenset[str]] = frozenset({"snowflake", "unity_catalog"})
-
-
-def fold_key(column: str) -> str:
-    """The redaction map's key for a column name: stripped and lower-cased, the one folding every
-    rung (warehouse tags, inheritance, detections, the policy lookups) agrees on."""
-    return column.strip().lower()
 
 
 def normalize_tag(tag_name: str | None, tag_value: str | None) -> str | None:

@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.app.services import audit_service
-from backend.app.services.column_tags import DETECTED, fold_key
+from backend.app.services.classification_vocab import DETECTED, fold_key
 
 # The redaction ladder lives in `run_service` and is imported wholesale rather than partially re-
 # implemented here.
