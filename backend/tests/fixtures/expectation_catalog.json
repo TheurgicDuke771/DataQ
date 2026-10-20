@@ -331,6 +331,16 @@
     "dataframeOnly": false
   },
   {
+    "type": "monitor:pii_drift",
+    "kind": "pii_drift",
+    "dimension": null,
+    "fields": [
+      "ignore_columns"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
     "type": "monitor:anomaly",
     "kind": "anomaly",
     "dimension": null,

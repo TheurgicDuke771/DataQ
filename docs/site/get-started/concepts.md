@@ -17,7 +17,7 @@ flowchart LR
 |---|---|---|
 | **Connection** | How DataQ reaches one datasource (or one orchestrator), with its credential kept in the secret store | Connections |
 | **Suite** | A named set of checks against one target table or file | Suites |
-| **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly), a comparison, or custom SQL | Suite → Checks |
+| **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly, PII drift), a comparison, or custom SQL | Suite → Checks |
 | **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
 | **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
 | **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
