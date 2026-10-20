@@ -1503,6 +1503,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Privacy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#comparison" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1515,7 +1543,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_7" class="md-nav__link">
+  <a href="#examples_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -1543,7 +1571,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_8" class="md-nav__link">
+  <a href="#examples_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -1571,7 +1599,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_9" class="md-nav__link">
+  <a href="#examples_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -1599,7 +1627,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_10" class="md-nav__link">
+  <a href="#examples_11" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -2957,6 +2985,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Privacy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#comparison" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2969,7 +3025,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_7" class="md-nav__link">
+  <a href="#examples_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -2997,7 +3053,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_8" class="md-nav__link">
+  <a href="#examples_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -3025,7 +3081,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_9" class="md-nav__link">
+  <a href="#examples_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -3053,7 +3109,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#examples_10" class="md-nav__link">
+  <a href="#examples_11" class="md-nav__link">
     <span class="md-ellipsis">
       
         Examples
@@ -3151,7 +3207,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 <tbody>
 <tr>
 <td>Check types in the editor</td>
-<td>48</td>
+<td>49</td>
 </tr>
 <tr>
 <td>GX expectation types vetted by the backend</td>
@@ -4197,6 +4253,50 @@ change it on any check.</p>
 </code></pre></div>
 <p>Reports the z-score of today's row count against the last 14 runs on the same weekday (<code>seasonality</code> keeps only those; off, it is the last 14 runs of any day). It skips until 7 such runs exist, so on a daily schedule about seven weeks.</p>
 </details>
+<h2 id="privacy">Privacy<a class="headerlink" href="#privacy" title="Permanent link">¶</a></h2>
+<p>Did a column start carrying personal data that nobody classified? Profiles the table every run; the first run learns the current set and reports skip.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PII drift</strong></td>
+<td><code>monitor:pii_drift</code></td>
+<td>Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new against the baseline and carry no warehouse tag, no inherited classification and no entry in this suite’s pii_columns (the identifier column is not exempt). The first run only learns the current set and reports skip; the baseline never moves on its own, so the check keeps failing until the column is classified, dismissed or ignored, or the check is re-baselined.</td>
+<td>— (set it yourself)</td>
+<td><code>ignore_columns</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_7">Examples<a class="headerlink" href="#examples_7" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>PII drift</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"PII drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:pii_drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pii_drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"ignore_columns"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"session_token"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"warn_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The first run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and reports skip. Each later run counts the columns that are new against that baseline and that nobody has classified (no warehouse tag, no inherited classification, not in this suite's <code>pii_columns</code>, not dismissed) and fails on one — and keeps failing until someone classifies, dismisses or ignores the column. <code>session_token</code> is never counted.</p>
+</details>
 <h2 id="comparison">Comparison<a class="headerlink" href="#comparison" title="Permanent link">¶</a></h2>
 <p>Reconcile the suite's target against a second dataset, possibly on another connection.</p>
 <table>
@@ -4232,7 +4332,7 @@ change it on any check.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="examples_7">Examples<a class="headerlink" href="#examples_7" title="Permanent link">¶</a></h3>
+<h3 id="examples_8">Examples<a class="headerlink" href="#examples_8" title="Permanent link">¶</a></h3>
 <details class="example">
 <summary>Records reconciliation</summary>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -4303,7 +4403,7 @@ change it on any check.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="examples_8">Examples<a class="headerlink" href="#examples_8" title="Permanent link">¶</a></h3>
+<h3 id="examples_9">Examples<a class="headerlink" href="#examples_9" title="Permanent link">¶</a></h3>
 <details class="example">
 <summary>Custom SQL</summary>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -4405,7 +4505,7 @@ change it on any check.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="examples_9">Examples<a class="headerlink" href="#examples_9" title="Permanent link">¶</a></h3>
+<h3 id="examples_10">Examples<a class="headerlink" href="#examples_10" title="Permanent link">¶</a></h3>
 <details class="example">
 <summary>Null count (DMF)</summary>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -4615,7 +4715,7 @@ change it on any check.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="examples_10">Examples<a class="headerlink" href="#examples_10" title="Permanent link">¶</a></h3>
+<h3 id="examples_11">Examples<a class="headerlink" href="#examples_11" title="Permanent link">¶</a></h3>
 <details class="example">
 <summary>Not null (DQX)</summary>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>

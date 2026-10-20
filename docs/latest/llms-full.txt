@@ -232,7 +232,7 @@ flowchart LR
 |---|---|---|
 | **Connection** | How DataQ reaches one datasource (or one orchestrator), with its credential kept in the secret store | Connections |
 | **Suite** | A named set of checks against one target table or file | Suites |
-| **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly), a comparison, or custom SQL | Suite → Checks |
+| **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly, PII drift), a comparison, or custom SQL | Suite → Checks |
 | **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
 | **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
 | **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
@@ -4904,6 +4904,19 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **A monitor that fires when a column starts carrying personal data nobody classified.** The
+  new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
+  suite's table on each run, keeps what looks like email addresses or encoded blobs as a
+  classification of the asset, and counts the columns that are new against its baseline and
+  that carry no warehouse tag, no classification inherited through lineage and no entry in the
+  suite's `pii_columns`, and that nobody dismissed. One such column fails the check by default
+  (thresholds editable); the first run only learns the current set and reports skip. The
+  baseline never moves on its own, so the check keeps failing until the column is classified,
+  dismissed or ignored (then the incident resolves) or the check is re-baselined. It runs on
+  every datasource the column profiler supports and costs one profile per run.
+  Re-baseline, dry-run (the raw detector view, nothing persisted) and the incident card's kind
+  detail (`new_columns`, names only) work as for schema drift; over MCP, `create_check` and
+  `dryrun_check` accept the kind.
 - **Columns that start carrying personal data are masked without anyone tagging them.** Every
   profile of a suite's own table now runs the two value detectors that look at data rather
   than names (email addresses, encoded blobs) and keeps what they find as a classification of
@@ -5352,7 +5365,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 48 |
+| Check types in the editor | 49 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -6002,6 +6015,35 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
     Reports the z-score of today's row count against the last 14 runs on the same weekday (`seasonality` keeps only those; off, it is the last 14 runs of any day). It skips until 7 such runs exist, so on a daily schedule about seven weeks.
 
+## Privacy
+
+Did a column start carrying personal data that nobody classified? Profiles the table every run; the first run learns the current set and reports skip.
+
+| Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
+|---|---|---|---|---|---|---|
+| **PII drift** | `monitor:pii_drift` | Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new against the baseline and carry no warehouse tag, no inherited classification and no entry in this suite’s pii_columns (the identifier column is not exempt). The first run only learns the current set and reports skip; the baseline never moves on its own, so the check keeps failing until the column is classified, dismissed or ignored, or the check is re-baselined. | — (set it yourself) | `ignore_columns` *(optional)* | warn / fail / critical | All datasources |
+
+### Examples
+
+??? example "PII drift"
+
+    ```json
+    {
+      "name": "PII drift",
+      "expectation_type": "monitor:pii_drift",
+      "kind": "pii_drift",
+      "config": {
+        "ignore_columns": [
+          "session_token"
+        ]
+      },
+      "warn_threshold": 1,
+      "fail_threshold": 1
+    }
+    ```
+
+    The first run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and reports skip. Each later run counts the columns that are new against that baseline and that nobody has classified (no warehouse tag, no inherited classification, not in this suite's `pii_columns`, not dismissed) and fails on one — and keeps failing until someone classifies, dismisses or ignores the column. `session_token` is never counted.
+
 ## Comparison
 
 Reconcile the suite's target against a second dataset, possibly on another connection.
@@ -6438,6 +6480,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ |
 | Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ (namespace → table) |
@@ -6462,6 +6505,19 @@ percentile, so it is refused there at author time. Verified by executed runs, au
 → `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
 Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
+
+ⁱ **PII drift.** Every run profiles every column of the target through the column profiler
+(one login: the column listing plus the batched top-values query), keeps what looks like email
+addresses or encoded blobs as a classification of the asset, and counts the columns that are new
+against the baseline and that nobody has classified: no own warehouse tag, nothing inherited
+through lineage, not in the suite's `pii_columns`, not dismissed (the `identifier_column` is not
+exempt — it is shown unmasked). The first run learns the current set as the baseline and reports
+`skip`; the baseline never moves on its own, so the check keeps failing until the column is
+classified, dismissed or ignored, or the check is re-baselined. It runs wherever the profiler runs, which is every datasource in this
+table, and it is bounded by the profiler's own limits: on a SQL datasource the evidence is the
+top values per column, on files and Iceberg the sampled rows. Only the two shapes are detected; a
+column it does not name is not thereby clean. The ticks are earned by the executed engine tests
+over a faked profile, not by a live run — no cloud test instance exists.
 
 ᵇ **Schema drift** (ADR 0012)
 diffs a live column-name/type snapshot against a stored baseline and flags
@@ -6774,7 +6830,7 @@ risk that carries.
 | **Suite** | A named set of checks that runs against one connection's target. |
 | **Check** | One data-quality rule — a Great Expectations *expectation*, or a monitor kind (below). |
 | **Expectation** | A Great Expectations assertion about data (e.g. "column not null"). |
-| **Monitor** | A non-expectation check kind: *freshness* (staleness), *volume* (row-count range), *aggregate* (a column statistic in two-sided bands), *schema_drift* (column add/drop/retype vs a baseline), *anomaly* (rolling z-score over metric history), or *comparison* (cross-dataset reconciliation). |
+| **Monitor** | A non-expectation check kind: *freshness* (staleness), *volume* (row-count range), *aggregate* (a column statistic in two-sided bands), *schema_drift* (column add/drop/retype vs a baseline), *anomaly* (rolling z-score over metric history), *pii_drift* (a column that newly looks like personal data and that nobody classified), or *comparison* (cross-dataset reconciliation). |
 | **Dimension** | A check's DQ-dimension classification (ADR 0038): accuracy / completeness / consistency / integrity / timeliness / uniqueness / validity. NULL = unclassified, rendered as a coverage gap. |
 | **Run** | One execution of a suite. Lifecycle status: queued → running → succeeded/failed/cancelled. |
 | **Result** | One check's outcome in a run — status **pass / warn / fail / critical** (or *skip* / *error*). |
@@ -7242,7 +7298,7 @@ and never a silently ignored line.
 |---|---|---|
 | `name` | yes | 1–256 characters. |
 | `expectation_type` | yes | The check type. Every type, its parameters and a worked example of each is on [Check types](check-types.md). |
-| `kind` | no (default `expectation`) | `expectation`, `freshness`, `volume`, `schema_drift`, `anomaly`, `aggregate` or `comparison`. Must match the type: a `monitor:freshness` type has kind `freshness`. |
+| `kind` | no (default `expectation`) | `expectation`, `freshness`, `volume`, `schema_drift`, `anomaly`, `aggregate`, `pii_drift` or `comparison`. Must match the type: a `monitor:freshness` type has kind `freshness`. |
 | `config` | no | The type's parameters, as shown for each type on [Check types](check-types.md). |
 | `warn_threshold`, `fail_threshold`, `critical_threshold` | no | Severity bands. They must be ordered warn ≤ fail ≤ critical, and only types that measure a number accept them. |
 | `dimension` | no | `accuracy`, `completeness`, `consistency`, `integrity`, `timeliness`, `uniqueness` or `validity`. **Leave the field out** to have it derived from the check type. Write `dimension: null` to keep the check unclassified on purpose. |
@@ -18641,9 +18697,21 @@ DataQ can hold.
 ## Phases
 
 1. This ADR, the table and migration, the write path, the rung, the asset page and API, docs.
-2. `pii_drift`: a monitor kind whose `metric_value` is the count of detections first
-   seen since the last run on columns with no warehouse tag and no policy entry. Needs the
-   `kind_valid` constraints widened first, in their own migration.
+2. `pii_drift` (shipped 2026-10-20): a stateful monitor kind beside `schema_drift`. Each run
+   profiles every column of the suite's own target (one login), feeds this source as a full
+   profile, and reads back the columns whose only classification is a detection — no own
+   warehouse tag, nothing inherited, not in the suite's `pii_columns`, not dismissed, not in
+   the check's `ignore_columns`. The `identifier_column` is deliberately not exempt: it is a
+   display decision the redaction ladder honours over a detection, so an identifier that starts
+   carrying personal data is the one column that leaks unmasked. The first run stores the set in
+   `monitor_baselines` and reports `skip`; each later run reports the columns new against that
+   baseline as `metric_value` (the editor defaults warn and fail to 1). The baseline is fixed,
+   as schema_drift's is: an unclassified column is a standing condition, so the check keeps
+   failing until someone classifies, dismisses or ignores the column — then the next run passes
+   and the incident resolves — or re-baselines the check. Rolling the baseline forward was
+   considered and rejected because the next run would pass and auto-resolve the incident with
+   the column still unclassified. The dimension is deliberately undecidable (NULL). The
+   `kind_valid` constraints were widened in their own migration first.
 3. The governance-catalog source as `source = 'catalog'` rows.
 
 ## Consequences

@@ -2851,6 +2851,20 @@
 <td style="text-align: center;">✅</td>
 </tr>
 <tr>
+<td>PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
 <td>Comparison / reconciliation (diff vs a baseline connection)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2939,6 +2953,18 @@ percentile, so it is refused there at author time. Verified by executed runs, au
 → <code>metric_value</code> and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
 Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.</p>
+<p>ⁱ <strong>PII drift.</strong> Every run profiles every column of the target through the column profiler
+(one login: the column listing plus the batched top-values query), keeps what looks like email
+addresses or encoded blobs as a classification of the asset, and counts the columns that are new
+against the baseline and that nobody has classified: no own warehouse tag, nothing inherited
+through lineage, not in the suite's <code>pii_columns</code>, not dismissed (the <code>identifier_column</code> is not
+exempt — it is shown unmasked). The first run learns the current set as the baseline and reports
+<code>skip</code>; the baseline never moves on its own, so the check keeps failing until the column is
+classified, dismissed or ignored, or the check is re-baselined. It runs wherever the profiler runs, which is every datasource in this
+table, and it is bounded by the profiler's own limits: on a SQL datasource the evidence is the
+top values per column, on files and Iceberg the sampled rows. Only the two shapes are detected; a
+column it does not name is not thereby clean. The ticks are earned by the executed engine tests
+over a faked profile, not by a live run — no cloud test instance exists.</p>
 <p>ᵇ <strong>Schema drift</strong> (ADR 0012)
 diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a <code>CheckRunner</code>/GX at

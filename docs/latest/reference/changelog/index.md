@@ -57,6 +57,19 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **A monitor that fires when a column starts carrying personal data nobody classified.** The
+  new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
+  suite's table on each run, keeps what looks like email addresses or encoded blobs as a
+  classification of the asset, and counts the columns that are new against its baseline and
+  that carry no warehouse tag, no classification inherited through lineage and no entry in the
+  suite's `pii_columns`, and that nobody dismissed. One such column fails the check by default
+  (thresholds editable); the first run only learns the current set and reports skip. The
+  baseline never moves on its own, so the check keeps failing until the column is classified,
+  dismissed or ignored (then the incident resolves) or the check is re-baselined. It runs on
+  every datasource the column profiler supports and costs one profile per run.
+  Re-baseline, dry-run (the raw detector view, nothing persisted) and the incident card's kind
+  detail (`new_columns`, names only) work as for schema drift; over MCP, `create_check` and
+  `dryrun_check` accept the kind.
 - **Columns that start carrying personal data are masked without anyone tagging them.** Every
   profile of a suite's own table now runs the two value detectors that look at data rather
   than names (email addresses, encoded blobs) and keeps what they find as a classification of

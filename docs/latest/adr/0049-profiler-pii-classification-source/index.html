@@ -2568,9 +2568,21 @@ DataQ can hold.</p>
 <h2 id="phases">Phases<a class="headerlink" href="#phases" title="Permanent link">¶</a></h2>
 <ol>
 <li>This ADR, the table and migration, the write path, the rung, the asset page and API, docs.</li>
-<li><code>pii_drift</code>: a monitor kind whose <code>metric_value</code> is the count of detections first
-   seen since the last run on columns with no warehouse tag and no policy entry. Needs the
-   <code>kind_valid</code> constraints widened first, in their own migration.</li>
+<li><code>pii_drift</code> (shipped 2026-10-20): a stateful monitor kind beside <code>schema_drift</code>. Each run
+   profiles every column of the suite's own target (one login), feeds this source as a full
+   profile, and reads back the columns whose only classification is a detection — no own
+   warehouse tag, nothing inherited, not in the suite's <code>pii_columns</code>, not dismissed, not in
+   the check's <code>ignore_columns</code>. The <code>identifier_column</code> is deliberately not exempt: it is a
+   display decision the redaction ladder honours over a detection, so an identifier that starts
+   carrying personal data is the one column that leaks unmasked. The first run stores the set in
+   <code>monitor_baselines</code> and reports <code>skip</code>; each later run reports the columns new against that
+   baseline as <code>metric_value</code> (the editor defaults warn and fail to 1). The baseline is fixed,
+   as schema_drift's is: an unclassified column is a standing condition, so the check keeps
+   failing until someone classifies, dismisses or ignores the column — then the next run passes
+   and the incident resolves — or re-baselines the check. Rolling the baseline forward was
+   considered and rejected because the next run would pass and auto-resolve the incident with
+   the column still unclassified. The dimension is deliberately undecidable (NULL). The
+   <code>kind_valid</code> constraints were widened in their own migration first.</li>
 <li>The governance-catalog source as <code>source = 'catalog'</code> rows.</li>
 </ol>
 <h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">¶</a></h2>
