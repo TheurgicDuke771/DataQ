@@ -73,6 +73,10 @@ from .check_update_config_type_0 import CheckUpdateConfigType0
 from .check_version_read import CheckVersionRead
 from .check_version_read_config import CheckVersionReadConfig
 from .classification_dismiss_update import ClassificationDismissUpdate
+from .client_event import ClientEvent
+from .client_event_attributes import ClientEventAttributes
+from .client_events_accepted import ClientEventsAccepted
+from .client_events_write import ClientEventsWrite
 from .column_hop_read import ColumnHopRead
 from .column_node_read import ColumnNodeRead
 from .column_origin_read import ColumnOriginRead
@@ -283,6 +287,12 @@ from .suite_update import SuiteUpdate
 from .suite_validate_request import SuiteValidateRequest
 from .suite_validate_request_document_type_0 import SuiteValidateRequestDocumentType0
 from .suite_validation_read import SuiteValidationRead
+from .telemetry_event_read import TelemetryEventRead
+from .telemetry_event_read_attributes import TelemetryEventReadAttributes
+from .telemetry_settings_read import TelemetrySettingsRead
+from .telemetry_settings_read_sink import TelemetrySettingsReadSink
+from .telemetry_settings_write import TelemetrySettingsWrite
+from .telemetry_status_read import TelemetryStatusRead
 from .top_value import TopValue
 from .trace_direction import TraceDirection
 from .trend_point_read import TrendPointRead
@@ -373,6 +383,10 @@ __all__ = (
     "CheckVersionRead",
     "CheckVersionReadConfig",
     "ClassificationDismissUpdate",
+    "ClientEvent",
+    "ClientEventAttributes",
+    "ClientEventsAccepted",
+    "ClientEventsWrite",
     "ColumnHopRead",
     "ColumnNodeRead",
     "ColumnOriginRead",
@@ -579,6 +593,12 @@ __all__ = (
     "SuiteValidateRequest",
     "SuiteValidateRequestDocumentType0",
     "SuiteValidationRead",
+    "TelemetryEventRead",
+    "TelemetryEventReadAttributes",
+    "TelemetrySettingsRead",
+    "TelemetrySettingsReadSink",
+    "TelemetrySettingsWrite",
+    "TelemetryStatusRead",
     "TopValue",
     "TraceDirection",
     "TrendPointRead",
