@@ -508,7 +508,7 @@ def _dry_run_pii_drift(
             )
             raise DryRunFailedError(str(exc), detail={"table": table}) from exc
         raise
-    ignore = {fold_key(str(name)) for name in (config.get("ignore_columns") or ())}
+    ignore = pii_drift_service.ignored_columns(config)
     detected = sorted({fold_key(d.column): d.detector for d in detect(result.columns)}.items())
     considered = [{"column": c, "detector": det} for c, det in detected if c not in ignore]
     return DryRunOutcome(
