@@ -88,9 +88,16 @@ DataQ can hold.
 ## Phases
 
 1. This ADR, the table and migration, the write path, the rung, the asset page and API, docs.
-2. `pii_drift`: a monitor kind whose `metric_value` is the count of detections first
-   seen since the last run on columns with no warehouse tag and no policy entry. Needs the
-   `kind_valid` constraints widened first, in their own migration.
+2. `pii_drift` (shipped 2026-10-20): a stateful monitor kind beside `schema_drift`. Each run
+   profiles every column of the suite's own target (one login), feeds this source as a full
+   profile, and reads back the columns whose only classification is a detection — no own
+   warehouse tag, nothing inherited, not in the suite's `pii_columns` or its
+   `identifier_column`, not dismissed, not in the check's `ignore_columns`. The first run
+   stores that set in `monitor_baselines` and reports `skip`; each later run reports the
+   columns new against the previous run's set as `metric_value` (default thresholds warn and
+   fail at 1) and rolls the baseline forward, so a column is reported once and its incident
+   carries it from there. The dimension is deliberately undecidable (NULL). The `kind_valid`
+   constraints were widened in their own migration first.
 3. The governance-catalog source as `source = 'catalog'` rows.
 
 ## Consequences
