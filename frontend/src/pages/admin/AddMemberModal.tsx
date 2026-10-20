@@ -1,4 +1,4 @@
-import { Alert, Form, Input, Modal, Select, Typography } from 'antd';
+import { Alert, Form, Input, Select, Typography } from 'antd';
 import { useState } from 'react';
 
 import {
@@ -9,6 +9,7 @@ import {
 } from '../../api/admin';
 import { authMode } from '../../auth/config';
 import { fetchFailure } from '../../utils/errors';
+import { Modal } from '../../components/shared/Modal';
 
 /** Admit an address to the workspace. Deliberately says what this does NOT do:
  *  with an identity provider in front, the account must exist there first. */

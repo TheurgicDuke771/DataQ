@@ -9,7 +9,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Table,
   Tag,
   Typography,
@@ -31,6 +30,8 @@ import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
 import { expiryStatus } from '../../utils/expiry';
+import { Modal } from '../shared/Modal';
+import { useAppModal } from '../../hooks/useAppModal';
 
 /** Profile panel for the user's Personal Access Tokens (PATs, ADR 0026 phase 1, #461). */
 export function ApiKeysPanel() {
@@ -105,7 +106,8 @@ function keyStatus(key: ApiKey): { label: string; color: string } {
 }
 
 function ApiKeyTable({ keys, onChanged }: { keys: ApiKey[]; onChanged: () => void }) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const modal = useAppModal();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Not on the shared useConfirmDelete hook: this site drives a per-row `busyId` spinner and

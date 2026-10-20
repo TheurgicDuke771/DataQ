@@ -1,7 +1,8 @@
-import { Alert, Flex, InputNumber, Modal, Select, Typography } from 'antd';
+import { Alert, Flex, InputNumber, Select, Typography } from 'antd';
 import { useState } from 'react';
 
 import type { BulkThresholds } from '../../api/suites';
+import { Modal } from '../shared/Modal';
 
 /**
  * Set the same severity thresholds on every selected check. Each tier is left as it is, set to
@@ -15,8 +16,6 @@ const TIERS = [
   { key: 'critical_threshold', label: 'Critical' },
 ] as const;
 type TierKey = (typeof TIERS)[number]['key'];
-
-const SELECT_WIDTH = 150;
 
 const MODE_OPTIONS: { value: Mode; label: string }[] = [
   { value: 'keep', label: 'Leave as it is' },
@@ -92,11 +91,7 @@ export function BulkThresholdsModal({
             </Typography.Text>
             <Select<Mode>
               aria-labelledby={`bulk-${tier.key}-label`}
-              style={{ width: SELECT_WIDTH }}
-              // A fixed popup width, not the trigger's measured one: opened while the modal is
-              // still zooming in, the trigger measures ~30px and the options render 0px wide
-              // (#2443).
-              popupMatchSelectWidth={SELECT_WIDTH}
+              style={{ width: 150 }}
               value={modes[tier.key]}
               options={MODE_OPTIONS}
               onChange={(mode) => setModes((prev) => ({ ...prev, [tier.key]: mode }))}

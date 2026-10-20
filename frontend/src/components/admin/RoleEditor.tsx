@@ -1,4 +1,4 @@
-import { App, Modal, Select, Space, Tag, Tooltip } from 'antd';
+import { App, Select, Space, Tag, Tooltip } from 'antd';
 import { useState } from 'react';
 
 import {
@@ -10,6 +10,7 @@ import {
 import { fetchMe } from '../../api/me';
 import { useMe, useUpdateMe } from '../../auth/useMe';
 import { errorMessage } from '../../utils/errors';
+import { Modal } from '../shared/Modal';
 
 /** Inline workspace-role editor for one row of the Admin → Members table (ADR 0033, #742). */
 export function RoleEditor({

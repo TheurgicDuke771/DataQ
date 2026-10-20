@@ -1,17 +1,5 @@
 import { ArrowLeftOutlined, EditOutlined, UserOutlined } from '@ant-design/icons';
-import {
-  App,
-  Button,
-  Card,
-  Flex,
-  Input,
-  Modal,
-  Select,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { App, Button, Card, Flex, Input, Select, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -38,6 +26,7 @@ import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
+import { Modal } from '../components/shared/Modal';
 
 /**
  * Asset detail (`/assets/:assetId`, #760) — identity header, health across the composing suites
