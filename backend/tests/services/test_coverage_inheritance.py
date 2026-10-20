@@ -771,3 +771,30 @@ def test_an_inheriting_check_runs_yearly_when_the_setting_turns_it_on_and_keeps_
     assert off.observed_value is not None and "yearly" not in off.observed_value
     assert row.baseline["daily"] == days
     assert len(row.baseline["observations"]) == 2
+
+
+def test_an_untouched_edit_carries_the_yearly_in_effect_so_a_calendar_can_be_attached() -> None:
+    """Workspace switched yearly on after the check was made (no key, or a stale false):
+    attaching a calendar entry and echoing yearly true keeps it inheriting, and the config
+    the author-time checks see has yearly on."""
+    for stored in ({}, {"yearly": False}):
+        check = _check(**stored, **_flag(True))
+        sent = {
+            **svc.strip_flag(check.config),
+            "yearly": True,
+            "seasonal_periods": ["x"],
+        }
+
+        config, _ = _settle(check, config=sent, workspace={"baseline": _YEARLY_LEGACY})
+
+        assert config[KEY] is True
+        assert config["yearly"] is True
+
+
+def test_an_untouched_edit_adds_no_yearly_key_while_it_is_off() -> None:
+    config, _ = _settle(_check(**_flag(True)), config=None, workspace=None)
+
+    assert "yearly" not in config
+
+
+_YEARLY_LEGACY = {"window": 8, "min_points": 4, "seasonality": True, "yearly": True}

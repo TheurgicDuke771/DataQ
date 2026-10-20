@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Any, Final, Literal, get_args
 
@@ -75,23 +75,12 @@ class Shape:
     def as_dict(self) -> dict[str, Any]:
         """The group as a document stores it: ``yearly`` only when on, so a document saved
         before it existed reads the same."""
-        return {
-            "window": self.window,
-            "min_points": self.min_points,
-            "seasonality": self.seasonality,
-            **({_YEARLY: True} if self.yearly else {}),
-        }
+        return {k: v for k, v in asdict(self).items() if k != _YEARLY or v}
 
     def for_metric(self, target_metric: Any) -> dict[str, Any]:
         """The shape keys a baseline on ``target_metric`` runs on, ``yearly`` set either way
         where the metric takes it (a stored ``true`` must not outlive the setting)."""
-        group = {
-            "window": self.window,
-            "min_points": self.min_points,
-            "seasonality": self.seasonality,
-            _YEARLY: self.yearly,
-        }
-        return {k: v for k, v in group.items() if k in shape_keys(target_metric)}
+        return {k: v for k, v in asdict(self).items() if k in shape_keys(target_metric)}
 
 
 def shape_keys(target_metric: Any) -> tuple[str, ...]:
@@ -305,7 +294,6 @@ def _matches_legacy_signature(check: Check) -> bool:
         # `is` for the flag: 1 == True, and a window of 1 must not read as seasonality on.
         type(config.get(key)) is type(want) and config.get(key) == want
         for key, want in _LEGACY_SHAPE.as_dict().items()
-        if key in _SHAPE_KEYS
     )
 
 
@@ -441,9 +429,11 @@ def settle_edit(
             {**pinned_thresholds, **sent_thresholds},
         )
     # Still inheriting: the stored snapshot stays as it was, whatever was sent beside it.
-    kept_shape = {
-        k: stored_config.get(k, shape[k]) for k in keys if k in _SHAPE_KEYS or k in stored_config
-    }
+    kept_shape = {k: stored_config.get(k, shape[k]) for k in _SHAPE_KEYS}
+    if _YEARLY in keys and (_YEARLY in stored_config or shape[_YEARLY]):
+        # What the check runs on, so the author-time checks of this edit (a calendar entry
+        # needs yearly on) judge the value in effect, not a snapshot from before the setting.
+        kept_shape[_YEARLY] = shape[_YEARLY]
     return {**config, **kept_shape, INHERIT_KEY: True}, stored
 
 

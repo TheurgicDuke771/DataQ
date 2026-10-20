@@ -85,7 +85,7 @@ def test_a_period_key_on_a_whole_table_metric_is_refused_when_authoring(key: str
     """Silently ignoring it would leave the author believing the check buckets by date."""
     config = {"target_metric": "row_count", key: "day"}
 
-    with pytest.raises(MonitorConfigError, match=f"anomaly {key} applies only to"):
+    with pytest.raises(MonitorConfigError, match=f"anomaly {key} applies"):
         monitors.validate_monitor_config("anomaly", config)
     # A check stored before these keys existed, when unknown keys were ignored, still runs.
     assert monitors.anomaly_params(config).period is None

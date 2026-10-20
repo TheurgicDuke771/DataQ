@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -111,7 +112,7 @@ def effective_read(effective: svc.Effective) -> EffectiveCoverageRead:
             for baseline in svc.BASELINES
         },
         baseline=EffectiveShape(
-            **{**effective.shape.as_dict(), "yearly": effective.shape.yearly},
+            **asdict(effective.shape),
             source=effective.shape_from,
         ),
     )

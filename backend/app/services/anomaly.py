@@ -792,23 +792,22 @@ def whole_table_yearly(
     had without one. The priors are the run-by-run points the run is ordinarily scored
     against; with a calendar, runs on a declared day are left out of them."""
 
-    def runs(pool: list[Observation]) -> list[tuple[date, float]]:
-        return [(local_day(o.ts, params.timezone), o.value) for o in pool]
+    dated = [(local_day(o.ts, params.timezone), o.value) for o in observations]
 
-    considered = _considered(observations, now, params)
-    pool, excluded = observations, 0
+    def considered(pool: list[tuple[date, float]]) -> list[tuple[date, float]]:
+        # Weekdays in the check's zone, as the days of the daily series are.
+        if params.seasonality:
+            pool = [(d, v) for d, v in pool if d.weekday() == today.weekday()]
+        return pool[-params.window :]
+
+    pool, excluded = dated, 0
     if calendar is not None and calendar.entries:
-
-        def ordinary(o: Observation) -> bool:
-            return calendar.inside(local_day(o.ts, params.timezone)) is None
-
-        pool = [o for o in observations if ordinary(o)]
-        excluded = sum(1 for o in considered if not ordinary(o))
-    compared = seasonal.History(by_day, params, calendar).score_runs(
-        today, value, runs(_considered(pool, now, params))
-    )
+        ordinary = {d: calendar.inside(d) is None for d, _ in dated}
+        pool = [(d, v) for d, v in dated if ordinary[d]]
+        excluded = sum(1 for d, _ in considered(dated) if not ordinary[d])
+    compared = seasonal.History(by_day, params, calendar).score_runs(today, value, considered(pool))
     without = (
-        seasonal.History(by_day, params).score_runs(today, value, runs(considered))
+        seasonal.History(by_day, params).score_runs(today, value, considered(dated))
         if calendar is not None
         else None
     )

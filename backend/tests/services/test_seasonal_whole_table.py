@@ -534,3 +534,36 @@ def test_a_dry_run_records_no_day(
 
     assert outcome.observed_value is not None and outcome.observed_value["dry_run"] is True
     assert get_baseline(session, check.id) is None
+
+
+def test_with_weekday_seasonality_the_runs_are_picked_by_the_check_s_own_weekday() -> None:
+    """A run at 23:30 UTC on a Sunday is a Monday in Tokyo: it is a Monday prior, as the
+    Monday of the daily series it is scaled by."""
+    params = _params(_ROWS, seasonality=True, window=6, min_points=3, timezone="Asia/Tokyo")
+    today = date(2025, 6, 9)  # a Monday in Tokyo
+    rng = random.Random(5)
+    daily = {
+        date(2023, 5, 1) + timedelta(days=n): 1500 * (1 + rng.gauss(0, 0.02))
+        for n in range((today - date(2023, 5, 1)).days)
+    }
+    runs: list[tuple[datetime, float]] = []
+    for week in range(8, 0, -1):
+        sunday = datetime(2025, 6, 8, 23, 30, tzinfo=UTC) - timedelta(weeks=week)
+        runs.append((sunday, 2000 * (1 + rng.gauss(0, 0.02))))  # Monday in Tokyo
+        runs.append((sunday + timedelta(hours=20, minutes=30), 1000 * (1 + rng.gauss(0, 0.02))))
+    runs.sort()
+    observations = [Observation(ts=ts, value=v) for ts, v in runs]
+
+    scored, _ = anomaly.whole_table_yearly(
+        daily,
+        params,
+        None,
+        today=today,
+        value=2000.0,
+        observations=observations,
+        now=datetime(2025, 6, 9, 1, tzinfo=UTC),  # Monday 10:00 in Tokyo, Monday in UTC
+    )
+
+    assert scored.applied
+    assert scored.level == pytest.approx(2000, rel=0.05)
+    assert scored.z_score is not None and scored.z_score < 3

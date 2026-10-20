@@ -139,6 +139,14 @@ this time of year usually looks like.
    >   a whole-table check reports `not_a_per_period_metric`.
    > - **Retention.** The daily series keeps three years of days plus the window (seven times
    >   the window with weekday seasonality), by date; the run-by-run points keep what they kept.
+   > - **A prior day with no index** (no earlier year matched, or a zero level then) is divided
+   >   by 1, which is decision 3's rule that the index is 1 where it does not apply; a prior
+   >   whose day's index is 0 is left out, since it says nothing about scale. With weekday
+   >   seasonality, priors are picked by their weekday in the check's zone, as the days are.
+   > - **Changing the time zone** keeps the stored days as they were bucketed (a day near
+   >   midnight may be matched one day off until the history turns over), and for the hours
+   >   after moving the zone west, a run dated before the newest stored day adds nothing to
+   >   the series. The result reports the zone in use.
 
    Automatic coverage (ADR 0047) gets it through the setting it already has: the baseline
    shape gains a `yearly` switch, default off, which applies to the automatic row-count and
