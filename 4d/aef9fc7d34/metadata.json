@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "4daef9fc7d34",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-1681-ph7",
+  "checkpoints_count": 8,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4d/aef9fc7d34/0/metadata.json",
+      "transcript": "/4d/aef9fc7d34/0/full.jsonl",
+      "compact_transcript": "/4d/aef9fc7d34/0/transcript.jsonl",
+      "content_hash": "/4d/aef9fc7d34/0/content_hash.txt",
+      "prompt": "/4d/aef9fc7d34/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 624,
+    "cache_read_tokens": 472480,
+    "output_tokens": 401,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 8,
+      "cache_creation_tokens": 7312,
+      "cache_read_tokens": 1075572,
+      "output_tokens": 278,
+      "api_call_count": 4
+    }
+  }
+}
