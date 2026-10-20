@@ -69,7 +69,8 @@ export function TelemetryPanel() {
             Off by default. When on, DataQ records the events below as OpenTelemetry metrics and log
             events, to a file or collector your operator chose. Only event names, counts and the
             listed values are recorded: never a table or column name, SQL, a suite or check name, an
-            email address or a credential. Nothing is sent to DataQ&apos;s authors.
+            email address or a credential. Nothing is sent to DataQ&apos;s authors. Turning it off
+            takes up to 30 seconds to reach every DataQ process.
           </Typography.Text>
           {current.stored && current.sink === 'off' && (
             <Alert
@@ -77,6 +78,14 @@ export function TelemetryPanel() {
               showIcon
               title="Opted in, but nothing is recorded"
               description="This deployment has no telemetry sink (TELEMETRY_SINK is off). The operator has to set it to file or otlp before anything is recorded."
+            />
+          )}
+          {current.stored && current.sink !== 'off' && !current.sink_ready && (
+            <Alert
+              type="warning"
+              showIcon
+              title="Opted in, but the sink could not be started"
+              description="TELEMETRY_SINK is set, but DataQ could not start it (for example, the file path is not writable). Nothing is recorded; the server log says why."
             />
           )}
           <Collapse

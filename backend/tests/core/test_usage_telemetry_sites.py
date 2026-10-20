@@ -183,3 +183,90 @@ def test_mcp_tool_called_names_the_tool_and_outcome(logs: Any) -> None:
             {"event": "mcp_tool_called", "tool": "list_suites", "outcome": "error"},
         ),
     ]
+
+
+def test_run_completed_does_nothing_while_telemetry_is_off(db_session: Any) -> None:
+    from backend.app.worker import tasks
+
+    usage_telemetry.reset()
+
+    class _NoQueries:
+        def get(self, *_: Any) -> None:
+            raise AssertionError("queried with telemetry off")
+
+    tasks._usage_run_completed(_NoQueries(), run_id=uuid.uuid4())  # type: ignore[arg-type]
+
+
+def test_run_completed_never_raises_into_the_task(logs: Any) -> None:
+    from backend.app.worker import tasks
+
+    class _Broken:
+        def get(self, *_: Any) -> None:
+            raise RuntimeError("db gone")
+
+        def rollback(self) -> None:
+            return None
+
+    tasks._usage_run_completed(_Broken(), run_id=uuid.uuid4())  # type: ignore[arg-type]
+    assert _events(logs) == []
+
+
+def test_run_completed_omits_an_unknown_duration(db_session: Any, logs: Any) -> None:
+    from backend.app.worker import tasks
+
+    owner = admin_user(db_session, prefix="own")
+    suite = make_sql_suite(db_session, owner, conn_type="postgres")
+    run = Run(suite_id=suite.id, status="failed", triggered_by="manual:x")
+    db_session.add(run)
+    db_session.commit()
+
+    tasks._usage_run_completed(db_session, run_id=run.id)
+
+    ((_, attributes),) = _events(logs)
+    assert "duration_ms" not in attributes
+    assert attributes["outcome"] == "failed" and attributes["checks"] == 0
+
+
+def test_an_imported_suite_counts_each_check(db_session: Any, logs: Any) -> None:
+    from backend.app.services import suite_io_service
+
+    owner = admin_user(db_session, prefix="own")
+    suite = make_sql_suite(db_session, owner, conn_type="postgres")
+    logs.clear()
+    suite_io_service.import_suite(
+        db_session,
+        version=1,
+        name="imported",
+        description=None,
+        checks=[
+            {
+                "name": f"rows {n}",
+                "kind": "volume",
+                "expectation_type": "monitor:volume",
+                "config": {"min_rows": 1, "max_rows": 10},
+                "warn_threshold": None,
+                "fail_threshold": None,
+                "critical_threshold": None,
+            }
+            for n in range(2)
+        ],
+        connection_id=suite.connection_id,
+        created_by=owner.id,
+    )
+    assert [a["origin"] for _, a in _events(logs)] == ["import", "import"]
+
+
+def test_a_cancelled_tool_call_is_not_counted_as_ok(logs: Any) -> None:
+    from backend.app.mcp import server
+
+    usage_telemetry.register_mcp_tool_names(["list_suites"])
+
+    class _Ctx:
+        message = type("M", (), {"name": "list_suites"})()
+
+    async def _cancelled(_ctx: Any) -> str:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(server._UsageTelemetryMiddleware().on_call_tool(_Ctx(), _cancelled))
+    assert [a["outcome"] for _, a in _events(logs)] == ["cancelled"]

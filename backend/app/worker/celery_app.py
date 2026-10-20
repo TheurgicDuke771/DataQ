@@ -15,8 +15,8 @@ from celery.signals import (
     task_failure,
     task_postrun,
     task_prerun,
-    worker_init,
     worker_process_init,
+    worker_process_shutdown,
     worker_ready,
 )
 
@@ -248,13 +248,30 @@ def _configure_celery_logging(**_kwargs: Any) -> None:
     configure_logging(service_name="dataq-worker")
 
 
-@worker_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
-def _configure_worker_usage_telemetry(**_kwargs: Any) -> None:
-    """Once per worker (the parent; the SDK re-inits its threads in prefork children)."""
+@worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _usage_telemetry_worker_started(**_kwargs: Any) -> None:
+    """`app_started` once per worker, from the parent after the pool has forked. Flushed at
+    once: a child recycled later forks from this process and must not inherit the count."""
     from backend.app.core import usage_telemetry
 
     usage_telemetry.configure("dataq-worker")
     usage_telemetry.emit(usage_telemetry.UsageEvent.APP_STARTED, service="worker")
+    usage_telemetry.flush()
+
+
+@worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _configure_child_usage_telemetry(**_kwargs: Any) -> None:
+    from backend.app.core import usage_telemetry
+
+    usage_telemetry.configure("dataq-worker")
+
+
+@worker_process_shutdown.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _flush_child_usage_telemetry(**_kwargs: Any) -> None:
+    """A recycled child exits without the SDK's atexit; flush what it counted."""
+    from backend.app.core import usage_telemetry
+
+    usage_telemetry.flush()
 
 
 @worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated

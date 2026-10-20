@@ -39,6 +39,8 @@ class TelemetrySettingsRead(ApiModel):
     enabled: bool
     stored: bool
     sink: Literal["off", "file", "otlp"]
+    #: False when a sink is configured but this process could not start it (logged at boot).
+    sink_ready: bool
     events: list[TelemetryEventRead]
     updated_by: str | None
     updated_at: datetime | None
@@ -58,6 +60,7 @@ def _read(db: Session) -> TelemetrySettingsRead:
         enabled=svc.effective(db),
         stored=svc.stored_enabled(db),
         sink=get_settings().telemetry_sink,
+        sink_ready=svc.sink_ready(),
         events=[TelemetryEventRead(**event) for event in events],
         updated_by=updated_by_email(db, row),
         updated_at=row.updated_at if row is not None else None,

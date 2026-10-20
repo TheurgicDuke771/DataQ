@@ -945,12 +945,15 @@ def _usage_telemetry_transfer(db: Session, settings: Settings) -> ExternalTransf
             "against the published vocabulary before it is recorded."
         )
     else:
-        stored = telemetry_settings_service.stored_enabled(db)
-        why = (
-            "the admin has not opted in"
-            if not stored
-            else "TELEMETRY_SINK is off, so the admin's opt-in sends nothing"
-        )
+        if not telemetry_settings_service.stored_enabled(db):
+            why = "the admin has not opted in"
+        elif not telemetry_settings_service.sink_active():
+            why = "TELEMETRY_SINK is off, so the admin's opt-in sends nothing"
+        else:
+            why = (
+                f"TELEMETRY_SINK={sink} is set but the sink could not be started — the api "
+                "log says why — so the admin's opt-in sends nothing"
+            )
         detail = (
             f"Usage telemetry is OFF ({why}). Nothing about how this workspace is used "
             "leaves the deployment, and DataQ's authors receive nothing in any state."

@@ -10826,6 +10826,10 @@
             "title": "Sink",
             "type": "string"
           },
+          "sink_ready": {
+            "title": "Sink Ready",
+            "type": "boolean"
+          },
           "stored": {
             "title": "Stored",
             "type": "boolean"
@@ -10858,6 +10862,7 @@
           "enabled",
           "stored",
           "sink",
+          "sink_ready",
           "events",
           "updated_by",
           "updated_at"
