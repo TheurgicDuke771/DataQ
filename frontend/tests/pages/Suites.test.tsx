@@ -652,6 +652,35 @@ describe('Suites', () => {
     await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', 'chk-drift'));
   });
 
+  it('offers Re-baseline on a pii_drift check with its own wording', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    const drift = check({
+      id: 'chk-pii',
+      name: 'pii drift',
+      kind: 'pii_drift',
+      expectation_type: 'monitor:pii_drift',
+    });
+    mockListChecks.mockResolvedValue([drift, check({ id: 'chk-exp' })]);
+    mockRebaseline.mockResolvedValue(undefined);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('pii drift');
+
+    const buttons = screen.getAllByRole('button', { name: 'Re-baseline' });
+    expect(buttons).toHaveLength(1);
+    await user.click(buttons[0]);
+    await screen.findByText(/PII-looking unclassified columns/);
+    const ok = screen
+      .getAllByRole('button', { name: 'Re-baseline' })
+      .find((b) => b.className.includes('ant-btn-primary'));
+    if (!ok) throw new Error('confirm modal OK button not found');
+    await user.click(ok);
+    await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', 'chk-pii'));
+  });
+
   it('unsnoozes a snoozed check (badge + Unsnooze action) (#653)', async () => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);

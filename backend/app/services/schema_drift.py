@@ -24,7 +24,7 @@ from backend.app.datasources.monitors import (
     monitor_outcome,
 )
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, SQL_ENGINES
-from backend.app.db.models import Check, Connection
+from backend.app.db.models import Check, Connection, Run
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -239,6 +239,7 @@ def build_schema_drift_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,  # the shared builder signature; unused here
+    run: Run | None = None,  # likewise
 ) -> Callable[[Check], CheckOutcome]:
     """A per-run executor for schema_drift checks (the comparison pattern, #794)."""
 

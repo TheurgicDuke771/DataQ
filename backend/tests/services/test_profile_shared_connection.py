@@ -283,7 +283,7 @@ def test_list_then_profile_without_the_scope_costs_two_logins(
     owner = admin_user(db_session, prefix="shared")
     connection = _connection_of(db_session, _sql_suite(db_session, owner, warehouse_table))
     store = FakeSecretStore({"ref": "pw"})
-    target = {"table": warehouse_table, "schema": "public"}
+    target: dict[str, Any] = {"table": warehouse_table, "schema": "public"}
     columns = profile_service.list_columns(
         connection, session=db_session, secret_store=store, **target
     )
@@ -445,7 +445,7 @@ def test_a_session_killed_mid_scope_is_replaced_by_a_fresh_login(
     owner = admin_user(db_session, prefix="shared")
     connection = _connection_of(db_session, _sql_suite(db_session, owner, warehouse_table))
     store = FakeSecretStore({"ref": "pw"})
-    target = {"table": warehouse_table, "schema": "public"}
+    target: dict[str, Any] = {"table": warehouse_table, "schema": "public"}
     killer = create_engine(TEST_DATABASE_URL or "")
     with shared_connection():
         profile_service.list_columns(connection, session=db_session, secret_store=store, **target)
@@ -482,7 +482,7 @@ def test_a_dead_session_the_dialect_never_flags_is_discarded_without_a_reset_rol
     owner = admin_user(db_session, prefix="shared")
     connection = _connection_of(db_session, _sql_suite(db_session, owner, warehouse_table))
     store = FakeSecretStore({"ref": "pw"})
-    target = {"table": warehouse_table, "schema": "public"}
+    target: dict[str, Any] = {"table": warehouse_table, "schema": "public"}
     with shared_connection():
         profile_service.list_columns(connection, session=db_session, secret_store=store, **target)
         shared = profile_service._SHARED_CONNECTIONS.get()

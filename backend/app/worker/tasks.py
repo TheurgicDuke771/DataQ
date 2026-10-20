@@ -241,6 +241,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                     target_catalog=target.catalog,
                     secret_store=get_secret_store(),
                     coverage=coverage,
+                    run=run,
                 )
 
             run_service.execute_run(

@@ -54,7 +54,7 @@ and never a silently ignored line.
 |---|---|---|
 | `name` | yes | 1–256 characters. |
 | `expectation_type` | yes | The check type. Every type, its parameters and a worked example of each is on [Check types](check-types.md). |
-| `kind` | no (default `expectation`) | `expectation`, `freshness`, `volume`, `schema_drift`, `anomaly`, `aggregate` or `comparison`. Must match the type: a `monitor:freshness` type has kind `freshness`. |
+| `kind` | no (default `expectation`) | `expectation`, `freshness`, `volume`, `schema_drift`, `anomaly`, `aggregate`, `pii_drift` or `comparison`. Must match the type: a `monitor:freshness` type has kind `freshness`. |
 | `config` | no | The type's parameters, as shown for each type on [Check types](check-types.md). |
 | `warn_threshold`, `fail_threshold`, `critical_threshold` | no | Severity bands. They must be ordered warn ≤ fail ≤ critical, and only types that measure a number accept them. |
 | `dimension` | no | `accuracy`, `completeness`, `consistency`, `integrity`, `timeliness`, `uniqueness` or `validity`. **Leave the field out** to have it derived from the check type. Write `dimension: null` to keep the check unclassified on purpose. |
