@@ -20,6 +20,7 @@ from backend.app.api.v1 import admin_members as admin_members_router
 from backend.app.api.v1 import admin_offboarding as admin_offboarding_router
 from backend.app.api.v1 import admin_privacy as admin_privacy_router
 from backend.app.api.v1 import admin_scoring as admin_scoring_router
+from backend.app.api.v1 import admin_seasonal_periods as admin_seasonal_periods_router
 from backend.app.api.v1 import admin_suites as admin_suites_router
 from backend.app.api.v1 import admin_telemetry as admin_telemetry_router
 from backend.app.api.v1 import api_keys as api_keys_router
@@ -256,6 +257,7 @@ app.include_router(admin_coverage_router.router, prefix="/api/v1")
 app.include_router(admin_scoring_router.router, prefix="/api/v1")
 app.include_router(admin_telemetry_router.router, prefix="/api/v1")
 app.include_router(telemetry_router.router, prefix="/api/v1")
+app.include_router(admin_seasonal_periods_router.router, prefix="/api/v1")
 app.include_router(assets_router.router, prefix="/api/v1")
 app.include_router(incidents_router.router, prefix="/api/v1")
 app.include_router(llm_router.router, prefix="/api/v1")

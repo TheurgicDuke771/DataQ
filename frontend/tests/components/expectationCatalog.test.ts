@@ -187,7 +187,15 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
     const shown = (target_metric: string) =>
       spec.fields.filter((f) => fieldVisible(f, { target_metric })).map((f) => f.name);
     const common = ['target_metric', 'window', 'min_points', 'seasonality'];
-    const period = ['date_column', 'period', 'timezone', 'settle_hours', 'backfill', 'yearly'];
+    const period = [
+      'date_column',
+      'period',
+      'timezone',
+      'settle_hours',
+      'backfill',
+      'yearly',
+      'seasonal_periods',
+    ];
 
     expect(shown('row_count').sort()).toEqual([...common].sort());
     expect(shown('period_row_count').sort()).toEqual([...common, ...period].sort());

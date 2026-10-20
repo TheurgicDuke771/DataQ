@@ -319,6 +319,7 @@ def test_a_column_profile_dry_run_previews_the_real_profile(table: str) -> None:
     from backend.app.services import dryrun_service
 
     outcome = dryrun_service._dry_run_anomaly(
+        None,  # type: ignore[arg-type]  # the session only resolves attached calendar entries
         _pg(),
         config={"target_metric": "column_profile", "window": 8, "min_points": 3},
         target={"table": table, "schema": "public"},
