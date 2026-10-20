@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
-from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
+from backend.app.datasources.monitors import ANOMALY, PII_DRIFT, SCHEMA_DRIFT
 from backend.app.db.models import Check, Connection
-from backend.app.services import anomaly, schema_drift
+from backend.app.services import anomaly, pii_drift, schema_drift
 from backend.app.services.coverage_settings_service import SuiteCoverage
 
 
@@ -34,6 +34,7 @@ class _ExecutorBuilder(Protocol):
 _BUILDERS: dict[str, _ExecutorBuilder] = {
     SCHEMA_DRIFT: schema_drift.build_schema_drift_executor,
     ANOMALY: anomaly.build_anomaly_executor,
+    PII_DRIFT: pii_drift.build_pii_drift_executor,
 }
 
 

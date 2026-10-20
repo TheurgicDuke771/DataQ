@@ -36,6 +36,7 @@ from backend.app.datasources.monitors import (
     ANOMALY,
     FRESHNESS,
     MONITOR_KINDS,
+    PII_DRIFT,
     SCHEMA_DRIFT,
     MonitorConfigError,
     monitor_expectation_type,
@@ -112,9 +113,14 @@ SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, *FILE_TYPES})
 ANOMALY_CAPABLE_TYPES = frozenset(SQL_QUERYABLE_TYPES)
 
 # Each stateful kind's capability set; scalar kinds all use MONITOR_CAPABLE_TYPES.
+# pii_drift (ADR 0049 phase 2) profiles the target through the profiler, which covers exactly the
+# monitor-capable set (every SQL type, Iceberg and the flat-file stores).
+PII_DRIFT_CAPABLE_TYPES = frozenset(MONITOR_CAPABLE_TYPES)
+
 _CAPABLE_TYPES_BY_KIND: dict[str, frozenset[str]] = {
     SCHEMA_DRIFT: SCHEMA_DRIFT_CAPABLE_TYPES,
     ANOMALY: ANOMALY_CAPABLE_TYPES,
+    PII_DRIFT: PII_DRIFT_CAPABLE_TYPES,
 }
 
 

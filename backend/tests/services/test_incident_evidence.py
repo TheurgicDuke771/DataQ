@@ -1071,3 +1071,40 @@ def test_kind_detail_aggregate_names_the_breach_but_not_the_value(
         "column": "salary",
         "breached_bound": "max_value",
     }
+
+
+def test_kind_detail_pii_drift_lists_new_columns_and_the_baseline_flag(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Column names only (the detectors' evidence never carries a value); the baseline run's
+    empty `new_columns` must not read as "nothing new" (#828 class)."""
+    check = _monitor_check(db_session, world["suite"], "pii_drift")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        observed_value={"new_columns": ["notes"], "columns_detected": 2, "known_columns": ["c"]},
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "new_columns": ["notes"],
+        "columns_detected": 2,
+        "baseline_captured": False,
+    }
+    first = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="skip",
+        observed_value={"baseline_captured": True, "columns_detected": 2},
+    )
+    db_session.add(first)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=first, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "new_columns": [],
+        "columns_detected": 2,
+        "baseline_captured": True,
+    }

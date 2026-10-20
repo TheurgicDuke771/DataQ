@@ -44,7 +44,9 @@ _SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list
 
 #: The `check.kind` values `_kind_detail_layer` dispatches on — the single source of truth other
 #: modules (e.g. `llm_rca`) import rather than re-spelling this set independently (#1633 review).
-MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly", "aggregate"})
+MONITOR_KINDS = frozenset(
+    {"freshness", "volume", "schema_drift", "anomaly", "aggregate", "pii_drift"}
+)
 
 
 @dataclass(frozen=True)
@@ -288,6 +290,15 @@ def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | 
             "aggregate": observed.get("aggregate"),
             "column": observed.get("column"),
             "breached_bound": observed.get("breached_bound"),
+        }
+    if check.kind == "pii_drift":
+        # Column NAMES only — the detectors' evidence never carries a value. `baseline_captured`
+        # rides along for the same reason as schema_drift's: an empty `new_columns` on the
+        # baseline run is "not compared yet", not "nothing new".
+        return {
+            "new_columns": observed.get("new_columns", []),
+            "columns_detected": observed.get("columns_detected"),
+            "baseline_captured": observed.get("baseline_captured", False),
         }
     return None
 
