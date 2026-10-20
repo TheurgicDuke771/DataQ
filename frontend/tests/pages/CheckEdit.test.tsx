@@ -823,12 +823,14 @@ describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
 
   it('adds nothing to a check saved before the calendar existed', async () => {
     const user = userEvent.setup();
-    const { seasonal_periods: _ids, yearly: _yearly, ...before } = stored;
+    const before = Object.fromEntries(
+      Object.entries(stored).filter(([k]) => k !== 'seasonal_periods' && k !== 'yearly'),
+    );
     load({ ...perPeriod, config: before });
     await screen.findByText('Turn on yearly seasonality to attach calendar entries.');
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-    const config = mockUpdate.mock.calls[0][2].config;
+    const config = mockUpdate.mock.calls[0][2].config ?? {};
     expect(config).not.toHaveProperty('seasonal_periods');
     // The switch's default is what the backend assumes for a missing key.
     expect(config.yearly).toBe(false);
@@ -844,7 +846,7 @@ describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-    const config = mockUpdate.mock.calls[0][2].config;
+    const config = mockUpdate.mock.calls[0][2].config ?? {};
     expect(config.yearly).toBe(false);
     expect(config).not.toHaveProperty('seasonal_periods');
   });
