@@ -4855,6 +4855,25 @@
         "title": "DataSubjectRequest",
         "type": "object"
       },
+      "DeclaredRefRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DeclaredRefRead",
+        "type": "object"
+      },
       "DeploymentPostureRead": {
         "description": "What an auditor needs to answer \"where does our data live, and what can\ntake it elsewhere?\" without shell access to the deployment.",
         "properties": {
@@ -4956,6 +4975,266 @@
           "dismissed_at"
         ],
         "title": "DetectedClassificationRead",
+        "type": "object"
+      },
+      "DetectedOccurrenceRead": {
+        "properties": {
+          "backfilled_periods": {
+            "title": "Backfilled Periods",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "peak_ratio": {
+            "title": "Peak Ratio",
+            "type": "number"
+          },
+          "periods": {
+            "title": "Periods",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "start",
+          "end",
+          "peak_ratio",
+          "periods",
+          "backfilled_periods"
+        ],
+        "title": "DetectedOccurrenceRead",
+        "type": "object"
+      },
+      "DetectedPeriodRead": {
+        "properties": {
+          "declared": {
+            "items": {
+              "$ref": "#/components/schemas/DeclaredRefRead"
+            },
+            "title": "Declared",
+            "type": "array"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "recurring",
+              "seen_once"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurrences": {
+            "items": {
+              "$ref": "#/components/schemas/DetectedOccurrenceRead"
+            },
+            "title": "Occurrences",
+            "type": "array"
+          },
+          "peak_ratio": {
+            "title": "Peak Ratio",
+            "type": "number"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectedRangeRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "years_seen": {
+            "title": "Years Seen",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "start",
+          "end",
+          "peak_ratio",
+          "years_seen",
+          "range",
+          "occurrences",
+          "declared"
+        ],
+        "title": "DetectedPeriodRead",
+        "type": "object"
+      },
+      "DetectedRangeRead": {
+        "properties": {
+          "end_day": {
+            "title": "End Day",
+            "type": "integer"
+          },
+          "end_month": {
+            "title": "End Month",
+            "type": "integer"
+          },
+          "start_day": {
+            "title": "Start Day",
+            "type": "integer"
+          },
+          "start_month": {
+            "title": "Start Month",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_month",
+          "start_day",
+          "end_month",
+          "end_day"
+        ],
+        "title": "DetectedRangeRead",
+        "type": "object"
+      },
+      "DetectedSeasonalPeriodsRead": {
+        "description": "Periods the check's own history shows running at or above `thresholds.ratio` times\nthe level its scoring uses. Computed on request and stored nowhere: a detected period\nchanges no verdict until an admin promotes it to the calendar and it is attached.\n`reason` is set when there was nothing to look at (`not_a_per_period_metric`,\n`invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no\nreason means the history was read and nothing qualified.",
+        "properties": {
+          "history": {
+            "$ref": "#/components/schemas/DetectionHistoryRead"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/DetectedPeriodRead"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/DetectionThresholdsRead"
+          }
+        },
+        "required": [
+          "reason",
+          "periods",
+          "thresholds",
+          "history"
+        ],
+        "title": "DetectedSeasonalPeriodsRead",
+        "type": "object"
+      },
+      "DetectionHistoryRead": {
+        "properties": {
+          "backfilled": {
+            "title": "Backfilled",
+            "type": "integer"
+          },
+          "evaluated": {
+            "title": "Evaluated",
+            "type": "integer"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "years": {
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "unit",
+          "points",
+          "backfilled",
+          "evaluated",
+          "first",
+          "last",
+          "years"
+        ],
+        "title": "DetectionHistoryRead",
+        "type": "object"
+      },
+      "DetectionThresholdsRead": {
+        "properties": {
+          "min_consecutive": {
+            "title": "Min Consecutive",
+            "type": "integer"
+          },
+          "ratio": {
+            "title": "Ratio",
+            "type": "number"
+          },
+          "same_time_days": {
+            "title": "Same Time Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ratio",
+          "min_consecutive",
+          "same_time_days"
+        ],
+        "title": "DetectionThresholdsRead",
         "type": "object"
       },
       "DimensionScoreRead": {
@@ -9035,6 +9314,69 @@
         "title": "SeasonalPeriodPatch",
         "type": "object"
       },
+      "SeasonalPeriodPromote": {
+        "additionalProperties": false,
+        "description": "Promote a period detected in a check's history\n(`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.\n`start` is the detected period's `start` (its most recent occurrence); the server reads\nthe history again and refuses a start it no longer shows. A recurring period becomes a\nmonth/day range, a period seen once a dated entry (`series` applies only to that).\n`attach` also attaches the new entry to the check, which needs `yearly` on it.",
+        "properties": {
+          "attach": {
+            "default": false,
+            "title": "Attach",
+            "type": "boolean"
+          },
+          "check_id": {
+            "format": "uuid",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "check_id",
+          "start",
+          "name"
+        ],
+        "title": "SeasonalPeriodPromote",
+        "type": "object"
+      },
       "SeasonalPeriodRead": {
         "properties": {
           "attached_checks": {
@@ -12439,6 +12781,47 @@
           }
         },
         "summary": "Add a calendar entry (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/seasonal-periods/promote": {
+      "post": {
+        "operationId": "promote_detected_period",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonalPeriodPromote"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalPeriodRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a detected period to the calendar (admin)",
         "tags": [
           "admin"
         ]
@@ -17112,6 +17495,59 @@
           }
         },
         "summary": "Drop a stateful monitor check's baseline (recaptured on the next run)",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected": {
+      "get": {
+        "operationId": "get_detected_seasonal_periods",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectedSeasonalPeriodsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seasonal periods detected in an anomaly check's per-period history",
         "tags": [
           "checks"
         ]
