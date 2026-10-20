@@ -26,7 +26,7 @@ def _user_written_by_old_code(db: Any) -> uuid.UUID:
 def test_revision_chain() -> None:
     module = load_migration(_FILE)
     assert module.revision == "b9ddde2123fe"
-    assert module.down_revision == "b94674780cb8"
+    assert module.down_revision == "c7d2e9a41f05"
 
 
 def test_upgrade_on_a_populated_db_leaves_no_setting(db_session: Any) -> None:
