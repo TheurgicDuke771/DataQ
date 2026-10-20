@@ -182,7 +182,7 @@ class GenericSqlConfig(BaseModel):
         """The engine's own default schema when the connection names none."""
         raise NotImplementedError
 
-    def url_database(self) -> str:
+    def url_database(self) -> str | None:
         """The database the session connects to. An engine where a schema IS a database
         (MySQL) connects to the schema instead, which is how its session gets scoped.
         """
@@ -195,6 +195,14 @@ class GenericSqlConfig(BaseModel):
     def url_query(self) -> dict[str, str]:
         """Non-secret driver options the URL's query carries (Athena's workgroup)."""
         return {}
+
+    def url_host(self) -> str | None:
+        """The URL's host part: the server, or what a service dialect reads there instead
+        (BigQuery's project)."""
+        return self.host
+
+    def url_port(self) -> int | None:
+        return self.effective_port
 
 
 @dataclass(frozen=True)
@@ -231,10 +239,26 @@ class SqlCatalog:
 
     #: ``SELECT <schema>`` over every schema the credential may use, excluding system schemas.
     #: Takes ``:lim``.
-    schemas_sql: str
+    schemas_sql: str = ""
     #: ``SELECT <schema>, <table>`` over every table/view the credential may read. Takes
     #: ``:schema`` (NULL = every schema) and ``:lim``.
-    tables_sql: str
+    tables_sql: str = ""
+    #: A catalog read through the driver's client API instead of SQL views (BigQuery: listing
+    #: datasets and tables is a free metadata call, ``INFORMATION_SCHEMA`` a billed query). When
+    #: set, the two queries above are unused and schema drift reads its columns here too.
+    api: ApiCatalog | None = None
+
+
+class ApiCatalog(Protocol):
+    """A catalog read through the driver's client API (see `SqlCatalog.api`)."""
+
+    def schema_names(self, conn: Any, *, limit: int) -> list[str]: ...
+
+    def table_rows(
+        self, conn: Any, *, schema: str | None, limit: int
+    ) -> list[tuple[str, str, str]]: ...
+
+    def columns(self, conn: Any, *, schema: str, table: str) -> list[tuple[str, str]]: ...
 
 
 @dataclass(frozen=True)
@@ -320,6 +344,9 @@ class SqlEngineSpec:
     #: ``config`` → the namespace's host part, for an engine whose OpenLineage convention is not
     #: the configured host (Redshift names ``<cluster>.<region>``). ``None`` = the host.
     namespace_authority: Callable[[Any], str] | None = None
+    #: ``config`` → the whole namespace, for an engine whose OpenLineage convention names no
+    #: server (BigQuery's is the bare ``bigquery``).
+    namespace_override: Callable[[Any], str] | None = None
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)
@@ -341,8 +368,8 @@ class SqlEngineSpec:
             self.drivername,
             username=config.user,
             password=None if self.auth_connect_args is not None else secret,
-            host=config.host,
-            port=config.effective_port,
+            host=config.url_host(),
+            port=config.url_port(),
             database=config.url_database(),
             query=config.url_query(),
         )
@@ -419,6 +446,8 @@ class SqlEngineSpec:
 
     def namespace(self, config: GenericSqlConfig) -> str:
         """The OpenLineage namespace: ``<scheme>://<host>:<port>`` (host case-folded)."""
+        if self.namespace_override is not None:
+            return self.namespace_override(config)
         if self.namespace_authority is not None:
             host = self.namespace_authority(config)
         else:
@@ -834,6 +863,8 @@ def build_generic_sql_runner(
 
 def schema_names(spec: SqlEngineSpec, conn: Any, *, limit: int | None) -> list[str]:
     """Schemas the credential may use, in name order — see `SqlCatalog.schemas_sql`."""
+    if spec.catalog.api is not None:
+        return spec.catalog.api.schema_names(conn, limit=_limit(limit))
     from sqlalchemy import text
 
     rows = conn.execute(text(spec.catalog.schemas_sql), {"lim": _limit(limit)}).all()
@@ -851,6 +882,9 @@ def typed_table_rows(
     spec: SqlEngineSpec, conn: Any, *, schema: str | None = None, limit: int | None = None
 ) -> list[tuple[str, str, str]]:
     """:func:`table_rows` plus each relation's normalized :func:`sql.object_type`."""
+    if spec.catalog.api is not None:
+        rows = spec.catalog.api.table_rows(conn, schema=schema, limit=_limit(limit))
+        return [(s, t, object_type(kind)) for s, t, kind in rows if s and t]
     from sqlalchemy import text
 
     rows = conn.execute(

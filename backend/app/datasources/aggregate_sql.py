@@ -33,6 +33,7 @@ _DOUBLE_TYPE = {
     "databricks": "DOUBLE",
     "trino": "DOUBLE",
     "awsathena": "DOUBLE",
+    "bigquery": "FLOAT64",
 }
 
 
@@ -114,6 +115,12 @@ def _median_mssql(element: _Median, compiler: Any, **kw: Any) -> str:
     )
 
 
+@compiles(_Median, "bigquery")
+def _median_bigquery(element: _Median, compiler: Any, **kw: Any) -> str:
+    # GoogleSQL's exact PERCENTILE_CONT is window-only; `aggregate_statement` keeps one row.
+    return f"PERCENTILE_CONT({_double(compiler, element, **kw)}, 0.5) OVER ()"
+
+
 def _median_unsupported(element: _Median, compiler: Any, **kw: Any) -> str:
     raise CompileError(f"no exact median aggregate on the {compiler.dialect.name} dialect")
 
@@ -147,5 +154,5 @@ def aggregate_statement(
 ) -> Select[Any]:
     """``SELECT <aggregate>(column) FROM target`` for the executing dialect to compile."""
     statement = select(_EXPRESSIONS[aggregate](column)).select_from(target)
-    # The windowed T-SQL median yields one equal row per input row; harmless elsewhere.
+    # A windowed median (T-SQL, BigQuery) yields one equal row per input row; harmless elsewhere.
     return statement.limit(1) if aggregate == AGGREGATE_MEDIAN else statement

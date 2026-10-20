@@ -40,7 +40,7 @@ def _bucket_problem(value: str) -> bool:
     return value.startswith("goog") or "google" in value or bool(_IPV4.fullmatch(value))
 
 
-_PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 
 _KEY_FIELDS = ("client_email", "private_key", "token_uri")
 
@@ -116,7 +116,7 @@ class GcsConfig(BaseModel):
         if value is None or not value.strip():
             return None
         value = value.strip()
-        if not _PROJECT_ID.fullmatch(value):
+        if not PROJECT_ID.fullmatch(value):
             raise ValueError(
                 "project_id must be a Google Cloud project ID (6-30 lower-case letters, digits "
                 "or dashes, starting with a letter)"
