@@ -319,9 +319,10 @@ def test_dismiss_and_restore_are_audited_with_the_actor(db_session: Any) -> None
     events = _audit_rows(db_session, asset)
     # Order-independent: inside one test transaction every event shares `occurred_at`
     # (Postgres `now()` is the transaction timestamp), so an ORDER BY on it is a tie.
-    transitions = sorted((e.before["dismissed"], e.after["dismissed"]) for e in events)
+    payloads = [(e.before or {}, e.after or {}) for e in events]
+    transitions = sorted((b["dismissed"], a["dismissed"]) for b, a in payloads)
     assert transitions == [(False, True), (True, False)], "a no-op repeat writes no event"
-    assert all(e.before["column"] == e.after["column"] == "Contact" for e in events)
+    assert all(b["column"] == a["column"] == "Contact" for b, a in payloads)
     assert all(e.actor_user_id == actor.id and e.entity_type == "asset" for e in events)
 
 
