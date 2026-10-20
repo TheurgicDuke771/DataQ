@@ -21,6 +21,7 @@ from backend.app.api.v1 import admin_offboarding as admin_offboarding_router
 from backend.app.api.v1 import admin_privacy as admin_privacy_router
 from backend.app.api.v1 import admin_scoring as admin_scoring_router
 from backend.app.api.v1 import admin_suites as admin_suites_router
+from backend.app.api.v1 import admin_telemetry as admin_telemetry_router
 from backend.app.api.v1 import api_keys as api_keys_router
 from backend.app.api.v1 import assets as assets_router
 from backend.app.api.v1 import auth_otp as auth_otp_router
@@ -39,9 +40,11 @@ from backend.app.api.v1 import schedules as schedules_router
 from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suggestions as suggestions_router
 from backend.app.api.v1 import suites as suites_router
+from backend.app.api.v1 import telemetry as telemetry_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
 from backend.app.api.v1._base import TOTAL_COUNT_HEADER
+from backend.app.core import usage_telemetry
 from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope, register_exception_handlers
@@ -105,6 +108,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         app_insights_enabled=bool(settings.applicationinsights_connection_string),
     )
     await init_auth()
+    # Product-usage telemetry (ADR 0050): providers only; nothing leaves until the admin opts in.
+    usage_telemetry.configure("dataq-api", settings)
+    usage_telemetry.emit(usage_telemetry.UsageEvent.APP_STARTED, service="api")
     # Workspace poll-staleness watchdog (#1052).
     staleness_stop = asyncio.Event()
     staleness_task: asyncio.Task[None] | None = None
@@ -115,6 +121,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if staleness_task is not None:
         staleness_stop.set()
         await staleness_task
+    usage_telemetry.reset()
     logger.info("app_shutdown")
 
 
@@ -247,6 +254,8 @@ app.include_router(admin_integrations_router.router, prefix="/api/v1")
 app.include_router(admin_privacy_router.router, prefix="/api/v1")
 app.include_router(admin_coverage_router.router, prefix="/api/v1")
 app.include_router(admin_scoring_router.router, prefix="/api/v1")
+app.include_router(admin_telemetry_router.router, prefix="/api/v1")
+app.include_router(telemetry_router.router, prefix="/api/v1")
 app.include_router(assets_router.router, prefix="/api/v1")
 app.include_router(incidents_router.router, prefix="/api/v1")
 app.include_router(llm_router.router, prefix="/api/v1")

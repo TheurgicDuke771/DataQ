@@ -14,6 +14,7 @@ selection, not REST consumers (CLAUDE.md §10).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -24,11 +25,13 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
 from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -5005,8 +5008,49 @@ def build_mcp_app() -> Any:
     # ADR 0010/0013 config guardrail. The default keeps ACA working untouched;
     # MCP_ALLOWED_HOSTS covers EKS/GKE/on-prem/local-first, where a proxy
     # forwarding a different upstream Host otherwise gets an unconfigurable 421.
+    install_usage_telemetry()
     return mcp.http_app(
         path="/",
         allowed_hosts=get_settings().mcp_allowed_host_list,
         allowed_origins=["*"],
     )
+
+
+class _UsageTelemetryMiddleware(Middleware):
+    """One `mcp_tool_called` usage event per call (ADR 0050): the tool NAME (validated against
+    the registered set) and ok/error — never an argument or a result."""
+
+    async def on_call_tool(self, context: Any, call_next: Any) -> Any:
+        if not usage_telemetry.MCP_TOOL_NAMES.names:
+            tools = await mcp.list_tools(run_middleware=False)
+            usage_telemetry.register_mcp_tool_names([t.name for t in tools])
+        outcome = "ok"
+        try:
+            return await call_next(context)
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            usage_telemetry.emit(
+                usage_telemetry.UsageEvent.MCP_TOOL_CALLED,
+                tool=str(getattr(context.message, "name", "")),
+                outcome=outcome,
+            )
+
+
+_usage_telemetry_installed = False
+
+
+def install_usage_telemetry() -> None:
+    """Add the usage middleware, once, and declare the tool-name vocabulary — now when no event
+    loop is running (the import-time build), otherwise on the first call."""
+    global _usage_telemetry_installed
+    if _usage_telemetry_installed:
+        return
+    _usage_telemetry_installed = True
+    mcp.add_middleware(_UsageTelemetryMiddleware())
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        tools = asyncio.run(mcp.list_tools(run_middleware=False))
+        usage_telemetry.register_mcp_tool_names([t.name for t in tools])

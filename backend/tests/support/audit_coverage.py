@@ -115,6 +115,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("PUT", "/api/v1/admin/coverage"): "coverage_setting.update",
     ("DELETE", "/api/v1/admin/coverage"): "coverage_setting.update",
     ("PUT", "/api/v1/admin/scoring"): "scoring_setting.update",
+    # ── The usage-telemetry opt-in (ADR 0050): whether anything about how the workspace is
+    # used leaves the deployment is a config event of the same weight as the LLM one.
+    ("PUT", "/api/v1/admin/telemetry"): "telemetry_setting.update",
     ("DELETE", "/api/v1/admin/scoring"): "scoring_setting.update",
     # ── The orphan-secret sweep "run now" (#1886) — an admin-triggered ops action
     # over the secret store, worth a trail even though it enqueues rather than
@@ -175,6 +178,10 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     ),
     ("POST", "/api/v1/admin/auth-email/test"): (
         "an SMTP pre-flight send; changes no configuration"
+    ),
+    ("POST", "/api/v1/telemetry/events"): (
+        "a browser reporting a usage event (ADR 0050) — persisted nowhere in the database, "
+        "and emitted only when the audited admin opt-in and the operator's sink are both on"
     ),
     # 2.
     ("POST", "/api/v1/suites/{suite_id}/run"): (

@@ -15,6 +15,7 @@ from celery.signals import (
     task_failure,
     task_postrun,
     task_prerun,
+    worker_init,
     worker_process_init,
     worker_ready,
 )
@@ -245,6 +246,15 @@ def _configure_celery_logging(**_kwargs: Any) -> None:
     JSON + PII-redacting chain in force.
     """
     configure_logging(service_name="dataq-worker")
+
+
+@worker_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _configure_worker_usage_telemetry(**_kwargs: Any) -> None:
+    """Once per worker (the parent; the SDK re-inits its threads in prefork children)."""
+    from backend.app.core import usage_telemetry
+
+    usage_telemetry.configure("dataq-worker")
+    usage_telemetry.emit(usage_telemetry.UsageEvent.APP_STARTED, service="worker")
 
 
 @worker_process_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated

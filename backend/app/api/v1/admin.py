@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import require_workspace_admin
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.models import (
     INCIDENT_ACTIVE_STATUSES,
@@ -38,6 +38,7 @@ from backend.app.services import (
     privacy_settings_service,
     run_dispatch,
     secret_sweep_service,
+    telemetry_settings_service,
     workspace_health_service,
 )
 from backend.app.services.failure_classifier import classify_broker_reason
@@ -869,6 +870,38 @@ def _zero_sample_detail(*, zero_sample: bool, on: str, off: str) -> str:
     return on if zero_sample else off
 
 
+def _usage_telemetry_transfer(db: Session, settings: Settings) -> ExternalTransfer:
+    """The product-usage telemetry row (ADR 0050): disclosed in BOTH states, naming the sink."""
+    enabled = telemetry_settings_service.effective(db)
+    sink = settings.telemetry_sink
+    if enabled:
+        destination = (
+            f"a JSON-lines file on the deployment's own disk ({settings.telemetry_file_path})"
+            if sink == "file"
+            else "the configured OpenTelemetry exporter(s) — the same OTLP endpoint and/or "
+            "App Insights resource the traces and logs go to"
+        )
+        detail = (
+            "Usage telemetry is ON (admin opt-in + TELEMETRY_SINK): event names, counts, "
+            "durations and closed-vocabulary attributes (check kind, datasource type, page "
+            f"route name, outcome) go to {destination}. Never a table or column name, SQL, "
+            "suite or check name, email or credential: every attribute value is validated "
+            "against the published vocabulary before it is recorded."
+        )
+    else:
+        stored = telemetry_settings_service.stored_enabled(db)
+        why = (
+            "the admin has not opted in"
+            if not stored
+            else "TELEMETRY_SINK is off, so the admin's opt-in sends nothing"
+        )
+        detail = (
+            f"Usage telemetry is OFF ({why}). Nothing about how this workspace is used "
+            "leaves the deployment, and DataQ's authors receive nothing in any state."
+        )
+    return ExternalTransfer(name="usage_telemetry", enabled=enabled, detail=detail)
+
+
 def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     """The outbound-LLM posture row (ADR 0042): honest in BOTH states."""
     row = llm_service.get_settings_row(db)
@@ -1052,6 +1085,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 "operator and may sit in another jurisdiction."
             ),
         ),
+        _usage_telemetry_transfer(db, settings),
     ]
     return DeploymentPostureRead(
         region=settings.deployment_region or None,

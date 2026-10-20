@@ -42,6 +42,9 @@ _AUTH_PREFIX: Final = "/api/v1/auth/"
 # class. The admin live-probe is the one endpoint OUTSIDE /llm that also pays for a model call.
 _LLM_PREFIX: Final = "/api/v1/llm"
 _LLM_EXTRA_PATHS: Final = frozenset({"/api/v1/admin/llm/test"})
+# Browser usage-event reports (ADR 0050): a page view per navigation, so a tighter per-caller
+# cap than `default` and no way to spend the caller's general budget on them.
+_TELEMETRY_PREFIX: Final = "/api/v1/telemetry"
 _MUTATING_METHODS: Final = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Known providers get their OWN per-IP webhook bucket (#785).
@@ -257,6 +260,11 @@ def _resolve_policy(
             digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
             return "llm", settings.rate_limit_llm_per_minute, f"tok:{digest}"
         return "llm", settings.rate_limit_llm_per_minute, f"ip:{ip}"
+    if path.startswith(_TELEMETRY_PREFIX) and method in _MUTATING_METHODS:
+        if bearer is not None:
+            digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
+            return "telemetry", settings.rate_limit_telemetry_per_minute, f"tok:{digest}"
+        return "telemetry", settings.rate_limit_telemetry_per_minute, f"ip:{ip}"
     if bearer is not None:
         digest = hashlib.sha256(bearer.encode()).hexdigest()[:32]
         return "default", settings.rate_limit_authenticated_per_minute, f"tok:{digest}"
@@ -316,6 +324,8 @@ async def rate_limit_middleware(
         # Rotated-bearer backstop (#785 class): fresh tokens mint fresh primary
         # buckets, but every model call from one IP shares this ceiling.
         keys.append(f"rl:llm:ipall:{ip}:{window}")
+    elif cls == "telemetry":
+        keys.append(f"rl:telemetry:ipall:{ip}:{window}")
     counts = await _active_store().incr_windows(keys)
 
     if counts is None:
@@ -333,6 +343,8 @@ async def rate_limit_middleware(
         exceeded_limit = settings.rate_limit_webhook_ip_per_minute
     elif cls == "llm" and counts[1] > settings.rate_limit_llm_ip_per_minute:
         exceeded_limit = settings.rate_limit_llm_ip_per_minute
+    elif cls == "telemetry" and counts[1] > settings.rate_limit_ip_per_minute:
+        exceeded_limit = settings.rate_limit_ip_per_minute
 
     if exceeded_limit is not None:
         retry_after = max(1, (window + 1) * WINDOW_SECONDS - now)

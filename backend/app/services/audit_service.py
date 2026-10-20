@@ -254,6 +254,7 @@ _SCORING_SETTING_FIELDS: Final[tuple[str, ...]] = (
 )
 # Thresholds and window sizes only: no warehouse value can reach this document.
 _COVERAGE_SETTING_FIELDS: Final[tuple[str, ...]] = ("id", "config", "updated_by")
+_TELEMETRY_SETTING_FIELDS: Final[tuple[str, ...]] = ("id", "enabled", "updated_by")
 
 # `token_hash` is absent and must stay absent. ADR 0041 §2.5: an api_key event
 # records the mint/revoke, **never the token or its hash**.
@@ -320,6 +321,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "privacy_setting": _PRIVACY_SETTING_FIELDS,
     "scoring_setting": _SCORING_SETTING_FIELDS,
     "coverage_setting": _COVERAGE_SETTING_FIELDS,
+    "telemetry_setting": _TELEMETRY_SETTING_FIELDS,
 }
 
 

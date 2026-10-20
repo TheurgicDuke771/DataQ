@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.databricks_dqx import (
@@ -1021,6 +1022,14 @@ def create_check(
     session.commit()
     session.refresh(check)
     log.info("check_created", check_id=str(check.id), suite_id=str(suite_id))
+    usage_telemetry.emit(
+        usage_telemetry.UsageEvent.CHECK_CREATED,
+        session=session,
+        kind=kind,
+        engine=engine,
+        datasource_type=_connection_type(session, suite),
+        origin=origin,
+    )
     return check
 
 

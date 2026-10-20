@@ -7,11 +7,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.alerting import dispatch as alert_dispatch
 from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED, HealthState
+from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -23,6 +24,7 @@ from backend.app.datasources.registry import build_check_runner, owned_runner
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
     Connection,
+    Result,
     Run,
     Suite,
 )
@@ -91,6 +93,30 @@ def _terminal_failed(
     session.commit()
     log.exception(event, run_id=str(run_id))
     return "failed"
+
+
+def _usage_run_completed(session: Session, *, run_id: uuid.UUID) -> None:
+    """The `run_completed` usage event (ADR 0050): outcome + datasource type + counts only."""
+    run = session.get(Run, run_id)
+    if run is None or run.status not in usage_telemetry.RUN_OUTCOMES:
+        return
+    suite = session.get(Suite, run.suite_id)
+    connection = session.get(Connection, suite.connection_id) if suite is not None else None
+    if connection is None:
+        return
+    duration_ms = (
+        int((run.finished_at - run.started_at).total_seconds() * 1000)
+        if run.finished_at is not None and run.started_at is not None
+        else 0
+    )
+    usage_telemetry.emit(
+        usage_telemetry.UsageEvent.RUN_COMPLETED,
+        session=session,
+        outcome=run.status,
+        datasource_type=connection.type,
+        checks=session.scalar(select(func.count()).where(Result.run_id == run_id)) or 0,
+        duration_ms=max(duration_ms, 0),
+    )
 
 
 def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
@@ -267,6 +293,7 @@ def run_suite(
                 lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
                 raise
             lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
+            _usage_run_completed(session, run_id=rid)
             # Incident rollup BEFORE alert dispatch so the report can reference the
             # open incident (#761); fail-soft like the hooks around it.
             incident_service.sync_incidents_for_run(session, run_id=rid)
