@@ -200,7 +200,7 @@ Try the four questions the tools were designed around:
 Every tool states what it **cannot** see — a mid-run suite is reported as *not final*, an
 expired snooze as *expired*, a truncated list as *truncated* — because an assistant has no
 "running" badge to glance at. That design is documented in
-[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 54 tools with who
+[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 56 tools with who
 can call them is the [MCP tools reference](../reference/mcp-tools.md).
 
 !!! tip "Ask about the docs, too"
@@ -3300,8 +3300,10 @@ expects about 2.4 times the last fortnight's level because Wednesday 27 November
 
 **Declared seasonal periods** line up the peaks the weekday matching cannot: a sale that
 moves by more than a few days, or a fixed date such as 25 December. They live in one
-workspace calendar (**Admin → Seasonal periods**, `GET /api/v1/admin/seasonal-periods`;
-anyone signed in can read it, workspace admins change it, every change is audited). An entry
+workspace calendar, managed through the REST API under `/api/v1/admin/seasonal-periods`
+(there is no calendar screen in the app yet; anyone signed in can read it, workspace
+admins change it, every change is audited, and AI assistants read it with the
+`list_seasonal_periods` MCP tool). An entry
 is either **recurring**, a month-and-day range every year that may wrap the year end (20
 December to 5 January; a 29 February bound is taken as 28 February in a year without one),
 or **dated**, an explicit start and end. Dated entries that share a **series** (compared
@@ -3337,6 +3339,40 @@ the refusal names the checks). While attached:
 
 A suite export carries the ids; importing it into a workspace whose calendar does not hold
 them is refused with the ids named.
+
+**Detected seasonal periods** are what a per-period check's own history shows, read when
+someone asks: `GET /api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`
+(view access to the suite), or the `get_detected_seasonal_periods` MCP tool. A period is
+detected where the value ran at **1.5 times** its level or more (taken as scoring takes it: the
+median of the window before it with `yearly` on, attached declared periods left out, and the
+mean of the window without `yearly`) for at least **two days
+in a row**, or one week on a weekly check. A single day is a spike, not a period, and a day
+with no point ends a run. Seen at the same time of year in two or more years (within a week
+of each other, so a sale that moves a few days still matches) it is **recurring**; in one
+year, **seen once**. The response lists each period's occurrences by year, with their peak
+ratio and how many of their points were seeded from the table rather than seen by a run, the
+month-and-day span a recurring one covers, any attached entry that overlaps it, and how much
+history stood behind it (points, first and last day, years).
+
+A detected period is a description. It is not stored and **changes no verdict**: only an
+entry on the calendar, attached to the check, does. An empty list says less than it seems:
+`reason` is set when nothing could be looked at (`not_a_per_period_metric`, `no_history`,
+`insufficient_history`, `invalid_config`); with no reason, the history was read and nothing
+reached 1.5 times for long enough (or the stored history was discarded because the
+check's metric, date column or day/week setting was edited). A peak that lasts more than
+about half the check's window of prior periods (same-weekday periods when seasonality is
+on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
+a calendar entry over it fixes that, for detection as for scoring.
+
+A workspace admin turns a detected period into a calendar entry with
+`POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
+most recent occurrence, as the detection returned it) and a `name`. The history is read
+again, so a period it no longer shows is refused, and so is a season an entry on the
+calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring
+entry over the month-and-day span; one seen once becomes a dated entry, optionally in a
+`series`. With `attach: true` the check names the new entry too, in the same change, so a
+check that cannot take it (one without `yearly`) leaves no entry behind. The new entry is
+audited as created, with the period it came from.
 
 ### Comparison check (all datasources — ADR 0015)
 
@@ -3718,7 +3754,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 ## AI assistants (MCP)
 
-A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **56-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
 reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
@@ -3728,7 +3764,7 @@ with health and lineage) and **incidents** (what is broken right now, with the e
 acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
 a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
 connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
-UI. The 54 split three ways: **30 read-only, 18 that change state**, and **6 that persist
+UI. The 56 split three ways: **32 read-only, 18 that change state**, and **6 that persist
 nothing but open a live datasource connection with stored credentials** and so are gated like
 writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
@@ -3777,7 +3813,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 54 tools and per-suite permissions. Two rejections are deliberate in that
+    all 56 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -3835,7 +3871,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 54 tools
+## The 56 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -3845,7 +3881,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (30) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (32) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
@@ -4955,7 +4991,8 @@ section below.
   against it, and a peak that fails to arrive is flagged. It applies once the history
   reaches back a year, which seeding supplies at once, and each result says whether it was
   applied and what was expected.
-- **A declared seasonal calendar for anomaly checks.** Workspace admins keep one calendar of named seasonal periods (recurring month-and-day ranges, or dated entries grouped into a series across years) under Admin → Seasonal periods, audited like other admin changes. A per-period anomaly check with `yearly` on attaches the entries that apply to its table: a day inside one is compared with the same day of the period's previous occurrence, so a sale that moves or a fixed date lines up, and the days after it are not judged against it. In a period's first year a rise is reported as within the period rather than banded, while a drop still alerts. Every result says which entry applied and what the run would have scored without the calendar.
+- **A declared seasonal calendar for anomaly checks.** Workspace admins keep one calendar of named seasonal periods (recurring month-and-day ranges, or dated entries grouped into a series across years) through the REST API, audited like other admin changes. A per-period anomaly check with `yearly` on attaches the entries that apply to its table: a day inside one is compared with the same day of the period's previous occurrence, so a sale that moves or a fixed date lines up, and the days after it are not judged against it. In a period's first year a rise is reported as within the period rather than banded, while a drop still alerts. Every result says which entry applied and what the run would have scored without the calendar.
+- **Detected seasonal periods, and promoting one to the calendar.** A per-period anomaly check now reports the seasonal periods its own history shows: runs of at least two days (or one week) at 1.5 times the level the check is scored against, called recurring when they come at the same time in two or more years and seen once otherwise, with each year's dates, peak ratio and how much history stood behind them. A detected period is a description and changes no verdict. A workspace admin can promote one to the declared calendar (a recurring period as a month-and-day range, one seen once as a dated entry) and attach it to the check in the same step. AI assistants gain two read-only MCP tools, `list_seasonal_periods` and `get_detected_seasonal_periods`.
 - **Third-party notices and an SPDX SBOM ship with every image and release.** Both container images carry `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (`scripts/check-licenses.py`, with reviewed overrides in `scripts/licenses/overrides.toml`).
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
@@ -6921,7 +6958,7 @@ risk that carries.
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin (incl. workspace Settings) (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
 | Python client + `dataq` CLI | Generated from the OpenAPI spec, attached to each GitHub Release ([Python client](../guides/python-client.md)) |
-| MCP | 54 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
+| MCP | 56 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
 
 
 ---
@@ -6950,7 +6987,7 @@ risk that carries.
 | **Incident** | The stateful, deduped object failing results roll up into: `open → acknowledged → resolved`, ≤1 active per (asset, check), evidence card attached (ADR 0034). |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/OpenBao (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 54 curated tools at `/mcp` for AI assistants (30 read-only, 18 that change state, 6 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 56 curated tools at `/mcp` for AI assistants (32 read-only, 18 that change state, 6 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/site/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership
@@ -6971,8 +7008,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 54 |
-| Read-only | 30 |
+| Tools | 56 |
+| Read-only | 32 |
 | Changes state | 18 |
 | Live probe | 6 |
 
@@ -6990,6 +7027,7 @@ connection mutation, and a credential must never transit an LLM.
 | `get_check_history` | `view` on the suite | Get one check's recent result history — how it has behaved run over run. |
 | `get_column_policy` | `view` on the suite | Get the suite's failing-sample redaction policy — which columns are masked. |
 | `get_coverage` | any signed-in user | Get how much of the asset inventory is watched, and how often automatic checks cry wolf. |
+| `get_detected_seasonal_periods` | `view` on the suite | Detect the sale seasons and one-off peaks in an anomaly check's own stored history (read-only; changes no verdict): runs of days or weeks at or above ``thresholds.ratio`` (1.5) times the level of the periods the check is scored against (their median with ``yearly`` on, their mean without: ``thresholds.level``). |
 | `get_doc` | any signed-in user | Read a published DataQ user-facing doc page, verbatim. |
 | `get_health_score` | any signed-in user | Get the workspace data-quality health score and its trend. |
 | `get_incident` | `view` on the incident's suite | Get one incident with its evidence card — why it opened and what else broke. |
@@ -7008,6 +7046,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
 | `list_schedules` | any signed-in user; suite-scoped when a suite is named | List the cron schedules that run suites automatically. |
+| `list_seasonal_periods` | any signed-in user | List the workspace's declared (admin-maintained) seasonal calendar: the named sale periods and fixed dates an anomaly check can attach. |
 | `list_suggested_rules` | `view` on the suite | List the rules waiting for review on a suite — proposals, not checks. |
 | `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
@@ -8669,7 +8708,7 @@ Boundary notes:
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS, OpenBao (KV v2) self-hosted (ADR [0039](../adr/0039-openbao-self-hosted-secret-backend.md)). Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 54 FastMCP tools (30 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 56 FastMCP tools (32 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
 
 
@@ -11750,7 +11789,7 @@ a third-party endpoint.
 | 5 | **OIDC identity provider** — Azure AD, AWS Cognito, any standards-compliant issuer | Standard OIDC flows; DataQ receives (never sends) profile claims | User identity (email, name, subject id) held at the IdP | `oidc` auth mode |
 | 6 | **Secret store** — Azure Key Vault, AWS Secrets Manager, OpenBao/Vault | Warehouse credentials (write on connection create, read at run time) | No customer data — but the credentials unlock the systems that hold it | Always (one of the four backends) |
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
-| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 54 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
+| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 56 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows) | No — table/job names and check outcomes, not row data | Pull: when `LINEAGE_PROVIDER` is configured. Emission: when `OPENLINEAGE_URL` (or the library's own transport config) is set |
 | 11 | **Audit tamper anchor** — an HMAC-signed webhook, or an immutable object store (S3 Object Lock / S3-compatible, Azure immutable blob) | The audit hash-chain head: a SHA-256 hash, a label, the hashed-event count and a timestamp — daily and before every retention purge | No — never an audit event's actor, action or payload | `TAMPER_ANCHOR=webhook` or `object_lock` (off by default) |
@@ -12105,7 +12144,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 ## Features
 
 The application feature set — suites/checks across all eleven datasource types, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
+assets/lineage/incidents, alerting, scheduling, the 56-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
@@ -12521,7 +12560,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
-**Can an AI assistant use DataQ?** Yes — 54 MCP tools at `/mcp` (Claude Desktop / Claude.ai
+**Can an AI assistant use DataQ?** Yes — 56 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](../guides/mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an
@@ -12809,7 +12848,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted (amended 2026-09-06 — the weights are a workspace setting) |
 | [0006](0006-adf-webhook-authentication.md) | ADF webhook authentication (shared secret in URL + hard-cutover rotation) | Accepted |
 | [0007](0007-airflow-callback-model.md) | Airflow callback model (HMAC-signed webhook + polling fallback) | Accepted |
-| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → 52 (`browse_connection`, run-target browsing) → **54** (`get_coverage`, `list_suggested_rules`; 30 read-only / 18 state-changing / 6 live-probe) | Accepted |
+| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → 52 (`browse_connection`, run-target browsing) → 54 (`get_coverage`, `list_suggested_rules`) → **56** (`list_seasonal_periods`, `get_detected_seasonal_periods`; 32 read-only / 18 state-changing / 6 live-probe) | Accepted |
 | [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
@@ -13696,6 +13735,18 @@ parameter's own JSON-schema `enum` carries the live catalog, so a client sees th
 on every turn with no companion `list_doc_pages()` tool needed. Workspace-agnostic — no per-suite
 or per-workspace gate, since these pages carry no tenant data. The split becomes **48 tools: 25
 read-only, 18 that change state, 5 live-probe**.
+
+## Amendment — the seasonal calendar reads, 54 → 56
+
+Two read-only tools for ADR 0048's seasonal periods. `list_seasonal_periods` lists the declared
+workspace calendar (any signed-in user, as over REST), so an assistant can take the id an anomaly
+check's `seasonal_periods` needs from MCP rather than from the user; `create_check` had said the
+ids were not readable over MCP, and now points here. `get_detected_seasonal_periods` gates on
+`view` of the check's suite and returns the periods the check's own history shows, with how much
+history stood behind them and, on every response, that a detected period changes no verdict.
+Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
+admin-only, and MCP exposes no admin-only tool. The split becomes **56 tools: 32 read-only, 18
+that change state, 6 live-probe**.
 
 
 ---
@@ -18752,6 +18803,30 @@ this time of year usually looks like.
      Until then a detected period is a description: it is not stored and it changes no
      score. The seasonal index already carries a recurring peak into the expected value
      without it.
+   > **Amended 2026-10-20 (phase 5).** The thresholds and the promote flow, as built. (1) *The
+   > level* is taken as scoring takes it, over the same `window` periods before (by weekday
+   > with `seasonality`, attached declared periods left out): their median with `yearly`
+   > on, their mean without, since that is what a check without `yearly` is scored against; a period is looked at only once
+   > `min_points` periods precede it. A peak outlasting about half the window's prior
+   > periods (same-weekday ones with `seasonality`) lifts that median with it, so its tail is not detected; an attached entry covering it is what fixes
+   > that, as it does for scoring. (2) *A run* is consecutive qualifying periods: at least
+   > two days, since one day is a spike rather than a period, or one week. A day with no
+   > point ends a run; no gap is bridged. (3) *The same time* in two years means the runs,
+   > laid on one year, come within seven days of each other, so a sale that moves by up to a
+   > week still matches. Two runs in one season (a sale split by an ordinary day, or one that
+   > crosses the new year) are one year, not two. (4) *What is returned*: each period's
+   > occurrences per year with their peak ratio and how many of their points were backfilled,
+   > the month/day span a recurring one covers, the attached entries that overlap it, and how
+   > much history stood behind the answer; when there was nothing to look at, the reason (not
+   > a per-period metric, no history, too little history). It is computed on request from the
+   > stored points, a separate read from the trend's baseline read so the trend view asks for
+   > it only on a per-period check. (5) *Promoting* is an admin action that re-reads the
+   > history and names the period by the start of its most recent occurrence, so a period the
+   > history no longer shows is refused rather than invented, and one an existing entry
+   > already covers is refused naming that entry, so a season is declared once. A recurring period becomes a
+   > recurring entry over that span, one seen once a dated entry. Attaching it to the check is
+   > optional and done in the same transaction, so a check that cannot take it (no `yearly`)
+   > leaves no entry behind. The entry is audited as created, with what it was promoted from.
 
 6. **Retention.** A check with `yearly` on, or on a per-period metric, keeps three years of
    periods plus its window (about 1,100 daily points). Other anomaly checks keep what they

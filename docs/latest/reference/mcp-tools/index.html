@@ -2557,11 +2557,11 @@ run against), and the description is the opening of what an AI assistant is show
 <tbody>
 <tr>
 <td>Tools</td>
-<td>54</td>
+<td>56</td>
 </tr>
 <tr>
 <td>Read-only</td>
-<td>30</td>
+<td>32</td>
 </tr>
 <tr>
 <td>Changes state</td>
@@ -2619,6 +2619,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>get_coverage</code></td>
 <td>any signed-in user</td>
 <td>Get how much of the asset inventory is watched, and how often automatic checks cry wolf.</td>
+</tr>
+<tr>
+<td><code>get_detected_seasonal_periods</code></td>
+<td><code>view</code> on the suite</td>
+<td>Detect the sale seasons and one-off peaks in an anomaly check's own stored history (read-only; changes no verdict): runs of days or weeks at or above <code>thresholds.ratio</code> (1.5) times the level of the periods the check is scored against (their median with <code>yearly</code> on, their mean without: <code>thresholds.level</code>).</td>
 </tr>
 <tr>
 <td><code>get_doc</code></td>
@@ -2709,6 +2714,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>list_schedules</code></td>
 <td>any signed-in user; suite-scoped when a suite is named</td>
 <td>List the cron schedules that run suites automatically.</td>
+</tr>
+<tr>
+<td><code>list_seasonal_periods</code></td>
+<td>any signed-in user</td>
+<td>List the workspace's declared (admin-maintained) seasonal calendar: the named sale periods and fixed dates an anomaly check can attach.</td>
 </tr>
 <tr>
 <td><code>list_suggested_rules</code></td>

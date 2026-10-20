@@ -2504,6 +2504,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-the-seasonal-calendar-reads-54-56" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — the seasonal calendar reads, 54 → 56
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2805,6 +2816,16 @@ parameter's own JSON-schema <code>enum</code> carries the live catalog, so a cli
 on every turn with no companion <code>list_doc_pages()</code> tool needed. Workspace-agnostic — no per-suite
 or per-workspace gate, since these pages carry no tenant data. The split becomes <strong>48 tools: 25
 read-only, 18 that change state, 5 live-probe</strong>.</p>
+<h2 id="amendment-the-seasonal-calendar-reads-54-56">Amendment — the seasonal calendar reads, 54 → 56<a class="headerlink" href="#amendment-the-seasonal-calendar-reads-54-56" title="Permanent link">¶</a></h2>
+<p>Two read-only tools for ADR 0048's seasonal periods. <code>list_seasonal_periods</code> lists the declared
+workspace calendar (any signed-in user, as over REST), so an assistant can take the id an anomaly
+check's <code>seasonal_periods</code> needs from MCP rather than from the user; <code>create_check</code> had said the
+ids were not readable over MCP, and now points here. <code>get_detected_seasonal_periods</code> gates on
+<code>view</code> of the check's suite and returns the periods the check's own history shows, with how much
+history stood behind them and, on every response, that a detected period changes no verdict.
+Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
+admin-only, and MCP exposes no admin-only tool. The split becomes <strong>56 tools: 32 read-only, 18
+that change state, 6 live-probe</strong>.</p>
 
 
 
