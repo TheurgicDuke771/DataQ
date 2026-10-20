@@ -1413,7 +1413,7 @@
       },
       "BaselineShapeWrite": {
         "additionalProperties": false,
-        "description": "How much history a baseline compares against. All three are set together.",
+        "description": "How much history a baseline compares against. `window`, `min_points` and\n`seasonality` are set together; `yearly` (compare with the same time in earlier years,\non the row-count and freshness baselines only) is off when left out, so a level that sets\nthis group without it switches it off for its tables.",
         "properties": {
           "min_points": {
             "title": "Min Points",
@@ -1426,6 +1426,11 @@
           "window": {
             "title": "Window",
             "type": "integer"
+          },
+          "yearly": {
+            "default": false,
+            "title": "Yearly",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3155,6 +3160,72 @@
           "dismissed"
         ],
         "title": "ClassificationDismissUpdate",
+        "type": "object"
+      },
+      "ClientEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Attributes",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 64,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ClientEvent",
+        "type": "object"
+      },
+      "ClientEventsAccepted": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted",
+          "enabled"
+        ],
+        "title": "ClientEventsAccepted",
+        "type": "object"
+      },
+      "ClientEventsWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ClientEvent"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "ClientEventsWrite",
         "type": "object"
       },
       "ColumnHopRead": {
@@ -5422,12 +5493,17 @@
           "window": {
             "title": "Window",
             "type": "integer"
+          },
+          "yearly": {
+            "title": "Yearly",
+            "type": "boolean"
           }
         },
         "required": [
           "window",
           "min_points",
           "seasonality",
+          "yearly",
           "source"
         ],
         "title": "EffectiveShape",
@@ -11185,6 +11261,140 @@
         "title": "SuiteValidationRead",
         "type": "object"
       },
+      "TelemetryEventRead": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Attributes",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "attributes"
+        ],
+        "title": "TelemetryEventRead",
+        "type": "object"
+      },
+      "TelemetrySettingsRead": {
+        "description": "`enabled` is the EFFECTIVE state: the stored opt-in AND an operator-configured sink.\n`stored` is only what the toggle last wrote; with `sink = off` it sends nothing, and the\npage says so rather than reporting a state the emitter ignores. `events` is the whole\nvocabulary \u2014 the only values that can ever leave the deployment.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TelemetryEventRead"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "sink": {
+            "enum": [
+              "off",
+              "file",
+              "otlp"
+            ],
+            "title": "Sink",
+            "type": "string"
+          },
+          "sink_ready": {
+            "title": "Sink Ready",
+            "type": "boolean"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "enabled",
+          "stored",
+          "sink",
+          "sink_ready",
+          "events",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "TelemetrySettingsRead",
+        "type": "object"
+      },
+      "TelemetrySettingsWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "TelemetrySettingsWrite",
+        "type": "object"
+      },
+      "TelemetryStatusRead": {
+        "description": "Whether the browser should report at all, and the only events it may report.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "events"
+        ],
+        "title": "TelemetryStatusRead",
+        "type": "object"
+      },
       "TopValue": {
         "properties": {
           "count": {
@@ -13293,6 +13503,66 @@
           }
         },
         "summary": "Transfer suite ownership (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/telemetry": {
+      "get": {
+        "operationId": "get_telemetry_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetrySettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usage telemetry (admin)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "put_telemetry_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetrySettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetrySettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set the usage-telemetry opt-in",
         "tags": [
           "admin"
         ]
@@ -19008,6 +19278,68 @@
         "summary": "A suite's proposed rules (automatic coverage review queue)",
         "tags": [
           "suggestions"
+        ]
+      }
+    },
+    "/api/v1/telemetry": {
+      "get": {
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usage-telemetry status",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/events": {
+      "post": {
+        "operationId": "post_events",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientEventsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEventsAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report browser usage events",
+        "tags": [
+          "telemetry"
         ]
       }
     },

@@ -20,12 +20,14 @@ class EffectiveShape:
         seasonality (bool):
         source (EffectiveShapeSource):
         window (int):
+        yearly (bool):
     """
 
     min_points: int
     seasonality: bool
     source: EffectiveShapeSource
     window: int
+    yearly: bool
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -37,6 +39,8 @@ class EffectiveShape:
 
         window = self.window
 
+        yearly = self.yearly
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -45,6 +49,7 @@ class EffectiveShape:
                 "seasonality": seasonality,
                 "source": source,
                 "window": window,
+                "yearly": yearly,
             }
         )
 
@@ -61,11 +66,14 @@ class EffectiveShape:
 
         window = d.pop("window")
 
+        yearly = d.pop("yearly")
+
         effective_shape = cls(
             min_points=min_points,
             seasonality=seasonality,
             source=source,
             window=window,
+            yearly=yearly,
         )
 
         effective_shape.additional_properties = d

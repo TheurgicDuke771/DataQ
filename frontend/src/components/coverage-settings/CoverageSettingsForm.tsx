@@ -169,6 +169,20 @@ export function CoverageSettingsForm({
             />
             <Typography.Text>Compare the same weekday only</Typography.Text>
           </Space>
+          <Space size={8}>
+            <Switch
+              checked={(draft.baseline ?? below.baseline).yearly ?? false}
+              disabled={draft.baseline === null || saving}
+              aria-label="Compare with the same time in earlier years"
+              onChange={(on) =>
+                draft.baseline && set({ ...draft, baseline: { ...draft.baseline, yearly: on } })
+              }
+            />
+            <Typography.Text>Compare with the same time in earlier years</Typography.Text>
+            <Typography.Text type="secondary">
+              Row count and freshness only. Each table keeps a year or more of daily history.
+            </Typography.Text>
+          </Space>
         </Space>
       </Flex>
 

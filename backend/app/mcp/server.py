@@ -14,6 +14,7 @@ selection, not REST consumers (CLAUDE.md §10).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -24,11 +25,13 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
 from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -1321,7 +1324,9 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
 
     An empty ``periods`` does **not** prove the table has no seasons. A non-null
     ``reason`` means nothing was examined: ``not_a_per_period_metric`` (any other
-    kind or metric), ``invalid_config``, ``no_history`` (the check has not run, its
+    kind or metric, including a ``row_count`` or ``freshness_age_hours`` check with
+    ``yearly`` on: its one-a-day history is not searched for periods),
+    ``invalid_config``, ``no_history`` (the check has not run, its
     baseline was dropped, or its history was stored under a different metric, date
     column or day/week setting, which an edit to the check discards) or
     ``insufficient_history`` (no period had ``min_points`` periods before it).
@@ -2393,23 +2398,33 @@ def create_check(
       runs report ``skip``, not a false anomaly.
     - ``seasonality`` (optional): set to compare against the same day-of-week
       rather than a flat rolling window.
-    - ``yearly`` (optional, **per-period metrics only**; refused on ``row_count``,
-      ``freshness_age_hours`` and ``column_profile``): also compare with the same
-      time in earlier years, for data with a yearly rhythm ('sales spike every
-      November'). A peak that came last year is then expected this year and one
-      that fails to arrive is flagged. **It does nothing until the check's
-      history reaches back a year**, which seeding gives at once when the table
-      still holds its past: until then the check scores as if the setting were
-      off, and ``observed_value.yearly`` says ``applied: false`` with the
-      ``reason``. Do not tell a user the check is "accounting for seasonality"
-      without reading that field. When applied, ``yearly`` carries ``expected``,
-      ``index``, the earlier periods ``matched`` and the ``ratios`` each ran at,
-      and ``mean`` / ``stddev`` are the centre and spread the run was scored
-      against, not an average of recent runs. One earlier year (``years: 1``)
-      cannot tell a yearly event from a one-off, and ``ratios`` that disagree
-      (two years with a peak, one without) make the comparison loose: say how
-      many years stand behind it.
-    - ``seasonal_periods`` (optional, with ``yearly`` on a per-period metric): a
+    - ``yearly`` (optional; accepted on ``row_count``, ``freshness_age_hours`` and
+      the per-period metrics, refused on ``column_profile``): also compare with
+      the same time in earlier years, for data with a yearly rhythm ('sales
+      spike every November'). A peak that came last year is then expected this
+      year and one that fails to arrive is flagged. **It does nothing until the
+      check's history reaches back a year.** A per-period metric can get that at
+      once by seeding from the table's past; a ``row_count`` or
+      ``freshness_age_hours`` check cannot: it keeps a one-a-day history (the
+      median of each day's runs) only from the day ``yearly`` is switched on, so
+      its first yearly verdict is a year away. Until then the check scores as if
+      the setting were off, and ``observed_value.yearly`` says ``applied:
+      false`` with the ``reason`` (``no_earlier_year`` while the year
+      accumulates, or ``insufficient_history`` with too few recent runs). Do
+      not tell a user the check is "accounting for seasonality" without reading
+      that field. When applied, ``yearly`` carries ``level``,
+      ``expected``, ``index``, the earlier days or periods ``matched`` and the
+      ``ratios`` each ran at, and ``mean`` / ``stddev`` are the centre and
+      spread the run was scored against, not a plain average of recent runs. On a
+      whole-table metric ``yearly.basis`` is ``runs``: the run is still scored
+      against its recent runs (each divided by its own day's index), and
+      ``observed_value.daily`` says how many days of history stand behind the
+      index (``days``, ``first``) and the ``timezone`` they are kept in (config
+      ``timezone``, an IANA name, default UTC; only with ``yearly`` on). One
+      earlier year (``years: 1``) cannot tell a yearly event from a one-off,
+      and ``ratios`` that disagree (two years with a peak, one without) make
+      the comparison loose: say how many years stand behind it.
+    - ``seasonal_periods`` (optional, with ``yearly`` on): a
       list of ids of the workspace's declared seasonal calendar entries (a sale
       that moves, a fixed date) that apply to this table. A day inside one is
       compared with the same day of that period's previous occurrence instead of
@@ -2443,7 +2458,9 @@ def create_check(
     ``row_count`` has no normal to return to ('alert me when daily orders look
     wrong', 'weekly sales amount'). ``period_row_count`` counts the rows whose date
     falls in one calendar period; ``period_sum`` sums a numeric column over them.
-    They add these keys, which are refused on every other metric:
+    They add these keys, which are refused on every other metric (except
+    ``timezone`` and ``seasonal_periods``, which ``row_count`` and
+    ``freshness_age_hours`` also take when ``yearly`` is on):
     - ``date_column`` (required): the column that dates a row. It is not checked
       against the table here; confirm it with ``list_columns``.
     - ``value_column`` (required for ``period_sum``, refused for the count).
@@ -2453,7 +2470,8 @@ def create_check(
       is over; it does not change which period a row falls in, which is the date
       the warehouse returns for the column. Do not set it to the user's own zone
       when the data is in another: a zone ahead of the data's judges a day
-      before it has finished and stores that short value.
+      before it has finished and stores that short value. On a whole-table metric
+      with ``yearly`` on it is instead the zone a run's calendar day is taken in.
     - ``settle_hours`` (optional, default 6): a period is judged only once it has
       been closed that long.
     - ``backfill`` (optional, default true): seed the history on the first run.
@@ -5198,8 +5216,64 @@ def build_mcp_app() -> Any:
     # ADR 0010/0013 config guardrail. The default keeps ACA working untouched;
     # MCP_ALLOWED_HOSTS covers EKS/GKE/on-prem/local-first, where a proxy
     # forwarding a different upstream Host otherwise gets an unconfigurable 421.
+    install_usage_telemetry()
     return mcp.http_app(
         path="/",
         allowed_hosts=get_settings().mcp_allowed_host_list,
         allowed_origins=["*"],
     )
+
+
+class _UsageTelemetryMiddleware(Middleware):
+    """One `mcp_tool_called` usage event per call (ADR 0050): the tool NAME (validated against
+    the registered set) and ok/error/cancelled, never an argument or a result. Nothing here can
+    change the call's result or exception, and the emit runs off the event loop."""
+
+    async def on_call_tool(self, context: Any, call_next: Any) -> Any:
+        outcome = "ok"
+        try:
+            return await call_next(context)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except BaseException:
+            outcome = "error"
+            raise
+        finally:
+            if usage_telemetry.configured():
+                if not usage_telemetry.MCP_TOOL_NAMES.names:
+                    await register_usage_tool_names()
+                await asyncio.to_thread(
+                    _emit_tool_called, str(getattr(context.message, "name", "")), outcome
+                )
+
+
+def _emit_tool_called(tool: str, outcome: str) -> None:
+    usage_telemetry.emit(usage_telemetry.UsageEvent.MCP_TOOL_CALLED, tool=tool, outcome=outcome)
+
+
+_usage_telemetry_installed = False
+
+
+def install_usage_telemetry() -> None:
+    """Add the usage middleware, once. The tool-name vocabulary is declared by
+    `register_usage_tool_names` — here when no event loop is running (an import-time build),
+    otherwise from the api lifespan."""
+    global _usage_telemetry_installed
+    if _usage_telemetry_installed:
+        return
+    _usage_telemetry_installed = True
+    mcp.add_middleware(_UsageTelemetryMiddleware())
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(register_usage_tool_names())
+
+
+async def register_usage_tool_names() -> None:
+    """Declare every registered tool name as the `mcp_tool_called.tool` vocabulary."""
+    try:
+        tools = await mcp.list_tools(run_middleware=False)
+        usage_telemetry.register_mcp_tool_names([t.name for t in tools])
+    except Exception:
+        log.warning("usage_telemetry_tool_names_unavailable", exc_info=True)

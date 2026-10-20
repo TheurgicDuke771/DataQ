@@ -39,6 +39,7 @@ CONNECTION_TYPES = (
     "mssql",
     "athena",
     "redshift",
+    "bigquery",
     "adf",
     "airflow",
     "dbt",

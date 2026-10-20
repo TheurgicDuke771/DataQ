@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import (
@@ -523,6 +524,10 @@ def create_invocation(
     )
     session.add(invocation)
     session.flush()
+    if kind in usage_telemetry.LLM_FEATURES:
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.LLM_FEATURE_USED, session=session, feature=kind
+        )
     return invocation
 
 

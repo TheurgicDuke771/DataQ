@@ -2,7 +2,7 @@ import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, getConnection } from '../../src/api/connections';
 import {
@@ -118,6 +118,11 @@ function renderPage() {
 }
 
 afterEach(() => vi.clearAllMocks());
+
+// The calendar picker reads the calendar wherever yearly seasonality is offered.
+beforeEach(() => {
+  mockCalendar.mockResolvedValue([]);
+});
 
 describe('CheckEdit', () => {
   it('prefills config + thresholds, updates, and navigates back', async () => {
@@ -760,7 +765,12 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
       name: 'orders row-count anomaly',
       engine: 'gx',
       expectation_type: 'monitor:anomaly',
-      config: { target_metric: 'row_count', window: 21, min_points: 10, seasonality: true },
+      config: {
+        target_metric: 'row_count',
+        window: 21,
+        min_points: 10,
+        seasonality: true,
+      },
       dimension: undefined,
       warn_threshold: null,
       fail_threshold: 3,

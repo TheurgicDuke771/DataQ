@@ -86,12 +86,14 @@ describe('buildCheckPayload — attached calendar entries', () => {
     expect(config).not.toHaveProperty('seasonal_periods');
   });
 
-  it('never sends them for a whole-table metric', () => {
-    const config = buildCheckPayload({
+  it('sends them for a yearly row count, and never for the column profile', () => {
+    const rowCount = { target_metric: 'row_count', yearly: true, seasonal_periods: ['a'] };
+    expect(buildCheckPayload({ ...base, config: rowCount }).config).toEqual(rowCount);
+    const profile = buildCheckPayload({
       ...base,
-      config: { target_metric: 'row_count', yearly: true, seasonal_periods: ['a'] },
+      config: { target_metric: 'column_profile', yearly: true, seasonal_periods: ['a'] },
     }).config;
-    expect(config).toEqual({ target_metric: 'row_count' });
+    expect(profile).toEqual({ target_metric: 'column_profile' });
   });
 });
 

@@ -24,6 +24,7 @@ import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
 import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
+import { PageViewReporter } from './components/PageViewReporter';
 import { IS_DEMO } from './demo/flag';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
@@ -143,6 +144,7 @@ export function App() {
           Skip to content
         </a>
         <PageTitle />
+        <PageViewReporter />
         <ScrollableTableFocus />
         <Header
           style={{

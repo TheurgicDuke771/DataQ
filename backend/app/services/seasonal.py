@@ -232,6 +232,9 @@ class YearlyScore:
     declared: DeclaredEffect | None = None
     #: Earlier points left out of the level for falling inside a declared period.
     excluded_from_level: int = 0
+    #: ``runs`` for a whole-table metric: the level is its run-by-run baseline, each prior run
+    #: first divided by its own day's index; the index comes from the one-a-day series.
+    basis: str | None = None
 
     @property
     def banded(self) -> bool:
@@ -248,6 +251,7 @@ class YearlyScore:
             "matched": [d.isoformat() for d in self.matched],
             "ratios": [round(r, 4) for r in self.ratios],
             "years": len(self.matched),
+            **({"basis": self.basis} if self.basis else {}),
         }
 
 
@@ -270,6 +274,7 @@ class History:
         # for every earlier day, and a calendar lookup walks every entry.
         self._inside: dict[date, tuple[DeclaredPeriod, Occurrence] | None] = {}
         self._candidates_of: dict[date, tuple[list[date], str, DeclaredEffect | None]] = {}
+        self._factor_of: dict[date, float] = {}
 
     def _declared(self, day: date) -> tuple[DeclaredPeriod, Occurrence] | None:
         if not self._calendar.entries:
@@ -469,6 +474,74 @@ class History:
             degenerate=degenerate,
             declared=effect,
             excluded_from_level=excluded,
+        )
+
+    def factor(self, day: date) -> float:
+        """The index ``day`` is scaled by, or 1 where none applies."""
+        if day not in self._factor_of:
+            found = self.index(day)
+            self._factor_of[day] = 1.0 if isinstance(found, str) else found[0]
+        return self._factor_of[day]
+
+    def score_runs(self, day: date, value: float, runs: list[tuple[date, float]]) -> YearlyScore:
+        """A whole-table run (ADR 0048 decision 4, amended 2026-10-14): scored against its own
+        run-by-run priors ``runs`` (the local day each was taken, its value), not against
+        other days' one-a-day values. This history is the one-a-day series, and only supplies
+        the index: each prior is divided by its day's index, and their mean and spread are
+        multiplied by today's."""
+        if value < 0:
+            return YearlyScore(applied=False, reason=NEGATIVE_VALUE)
+        _, _, effect = self._candidates(day)
+        found = self._ratios(day)
+        first_year = False
+        if isinstance(found, str):
+            if effect is None or found != NO_EARLIER_YEAR:
+                return YearlyScore(applied=False, reason=found, declared=effect)
+            first_year = True
+            ratios, matched = [1.0], []
+        else:
+            ratios, matched = found[0], list(found[1])
+        adjusted = [v / f for d, v in runs if (f := self.factor(d)) > 0]
+        if len(adjusted) < max(_LEVEL_MIN_POINTS, self._params.min_points):
+            return YearlyScore(applied=False, reason=INSUFFICIENT_HISTORY, declared=effect)
+        if any(v < 0 for v in adjusted):
+            return YearlyScore(applied=False, reason=NEGATIVE_VALUE, declared=effect)
+        level = statistics.fmean(adjusted)
+        noise = statistics.stdev(adjusted)
+        factor = statistics.median(ratios)
+        expected = level * factor
+        spread = noise * factor if factor > 0 else noise
+        if len(ratios) > 1:
+            spread = math.hypot(spread, statistics.stdev(ratios) * level)
+        if effect is not None:
+            effect = DeclaredEffect(
+                entry=effect.entry,
+                occurrence=effect.occurrence,
+                offset_days=effect.offset_days,
+                matched=tuple(matched),
+                first_year=first_year,
+                banded=not first_year or value <= level,
+            )
+        negligible = _NEGLIGIBLE * max(1.0, abs(expected))
+        degenerate = spread <= negligible
+        if degenerate:
+            spread = 0.0
+            z_score = 0.0 if abs(value - expected) <= negligible else ANOMALY_DEGENERATE_Z
+        else:
+            z_score = abs(value - expected) / spread
+        return YearlyScore(
+            applied=True,
+            level=level,
+            index=factor,
+            matched=tuple(matched),
+            ratios=tuple(ratios),
+            expected=expected,
+            z_score=z_score,
+            centre=expected,
+            spread=spread,
+            degenerate=degenerate,
+            declared=effect,
+            basis="runs",
         )
 
 

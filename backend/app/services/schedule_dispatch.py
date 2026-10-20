@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.orm import Session
 
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Connection, Run, Schedule, Suite
@@ -90,6 +91,7 @@ def _publish(
         try:
             sent.append((item, run_dispatch.dispatch_run(item.run_id)))
             streak = 0
+            usage_telemetry.emit(usage_telemetry.UsageEvent.SUITE_RUN_TRIGGERED, trigger="schedule")
         except Exception:
             log.exception(
                 "run_dispatch_failed", run_id=str(item.run_id), schedule_id=str(item.schedule_id)

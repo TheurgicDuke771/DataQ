@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 import jwt
@@ -859,6 +859,19 @@ elif _settings.dev_bypass_allowed:
     _resolver = _get_current_user_dev_bypass
 else:
     _resolver = _get_current_user_unconfigured
+
+
+def credential_kind(request: HTTPConnection) -> Literal["pat", "session", "oidc", "bypass"]:
+    """How the current request authenticated — the coarse kind only, never the credential
+    (ADR 0050's `user_signed_in` attribute)."""
+    if _pat_token(request) is not None:
+        return "pat"
+    if _session_token(request) is not None:
+        return "session"
+    if _resolver is _get_current_user_dev_bypass:
+        return "bypass"
+    return "oidc"
+
 
 get_current_user: Callable[..., User] = membership_gated(_resolver)
 

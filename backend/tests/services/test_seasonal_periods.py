@@ -304,10 +304,16 @@ def test_seasonal_periods_parse_to_unique_ids_and_need_yearly_on_a_per_period_me
     assert params.seasonal_periods == (a, b)
     with pytest.raises(MonitorConfigError, match="needs yearly: true"):
         _params(yearly=False, seasonal_periods=[str(a)])
-    with pytest.raises(MonitorConfigError, match="applies only to target_metric"):
+    with pytest.raises(MonitorConfigError, match="'row_count' only with yearly: true"):
         monitors.anomaly_params(
             {"target_metric": "row_count", "seasonal_periods": [str(a)]}, authoring=True
         )
+    with pytest.raises(MonitorConfigError, match="applies only to target_metric"):
+        monitors.anomaly_params(
+            {"target_metric": "column_profile", "seasonal_periods": [str(a)]}, authoring=True
+        )
+    whole_table = {"target_metric": "row_count", "yearly": True, "seasonal_periods": [str(a)]}
+    assert monitors.anomaly_params(whole_table, authoring=True).seasonal_periods == (a,)
 
 
 @pytest.mark.parametrize(
