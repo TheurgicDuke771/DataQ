@@ -88,6 +88,7 @@ differences:
 | Token validation | Azure-native validator: `AZURE_TENANT_ID`, `AZURE_API_CLIENT_ID`, `AZURE_SPA_CLIENT_ID`, `AZURE_API_SCOPE`, `AZURE_ALLOW_GUEST_USERS` | Generic `OidcBearerScheme`: just `OIDC_ISSUER` + `OIDC_AUDIENCE`. The user profile resolves via the **userinfo endpoint**, because Cognito access tokens carry neither `email` nor `aud` |
 | Secret injection | Container Apps secret refs | ECS `valueFrom` Secrets Manager ARNs — start-time snapshots, so a rotated infra secret needs a service bounce |
 | Telemetry | `APPLICATIONINSIGHTS_CONNECTION_STRING` | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (loopback into the ADOT sidecar) |
+| Usage telemetry ([ADR 0050](../adr/0050-usage-telemetry.md)) | `TELEMETRY_SINK=off` by default on both; set `otlp` to send the `dataq.usage.*` counter and events to App Insights / the OTLP endpoint above, or `file` with `TELEMETRY_FILE_PATH`. Nothing is recorded until an admin also opts in, and `GET /admin/deployment` lists it as `usage_telemetry` either way | same |
 | Email | Any SMTP relay + tfvars-sourced addresses | SES SMTP host + an IAM-derived SMTP password secret + `alert_email` / `alert_email_to` variables |
 
 ### Frontend (runtime `DATAQ_*` contract — one nginx image, envsubst at startup)

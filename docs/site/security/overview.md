@@ -691,9 +691,11 @@ mechanism and points you at the live endpoint for the values.
 
 ### What can move data out
 
-**DataQ sends nothing to its authors.** There is no usage telemetry, no licence check and
-no update check: a deployment makes network calls only to the services its operator
-configures — its datasources, identity provider, orchestrators and the destinations below.
+**DataQ sends nothing to its authors.** There is no licence check and no update check, and
+product-usage telemetry is off unless both the operator and a workspace admin turn it on
+(see below) — and even then it goes only to the operator's own file or collector. A
+deployment makes network calls only to the services its operator configures — its
+datasources, identity provider, orchestrators and the destinations below.
 The list below is the ones that can carry data out.
 
 Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
@@ -705,6 +707,13 @@ considered:
   operator-configured and its location is outside DataQ's knowledge.
 - **Telemetry** — traces and logs to an operator-chosen sink; PII is redacted at
   the logger, so this is operational metadata rather than warehouse values.
+- **Usage telemetry** — **off by default.** It records anything only when the operator
+  sets `TELEMETRY_SINK` (`file` or `otlp`) **and** a workspace admin opts in under Admin →
+  Settings; it is listed as `usage_telemetry` in either state. It carries event names,
+  counts and fixed-vocabulary attributes only (check kind, datasource type, page route
+  name, outcome), validated in code against a published list — never a table or column
+  name, SQL, suite or check name, email or credential. See
+  [ADR 0050](../adr/0050-usage-telemetry.md) for the event list.
 - **MCP AI clients** — **live today.** `/mcp` serves run results, redacted failing
   samples and check configuration to whatever AI client holds a valid PAT. The
   model provider behind that client, and its jurisdiction, are chosen by the token
