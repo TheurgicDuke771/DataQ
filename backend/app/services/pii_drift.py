@@ -16,7 +16,8 @@ auto-resolve the incident while the column is still unclassified.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,7 +29,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import PII_DRIFT, monitor_expectation_type, monitor_outcome
 from backend.app.db.models import Asset, Check, Connection, Run, Suite
-from backend.app.services import profile_service
+from backend.app.services import column_detections, profile_service
 from backend.app.services.check_service import FILE_TYPES
 from backend.app.services.classification_vocab import DETECTED, fold_key
 from backend.app.services.column_detections import detect, dismissed_detected_columns
@@ -49,15 +50,27 @@ class PiiDriftProfileError(Exception):
 
 
 def _target_kwargs(
-    connection: Connection, *, table: str, schema: str | None, catalog: str | None
+    connection: Connection,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    file_format: str | None = None,
 ) -> dict[str, Any]:
     """The profiler's location arguments for a run's resolved target: a flat-file target is a
-    path, an Iceberg one an already-folded ``namespace.table`` identifier."""
+    path (plus the suite's explicit ``file_format``, which an extension-less key needs), an
+    Iceberg one an already-folded ``namespace.table`` identifier."""
     if connection.type in FILE_TYPES:
-        return {"path": table}
+        return {"path": table, "file_format": file_format}
     if connection.type == "iceberg":
         return {"table": table}
     return {"table": table, "schema": schema, "catalog": catalog}
+
+
+def ignored_columns(config: Mapping[str, Any] | None) -> set[str]:
+    """The check's ``ignore_columns``, folded like every other column key — the ONE reading the
+    run and the dry-run share, so the two cannot disagree on case or whitespace."""
+    return {fold_key(str(c)) for c in ((config or {}).get("ignore_columns") or ()) if c}
 
 
 def profile_target(
@@ -69,23 +82,35 @@ def profile_target(
     catalog: str | None,
     secret_store: SecretStore,
     asset: Asset | None,
+    file_format: str | None = None,
+    record_credential: bool = True,
 ) -> profile_service.ProfileResult:
     """List → profile every column under one login; with ``asset`` the profile also feeds the
-    classification source as a FULL profile (the stamp moves)."""
-    location = _target_kwargs(connection, table=table, schema=schema, catalog=catalog)
+    classification source as a FULL profile (the stamp moves).
+
+    Inside a worker run (``record_credential=False``) nothing here commits: the per-call
+    credential bookkeeping is skipped (the run has its own) and the detections are written
+    flush-only, so they ride the run's terminal commit with every other stateful write (#318).
+    """
+    location = _target_kwargs(
+        connection, table=table, schema=schema, catalog=catalog, file_format=file_format
+    )
     try:
         with profile_service.shared_connection():
             columns = profile_service.list_columns(
-                connection, session=session, secret_store=secret_store, **location
+                connection,
+                session=session,
+                secret_store=secret_store,
+                record_credential=record_credential,
+                **location,
             )
-            return profile_service.profile_connection(
+            result = profile_service.profile_connection(
                 connection,
                 session=session,
                 columns=columns,
                 top_n=PROFILE_TOP_N,
                 secret_store=secret_store,
-                asset=asset,
-                full_profile=asset is not None,
+                record_credential=record_credential,
                 **location,
             )
     except DataQError:
@@ -102,6 +127,11 @@ def profile_target(
         raise PiiDriftProfileError(
             f"could not profile the target: {safe_failure_reason(exc)}"
         ) from exc
+    if asset is not None:
+        column_detections.record_profile_detections_safely(
+            session, asset, result.columns, full_profile=True, commit=record_credential
+        )
+    return result
 
 
 def policy_columns(policy: dict[str, Any] | None) -> set[str]:
@@ -130,8 +160,17 @@ def unclassified_detected_columns(
     inherited through lineage carries that verdict, not ``detected``, and drops out here by
     construction; a dismissed detection is not in the map at all.
     """
-    decided = policy_columns(policy) | {fold_key(c) for c in (ignore_columns or ())}
+    decided = policy_columns(policy) | ignored_columns({"ignore_columns": ignore_columns})
     return sorted(k for k, v in (tags or {}).items() if v == DETECTED and k not in decided)
+
+
+@dataclass(frozen=True)
+class _RunProfile:
+    """What one run learns about the target once, shared by every pii_drift check in it."""
+
+    result: profile_service.ProfileResult
+    detected_now: frozenset[str]  # folded names the detectors flagged in THIS profile
+    tags: dict[str, str]  # the asset's effective map with this profile's detections overlaid
 
 
 def build_pii_drift_executor(
@@ -156,10 +195,10 @@ def build_pii_drift_executor(
     """
     from backend.app.services.run_service import resolve_asset  # the heavier module, lazily
 
-    # Per-run cache: the profile, this profile's own detections and the asset's effective tag
-    # map are computed once however many pii_drift checks the suite holds; only the per-check
+    # Per-run cache (see `_RunProfile`): computed once however many pii_drift checks the suite
+    # holds — a failed profile too, so N checks cost one attempt, not N. Only the per-check
     # policy/ignore subtraction and the baseline diff run per check.
-    profiled: dict[str, Any] = {}
+    cache: list[_RunProfile | str] = []
 
     def errored(message: str) -> CheckOutcome:
         return CheckOutcome(
@@ -169,6 +208,37 @@ def build_pii_drift_executor(
             error_message=message,
         )
 
+    def _profile_once(suite: Suite, asset: Asset) -> _RunProfile | str:
+        """The run's one profile, or the classified error message every check reports."""
+        target = suite.target if isinstance(suite.target, dict) else {}
+        try:
+            result = profile_target(
+                connection,
+                session=session,
+                table=target_table,
+                schema=target_schema,
+                catalog=target_catalog,
+                secret_store=secret_store,
+                asset=asset if persist else None,
+                file_format=target.get("file_format"),
+                record_credential=not persist,
+            )
+        except (PiiDriftProfileError, DataQError) as exc:
+            # A per-check error, never a run failure: a profiler outage (`ProfileFailedError`
+            # is a DataQError too) must not discard the sibling checks' results. Both carry a
+            # classified, author-facing message.
+            return str(exc)
+        # This profile's own detections are overlaid on the stored map, so the verdict does not
+        # rest on the classification store alone: its write and read are fail-soft (ADR 0049
+        # §4), and a swallowed error there must not turn a detection into a pass or an empty
+        # baseline. Stronger rungs (warehouse tag, inherited) still win, and a steward's
+        # dismissal stands even when this profile detects the column again.
+        detected_now = {fold_key(d.column) for d in detect(result.columns)}
+        tags = dict(effective_column_tags(session, asset) or {})
+        for column in detected_now - dismissed_detected_columns(session, asset):
+            tags.setdefault(column, DETECTED)
+        return _RunProfile(result=result, detected_now=frozenset(detected_now), tags=tags)
+
     def executor(check: Check) -> CheckOutcome:
         suite = session.get(Suite, check.suite_id)
         asset = resolve_asset(session, suite, run) if suite is not None else None
@@ -177,35 +247,12 @@ def build_pii_drift_executor(
                 "pii_drift needs the suite's asset to hold its classifications and none is "
                 "resolved — set a run target on the suite"
             )
-        if "result" not in profiled:
-            try:
-                result = profile_target(
-                    connection,
-                    session=session,
-                    table=target_table,
-                    schema=target_schema,
-                    catalog=target_catalog,
-                    secret_store=secret_store,
-                    asset=asset if persist else None,
-                )
-            except (PiiDriftProfileError, DataQError) as exc:
-                # A per-check error, never a run failure: a profiler outage (`ProfileFailedError`
-                # is a DataQError too) must not discard the sibling checks' results. Both carry
-                # a classified, author-facing message.
-                return errored(str(exc))
-            profiled["result"] = result
-            # This profile's own detections are overlaid on the stored map, so the verdict does
-            # not rest on the classification store alone: its write and read are fail-soft
-            # (ADR 0049 §4), and a swallowed error there must not turn a detection into a pass
-            # or an empty baseline. Stronger rungs (warehouse tag, inherited) still win, and a
-            # steward's dismissal stands even when this profile detects the column again.
-            profiled["detected_now"] = {fold_key(d.column) for d in detect(result.columns)}
-            tags = dict(effective_column_tags(session, asset) or {})
-            dismissed = dismissed_detected_columns(session, asset)
-            for column in profiled["detected_now"] - dismissed:
-                tags.setdefault(column, DETECTED)
-            profiled["tags"] = tags
-        result = profiled["result"]
+        if not cache:
+            cache.append(_profile_once(suite, asset))
+        profiled = cache[0]
+        if isinstance(profiled, str):
+            return errored(profiled)
+        result = profiled.result
         config = dict(check.config)
         # Only columns the table holds NOW count: a persisted detection for a column since
         # dropped or renamed is deliberately kept by the classification source (ADR 0049 §4)
@@ -215,7 +262,7 @@ def build_pii_drift_executor(
         current = [
             c
             for c in unclassified_detected_columns(
-                profiled["tags"],
+                profiled.tags,
                 policy=suite.column_policy,
                 ignore_columns=config.get("ignore_columns"),
             )
@@ -227,7 +274,7 @@ def build_pii_drift_executor(
             # What the detectors flagged in THIS profile. `columns_unclassified` is a different
             # population — every present column carrying a detection (this run's or a retained
             # earlier one) that nothing classified — so it can exceed this figure.
-            "columns_detected": len(profiled["detected_now"]),
+            "columns_detected": len(profiled.detected_now),
             "columns_unclassified": len(current),
         }
         if baseline_row is None:

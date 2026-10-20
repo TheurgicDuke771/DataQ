@@ -355,22 +355,85 @@ def test_the_profilers_own_refusals_are_not_flattened_into_an_outage(
         )
 
 
-def test_the_persisted_run_hands_the_profiler_the_asset_as_a_full_profile(
+def test_the_persisted_run_feeds_the_classification_source_as_a_full_profile_without_committing(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The run's asset gets the detections as a FULL profile (the stamp moves), written
+    flush-only: the stateful phase rides the run's terminal commit (#318)."""
     captured: dict[str, Any] = {}
-    real = profile_service.profile_connection
+    real = column_detections.record_profile_detections_safely
 
-    def spy(connection: Any, **kwargs: Any) -> ProfileResult:
-        captured.update(kwargs)
-        return real(connection, **kwargs)
+    def spy(session: Any, asset: Any, columns: Any, **kwargs: Any) -> None:
+        captured.update(kwargs, asset_id=asset.id)
+        real(session, asset, columns, **kwargs)
 
     _Fake(monkeypatch, _profile(contact=_EMAILS))
-    monkeypatch.setattr(profile_service, "profile_connection", spy)
+    monkeypatch.setattr(column_detections, "record_profile_detections_safely", spy)
     _executor(graph)(graph["check"])
-    assert captured["asset"] is not None and captured["asset"].id == graph["asset"].id
-    assert captured["full_profile"] is True
-    assert captured["table"] == "orders" and captured["schema"] == "public"
+    assert captured == {"full_profile": True, "commit": False, "asset_id": graph["asset"].id}
+
+
+def test_the_executor_never_commits_the_worker_session(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """execute_run's #318 invariant: a stateful phase is unpublishable and rides the terminal
+    commit. The profile path's credential bookkeeping and the detection write both commit on
+    their own elsewhere; inside a run neither may, or a cancelled run keeps committed rows."""
+    _Fake(monkeypatch, _profile(contact=_EMAILS))
+    commits: list[int] = []
+    real_commit = graph["session"].commit
+
+    def counting_commit() -> None:
+        commits.append(1)
+        real_commit()
+
+    monkeypatch.setattr(graph["session"], "commit", counting_commit)
+    out = _executor(graph)(graph["check"])
+    assert out.errored is False
+    assert commits == []
+    # …and the detections are still visible to this transaction, pending the terminal commit.
+    assert [r.column_name for r in _rows(graph["session"], graph["asset"])] == ["contact"]
+
+
+def test_a_failed_profile_is_attempted_once_per_run_however_many_checks(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts: list[int] = []
+
+    def _down(*a: Any, **k: Any) -> list[str]:
+        attempts.append(1)
+        raise profile_service.ProfileFailedError("column profile could not execute")
+
+    monkeypatch.setattr(profile_service, "list_columns", _down)
+    second = Check(
+        suite_id=graph["suite"].id,
+        name="pii drift 2",
+        kind="pii_drift",
+        expectation_type="monitor:pii_drift",
+        config={},
+    )
+    graph["session"].add(second)
+    graph["session"].commit()
+    run = _executor(graph)
+    outcomes = [run(graph["check"]), run(second)]
+    assert all(
+        o.errored and o.error_message == "column profile could not execute" for o in outcomes
+    )
+    assert len(attempts) == 1
+
+
+def test_a_flat_file_target_keeps_its_explicit_file_format(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An extension-less key profiles only with the suite's `file_format`; dropping it would make
+    every run error with 'pass file_format' about a field the author already set."""
+    graph["conn"].type = "s3"
+    graph["suite"].target = {"path": "landing/orders/latest", "file_format": "parquet"}
+    graph["session"].commit()
+    fake = _Fake(monkeypatch, _profile(contact=_EMAILS))
+    out = _executor(graph)(graph["check"])
+    assert out.errored is False
+    assert fake.seen[0]["path"] == "orders" and fake.seen[0]["file_format"] == "parquet"
 
 
 def test_an_unclassified_driver_exception_is_a_per_check_error_with_a_classified_message(
@@ -442,8 +505,12 @@ def test_file_and_iceberg_targets_are_addressed_the_way_the_profiler_expects() -
     ice = Connection(name="ice", type="iceberg", env="dev", config={}, secret_ref="kv")
     pg = Connection(name="pg", type="postgres", env="dev", config={}, secret_ref="kv")
     assert pii_drift._target_kwargs(s3, table="landing/orders.csv", schema=None, catalog=None) == {
-        "path": "landing/orders.csv"
+        "path": "landing/orders.csv",
+        "file_format": None,
     }
+    assert pii_drift._target_kwargs(
+        s3, table="landing/orders/latest", schema=None, catalog=None, file_format="parquet"
+    ) == {"path": "landing/orders/latest", "file_format": "parquet"}
     assert pii_drift._target_kwargs(ice, table="sales.orders", schema=None, catalog=None) == {
         "table": "sales.orders"
     }
