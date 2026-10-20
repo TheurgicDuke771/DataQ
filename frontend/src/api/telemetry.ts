@@ -15,6 +15,8 @@ export interface TelemetrySettings {
   enabled: boolean;
   stored: boolean;
   sink: 'off' | 'file' | 'otlp';
+  /** False when a sink is configured but could not be started. */
+  sink_ready: boolean;
   events: TelemetryEventSpec[];
   updated_by: string | null;
   updated_at: string | null;

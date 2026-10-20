@@ -59,6 +59,7 @@ from backend.app.core.tracing import (
 )
 from backend.app.db.session import get_db
 from backend.app.mcp import build_mcp_app
+from backend.app.mcp.server import register_usage_tool_names
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
 # Validate caller-supplied X-Request-ID before echoing it (security audit 2026-05-28): cap length,
@@ -111,6 +112,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_auth()
     # Product-usage telemetry (ADR 0050): providers only; nothing leaves until the admin opts in.
     usage_telemetry.configure("dataq-api", settings)
+    if _mcp_app is not None:
+        await register_usage_tool_names()
     usage_telemetry.emit(usage_telemetry.UsageEvent.APP_STARTED, service="api")
     # Workspace poll-staleness watchdog (#1052).
     staleness_stop = asyncio.Event()

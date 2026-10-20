@@ -22,6 +22,7 @@ const OFF: TelemetrySettings = {
   enabled: false,
   stored: false,
   sink: 'file',
+  sink_ready: true,
   events: [
     { name: 'page_viewed', attributes: { route: ['dashboard', 'suites'] } },
     { name: 'run_completed', attributes: { checks: 'integer' } },
@@ -69,6 +70,15 @@ describe('TelemetryPanel', () => {
     expect(await screen.findByText('Opted in, but nothing is recorded')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Usage telemetry' })).toBeChecked();
     expect(screen.getByText('Off')).toBeInTheDocument();
+  });
+
+  it('says when a configured sink could not be started', async () => {
+    mockGet.mockResolvedValue({ ...OFF, stored: true, sink_ready: false });
+    renderSubPage(<TelemetryPanel />);
+    expect(
+      await screen.findByText('Opted in, but the sink could not be started'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Opted in, but nothing is recorded')).not.toBeInTheDocument();
   });
 
   it('shows the load failure rather than a default state', async () => {

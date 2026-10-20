@@ -45,10 +45,13 @@ def me(
     db: Annotated[Session, Depends(get_db)],
 ) -> MeResponse:
     """Return the authenticated user's profile plus their workspace-admin flag."""
-    # The SPA calls this once per sign-in, so it stands in for the sign-in event (ADR 0050).
-    usage_telemetry.emit(
-        usage_telemetry.UsageEvent.USER_SIGNED_IN, session=db, auth_mode=credential_kind(request)
-    )
+    # Every page load calls this; counted once per user per window, it stands in for a session.
+    if usage_telemetry.first_in_window(str(current_user.id)):
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.USER_SIGNED_IN,
+            session=db,
+            auth_mode=credential_kind(request),
+        )
     # model_validate keeps the passthrough fields automatic (a new User/MeResponse column is picked
     # up without editing this handler); only the computed flag is stamped on.
     resp = MeResponse.model_validate(current_user)

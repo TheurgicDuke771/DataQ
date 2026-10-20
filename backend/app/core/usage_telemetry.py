@@ -12,6 +12,7 @@ from __future__ import annotations
 import enum
 import json
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,7 +138,7 @@ EVENTS: Final[dict[UsageEvent, dict[str, Vocabulary]]] = {
         "kind": Vocabulary(CHECK_KINDS),
         "engine": Vocabulary(CHECK_ENGINES),
         "datasource_type": Vocabulary(DATASOURCE_TYPES),
-        "origin": Vocabulary(CHECK_ORIGINS),
+        "origin": Vocabulary((*CHECK_ORIGINS, "import")),
     },
     UsageEvent.CHECK_EDITOR_ABANDONED: {"step": Vocabulary(("expectation", "config"))},
     UsageEvent.SUITE_RUN_TRIGGERED: {"trigger": Vocabulary(TRIGGER_KINDS)},
@@ -150,7 +151,7 @@ EVENTS: Final[dict[UsageEvent, dict[str, Vocabulary]]] = {
     UsageEvent.CONNECTION_CREATED: {"type": Vocabulary(CONNECTION_TYPES)},
     UsageEvent.MCP_TOOL_CALLED: {
         "tool": MCP_TOOL_NAMES,
-        "outcome": Vocabulary(("ok", "error")),
+        "outcome": Vocabulary(("ok", "error", "cancelled")),
     },
     UsageEvent.LLM_FEATURE_USED: {"feature": Vocabulary(LLM_FEATURES)},
     UsageEvent.ALERT_DELIVERED: {"channel": Vocabulary(ALERT_CHANNELS)},
@@ -318,6 +319,27 @@ def configured() -> bool:
     return _state is not None
 
 
+SIGN_IN_WINDOW_S: Final = 8 * 3600
+_seen: dict[str, float] = {}
+_seen_lock = threading.Lock()
+
+
+def first_in_window(key: str, window_s: float = SIGN_IN_WINDOW_S) -> bool:
+    """True the first time `key` is seen in this process within `window_s`. The key stays in
+    memory and is never exported; it turns a per-request signal into a per-session one."""
+    if _state is None:
+        return False
+    now = time.monotonic()
+    with _seen_lock:
+        if len(_seen) > 10_000:
+            for stale in [k for k, until in _seen.items() if until <= now]:
+                del _seen[stale]
+        if _seen.get(key, 0.0) > now:
+            return False
+        _seen[key] = now + window_s
+        return True
+
+
 def configure(
     service_name: str,
     settings: Settings | None = None,
@@ -403,6 +425,7 @@ def reset() -> None:
     global _state
     state, _state = _state, None
     _rejected_warned.clear()
+    _seen.clear()
     if state is None:
         return
     try:

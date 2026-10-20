@@ -96,27 +96,34 @@ def _terminal_failed(
 
 
 def _usage_run_completed(session: Session, *, run_id: uuid.UUID) -> None:
-    """The `run_completed` usage event (ADR 0050): outcome + datasource type + counts only."""
-    run = session.get(Run, run_id)
-    if run is None or run.status not in usage_telemetry.RUN_OUTCOMES:
+    """The `run_completed` usage event (ADR 0050): outcome + datasource type + counts only.
+    No query runs unless telemetry is on, and a failure here never reaches the incident and
+    alert hooks after it."""
+    if not usage_telemetry.configured():
         return
-    suite = session.get(Suite, run.suite_id)
-    connection = session.get(Connection, suite.connection_id) if suite is not None else None
-    if connection is None:
-        return
-    duration_ms = (
-        int((run.finished_at - run.started_at).total_seconds() * 1000)
-        if run.finished_at is not None and run.started_at is not None
-        else 0
-    )
-    usage_telemetry.emit(
-        usage_telemetry.UsageEvent.RUN_COMPLETED,
-        session=session,
-        outcome=run.status,
-        datasource_type=connection.type,
-        checks=session.scalar(select(func.count()).where(Result.run_id == run_id)) or 0,
-        duration_ms=max(duration_ms, 0),
-    )
+    try:
+        run = session.get(Run, run_id)
+        if run is None or run.status not in usage_telemetry.RUN_OUTCOMES:
+            return
+        suite = session.get(Suite, run.suite_id)
+        connection = session.get(Connection, suite.connection_id) if suite is not None else None
+        if connection is None:
+            return
+        attributes: dict[str, Any] = {
+            "outcome": run.status,
+            "datasource_type": connection.type,
+            "checks": session.scalar(select(func.count()).where(Result.run_id == run_id)) or 0,
+        }
+        if run.finished_at is not None and run.started_at is not None:
+            elapsed_ms = int((run.finished_at - run.started_at).total_seconds() * 1000)
+            if elapsed_ms >= 0:
+                attributes["duration_ms"] = elapsed_ms
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.RUN_COMPLETED, session=session, **attributes
+        )
+    except Exception:
+        session.rollback()
+        log.warning("usage_run_completed_failed", run_id=str(run_id), exc_info=True)
 
 
 def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:

@@ -41,8 +41,15 @@ def sink_active() -> bool:
     return get_settings().telemetry_sink != "off"
 
 
+def sink_ready() -> bool:
+    """The sink is configured AND this process built it; false when setup failed (logged)."""
+    from backend.app.core import usage_telemetry
+
+    return sink_active() and usage_telemetry.configured()
+
+
 def effective(session: Session) -> bool:
-    return sink_active() and stored_enabled(session)
+    return sink_ready() and stored_enabled(session)
 
 
 def invalidate() -> None:

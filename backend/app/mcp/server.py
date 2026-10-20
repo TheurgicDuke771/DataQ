@@ -5080,32 +5080,39 @@ def build_mcp_app() -> Any:
 
 class _UsageTelemetryMiddleware(Middleware):
     """One `mcp_tool_called` usage event per call (ADR 0050): the tool NAME (validated against
-    the registered set) and ok/error — never an argument or a result."""
+    the registered set) and ok/error/cancelled, never an argument or a result. Nothing here can
+    change the call's result or exception, and the emit runs off the event loop."""
 
     async def on_call_tool(self, context: Any, call_next: Any) -> Any:
-        if not usage_telemetry.MCP_TOOL_NAMES.names:
-            tools = await mcp.list_tools(run_middleware=False)
-            usage_telemetry.register_mcp_tool_names([t.name for t in tools])
         outcome = "ok"
         try:
             return await call_next(context)
-        except Exception:
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except BaseException:
             outcome = "error"
             raise
         finally:
-            usage_telemetry.emit(
-                usage_telemetry.UsageEvent.MCP_TOOL_CALLED,
-                tool=str(getattr(context.message, "name", "")),
-                outcome=outcome,
-            )
+            if usage_telemetry.configured():
+                if not usage_telemetry.MCP_TOOL_NAMES.names:
+                    await register_usage_tool_names()
+                await asyncio.to_thread(
+                    _emit_tool_called, str(getattr(context.message, "name", "")), outcome
+                )
+
+
+def _emit_tool_called(tool: str, outcome: str) -> None:
+    usage_telemetry.emit(usage_telemetry.UsageEvent.MCP_TOOL_CALLED, tool=tool, outcome=outcome)
 
 
 _usage_telemetry_installed = False
 
 
 def install_usage_telemetry() -> None:
-    """Add the usage middleware, once, and declare the tool-name vocabulary — now when no event
-    loop is running (the import-time build), otherwise on the first call."""
+    """Add the usage middleware, once. The tool-name vocabulary is declared by
+    `register_usage_tool_names` — here when no event loop is running (an import-time build),
+    otherwise from the api lifespan."""
     global _usage_telemetry_installed
     if _usage_telemetry_installed:
         return
@@ -5114,5 +5121,13 @@ def install_usage_telemetry() -> None:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        tools = asyncio.run(mcp.list_tools(run_middleware=False))
+        asyncio.run(register_usage_tool_names())
+
+
+async def register_usage_tool_names() -> None:
+    """Declare every registered tool name as the `mcp_tool_called.tool` vocabulary."""
+    try:
+        tools = await mcp.list_tools(run_middleware=False)
         usage_telemetry.register_mcp_tool_names([t.name for t in tools])
+    except Exception:
+        log.warning("usage_telemetry_tool_names_unavailable", exc_info=True)

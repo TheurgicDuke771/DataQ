@@ -49,11 +49,15 @@ def capture() -> Any:
     return logs
 
 
-def _sink(monkeypatch: pytest.MonkeyPatch, sink: str, tmp_path: Any = None) -> None:
+def _sink(
+    monkeypatch: pytest.MonkeyPatch, sink: str, tmp_path: Any = None, *, start: bool = True
+) -> None:
     monkeypatch.setenv("TELEMETRY_SINK", sink)
     if sink == "file":
         monkeypatch.setenv("TELEMETRY_FILE_PATH", str(tmp_path / "usage.jsonl"))
     get_settings.cache_clear()
+    if start and not usage_telemetry.configured():
+        assert usage_telemetry.configure("test", get_settings())
 
 
 def _names(logs: Any) -> list[str]:
@@ -252,3 +256,67 @@ def test_me_emits_the_sign_in_event_with_the_auth_kind(
     (record,) = capture.get_finished_logs()
     assert record.log_record.event_name == "dataq.usage.user_signed_in"
     assert dict(record.log_record.attributes) == {"event": "user_signed_in", "auth_mode": "pat"}
+
+
+def test_posture_says_when_a_configured_sink_failed_to_start(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    client.put("/api/v1/admin/telemetry", json={"enabled": True})
+    _sink(monkeypatch, "file", tmp_path, start=False)
+    row = _usage_row(client)
+    assert row["enabled"] is False and "could not be started" in row["detail"]
+    body = client.get("/api/v1/admin/telemetry").json()
+    assert (body["enabled"], body["stored"], body["sink_ready"]) == (False, True, False)
+
+
+def test_sign_in_is_counted_once_per_window_not_per_page_load(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    capture: Any,
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    _sink(monkeypatch, "file", tmp_path)
+    client.put("/api/v1/admin/telemetry", json={"enabled": True})
+    capture.clear()
+    _, headers = as_role("member")
+    for _ in range(3):
+        client.get("/api/v1/me", headers=headers)
+    assert _names(capture) == ["dataq.usage.user_signed_in"]
+
+
+def test_telemetry_posts_share_the_default_per_ip_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    seen: list[list[str]] = []
+
+    class _Store:
+        async def incr_windows(self, keys: list[str]) -> list[int]:
+            seen.append(list(keys))
+            return [1] * len(keys)
+
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    get_settings.cache_clear()
+    monkeypatch.setattr(rate_limit, "_active_store", lambda: _Store())
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/telemetry/events",
+            "headers": [(b"authorization", b"Bearer dq_live_x")],
+            "client": ("10.1.2.3", 5000),
+        }
+    )
+
+    async def _next(_request: Request) -> Response:
+        return Response("ok")
+
+    asyncio.run(rate_limit.rate_limit_middleware(request, _next))
+    ((primary, ceiling),) = seen
+    assert primary.startswith("rl:telemetry:tok:")
+    assert ceiling.startswith("rl:default:ipall:")

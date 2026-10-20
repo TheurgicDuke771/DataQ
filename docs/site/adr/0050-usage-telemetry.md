@@ -69,12 +69,14 @@ constraints are non-negotiable:
 
 5. **The browser never talks to a collector.** The SPA posts `page_viewed` and
    `check_editor_abandoned` to `POST /api/v1/telemetry/events` (signed-in users only, at most 20
-   events per post, its own rate-limit class `telemetry`, 60/minute per principal), where they
+   events per post, its own rate-limit class `telemetry`, 60/minute per principal and sharing the
+   default per-IP ceiling), where they
    are validated against the same registry; the server is the only emitter. The SPA reports a
    route *name* (`suite_detail`), never a URL, so no id or query string can leave.
 
 6. **Disclosure.** `GET /api/v1/admin/deployment` always lists a `usage_telemetry` transfer,
-   off or on; when on, its detail names the sink (the file path, or the OTel exporters). The
+   off or on; when on, its detail names the sink (the file path, or the OTel exporters); when
+   off it says why — no opt-in, no sink, or a sink that is configured but failed to start. The
    Admin settings page shows the effective state, the sink, and the full event list inline.
 
 ## The events
@@ -82,14 +84,14 @@ constraints are non-negotiable:
 | Event | Emitted when | Attributes |
 |---|---|---|
 | `app_started` | the api or a worker starts | `service`: `api` · `worker` |
-| `user_signed_in` | the SPA loads the signed-in user (`GET /me`) | `auth_mode`: `pat` · `session` · `oidc` · `bypass` |
+| `user_signed_in` | a user's first `GET /me` in an 8-hour window, per api process (a session, not a page load) | `auth_mode`: `pat` · `session` · `oidc` · `bypass` |
 | `page_viewed` | the SPA navigates (browser-reported) | `route`: a route name such as `dashboard`, `suite_detail`, `check_new`, `admin_settings`, `other` |
-| `check_created` | a check is saved | `kind`, `engine`, `datasource_type`, `origin` (`user` · `auto` · `suggestion`) |
+| `check_created` | a check is saved, including each check of an imported suite | `kind`, `engine`, `datasource_type`, `origin` (`user` · `auto` · `suggestion` · `import`) |
 | `check_editor_abandoned` | the new-check editor is left without saving (browser-reported) | `step`: `expectation` · `config` |
 | `suite_run_triggered` | a run is dispatched | `trigger`: `manual` · `schedule` · `mcp` · `probe` · `adf` · `airflow` · `dbt` · `other` |
-| `run_completed` | the worker finishes a run | `outcome`, `datasource_type`, `checks` (count), `duration_ms` |
+| `run_completed` | the worker finishes a run | `outcome`, `datasource_type`, `checks` (count), `duration_ms` (omitted when the run has no start or end time) |
 | `connection_created` | a connection is saved | `type` |
-| `mcp_tool_called` | an MCP tool is called | `tool` (a registered tool name), `outcome`: `ok` · `error` |
+| `mcp_tool_called` | an MCP tool is called (a call naming no registered tool is not counted) | `tool` (a registered tool name), `outcome`: `ok` · `error` · `cancelled` |
 | `llm_feature_used` | an LLM feature is invoked | `feature`: `sql_generation` · `check_suggestion` · `rca_narrative` |
 | `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` |
 | `coverage_auto_check_created` | automatic coverage adds a check | `kind` |

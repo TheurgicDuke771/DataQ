@@ -325,7 +325,8 @@ async def rate_limit_middleware(
         # buckets, but every model call from one IP shares this ceiling.
         keys.append(f"rl:llm:ipall:{ip}:{window}")
     elif cls == "telemetry":
-        keys.append(f"rl:telemetry:ipall:{ip}:{window}")
+        # The default class's per-IP ceiling, shared: a telemetry post spends the same budget.
+        keys.append(f"rl:default:ipall:{ip}:{window}")
     counts = await _active_store().incr_windows(keys)
 
     if counts is None:
