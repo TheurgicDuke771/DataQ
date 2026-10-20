@@ -1,6 +1,6 @@
 import { Alert, Button, Descriptions, Flex, Tag, Typography } from 'antd';
 
-import type { AuditChainStatus } from '../../api/admin';
+import type { AnchorVerification, AuditChainStatus } from '../../api/admin';
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { Section } from './parts';
 import { STATUS_TAG, useAuditChainVerify } from './useAuditChainVerify';
@@ -120,7 +120,9 @@ function ChainResult({ result }: { result: AuditChainStatus }) {
         </Descriptions.Item>
         <Descriptions.Item label="External anchor">
           {result.anchor_mode === 'webhook' ? (
-            <Tag color="green">Anchored off-box</Tag>
+            <Tag color="green">Anchored off-box (webhook)</Tag>
+          ) : result.anchor_mode === 'object_lock' ? (
+            <Tag color="green">Anchored off-box (immutable object store)</Tag>
           ) : (
             <Flex vertical gap={2}>
               <Tag>Not configured</Tag>
@@ -131,7 +133,50 @@ function ChainResult({ result }: { result: AuditChainStatus }) {
             </Flex>
           )}
         </Descriptions.Item>
+        {result.anchors && (
+          <Descriptions.Item label="Anchors read back">
+            <AnchorReadBack anchors={result.anchors} />
+          </Descriptions.Item>
+        )}
       </Descriptions>
+    </Flex>
+  );
+}
+
+const ANCHOR_TAG: Record<AnchorVerification['status'], { color: string; label: string }> = {
+  ok: { color: 'green', label: 'Every published head is in the chain' },
+  mismatch: { color: 'red', label: 'A published head is missing from the chain' },
+  empty: { color: 'default', label: 'Nothing published yet' },
+  unavailable: { color: 'orange', label: 'Anchor store unreachable — not checked' },
+};
+
+function AnchorReadBack({ anchors }: { anchors: AnchorVerification }) {
+  return (
+    <Flex vertical gap={4}>
+      <Tag color={ANCHOR_TAG[anchors.status].color}>{ANCHOR_TAG[anchors.status].label}</Tag>
+      {anchors.status === 'unavailable' ? (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {anchors.error} — this says nothing about the anchors, only that they could not be read.
+        </Typography.Text>
+      ) : (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {anchors.checked_count} checked{anchors.truncated ? ' (newest only)' : ''}:{' '}
+          {anchors.present_count} present, {anchors.purged_count} explained by retention,{' '}
+          {anchors.missing_count} missing, {anchors.malformed_count} not an anchor.
+        </Typography.Text>
+      )}
+      {anchors.status === 'mismatch' && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          A missing head means the database was restored to before that anchor was published, or the
+          chain was rewritten. Heads older than the last retention purge are expected to be gone and
+          are counted separately.
+        </Typography.Text>
+      )}
+      {anchors.findings.map((f) => (
+        <Typography.Text key={f.key} code style={{ fontSize: 12 }}>
+          {f.match}: {f.key}
+        </Typography.Text>
+      ))}
     </Flex>
   );
 }

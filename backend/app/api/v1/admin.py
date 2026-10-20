@@ -30,6 +30,7 @@ from backend.app.db.session import get_db
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
 from backend.app.services import (
+    audit_anchor_service,
     audit_chain,
     audit_read_service,
     audit_service,
@@ -786,8 +787,36 @@ class AuditChainStatus(ApiModel):
     #: Whether TAMPER_ANCHOR is configured. "ok" with anchor_mode="none" means the
     #: chain is internally consistent but NOT independently verifiable by anyone
     #: who could also rewrite the whole table — see ADR 0041 §9.
-    anchor_mode: Literal["none", "webhook"]
+    anchor_mode: Literal["none", "webhook", "object_lock"]
     first_break: dict[str, Any] | None
+    #: The published heads read back from the anchor and matched against the local
+    #: chain (#2310) — only an anchor DataQ can read (object_lock) fills this; null
+    #: for none/webhook. "unavailable" is a store outage, never folded into "empty".
+    anchors: AnchorVerificationRead | None = None
+
+
+class AnchorFinding(ApiModel):
+    key: str
+    label: str | None
+    head_hash: str | None
+    as_of: datetime | None
+    match: Literal["present", "purged", "missing", "malformed"]
+
+
+class AnchorVerificationRead(ApiModel):
+    #: "ok" (every anchor's head is in the chain or explained by a purge) |
+    #: "mismatch" (a published head is missing — a restore to before it, or a
+    #: rewritten chain — or an object under the prefix is not an anchor) |
+    #: "empty" (nothing published yet) | "unavailable" (the store could not be read).
+    status: Literal["ok", "mismatch", "empty", "unavailable"]
+    checked_count: int
+    present_count: int
+    purged_count: int
+    missing_count: int
+    malformed_count: int
+    findings: list[AnchorFinding]
+    truncated: bool
+    error: str | None
 
 
 @router.get(
@@ -798,6 +827,7 @@ class AuditChainStatus(ApiModel):
 def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainStatus:
     """The verification tooling for the tamper-evidence hash chain (#1460)."""
     result = audit_chain.verify_chain(db)
+    anchors = audit_anchor_service.verify_anchors(db)
     if result.first_break is not None:
         status: Literal["ok", "broken", "empty"] = "broken"
     elif result.verified_count == 0:
@@ -826,6 +856,30 @@ def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainSta
         chain_head_hash=result.chain_head_hash,
         anchor_mode=settings.tamper_anchor,
         first_break=break_info,
+        anchors=(
+            None
+            if anchors is None
+            else AnchorVerificationRead(
+                status=anchors.status,
+                checked_count=anchors.checked_count,
+                present_count=anchors.present_count,
+                purged_count=anchors.purged_count,
+                missing_count=anchors.missing_count,
+                malformed_count=anchors.malformed_count,
+                findings=[
+                    AnchorFinding(
+                        key=f.key,
+                        label=f.label,
+                        head_hash=f.head_hash,
+                        as_of=f.as_of,
+                        match=f.match,
+                    )
+                    for f in anchors.findings
+                ],
+                truncated=anchors.truncated,
+                error=anchors.error,
+            )
+        ),
     )
 
 

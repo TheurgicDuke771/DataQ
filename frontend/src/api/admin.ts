@@ -373,8 +373,31 @@ export interface AuditChainStatus {
   unverifiable_legacy_count: number;
   chain_head_hash: string | null;
   /** `none` = internally consistent, but not independently verifiable (ADR 0041 §9). */
-  anchor_mode: 'none' | 'webhook';
+  anchor_mode: 'none' | 'webhook' | 'object_lock';
   first_break: AuditChainBreak | null;
+  /** Published heads read back from the anchor — only an `object_lock` anchor can be read. */
+  anchors?: AnchorVerification | null;
+}
+
+export interface AnchorFinding {
+  key: string;
+  label: string | null;
+  head_hash: string | null;
+  as_of: string | null;
+  match: 'present' | 'purged' | 'missing' | 'malformed';
+}
+
+export interface AnchorVerification {
+  /** `unavailable` is a store outage — never folded into `empty`. */
+  status: 'ok' | 'mismatch' | 'empty' | 'unavailable';
+  checked_count: number;
+  present_count: number;
+  purged_count: number;
+  missing_count: number;
+  malformed_count: number;
+  findings: AnchorFinding[];
+  truncated: boolean;
+  error: string | null;
 }
 
 export async function verifyAuditChain(): Promise<AuditChainStatus> {
