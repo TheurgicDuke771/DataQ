@@ -15,7 +15,6 @@ from ...types import Response
 
 def _get_kwargs(
     asset_id: UUID,
-    column: str,
     *,
     body: ClassificationDismissUpdate,
 ) -> dict[str, Any]:
@@ -23,9 +22,8 @@ def _get_kwargs(
 
     _kwargs: dict[str, Any] = {
         "method": "patch",
-        "url": "/api/v1/assets/{asset_id}/classifications/{column}".format(
+        "url": "/api/v1/assets/{asset_id}/classifications".format(
             asset_id=quote(str(asset_id), safe=""),
-            column=quote(str(column), safe=""),
         ),
     }
 
@@ -69,7 +67,6 @@ def _build_response(
 
 def sync_detailed(
     asset_id: UUID,
-    column: str,
     *,
     client: AuthenticatedClient | Client,
     body: ClassificationDismissUpdate,
@@ -78,10 +75,11 @@ def sync_detailed(
 
     Args:
         asset_id (UUID):
-        column (str):
         body (ClassificationDismissUpdate): Dismiss (`true`) or restore (`false`) one profiler
             detection — the only way a detection
-            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4).
+            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4). The column travels in
+            the body: a column name may hold `/` (quoted identifiers, file headers), which a path
+            segment cannot carry.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -93,7 +91,6 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         asset_id=asset_id,
-        column=column,
         body=body,
     )
 
@@ -106,7 +103,6 @@ def sync_detailed(
 
 def sync(
     asset_id: UUID,
-    column: str,
     *,
     client: AuthenticatedClient | Client,
     body: ClassificationDismissUpdate,
@@ -115,10 +111,11 @@ def sync(
 
     Args:
         asset_id (UUID):
-        column (str):
         body (ClassificationDismissUpdate): Dismiss (`true`) or restore (`false`) one profiler
             detection — the only way a detection
-            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4).
+            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4). The column travels in
+            the body: a column name may hold `/` (quoted identifiers, file headers), which a path
+            segment cannot carry.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -130,7 +127,6 @@ def sync(
 
     return sync_detailed(
         asset_id=asset_id,
-        column=column,
         client=client,
         body=body,
     ).parsed
@@ -138,7 +134,6 @@ def sync(
 
 async def asyncio_detailed(
     asset_id: UUID,
-    column: str,
     *,
     client: AuthenticatedClient | Client,
     body: ClassificationDismissUpdate,
@@ -147,10 +142,11 @@ async def asyncio_detailed(
 
     Args:
         asset_id (UUID):
-        column (str):
         body (ClassificationDismissUpdate): Dismiss (`true`) or restore (`false`) one profiler
             detection — the only way a detection
-            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4).
+            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4). The column travels in
+            the body: a column name may hold `/` (quoted identifiers, file headers), which a path
+            segment cannot carry.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -162,7 +158,6 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         asset_id=asset_id,
-        column=column,
         body=body,
     )
 
@@ -173,7 +168,6 @@ async def asyncio_detailed(
 
 async def asyncio(
     asset_id: UUID,
-    column: str,
     *,
     client: AuthenticatedClient | Client,
     body: ClassificationDismissUpdate,
@@ -182,10 +176,11 @@ async def asyncio(
 
     Args:
         asset_id (UUID):
-        column (str):
         body (ClassificationDismissUpdate): Dismiss (`true`) or restore (`false`) one profiler
             detection — the only way a detection
-            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4).
+            is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4). The column travels in
+            the body: a column name may hold `/` (quoted identifiers, file headers), which a path
+            segment cannot carry.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -198,7 +193,6 @@ async def asyncio(
     return (
         await asyncio_detailed(
             asset_id=asset_id,
-            column=column,
             client=client,
             body=body,
         )

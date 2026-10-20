@@ -125,7 +125,7 @@ from .data_subject_request import DataSubjectRequest
 from .deployment_posture_read import DeploymentPostureRead
 from .deployment_posture_read_zero_sample_source import DeploymentPostureReadZeroSampleSource
 from .detected_classification_read import DetectedClassificationRead
-from .detected_classification_read_detector import DetectedClassificationReadDetector
+from .detected_classification_read_effect import DetectedClassificationReadEffect
 from .dimension_score_read import DimensionScoreRead
 from .document_problem_read import DocumentProblemRead
 from .effective_coverage_read import EffectiveCoverageRead
@@ -421,7 +421,7 @@ __all__ = (
     "DeploymentPostureRead",
     "DeploymentPostureReadZeroSampleSource",
     "DetectedClassificationRead",
-    "DetectedClassificationReadDetector",
+    "DetectedClassificationReadEffect",
     "DimensionScoreRead",
     "DocumentProblemRead",
     "EffectiveCoverageRead",

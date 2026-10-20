@@ -8,32 +8,36 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
-from ..models.detected_classification_read_detector import DetectedClassificationReadDetector
+from ..models.detected_classification_read_effect import DetectedClassificationReadEffect
 
 T = TypeVar("T", bound="DetectedClassificationRead")
 
 
 @_attrs_define
 class DetectedClassificationRead:
-    """A column the profiler found PII-shaped VALUES in (ADR 0049). Masked as sensitive on every
-    read path unless `dismissed` (a workspace-Admin act) or named as a suite's
-    `identifier_column`; a dismissed row keeps `last_detected_at` moving, so "still detected"
-    stays visible. `evidence` is deliberately not exposed: it is counts only, and the detector
-    name says what fired.
+    """A column the profiler found PII-shaped VALUES in (ADR 0049). `effect` is what it does
+    now: `masks` (sensitive on every read path, unless a suite names the column as its own
+    `identifier_column`), `overridden_by_tag` (the column's own warehouse tag decides instead,
+    either way), `dismissed` (a workspace-Admin act). A dismissed row keeps `last_detected_at`
+    moving, so "still detected" stays visible. `detector` is a label (`email` or `encoded`
+    today) and not a closed enum on the wire, so a new detector never breaks this page.
+    `evidence` is deliberately not exposed: it is counts only, and the detector says what fired.
 
         Attributes:
             column (str):
-            detector (DetectedClassificationReadDetector):
+            detector (str):
             dismissed (bool):
             dismissed_at (datetime.datetime | None):
+            effect (DetectedClassificationReadEffect):
             first_detected_at (datetime.datetime):
             last_detected_at (datetime.datetime):
     """
 
     column: str
-    detector: DetectedClassificationReadDetector
+    detector: str
     dismissed: bool
     dismissed_at: datetime.datetime | None
+    effect: DetectedClassificationReadEffect
     first_detected_at: datetime.datetime
     last_detected_at: datetime.datetime
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -41,7 +45,7 @@ class DetectedClassificationRead:
     def to_dict(self) -> dict[str, Any]:
         column = self.column
 
-        detector = self.detector.value
+        detector = self.detector
 
         dismissed = self.dismissed
 
@@ -50,6 +54,8 @@ class DetectedClassificationRead:
             dismissed_at = self.dismissed_at.isoformat()
         else:
             dismissed_at = self.dismissed_at
+
+        effect = self.effect.value
 
         first_detected_at = self.first_detected_at.isoformat()
 
@@ -63,6 +69,7 @@ class DetectedClassificationRead:
                 "detector": detector,
                 "dismissed": dismissed,
                 "dismissed_at": dismissed_at,
+                "effect": effect,
                 "first_detected_at": first_detected_at,
                 "last_detected_at": last_detected_at,
             }
@@ -75,7 +82,7 @@ class DetectedClassificationRead:
         d = dict(src_dict)
         column = d.pop("column")
 
-        detector = DetectedClassificationReadDetector(d.pop("detector"))
+        detector = d.pop("detector")
 
         dismissed = d.pop("dismissed")
 
@@ -94,6 +101,8 @@ class DetectedClassificationRead:
 
         dismissed_at = _parse_dismissed_at(d.pop("dismissed_at"))
 
+        effect = DetectedClassificationReadEffect(d.pop("effect"))
+
         first_detected_at = datetime.datetime.fromisoformat(d.pop("first_detected_at"))
 
         last_detected_at = datetime.datetime.fromisoformat(d.pop("last_detected_at"))
@@ -103,6 +112,7 @@ class DetectedClassificationRead:
             detector=detector,
             dismissed=dismissed,
             dismissed_at=dismissed_at,
+            effect=effect,
             first_detected_at=first_detected_at,
             last_detected_at=last_detected_at,
         )
