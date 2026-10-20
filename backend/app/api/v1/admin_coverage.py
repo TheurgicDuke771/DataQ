@@ -37,13 +37,17 @@ class SensitivityWrite(ApiRequestModel):
 
 
 class BaselineShapeWrite(ApiRequestModel):
-    """How much history a baseline compares against. All three are set together."""
+    """How much history a baseline compares against. `window`, `min_points` and
+    `seasonality` are set together; `yearly` (compare with the same time in earlier years,
+    on the row-count and freshness baselines only) is off when left out, so a level that sets
+    this group without it switches it off for its tables."""
 
     model_config = _STRICT
 
     window: int
     min_points: int
     seasonality: bool
+    yearly: bool = False
 
 
 class CoverageSettingsWrite(ApiRequestModel):
@@ -69,6 +73,8 @@ class EffectiveShape(ApiModel):
     window: int
     min_points: int
     seasonality: bool
+    #: Applies to the row-count and freshness baselines; the column profile has none.
+    yearly: bool
     source: svc.Level
 
 
@@ -104,7 +110,10 @@ def effective_read(effective: svc.Effective) -> EffectiveCoverageRead:
             )
             for baseline in svc.BASELINES
         },
-        baseline=EffectiveShape(**effective.shape.as_dict(), source=effective.shape_from),
+        baseline=EffectiveShape(
+            **{**effective.shape.as_dict(), "yearly": effective.shape.yearly},
+            source=effective.shape_from,
+        ),
     )
 
 

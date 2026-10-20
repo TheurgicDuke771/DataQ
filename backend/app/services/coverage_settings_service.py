@@ -42,6 +42,10 @@ Baseline = Literal["volume", "freshness", "profile"]
 BASELINES: Final[tuple[str, ...]] = get_args(Baseline)
 _TIERS: Final[tuple[str, ...]] = ("warn", "fail", "critical")
 _SHAPE_KEYS: Final[tuple[str, ...]] = ("window", "min_points", "seasonality")
+#: Optional in a shape group, off when left out (ADR 0047, amended for ADR 0048 phase 7).
+_YEARLY: Final = "yearly"
+#: The baselines ``yearly`` reaches; the column profile is hundreds of series a table.
+_YEARLY_METRICS: Final[frozenset[str]] = frozenset({ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC})
 
 Level = Literal["asset", "workspace", "default"]
 
@@ -66,13 +70,33 @@ class Shape:
     window: int
     min_points: int
     seasonality: bool
+    yearly: bool = False
 
     def as_dict(self) -> dict[str, Any]:
+        """The group as a document stores it: ``yearly`` only when on, so a document saved
+        before it existed reads the same."""
         return {
             "window": self.window,
             "min_points": self.min_points,
             "seasonality": self.seasonality,
+            **({_YEARLY: True} if self.yearly else {}),
         }
+
+    def for_metric(self, target_metric: Any) -> dict[str, Any]:
+        """The shape keys a baseline on ``target_metric`` runs on, ``yearly`` set either way
+        where the metric takes it (a stored ``true`` must not outlive the setting)."""
+        group = {
+            "window": self.window,
+            "min_points": self.min_points,
+            "seasonality": self.seasonality,
+            _YEARLY: self.yearly,
+        }
+        return {k: v for k, v in group.items() if k in shape_keys(target_metric)}
+
+
+def shape_keys(target_metric: Any) -> tuple[str, ...]:
+    """The config keys the shape group sets on a baseline watching ``target_metric``."""
+    return (*_SHAPE_KEYS, _YEARLY) if target_metric in _YEARLY_METRICS else _SHAPE_KEYS
 
 
 DEFAULT_SENSITIVITY: Final = Sensitivity(warn=3, fail=4, critical=6)
@@ -125,8 +149,8 @@ def _sensitivity(value: Any, baseline: str) -> Sensitivity:
 
 
 def _shape(value: Any) -> Shape:
-    group = _only_keys(value, _SHAPE_KEYS, "baseline")
-    if set(group) != set(_SHAPE_KEYS):
+    group = _only_keys(value, (*_SHAPE_KEYS, _YEARLY), "baseline")
+    if not set(_SHAPE_KEYS) <= set(group):
         raise CoverageSettingsInvalidError(
             "baseline must set window, min_points and seasonality together"
         )
@@ -135,7 +159,12 @@ def _shape(value: Any) -> Shape:
         params = anomaly_params({"target_metric": ROW_COUNT_METRIC, **group})
     except MonitorConfigError as exc:
         raise CoverageSettingsInvalidError(str(exc)[:300]) from exc
-    return Shape(window=params.window, min_points=params.min_points, seasonality=params.seasonality)
+    return Shape(
+        window=params.window,
+        min_points=params.min_points,
+        seasonality=params.seasonality,
+        yearly=params.yearly,
+    )
 
 
 def validate(document: Any) -> dict[str, Any]:
@@ -234,7 +263,7 @@ class CheckSettings:
 
     def config(self, stored: dict[str, Any]) -> dict[str, Any]:
         """The check's config with the resolved shape in place of the stored one."""
-        return {**stored, **self.shape.as_dict()}
+        return {**stored, **self.shape.for_metric(stored.get("target_metric"))}
 
     def levels(self) -> dict[str, Level]:
         return {"sensitivity": self.sensitivity_from, "baseline": self.shape_from}
@@ -276,6 +305,7 @@ def _matches_legacy_signature(check: Check) -> bool:
         # `is` for the flag: 1 == True, and a window of 1 must not read as seasonality on.
         type(config.get(key)) is type(want) and config.get(key) == want
         for key, want in _LEGACY_SHAPE.as_dict().items()
+        if key in _SHAPE_KEYS
     )
 
 
@@ -396,8 +426,9 @@ def settle_edit(
         return {**config, INHERIT_KEY: sent_flag is True}, {**stored, **sent_thresholds}
 
     effective = settings.sensitivity.as_dict()
-    shape = settings.shape.as_dict()
-    sent_shape = {k: config[k] for k in _SHAPE_KEYS if sent_config is not None and k in config}
+    keys = shape_keys(config.get("target_metric"))
+    shape = settings.shape.for_metric(config.get("target_metric"))
+    sent_shape = {k: config[k] for k in keys if sent_config is not None and k in config}
     changed = any(not _same(v, effective[t]) for t, v in sent_thresholds.items()) or any(
         v != shape[k] for k, v in sent_shape.items()
     )
@@ -410,7 +441,9 @@ def settle_edit(
             {**pinned_thresholds, **sent_thresholds},
         )
     # Still inheriting: the stored snapshot stays as it was, whatever was sent beside it.
-    kept_shape = {k: stored_config.get(k, shape[k]) for k in _SHAPE_KEYS}
+    kept_shape = {
+        k: stored_config.get(k, shape[k]) for k in keys if k in _SHAPE_KEYS or k in stored_config
+    }
     return {**config, **kept_shape, INHERIT_KEY: True}, stored
 
 
@@ -450,7 +483,7 @@ def document_differs(
     if flag is not None and flag != (settings is not None):
         return True
     if flag is True:
-        for key in _SHAPE_KEYS:
+        for key in shape_keys(mine.get("target_metric")):
             mine.pop(key, None)
             doc_config.pop(key, None)
     return bool(mine != doc_config)

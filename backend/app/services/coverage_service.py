@@ -232,7 +232,7 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
             kind="anomaly",
             config={
                 **metric,
-                **effective().shape.as_dict(),
+                **effective().shape.for_metric(metric.get("target_metric")),
                 coverage_settings_service.INHERIT_KEY: True,
             },
             thresholds=effective().sensitivity[role].as_dict(),
