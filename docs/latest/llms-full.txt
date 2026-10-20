@@ -4920,6 +4920,9 @@ section below.
 
 ### Fixed
 
+- **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
+  zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
+  channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
 - **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.
