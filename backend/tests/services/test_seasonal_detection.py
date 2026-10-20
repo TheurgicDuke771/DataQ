@@ -135,6 +135,18 @@ def test_a_sale_split_by_an_ordinary_day_counts_as_one_year_not_two() -> None:
     ]
 
 
+def test_one_season_split_across_new_year_is_still_one_year() -> None:
+    sales = (
+        (date(2024, 12, 29), date(2024, 12, 31)),
+        (date(2025, 1, 2), date(2025, 1, 4)),
+    )
+    points = _noisy(date(2024, 1, 1), date(2025, 2, 28), peaks=sales)
+
+    found = seasonal.detect(points, _params())
+
+    assert [(p.kind, p.years_seen, p.range) for p in found.periods] == [("seen_once", 1, None)]
+
+
 def test_a_period_across_the_year_end_recurs_with_a_wrapping_range() -> None:
     sales = (
         (date(2023, 12, 28), date(2024, 1, 3)),
