@@ -9,7 +9,9 @@ Every value crosses the real ``google-cloud-bigquery`` boundary (#953): the dial
 the REST client and google-auth's JWT-bearer flow (the key file's ``token_uri`` is a local stub
 that issues a bearer). Real BigQuery is not reachable from CI (#2224). What the emulator cannot
 show is named where it matters: it has no IAM (so the read-only guarantee is untestable here)
-and it does not enforce ``maximum_bytes_billed`` (only that the cap reaches every job).
+and it does not enforce ``maximum_bytes_billed`` (only that the cap reaches every job). Start it
+fresh: it resolves an unqualified table name across every dataset rather than in the job's default
+dataset, so a leftover dataset holding another ``orders`` would answer for this one.
 """
 
 from __future__ import annotations

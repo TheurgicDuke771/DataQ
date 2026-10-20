@@ -283,6 +283,9 @@ class SqlEngineSpec:
     #: Reads which columns of a table the profiler must not MIN/MAX or GROUP BY, for an engine
     #: whose aggregates are not defined over every type. ``None`` = every type aggregates.
     column_caps: ColumnCapsReader | None = None
+    #: Column names resolve whatever their case (BigQuery), so `column_caps` is matched to a
+    #: caller's spelling case-insensitively.
+    column_names_case_insensitive: bool = False
     #: Extra ``create_engine`` keyword arguments for the RUN path's engines (GX's and the
     #: monitors'), e.g. how the driver hands back JSON cells.
     run_engine_options: dict[str, Any] = field(default_factory=dict)

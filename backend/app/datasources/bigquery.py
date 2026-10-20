@@ -271,8 +271,25 @@ def _project(conn: Any) -> str:
     return str(conn.dialect.project_id)
 
 
+# The REST API reports a type by its legacy name or its GoogleSQL one depending on how the table
+# was created; one spelling per type keeps a drift baseline from flagging the same column.
+_STANDARD_TYPE = {
+    "INTEGER": "INT64",
+    "FLOAT": "FLOAT64",
+    "BOOLEAN": "BOOL",
+    "RECORD": "STRUCT",
+    "DECIMAL": "NUMERIC",
+    "BIGDECIMAL": "BIGNUMERIC",
+}
+
+
+def _standard_type(field: Any) -> str:
+    kind = str(field.field_type).upper()
+    return _STANDARD_TYPE.get(kind, kind)
+
+
 def _field_type(field: Any) -> str:
-    kind = str(field.field_type)
+    kind = _standard_type(field)
     return f"ARRAY<{kind}>" if field.mode == "REPEATED" else kind
 
 
@@ -289,8 +306,14 @@ class _BigQueryCatalog:
         client = _client(conn)
         datasets = [schema] if schema is not None else self.schema_names(conn, limit=limit)
         rows: list[tuple[str, str, str]] = []
+        from google.api_core.exceptions import NotFound
+
         for dataset in datasets:
-            tables = client.list_tables(f"{_project(conn)}.{dataset}")
+            try:
+                tables = list(client.list_tables(f"{_project(conn)}.{dataset}"))
+            except NotFound:
+                # A missing dataset lists nothing, as a missing schema does on the SQL engines.
+                continue
             rows.extend((dataset, t.table_id, str(t.table_type)) for t in tables)
         return sorted(rows)[:limit]
 
@@ -308,13 +331,13 @@ class _BigQueryCatalog:
 _CATALOG = _BigQueryCatalog()
 
 # MIN/MAX are undefined over these; equality (COUNT DISTINCT, GROUP BY) too.
-_UNAGGREGATABLE_TYPES = frozenset({"RECORD", "STRUCT", "GEOGRAPHY", "JSON", "RANGE"})
+_UNAGGREGATABLE_TYPES = frozenset({"STRUCT", "GEOGRAPHY", "JSON", "RANGE"})
 
 
 def _column_caps(conn: Any, schema: str, table: str) -> dict[str, ColumnCaps]:
     caps: dict[str, ColumnCaps] = {}
     for field in _client(conn).get_table(f"{_project(conn)}.{schema}.{table}").schema:
-        plain = field.mode != "REPEATED" and str(field.field_type) not in _UNAGGREGATABLE_TYPES
+        plain = field.mode != "REPEATED" and _standard_type(field) not in _UNAGGREGATABLE_TYPES
         caps[str(field.name)] = ColumnCaps(orderable=plain, groupable=plain)
     return caps
 
@@ -335,6 +358,7 @@ BIGQUERY = SqlEngineSpec(
     credential_noun="service-account key file",
     catalog=SqlCatalog(api=_CATALOG),
     column_caps=_column_caps,
+    column_names_case_insensitive=True,
     explain_failure=_explain_failure,
     llm_dialect="BigQuery GoogleSQL (backtick-quoted identifiers)",
 )

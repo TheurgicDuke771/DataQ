@@ -500,6 +500,12 @@ dialect over the `google-cloud-bigquery` client.
 - **The profiler** reports min/max, distinct count and top values as unavailable for
   `STRUCT`/`RECORD`, `ARRAY` (repeated), `GEOGRAPHY`, `JSON` and `RANGE` columns.
 - **Median** is exact (BigQuery's `PERCENTILE_CONT`), so the aggregate monitor offers it.
+- **Freshness over a `DATETIME` column** reads the value as UTC, since a `DATETIME` carries no
+  time zone. If the producer writes local wall-clock time, the reported age is off by the UTC
+  offset; prefer a `TIMESTAMP` column.
+- **Schema drift** compares each top-level column's name and type (and whether it is
+  repeated). A change to a field *inside* a `STRUCT`, or a column switching between `NULLABLE`
+  and `REQUIRED`, is not reported.
 - **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".
 - **Verification.** This connection has been exercised end to end against the

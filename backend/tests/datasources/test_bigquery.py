@@ -385,8 +385,13 @@ class _FakeClient:
         return self.datasets
 
     def list_tables(self, dataset: str) -> list[Any]:
+        from google.api_core.exceptions import NotFound
+
         self.calls.append(("list_tables", dataset))
-        return self.tables[dataset.split(".", 1)[1]]
+        name = dataset.split(".", 1)[1]
+        if name not in self.tables:
+            raise NotFound(f"Not found: Dataset {dataset}")
+        return self.tables[name]
 
     def get_table(self, ref: str) -> Any:
         from google.api_core.exceptions import NotFound
@@ -429,9 +434,9 @@ def test_columns_come_from_the_table_schema_and_a_missing_table_has_none() -> No
     assert BIGQUERY.catalog.api is not None
     client = _FakeClient()
     assert BIGQUERY.catalog.api.columns(_conn(client), schema="retail", table="orders") == [
-        ("id", "INTEGER"),
+        ("id", "INT64"),
         ("tags", "ARRAY<STRING>"),
-        ("address", "RECORD"),
+        ("address", "STRUCT"),
         ("where", "GEOGRAPHY"),
         ("doc", "JSON"),
         ("placed_at", "TIMESTAMP"),
@@ -446,3 +451,55 @@ def test_the_profiler_skips_aggregates_googlesql_does_not_define() -> None:
     plain = {name for name, cap in caps.items() if cap.orderable and cap.groupable}
     assert plain == {"id", "placed_at"}
     assert not any(caps[name].orderable or caps[name].groupable for name in caps.keys() - plain)
+
+
+def test_a_type_reads_the_same_whichever_name_the_api_reports_it_by() -> None:
+    """The REST API reports legacy names (INTEGER, RECORD) or GoogleSQL ones (INT64, STRUCT)
+    depending on how the table was made; a drift baseline must not see a change between them."""
+    from google.cloud import bigquery
+
+    def columns(*kinds: str) -> list[tuple[str, str]]:
+        client = _FakeClient()
+        client.schema = [
+            (
+                bigquery.SchemaField(f"c{i}", kind, fields=[bigquery.SchemaField("x", "STRING")])
+                if kind in ("RECORD", "STRUCT")
+                else bigquery.SchemaField(f"c{i}", kind)
+            )
+            for i, kind in enumerate(kinds)
+        ]
+        assert BIGQUERY.catalog.api is not None
+        return BIGQUERY.catalog.api.columns(_conn(client), schema="retail", table="orders")
+
+    legacy = columns("INTEGER", "FLOAT", "BOOLEAN", "RECORD", "DECIMAL", "BIGDECIMAL")
+    standard = columns("INT64", "FLOAT64", "BOOL", "STRUCT", "NUMERIC", "BIGNUMERIC")
+    assert legacy == standard
+    assert [kind for _, kind in standard] == [
+        "INT64",
+        "FLOAT64",
+        "BOOL",
+        "STRUCT",
+        "NUMERIC",
+        "BIGNUMERIC",
+    ]
+
+
+def test_a_dataset_that_does_not_exist_lists_no_tables() -> None:
+    assert typed_table_rows(BIGQUERY, _conn(_FakeClient()), schema="gone", limit=None) == []
+
+
+def test_the_profiler_matches_a_column_however_the_caller_cased_it() -> None:
+    """BigQuery column names resolve whatever their case, so `ADDRESS` is the STRUCT column."""
+    from backend.app.db.models import Connection
+    from backend.app.services.profile_service import _column_caps
+
+    connection = Connection(type="bigquery", config={"project_id": _PROJECT})
+    caps = _column_caps(
+        connection,
+        _conn(_FakeClient()),
+        schema="retail",
+        table="orders",
+        columns=["ADDRESS", "Id", "missing"],
+    )
+    assert set(caps) == {"ADDRESS", "Id"}
+    assert not caps["ADDRESS"].orderable and caps["Id"].orderable
