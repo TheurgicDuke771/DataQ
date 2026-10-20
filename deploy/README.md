@@ -370,6 +370,12 @@ Confirm the change is *ready and green* before you push it to prod:
   `aad_object_id` + unique `lower(email)`, #735) requires a duplicate-email audit — if it
   finds duplicates, the index creation fails and the migrate job aborts, so resolve them
   first.
+- [ ] **Distribution compliance is automatic — just confirm it ran.** Both images carry
+  `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), and on a
+  release tag `publish-images.yml` attaches the notices plus a Syft SPDX SBOM per image to the
+  GitHub Release. The licence gate (`scripts/check-licenses.py`, CONTRIBUTING rule 40) is part
+  of the CI run above and of the backend image build; see
+  `docs/site/security/compliance/third-party-notices.md`.
 - [ ] **Config + secrets are in place** — the required GitHub env/vars and Key Vault secrets
   (see the [prerequisites](#before-you-deploy-production-prerequisites) above), especially any
   new key this release reads.

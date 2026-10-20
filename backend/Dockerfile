@@ -19,6 +19,13 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY backend/requirements*.txt ./backend/
 RUN pip install -r backend/requirements.txt
 
+# Licence gate + THIRD-PARTY-NOTICES over the venv just built (ADR 0031, CONTRIBUTING rule 40):
+# a strong-copyleft, source-available or unknown licence fails the build here as well as in CI.
+COPY scripts/check-licenses.py ./scripts/
+COPY scripts/licenses ./scripts/licenses
+RUN python scripts/check-licenses.py backend --requirements backend/requirements.txt \
+      --notices /THIRD-PARTY-NOTICES.md
+
 # ── Runtime: slim base + the venv + app code ─────────────────────────────────
 FROM python:3.13-slim AS runtime
 
@@ -36,6 +43,8 @@ WORKDIR /workspace
 
 # The fully-built venv from the builder (no compilers / apt lists in this layer).
 COPY --from=builder /opt/venv /opt/venv
+# Bundled third-party licence notices (ADR 0031); also attached to each GitHub release.
+COPY --from=builder /THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 
 # Application code + tooling config (pyproject is imported for runtime config).
 COPY pyproject.toml ./
