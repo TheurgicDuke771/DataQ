@@ -324,6 +324,14 @@ cover, never folded into the verified count. **External anchor** reports whether
 head is published outside the database: without one, the chain is only *internally*
 consistent, because anyone able to rewrite the whole table could rewrite the hashes with it.
 
+With an **immutable object store** anchor (`TAMPER_ANCHOR=object_lock` — S3 Object Lock or an
+Azure immutable blob), the card adds **Anchors read back**: the published heads are listed
+from the store and matched against the chain. Each is *present*, *explained by retention*
+(older than the last purge, so expected to be gone), *missing* — the database was restored
+to before that head was published, or the chain was rewritten — or *not an anchor* (an
+object under the prefix DataQ did not write). An unreachable store reads as **not checked**,
+never as "nothing published".
+
 ### Data-subject rights
 
 The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)

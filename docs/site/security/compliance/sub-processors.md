@@ -37,6 +37,7 @@ a third-party endpoint.
 | 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 54 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows) | No — table/job names and check outcomes, not row data | Pull: when `LINEAGE_PROVIDER` is configured. Emission: when `OPENLINEAGE_URL` (or the library's own transport config) is set |
+| 11 | **Audit tamper anchor** — an HMAC-signed webhook, or an immutable object store (S3 Object Lock / S3-compatible, Azure immutable blob) | The audit hash-chain head: a SHA-256 hash, a label, the hashed-event count and a timestamp — daily and before every retention purge | No — never an audit event's actor, action or payload | `TAMPER_ANCHOR=webhook` or `object_lock` (off by default) |
 
 Cloud-platform services that *host* a deployment (the managed Postgres, Redis,
 container runtime, object storage of your chosen cloud) are your cloud provider
@@ -55,4 +56,4 @@ maintained as code review discipline, not a calendar:
 3. The **LLM row flips from "not built"** in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.
 
-Last reviewed: 2026-09-01 (originally 2026-08-21).
+Last reviewed: 2026-10-20 (originally 2026-08-21).
