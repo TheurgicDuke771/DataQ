@@ -23,7 +23,14 @@ from backend.app.datasources.base import (
 from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.gx_runner import GxContextBusyError
-from backend.app.datasources.monitors import AGGREGATE, ANOMALY, PII_DRIFT, SCHEMA_DRIFT
+from backend.app.datasources.monitors import (
+    AGGREGATE,
+    ANOMALY,
+    PII_DRIFT,
+    SCHEMA_DRIFT,
+    MonitorConfigError,
+    validate_monitor_config,
+)
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     build_check_runner,
@@ -421,7 +428,6 @@ def _dry_run_schema_drift(
     persisted runs — dry-run has no check row to hold a baseline against, and
     must never write one — so the preview shows WHAT would be baselined.
     """
-    from backend.app.datasources.monitors import MonitorConfigError, validate_monitor_config
     from backend.app.services import schema_drift as schema_drift_service
 
     try:
@@ -470,7 +476,6 @@ def _dry_run_pii_drift(
     is the raw detector view: the persisted run subtracts warehouse tags, inherited
     classifications, the suite's policy and dismissals, and judges against its baseline.
     """
-    from backend.app.datasources.monitors import MonitorConfigError, validate_monitor_config
     from backend.app.services import pii_drift as pii_drift_service
     from backend.app.services.classification_vocab import fold_key
     from backend.app.services.column_detections import detect
