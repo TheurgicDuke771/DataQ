@@ -3,7 +3,7 @@
 - **Status:** Accepted (2026-10-20)
 - **Date:** 2026-10-20
 - **Deciders:** @TheurgicDuke771
-- **Related:** G3 / #433 (warehouse column tags, the governance floor), ADR [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (assets; the 2026-09-27 amendment on classification propagation), ADR [0041](0041-history-audit-strategy.md) (audit events), ADR [0012](0012-monitor-kind-seam.md) (the `pii_drift` monitor kind that consumes this, #1675). Issue #1674.
+- **Related:** compliance gap G3 (warehouse column tags, the governance floor), ADR [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (assets; the 2026-09-27 amendment on classification propagation), ADR [0041](0041-history-audit-strategy.md) (audit events), ADR [0012](0012-monitor-kind-seam.md) (the `pii_drift` monitor kind that consumes this).
 
 ## Context
 
@@ -33,8 +33,8 @@ DataQ can hold.
 1. **A classification table, not a column.** `asset_column_classifications` holds one row per
    `(asset, column, source)`: `verdict`, `detector`, `evidence` (counts only, never a value),
    `first_detected_at`, `last_detected_at`, `dismissed_at`, `dismissed_by`. `source` is
-   `profiler` today; the governance-catalog pull (#1690) is the next source and gets its own
-   value rather than a second table. `assets.detected_classifications_refreshed_at` records the
+   `profiler` today; the governance-catalog pull on the roadmap is the next source and gets its
+   own value rather than a second table. `assets.detected_classifications_refreshed_at` records the
    last profile that was checked, so "looked and found none" differs from "never looked", as it
    does for warehouse tags.
 
@@ -78,10 +78,10 @@ DataQ can hold.
 ## Phases
 
 1. This ADR, the table and migration, the write path, the rung, the asset page and API, docs.
-2. `pii_drift` (#1675): a monitor kind whose `metric_value` is the count of detections first
+2. `pii_drift`: a monitor kind whose `metric_value` is the count of detections first
    seen since the last run on columns with no warehouse tag and no policy entry. Needs the
    `kind_valid` constraints widened first, in their own migration.
-3. The governance-catalog source (#1690) as `source = 'catalog'` rows.
+3. The governance-catalog source as `source = 'catalog'` rows.
 
 ## Consequences
 
