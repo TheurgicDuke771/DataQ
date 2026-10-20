@@ -1460,6 +1460,21 @@ class CoverageSetting(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class TelemetrySetting(Base):
+    """The workspace's usage-telemetry opt-in (#1707). One row, the `CoverageSetting` idiom;
+    an absent row means off."""
+
+    __tablename__ = "telemetry_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class SeasonalPeriod(Base):
     """One entry of the workspace calendar of declared seasonal periods (ADR 0048 decision 5).
 
