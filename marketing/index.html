@@ -32,6 +32,7 @@
     <nav class="nav-links">
       <a href="#features">Features</a>
       <a href="#see-it">Screens</a>
+      <a href="#walkthrough">Walkthrough</a>
       <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Docs</a>
       <a href="https://github.com/TheurgicDuke771/DataQ">GitHub</a>
     </nav>
@@ -194,7 +195,7 @@
   </div>
 </section>
 
-<section id="walkthrough" class="walkthrough">
+<section id="walkthrough" class="features">
   <div class="features-inner">
     <div class="section-head">
       <h2>Walk through the demo</h2>
@@ -213,7 +214,7 @@
       </li>
       <li>
         <figure class="shot">
-          <a href="assets/shots/walkthrough-2-suite.webp" class="walk-zoom"><img src="assets/shots/walkthrough-2-suite.webp" width="1440" height="900" alt="The Shop orders (demo) suite on the Demo warehouse (PostgreSQL) connection, targeting shop.orders, listing its eleven checks with their engine and quality dimension and snooze, disable, edit and delete actions" loading="lazy"></a>
+          <a href="assets/shots/walkthrough-2-suite.webp" class="walk-zoom"><img src="assets/shots/walkthrough-2-suite.webp" width="1440" height="900" alt="The Shop orders (demo) suite on the Demo warehouse (PostgreSQL) connection, targeting shop.orders, with the first of its eleven checks listed with their engine and quality dimension and snooze, disable, edit and delete actions" loading="lazy"></a>
           <figcaption><strong>2. One suite, eleven checks.</strong> <em>Shop orders</em> covers value rules, custom SQL, freshness, volume, an aggregate, schema drift and anomaly detection. Its hourly schedule, triggers and alerting sit further down the same page.</figcaption>
         </figure>
       </li>
@@ -238,7 +239,7 @@
       <li>
         <div class="walk-card">
           <div class="title">6. Ask your assistant</div>
-          <p>Connect Claude, Copilot or Cursor to <code>/mcp</code> with a personal access token and ask <em>&ldquo;what is failing on shop.orders, and why?&rdquo;</em> The assistant works through the same 56 tools with your permissions, for example:</p>
+          <p>Connect Claude, Copilot or Cursor to <code>/mcp/</code> (keep the trailing slash) with a personal access token and ask <em>&ldquo;what is failing on shop.orders, and why?&rdquo;</em> The assistant works through the same MCP tools as the rest of the product, with your permissions. For example:</p>
           <pre><code>list_incidents     what is open, and on which asset
 get_incident       the failing result and its evidence
 trigger_suite_run  re-run the suite once the data is fixed</code></pre>
@@ -277,6 +278,7 @@ trigger_suite_run  re-run the suite once the data is fixed</code></pre>
         <h4>Product</h4>
         <div class="footer-col-links">
           <a href="#features">Features</a>
+          <a href="#walkthrough">Demo walkthrough</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Documentation</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/">Check types</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/">Changelog</a>
