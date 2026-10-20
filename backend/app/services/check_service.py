@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.databricks_dqx import (
     DQX_ENGINE,
     DQX_EXPECTATION_TYPES,
@@ -100,7 +101,7 @@ COMPARISON_EXPECTATION_TYPE = "comparison:records"
 COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 
 # The flat-file datasources.
-FILE_TYPES = frozenset({"adls_gen2", "s3"})
+FILE_TYPES = FLAT_FILE_TYPES
 
 # Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the author-time gate for
 # freshness/volume checks.

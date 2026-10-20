@@ -13,6 +13,9 @@ from pydantic import BaseModel
 # #1229.
 SAMPLE_ROW_CAP = 20
 
+#: The flat-file (object-store) datasources — one runner, three stores (#1683).
+FLAT_FILE_TYPES: frozenset[str] = frozenset({"adls_gen2", "s3", "gcs"})
+
 # Sub-key inside a persisted `sample_failures` payload holding the capture-time, full-population
 # value-signal summary (#1230).
 VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"

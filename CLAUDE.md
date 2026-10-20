@@ -6,11 +6,11 @@
 
 ## 1. Project summary
 
-**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **11 datasources** and integrates with **3 orchestration providers**.
+**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **12 datasources** and integrates with **3 orchestration providers**.
 
 | Layer | Components |
 |---|---|
-| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045), SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, same base — ADR 0044), Amazon Athena (`athena`, same base — region + IAM key, every check a billed query, IAM policy as the read-only guarantee), Amazon Redshift (`redshift`, same base — clusters + Serverless, read-only sessions) |
+| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Google Cloud Storage (`gcs`, #1683), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045), SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, same base — ADR 0044), Amazon Athena (`athena`, same base — region + IAM key, every check a billed query, IAM policy as the read-only guarantee), Amazon Redshift (`redshift`, same base — clusters + Serverless, read-only sessions) |
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
@@ -114,6 +114,7 @@ DataQ/
 - Snowflake (DEV/QA/UAT)
 - ADLS Gen2 (flat files)
 - AWS S3 — and any S3-compatible store, via the connection's optional `endpoint_url` (#1063)
+- Google Cloud Storage (`gcs`, #1683) — flat files on the shared runner; service-account key file or anonymous, optional `endpoint_url`. Verified against `fake-gcs-server` only (#2224).
 - Unity Catalog / Databricks
 - Apache Iceberg (native `pyiceberg` read — ADR 0030; engine-registered Iceberg tables also work zero-code under the `snowflake`/`unity_catalog` connections)
 - PostgreSQL — any server, self-hosted or managed (#1678). The first engine on the **engine-generic SQL base** (ADR 0045, `datasources/generic_sql.py` + one `SqlEngineSpec` per engine, registry in `sql_engines.py`): pushdown only, read-only sessions, every SQL capability set derives from `GENERIC_SQL_TYPES`. MySQL/MariaDB (#1684, PyMySQL — never a GPL driver) is the second engine — **never copy the Snowflake adapter**.

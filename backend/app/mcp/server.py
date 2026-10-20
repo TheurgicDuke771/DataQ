@@ -39,6 +39,7 @@ from backend.app.core.roles import (
     resolve_role,
 )
 from backend.app.core.secrets import get_secret_store
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.db.models import (
     CONNECTION_TYPES,
     ENVS,
@@ -594,8 +595,9 @@ def list_suites() -> list[dict[str, Any]]:
 
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
-    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / mssql /
-    trino), the environment (dev / qa / uat), how many checks it has (``check_count``),
+    against (snowflake / adls_gen2 / s3 / gcs / unity_catalog / iceberg / postgres / mysql /
+    mssql / trino / athena / redshift), the environment (dev / qa / uat), how many checks
+    it has (``check_count``),
     how many of those are switched on and so actually run (``enabled_check_count`` —
     quote this one for "how many checks run on orders"; ``list_checks`` says which are
     off), and the status + time of its most recent run
@@ -1520,10 +1522,10 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
 
     Use this for 'what are we connected to?', 'which connections are broken?', or
     to find the connection a suite should run against. Returns, per connection:
-    its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
-    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` for datasources; ``adf`` /
-    ``airflow`` / ``dbt`` for
-    orchestration providers), environment, whether a credential is stored, and
+    its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``gcs`` / ``unity_catalog``
+    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` / ``athena`` / ``redshift``
+    for datasources; ``adf`` / ``airflow`` / ``dbt`` for orchestration providers),
+    environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
     when it is failing, how many consecutive failures it has had, and when its
     credential expires if the credential states a lifetime. Optionally filter by
@@ -1551,7 +1553,8 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     apart, and null there means we have never looked. "No readable lifetime" is not
     "never expires": a password or a service-principal client secret (an ADLS
     connection's ``service_principal`` mode) expires on a date only the identity
-    provider knows. Report all of these as silence rather than reassurance.
+    provider knows, and a GCS service-account key file states no expiry yet can be
+    revoked or rotated at any time. Report all of these as silence rather than reassurance.
 
     ``credential_health`` answers the narrower question "is this connection's
     stored credential still accepted?" — and it is the right field for "why did
@@ -1565,6 +1568,15 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     health**; it means nothing has been observed, and it is also what every
     connection reads until it is next used. ``credential_health`` is ``null`` on
     an orchestration connection, whose equivalent is the poll fields above.
+
+    **No stored credential is not a fault on a connection that authenticates with
+    none** — a GCS bucket with ``auth_type: anonymous`` (a public bucket), Trino with
+    ``auth_type: none``, an Iceberg catalog with no secret. Such a connection reports
+    no credential stored, its ``credential_health.status`` stays ``unknown`` for good
+    (there is no credential whose acceptance could be recorded) and
+    ``credential_expiry_checked_at`` stays null for good (there is nothing to read an
+    expiry from). Judge it by ``last_run_at`` / ``last_run_error`` instead; check its
+    ``config.auth_type`` before calling it broken.
 
     ``last_run_error``/``last_poll_error`` are a **stored, classified** reason
     from the connection's last real run or poll (safe to quote verbatim — never
@@ -2321,7 +2333,7 @@ def create_check(
     For a monitor rather than a rule, set ``kind`` and pair it with
     ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
     ``MAX(column)``), ``volume`` (row count vs ``min_rows``/``max_rows`` — this
-    counts the true dataset size on every datasource, including ADLS / S3 /
+    counts the true dataset size on every datasource, including ADLS / S3 / GCS /
     Iceberg, unlike an ordinary row-count *expectation* check on a sampled
     suite, which measures the sample), ``aggregate`` (see below),
     ``schema_drift`` (columns added/removed/retyped vs a learned baseline),
@@ -2868,7 +2880,7 @@ def dryrun_check(
     check a monitor is to create it and run the suite.
 
     **A preview reads what a real run would read, so it inherits the target's
-    sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped
+    sampling.** On ADLS / S3 / GCS / Iceberg the evaluation may be over a capped
     sample rather than the whole dataset — so a ``pass`` describes the
     sample, and an ``expect_table_row_count_to_be_between`` preview's row
     count is the SAMPLE's count, not the file's. (This is unrelated to the
@@ -3359,10 +3371,17 @@ def test_connection(connection_id: str) -> dict[str, Any]:
 
     Use this for 'is the Snowflake connection working?' or when a run has failed
     and you need to tell a dead credential from a broken check. Opens a live
-    connection using the stored credential and reports success or a failure.
+    connection using the stored credential (if the connection has one) and reports
+    success or a failure.
 
     **What a pass proves is narrow:** the credential authenticates and the
-    datasource answers a trivial query. It does **not** check that a suite's
+    datasource answers a trivial query. On an object store (ADLS, S3, GCS) the
+    query is a one-object listing of the container or bucket: it shows the store is
+    reachable and listable, not that any object a suite targets is readable — a GCS
+    key holding list but not get permission passes here and fails every run. On a
+    connection with no credential (GCS ``auth_type: anonymous``) a pass shows only
+    that the bucket is publicly listable; nothing was authenticated. It does **not**
+    check that a suite's
     target table exists, that the role can read it, or that the run
     configuration is complete — a connection can pass here and fail every suite
     run (a Snowflake connection with no Role does exactly that). An ``ok: true``
@@ -3417,7 +3436,7 @@ def browse_connection(
 ) -> dict[str, Any]:
     """List what a connection can see, one level at a time, to pick a suite's run target.
 
-    Covers Unity Catalog, Snowflake, Iceberg, the SQL databases and ADLS/S3. Use
+    Covers Unity Catalog, Snowflake, Iceberg, the SQL databases and ADLS/S3/GCS. Use
     this before ``update_suite`` sets a target or
     ``import_suite`` needs one:
     it names the tables or files that exist instead of guessing a
@@ -3439,7 +3458,7 @@ def browse_connection(
       ``materialized_view``, ``dynamic_table`` (Snowflake) or
       ``streaming_table`` (Unity Catalog). Freshness and volume monitors on a
       plain ``view`` re-run its query rather than reading stored rows.
-    - **``kind: "files"``** — ADLS Gen2 and S3. ``prefix`` is a folder inside the
+    - **``kind: "files"``** — ADLS Gen2, S3 and GCS. ``prefix`` is a folder inside the
       connection's own container/bucket (``root``); the result is the
       ``folders`` and ``files`` directly under it, not recursive. A file's
       ``size`` or ``last_modified`` is null only when the store did not report
@@ -3448,7 +3467,8 @@ def browse_connection(
     Caveats:
 
     - **Privilege-filtered.** The listing is what the connection's *stored
-      credential* can see, not what exists. A table missing here may exist and
+      credential* (or, on an anonymous GCS connection, public access) can see, not
+      what exists. A table missing here may exist and
       be hidden from that role; do not report it as absent from the warehouse.
     - **``truncated: true`` means this is only the first ``limit`` entries** of
       the level, not all of them. The target can still be named explicitly.
@@ -3461,7 +3481,7 @@ def browse_connection(
 
     Nothing is changed and no data values are read, only names. Requires the
     **member** workspace role, like ``test_connection``: it spends a stored
-    credential against a remote system.
+    credential (when the connection has one) against a remote system.
     """
     cid = _parse_uuid(connection_id, field="connection_id")
     with _ctx() as (session, user), _service_errors():
@@ -4717,8 +4737,8 @@ def list_columns(
     is not proof the file never holds it.
 
     Requires **edit** access to the suite, not view: this opens a live connection
-    to the datasource using the stored credential, the same gate the profiler and
-    dry-run carry for the same reason.
+    to the datasource using the stored credential (when the connection has one), the
+    same gate the profiler and dry-run carry for the same reason.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -4841,7 +4861,7 @@ def _profile_target_defaults(
             ) from exc
     else:
         concrete = resolved.table
-    if connection.type in ("adls_gen2", "s3"):
+    if connection.type in FLAT_FILE_TYPES:
         return None, schema, catalog, concrete, file_format or suite.target.get("file_format")
     return concrete, schema or resolved.schema, catalog or resolved.catalog, None, file_format
 
@@ -4993,8 +5013,8 @@ def profile_column(
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
     your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
-    Server, Athena and Redshift are profiled in full; ADLS, S3 and Iceberg targets are profiled
-    over a sample of at most 100,000 rows** (for an ADLS or S3 file, its first 100,000
+    Server, Athena and Redshift are profiled in full; ADLS, S3, GCS and Iceberg targets are
+    profiled over a sample of at most 100,000 rows** (for an ADLS, S3 or GCS file, its first 100,000
     rows — not a random draw). On Athena every statistic is a billed
     query. When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not

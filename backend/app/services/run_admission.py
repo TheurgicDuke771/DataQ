@@ -24,7 +24,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.memory_budget import Admission, MemoryBudget, get_memory_budget
 from backend.app.core.secrets import get_secret_store
-from backend.app.datasources.base import ResolvedTarget
+from backend.app.datasources.base import FLAT_FILE_TYPES, ResolvedTarget
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import COMPARISON_KIND, Check, Connection, Run, Suite
 from backend.app.services import run_service, run_target
@@ -79,9 +79,13 @@ def _sample_bytes(target: ResolvedTarget) -> int | None:
 
 
 def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> MemoryEstimate | None:
-    from backend.app.datasources.flatfile import file_stat
+    from backend.app.datasources.flatfile import (
+        file_stat,
+        missing_credential,
+        resolve_flatfile_secret,
+    )
 
-    if not connection.secret_ref:
+    if missing_credential(connection.type, dict(connection.config), connection.secret_ref):
         # Nothing to probe the store with. The run fails on the same missing credential
         # moments later, but say so rather than leaving a materialising runner unmetered
         # and silent.
@@ -110,7 +114,12 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
         conn_type=connection.type,
         config=dict(connection.config),
         path=path,
-        secret=get_secret_store().get(connection.secret_ref),
+        secret=resolve_flatfile_secret(
+            conn_type=connection.type,
+            config=dict(connection.config),
+            secret_ref=connection.secret_ref,
+            secret_store=get_secret_store(),
+        ),
     )
     if stat.size is None:
         # The store would not say. Treat it as unknown, not as zero.
@@ -290,7 +299,7 @@ def _dataset_estimate(
     """The estimate for the suite's own batch, before comparison sides are added."""
     if connection.type in PUSHDOWN_TYPES:
         return None
-    if connection.type in {"adls_gen2", "s3"}:
+    if connection.type in FLAT_FILE_TYPES:
         return _flat_file_estimate(connection, target)
     if connection.type == "unity_catalog":
         return _unity_catalog_estimate(connection, target, checks)

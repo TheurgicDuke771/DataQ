@@ -35,6 +35,8 @@ def resolve_asset_identity(
         return _resolve_adls_gen2(config, target)
     if conn_type == "s3":
         return _resolve_s3(config, target)
+    if conn_type == "gcs":
+        return _resolve_gcs(config, target)
     if conn_type == "iceberg":
         return _resolve_iceberg(config, target)
     # Imported here: the engine registry pulls pydantic config models this module must not load
@@ -181,6 +183,17 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
     )
     name = _flatfile_name(target, "s3")
     return AssetIdentity(namespace=namespace, name=name)
+
+
+def _resolve_gcs(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
+    bucket = _require(config, "bucket", "gcs", "config")
+    endpoint_url = _str_or_none(config.get("endpoint_url"))
+    # `gs://{bucket}` is the OpenLineage naming-spec form; an emulator / compatible endpoint
+    # carries its authority so two stores sharing a bucket name stay distinct, as for S3.
+    namespace = (
+        f"gs://{_endpoint_authority(endpoint_url)}/{bucket}" if endpoint_url else f"gs://{bucket}"
+    )
+    return AssetIdentity(namespace=namespace, name=_flatfile_name(target, "gcs"))
 
 
 #: Ports implied by the scheme, so an explicit `:443` on `https://` (or `:80` on `http://`) doesn't

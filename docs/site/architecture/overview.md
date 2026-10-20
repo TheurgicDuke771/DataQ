@@ -29,7 +29,7 @@ flowchart LR
     end
     subgraph ds["📊 Datasources — GX checks execute here"]
         SF["Snowflake · DEV/QA/UAT"]
-        Files["ADLS Gen2 · S3 · flat files"]
+        Files["ADLS Gen2 · S3 · GCS · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
         PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server · Athena · Redshift<br/>generic SQL base, pushdown"]
@@ -665,7 +665,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift"]
+        DS["Datasources — Snowflake · ADLS · S3 · GCS · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
