@@ -197,12 +197,12 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
       'seasonal_periods',
     ];
 
-    expect(shown('row_count').sort()).toEqual([...common].sort());
+    expect(shown('row_count').sort()).toEqual([...common, 'yearly', 'seasonal_periods'].sort());
     expect(shown('period_row_count').sort()).toEqual([...common, ...period].sort());
     expect(shown('period_sum').sort()).toEqual([...common, ...period, 'value_column'].sort());
-    // A whole-table metric has no period to match across years.
+    // The column profile is hundreds of series; the other whole-table metrics take yearly.
     expect(shown('column_profile')).not.toContain('yearly');
-    expect(shown('freshness_age_hours')).not.toContain('yearly');
+    expect(shown('freshness_age_hours')).toContain('yearly');
   });
 
   it("bounds min_points by window's live value, not a static max (backend: 3 <= min_points <= window)", () => {

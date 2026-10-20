@@ -15,6 +15,9 @@ export interface BaselineShape {
   window: number;
   min_points: number;
   seasonality: boolean;
+  /** Also compare with the same time in earlier years (row-count and freshness baselines
+   *  only). Off when a stored group leaves it out. */
+  yearly?: boolean;
 }
 
 /** What one level stores. A group it omits is left to the level below; a group is set whole. */
@@ -25,7 +28,7 @@ export interface CoverageDocument {
 
 export interface EffectiveCoverage {
   sensitivity: Record<CoverageBaseline, Sensitivity & { source: CoverageLevel }>;
-  baseline: BaselineShape & { source: CoverageLevel };
+  baseline: BaselineShape & { yearly: boolean; source: CoverageLevel };
 }
 
 /** `GET /admin/coverage`. `effective` is what a table with no override of its own resolves to. */

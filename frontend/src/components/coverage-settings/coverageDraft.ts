@@ -36,7 +36,12 @@ type Nullable<T> = { [K in keyof T]: T[K] | null };
 /** What the form holds: each group is either set here (a value) or left to the level below (null). */
 export interface CoverageDraft {
   sensitivity: Record<CoverageBaseline, Nullable<Sensitivity> | null>;
-  baseline: (Nullable<Omit<BaselineShape, 'seasonality'>> & { seasonality: boolean }) | null;
+  baseline:
+    | (Nullable<Omit<BaselineShape, 'seasonality' | 'yearly'>> & {
+        seasonality: boolean;
+        yearly: boolean;
+      })
+    | null;
 }
 
 export function draftOf(doc: CoverageDocument | null): CoverageDraft {
@@ -47,7 +52,7 @@ export function draftOf(doc: CoverageDocument | null): CoverageDraft {
       freshness: sensitivity.freshness ? { ...sensitivity.freshness } : null,
       profile: sensitivity.profile ? { ...sensitivity.profile } : null,
     },
-    baseline: doc?.baseline ? { ...doc.baseline } : null,
+    baseline: doc?.baseline ? { ...doc.baseline, yearly: doc.baseline.yearly ?? false } : null,
   };
 }
 
@@ -60,7 +65,11 @@ export function documentOf(draft: CoverageDraft): CoverageDocument {
   }
   const doc: CoverageDocument = {};
   if (Object.keys(sensitivity).length > 0) doc.sensitivity = sensitivity;
-  if (draft.baseline) doc.baseline = draft.baseline as BaselineShape;
+  if (draft.baseline) {
+    // Stored only when on, as the server stores it.
+    const { yearly, ...shape } = draft.baseline;
+    doc.baseline = (yearly ? { ...shape, yearly } : shape) as BaselineShape;
+  }
   return doc;
 }
 
@@ -105,9 +114,9 @@ export function sensitivityFrom(effective: EffectiveCoverage, key: CoverageBasel
   return { warn, fail, critical };
 }
 
-export function shapeFrom(effective: EffectiveCoverage): BaselineShape {
-  const { window, min_points, seasonality } = effective.baseline;
-  return { window, min_points, seasonality };
+export function shapeFrom(effective: EffectiveCoverage): BaselineShape & { yearly: boolean } {
+  const { window, min_points, seasonality, yearly } = effective.baseline;
+  return { window, min_points, seasonality, yearly };
 }
 
 /**
