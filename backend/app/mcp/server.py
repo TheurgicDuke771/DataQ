@@ -3803,6 +3803,17 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     not listed here. `null` means it could not be determined (a lineage read failed), not that
     nothing is inherited; `inherited_classifications_truncated` means the lineage walk hit its
     depth cap, so a column further upstream was not considered.
+
+    `detected_classifications` answers the other "why is this masked?" question: each entry is
+    a column in which a profile found PII-shaped VALUES (`detector`: `email` or `encoded`), and
+    DataQ masks it as sensitive on every read path unless `dismissed` is true or a suite names
+    it as its `identifier_column`. Dismissal is a workspace-Admin act in the app with no MCP
+    tool, so do not offer to clear one; a dismissed entry's `last_detected_at` still moves when a
+    later profile sees the values again. `detected_classifications_refreshed_at` is when a
+    profile of this asset's own target last fed the source: `null` means no profile has, so an
+    empty list then says nothing about the data; `null` for the list itself means it could not
+    be read. A column with no entry is not thereby clean — only the values a profile saw were
+    examined, and only for those two shapes.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3894,6 +3905,26 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 ]
             ),
             "inherited_classifications_truncated": detail.inherited_classifications_truncated,
+            "detected_classifications": (
+                None
+                if detail.detected_classifications is None
+                else [
+                    {
+                        "column": dc.column,
+                        "detector": dc.detector,
+                        "first_detected_at": dc.first_detected_at.isoformat(),
+                        "last_detected_at": dc.last_detected_at.isoformat(),
+                        "dismissed": dc.dismissed,
+                        "dismissed_at": (dc.dismissed_at.isoformat() if dc.dismissed_at else None),
+                    }
+                    for dc in detail.detected_classifications
+                ]
+            ),
+            "detected_classifications_refreshed_at": (
+                detail.detected_classifications_refreshed_at.isoformat()
+                if detail.detected_classifications_refreshed_at
+                else None
+            ),
         }
 
 

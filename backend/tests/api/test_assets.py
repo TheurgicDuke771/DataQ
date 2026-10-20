@@ -966,3 +966,104 @@ def test_scorecard_shape_is_serialised(client: TestClient, world: dict[str, Any]
     assert set(card) == {"covered", "uncovered", "unclassified_checks"}
     for row in card["covered"]:
         assert set(row) == {"dimension", "checks_total", "checks_passing", "score"}
+
+
+# ── profiler-detected classifications on the asset (ADR 0049) ────────────────
+
+
+def _detect(db_session: Any, asset_id: Any, column: str = "Contact") -> None:
+    from types import SimpleNamespace
+
+    from backend.app.db.models import Asset
+    from backend.app.services.column_detections import record_profile_detections
+
+    emails = [{"value": f"u{i}@example.com", "count": 1} for i in range(10)]
+    asset = db_session.get(Asset, asset_id)
+    record_profile_detections(
+        db_session, asset, [SimpleNamespace(column=column, top_values=emails)]
+    )
+
+
+def test_detail_lists_detected_classifications_and_when_it_last_looked(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    _as(world["owner"])
+    before = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    assert before["detected_classifications"] == []
+    assert before["detected_classifications_refreshed_at"] is None, "never looked"
+
+    _detect(client_db(client), world["asset_x"])
+    body = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    (entry,) = body["detected_classifications"]
+    assert entry["column"] == "Contact" and entry["detector"] == "email"
+    assert entry["dismissed"] is False and entry["dismissed_at"] is None
+    assert entry["first_detected_at"] == entry["last_detected_at"]
+    assert body["detected_classifications_refreshed_at"] is not None
+
+
+def test_dismissing_a_detection_is_admin_only(client: TestClient, world: dict[str, Any]) -> None:
+    _detect(client_db(client), world["asset_x"])
+    _as(world["owner"])  # the SUITE owner, not a workspace admin: dismissal loosens masking
+    resp = client.patch(
+        f"/api/v1/assets/{world['asset_x']}/classifications/contact", json={"dismissed": True}
+    )
+    assert resp.status_code == 403
+
+
+def test_admin_dismisses_and_restores_a_detection_and_the_floor_follows(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    from sqlalchemy import select
+
+    from backend.app.db.models import Asset, AuditEvent
+    from backend.app.services.column_tags import DETECTED, effective_column_tags
+
+    db = client_db(client)
+    _detect(db, world["asset_x"])
+    admin = _user(db, _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    asset = db.get(Asset, world["asset_x"])
+    assert effective_column_tags(db, asset) == {"contact": DETECTED}, "precondition: masked"
+
+    resp = client.patch(
+        f"/api/v1/assets/{world['asset_x']}/classifications/CONTACT", json={"dismissed": True}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["column"] == "Contact" and body["dismissed"] is True and body["dismissed_at"]
+    assert effective_column_tags(db, asset) is None, "the rung is gone from the floor"
+    detail = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    assert detail["detected_classifications"][0]["dismissed"] is True, "still listed, as overruled"
+
+    restored = client.patch(
+        f"/api/v1/assets/{world['asset_x']}/classifications/contact", json={"dismissed": False}
+    ).json()
+    assert restored["dismissed"] is False and restored["dismissed_at"] is None
+    assert effective_column_tags(db, asset) == {"contact": DETECTED}
+
+    events = db.scalars(
+        select(AuditEvent).where(AuditEvent.action == "asset.classification_update")
+    ).all()
+    assert [(e.before["dismissed"], e.after["dismissed"]) for e in events] == [
+        (False, True),
+        (True, False),
+    ]
+    assert all(e.actor_user_id == admin.id for e in events)
+
+
+def test_dismissing_an_unknown_column_or_asset_is_404(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    admin = _user(client_db(client), _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    no_column = client.patch(
+        f"/api/v1/assets/{world['asset_x']}/classifications/nothing", json={"dismissed": True}
+    )
+    assert no_column.status_code == 404
+    assert no_column.json()["error"]["code"] == "classification_not_found"
+    no_asset = client.patch(
+        f"/api/v1/assets/{uuid.uuid4()}/classifications/contact", json={"dismissed": True}
+    )
+    assert no_asset.status_code == 404

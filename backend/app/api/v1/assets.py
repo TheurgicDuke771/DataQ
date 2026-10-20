@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -215,6 +215,23 @@ class InheritedClassificationRead(ApiModel):
     sources: list[InheritedSourceRead]
 
 
+class DetectedClassificationRead(ApiModel):
+    """A column the profiler found PII-shaped VALUES in (ADR 0049). Masked as sensitive on every
+    read path unless `dismissed` (a workspace-Admin act) or named as a suite's
+    `identifier_column`; a dismissed row keeps `last_detected_at` moving, so "still detected"
+    stays visible. `evidence` is deliberately not exposed: it is counts only, and the detector
+    name says what fired."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    column: str
+    detector: Literal["email", "encoded"]
+    first_detected_at: datetime
+    last_detected_at: datetime
+    dismissed: bool
+    dismissed_at: datetime | None
+
+
 class AssetDetailRead(ApiModel):
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + upstream/downstream lineage. `suites` lists only suites the caller can view
@@ -247,6 +264,18 @@ class AssetDetailRead(ApiModel):
         default_factory=list
     )
     inherited_classifications_truncated: bool = False
+    # The profiler's persisted detections (ADR 0049), dismissed ones included. null = could not
+    # be read, not "none detected".
+    detected_classifications: list[DetectedClassificationRead] | None = Field(default_factory=list)
+    # null = no profile of this asset's own target has fed the source yet.
+    detected_classifications_refreshed_at: datetime | None = None
+
+
+class ClassificationDismissUpdate(ApiRequestModel):
+    """Dismiss (`true`) or restore (`false`) one profiler detection — the only way a detection
+    is cleared, so it is workspace-Admin-only and audited (ADR 0049 §4)."""
+
+    dismissed: bool
 
 
 class ColumnTraceAssetRead(ApiModel):
@@ -440,6 +469,24 @@ def update_asset(
     # Return the refreshed workspace-true summary. Never 404s on an asset with no
     # composing suites — metadata exists independently of suites.
     return svc.summarize_asset(db, asset)
+
+
+@router.patch(
+    "/assets/{asset_id}/classifications/{column}",
+    response_model=DetectedClassificationRead,
+    summary="Dismiss or restore a profiler-detected classification (workspace-admin only)",
+)
+def update_asset_classification(
+    asset_id: uuid.UUID,
+    column: Annotated[str, Path(min_length=1, max_length=255)],
+    payload: ClassificationDismissUpdate,
+    # Dismissal LOOSENS masking, so it is the Admin axis (ADR 0033), like the asset metadata.
+    admin: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> svc.DetectedClassification:
+    return svc.set_classification_dismissed(
+        db, asset_id, column, dismissed=payload.dismissed, actor_id=admin.id
+    )
 
 
 @router.get(

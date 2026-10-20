@@ -57,3 +57,39 @@ def test_an_explicit_location_feeds_nothing(db_session: Any, monkeypatch: Any) -
     server.profile_column(str(suite.id), columns=["revenue"], table="ORDERS")
 
     assert seen["asset"] is None
+
+
+# ── get_asset reports the detections, and when it last looked ───────────────────────────────
+
+
+def test_get_asset_lists_detected_classifications(db_session: Any, monkeypatch: Any) -> None:
+    from types import SimpleNamespace
+
+    from backend.app.services.column_detections import record_profile_detections, set_dismissed
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    asset = _attach_asset(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    never = server.get_asset(str(asset.id))
+    assert never["detected_classifications"] == []
+    assert never["detected_classifications_refreshed_at"] is None
+
+    emails = [{"value": f"u{i}@example.com", "count": 1} for i in range(10)]
+    record_profile_detections(
+        db_session,
+        asset,
+        [
+            SimpleNamespace(column="Contact", top_values=emails),
+            SimpleNamespace(column="notes", top_values=emails),
+        ],
+    )
+    set_dismissed(db_session, asset, "notes", dismissed=True, actor_id=user.id)
+
+    out = server.get_asset(str(asset.id))
+    entries = {e["column"]: e for e in out["detected_classifications"]}
+    assert entries["Contact"]["detector"] == "email" and entries["Contact"]["dismissed"] is False
+    assert entries["notes"]["dismissed"] is True and entries["notes"]["dismissed_at"]
+    assert isinstance(entries["Contact"]["first_detected_at"], str)
+    assert out["detected_classifications_refreshed_at"] is not None
