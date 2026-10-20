@@ -64,7 +64,7 @@ interface CheckTrendProps {
   suiteId: string;
   check: CheckTrendCheck;
   /** History window (backend caps at 180); 90 gives a debugger-useful span
-   *  without ever hitting the cap. A per-period check reads 180, one per plotted period. */
+   *  without ever hitting the cap. A per-period check reads the cap, 180; its caption says when that leaves older periods without a band. */
   limit?: number;
   /** Called with the new entry's id after a detected period was promoted and attached to this
    *  check: an open editor must add it to its own copy of the config, or a save drops it. */
