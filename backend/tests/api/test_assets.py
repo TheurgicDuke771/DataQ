@@ -1065,7 +1065,8 @@ def test_admin_dismisses_and_restores_a_detection_and_the_floor_follows(
     events = db.scalars(
         select(AuditEvent).where(AuditEvent.action == "asset.classification_update")
     ).all()
-    assert [(e.before["dismissed"], e.after["dismissed"]) for e in events] == [
+    # Order-independent: the events share one transaction timestamp in this fixture.
+    assert sorted((e.before["dismissed"], e.after["dismissed"]) for e in events) == [
         (False, True),
         (True, False),
     ]
