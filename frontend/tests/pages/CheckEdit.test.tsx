@@ -12,10 +12,12 @@ import {
   getSuite,
   listCheckHistory,
   listCheckVersions,
+  listColumns,
   restoreCheckVersion,
   type Suite,
   updateCheck,
 } from '../../src/api/suites';
+import { listSeasonalPeriods, type SeasonalPeriod } from '../../src/api/seasonalPeriods';
 import { CheckEdit } from '../../src/pages/CheckEdit';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -34,7 +36,13 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     listCheckHistory: vi.fn(),
     getCheckBaseline: vi.fn(),
     restoreCheckVersion: vi.fn(),
+    listColumns: vi.fn(),
   };
+});
+
+vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/seasonalPeriods')>();
+  return { ...actual, listSeasonalPeriods: vi.fn() };
 });
 
 const mockGetSuite = vi.mocked(getSuite);
@@ -45,6 +53,8 @@ const mockVersions = vi.mocked(listCheckVersions);
 const mockHistory = vi.mocked(listCheckHistory);
 const mockBaseline = vi.mocked(getCheckBaseline);
 const mockRestore = vi.mocked(restoreCheckVersion);
+const mockColumns = vi.mocked(listColumns);
+const mockCalendar = vi.mocked(listSeasonalPeriods);
 
 const suite: Suite = {
   id: 's1',
@@ -743,5 +753,113 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
       fail_threshold: 3,
       critical_threshold: null,
     });
+  });
+});
+
+describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
+  const calendar: SeasonalPeriod[] = [
+    {
+      id: 'bf',
+      name: 'Black Friday',
+      kind: 'recurring',
+      start_month: 11,
+      start_day: 27,
+      end_month: 11,
+      end_day: 30,
+      start_date: null,
+      end_date: null,
+      series: null,
+      note: null,
+      attached_checks: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ];
+  const stored = {
+    target_metric: 'period_row_count',
+    date_column: 'ordered_at',
+    period: 'day',
+    timezone: 'UTC',
+    settle_hours: 6,
+    backfill: true,
+    window: 14,
+    min_points: 7,
+    seasonality: false,
+    yearly: true,
+    seasonal_periods: ['bf'],
+  };
+  const perPeriod: Check = {
+    id: 'chk5',
+    suite_id: 's1',
+    name: 'orders per day',
+    kind: 'anomaly',
+    expectation_type: 'monitor:anomaly',
+    config: stored,
+    warn_threshold: null,
+    fail_threshold: 3,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+
+  function load(check: Check) {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(check);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(check);
+    mockCalendar.mockResolvedValue(calendar);
+    renderPage();
+  }
+
+  it('shows the attached entries by name and saves them unchanged', async () => {
+    const user = userEvent.setup();
+    load(perPeriod);
+    expect(
+      await screen.findByText('Black Friday (27 Nov – 30 Nov, every year)'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][2].config).toEqual(stored);
+  });
+
+  it('adds nothing to a check saved before the calendar existed', async () => {
+    const user = userEvent.setup();
+    const { seasonal_periods: _ids, yearly: _yearly, ...before } = stored;
+    load({ ...perPeriod, config: before });
+    await screen.findByText('Turn on yearly seasonality to attach calendar entries.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const config = mockUpdate.mock.calls[0][2].config;
+    expect(config).not.toHaveProperty('seasonal_periods');
+    // The switch's default is what the backend assumes for a missing key.
+    expect(config.yearly).toBe(false);
+  });
+
+  it('warns before a save that turns yearly off detaches the entries', async () => {
+    const user = userEvent.setup();
+    load(perPeriod);
+    await screen.findByText('Black Friday (27 Nov – 30 Nov, every year)');
+    await user.click(screen.getByRole('switch', { name: /Yearly seasonality/ }));
+    expect(await screen.findByTestId('calendar-detach-warning')).toHaveTextContent(
+      'Saving removes 1 attached calendar entry',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const config = mockUpdate.mock.calls[0][2].config;
+    expect(config.yearly).toBe(false);
+    expect(config).not.toHaveProperty('seasonal_periods');
+  });
+
+  it('suggests the target’s columns for the date column', async () => {
+    const user = userEvent.setup();
+    mockColumns.mockResolvedValue(['ordered_at', 'shipped_at', 'amount']);
+    load(perPeriod);
+    const input = await screen.findByLabelText('Date column');
+    await user.click(input);
+    await waitFor(() =>
+      expect(mockColumns).toHaveBeenCalledWith('s1', expect.objectContaining({ table: 'ORDERS' })),
+    );
+    await user.clear(input);
+    await user.type(input, 'ship');
+    expect((await screen.findAllByText('shipped_at')).length).toBeGreaterThan(0);
   });
 });
