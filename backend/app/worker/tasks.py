@@ -215,6 +215,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                     target_catalog=target.catalog,
                     secret_store=get_secret_store(),
                     coverage=coverage,
+                    run=run,
                 )
 
             run_service.execute_run(
@@ -378,6 +379,8 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
             path=path,
             file_format=target.get("file_format"),
             secret_store=get_secret_store(),
+            # The suite's own target — the profile feeds the classification source (ADR 0049).
+            asset=run_service.resolve_asset(session, suite),
         )
         if not policy.get("identifier_column") and not policy.get("pii_columns"):
             return "empty"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -12,6 +13,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.asset_summary_read import AssetSummaryRead
     from ..models.composing_suite_read import ComposingSuiteRead
+    from ..models.detected_classification_read import DetectedClassificationRead
     from ..models.inherited_classification_read import InheritedClassificationRead
     from ..models.lineage_edge_read import LineageEdgeRead
     from ..models.lineage_node_read import LineageNodeRead
@@ -38,6 +40,8 @@ class AssetDetailRead:
                 field is identical for every viewer, aggregated over ALL composing suites.
                 Carries **two orthogonal health axes** (#803) the UI renders separately:
             upstream (list[LineageNodeRead]):
+            detected_classifications (list[DetectedClassificationRead] | None | Unset):
+            detected_classifications_refreshed_at (datetime.datetime | None | Unset):
             failing_lineage_sources (list[LineageSourceHealthRead] | Unset):
             health_score_delta (float | None | Unset):
             inherited_classifications (list[InheritedClassificationRead] | None | Unset):
@@ -54,6 +58,8 @@ class AssetDetailRead:
     suites: list[ComposingSuiteRead]
     summary: AssetSummaryRead
     upstream: list[LineageNodeRead]
+    detected_classifications: list[DetectedClassificationRead] | None | Unset = UNSET
+    detected_classifications_refreshed_at: datetime.datetime | None | Unset = UNSET
     failing_lineage_sources: list[LineageSourceHealthRead] | Unset = UNSET
     health_score_delta: float | None | Unset = UNSET
     inherited_classifications: list[InheritedClassificationRead] | None | Unset = UNSET
@@ -89,6 +95,30 @@ class AssetDetailRead:
         for upstream_item_data in self.upstream:
             upstream_item = upstream_item_data.to_dict()
             upstream.append(upstream_item)
+
+        detected_classifications: list[dict[str, Any]] | None | Unset
+        if isinstance(self.detected_classifications, Unset):
+            detected_classifications = UNSET
+        elif isinstance(self.detected_classifications, list):
+            detected_classifications = []
+            for detected_classifications_type_0_item_data in self.detected_classifications:
+                detected_classifications_type_0_item = (
+                    detected_classifications_type_0_item_data.to_dict()
+                )
+                detected_classifications.append(detected_classifications_type_0_item)
+
+        else:
+            detected_classifications = self.detected_classifications
+
+        detected_classifications_refreshed_at: None | str | Unset
+        if isinstance(self.detected_classifications_refreshed_at, Unset):
+            detected_classifications_refreshed_at = UNSET
+        elif isinstance(self.detected_classifications_refreshed_at, datetime.datetime):
+            detected_classifications_refreshed_at = (
+                self.detected_classifications_refreshed_at.isoformat()
+            )
+        else:
+            detected_classifications_refreshed_at = self.detected_classifications_refreshed_at
 
         failing_lineage_sources: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.failing_lineage_sources, Unset):
@@ -155,6 +185,12 @@ class AssetDetailRead:
                 "upstream": upstream,
             }
         )
+        if detected_classifications is not UNSET:
+            field_dict["detected_classifications"] = detected_classifications
+        if detected_classifications_refreshed_at is not UNSET:
+            field_dict["detected_classifications_refreshed_at"] = (
+                detected_classifications_refreshed_at
+            )
         if failing_lineage_sources is not UNSET:
             field_dict["failing_lineage_sources"] = failing_lineage_sources
         if health_score_delta is not UNSET:
@@ -180,6 +216,9 @@ class AssetDetailRead:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.asset_summary_read import AssetSummaryRead
         from ..models.composing_suite_read import ComposingSuiteRead
+        from ..models.detected_classification_read import (
+            DetectedClassificationRead,
+        )
         from ..models.inherited_classification_read import (
             InheritedClassificationRead,
         )
@@ -221,6 +260,55 @@ class AssetDetailRead:
             upstream_item = LineageNodeRead.from_dict(upstream_item_data)
 
             upstream.append(upstream_item)
+
+        def _parse_detected_classifications(
+            data: object,
+        ) -> list[DetectedClassificationRead] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                detected_classifications_type_0 = []
+                _detected_classifications_type_0 = data
+                for detected_classifications_type_0_item_data in _detected_classifications_type_0:
+                    detected_classifications_type_0_item = DetectedClassificationRead.from_dict(
+                        detected_classifications_type_0_item_data
+                    )
+
+                    detected_classifications_type_0.append(detected_classifications_type_0_item)
+
+                return detected_classifications_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[DetectedClassificationRead] | None | Unset, data)
+
+        detected_classifications = _parse_detected_classifications(
+            d.pop("detected_classifications", UNSET)
+        )
+
+        def _parse_detected_classifications_refreshed_at(
+            data: object,
+        ) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                detected_classifications_refreshed_at_type_0 = datetime.datetime.fromisoformat(data)
+
+                return detected_classifications_refreshed_at_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        detected_classifications_refreshed_at = _parse_detected_classifications_refreshed_at(
+            d.pop("detected_classifications_refreshed_at", UNSET)
+        )
 
         _failing_lineage_sources = d.pop("failing_lineage_sources", UNSET)
         failing_lineage_sources: list[LineageSourceHealthRead] | Unset = UNSET
@@ -319,6 +407,8 @@ class AssetDetailRead:
             suites=suites,
             summary=summary,
             upstream=upstream,
+            detected_classifications=detected_classifications,
+            detected_classifications_refreshed_at=detected_classifications_refreshed_at,
             failing_lineage_sources=failing_lineage_sources,
             health_score_delta=health_score_delta,
             inherited_classifications=inherited_classifications,

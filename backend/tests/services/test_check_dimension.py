@@ -96,11 +96,18 @@ def test_accuracy_and_integrity_are_never_derived() -> None:
             ("monitor:volume", "volume"),
             ("monitor:schema_drift", "schema_drift"),
             ("monitor:anomaly", "anomaly"),
+            ("monitor:pii_drift", "pii_drift"),
             ("comparison:records", "comparison"),
         ]
     }
     assert "accuracy" not in derived
     assert "integrity" not in derived
+
+
+def test_pii_drift_is_deliberately_unclassified() -> None:
+    """A privacy signal is none of the seven DQ dimensions (ADR 0038): NULL renders as a
+    coverage gap rather than being bucketed somewhere plausible."""
+    assert derive_dimension(expectation_type="monitor:pii_drift", kind="pii_drift") is None
 
 
 def test_an_unknown_type_on_a_known_kind_falls_back_to_the_kind() -> None:

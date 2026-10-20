@@ -50,7 +50,7 @@ from backend.app.datasources.sql_engines import (
     default_schema,
 )
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
-from backend.app.db.models import Connection
+from backend.app.db.models import Asset, Connection
 from backend.app.services import credential_health
 from backend.app.services.column_classification import ColumnClass, classify_column
 
@@ -1103,11 +1103,64 @@ def profile_connection(
     path: str | None = None,
     file_format: str | None = None,
     secret_store: SecretStore,
+    asset: Asset | None = None,
+    full_profile: bool = False,
+    record_credential: bool = True,
 ) -> ProfileResult:
-    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type."""
+    """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type.
+
+    ``record_credential=False`` skips the per-call credential-health bookkeeping, which COMMITS
+    the session on success: a caller inside a worker run (the pii_drift executor) must not
+    publish the run's pending rows mid-phase (#318) and has the run-level bookkeeping already.
+
+    ``asset`` is the asset this probe reads — pass it ONLY when the target is the suite's own
+    (never on an explicit table/path override, whose columns may collide by name) — and the
+    profile then feeds the profiler classification source (ADR 0049): the email / encoded
+    value detectors' verdicts are persisted against it, fail-soft, so a column that starts
+    carrying PII-shaped values is masked everywhere from the next profile on. ``full_profile``
+    says ``columns`` is the table's whole column list, which is what lets the profile stamp the
+    asset as looked-at; a probe of some columns records what it saw and claims nothing more.
+    """
+    result = _profile_connection(
+        connection,
+        session=session,
+        columns=columns,
+        top_n=top_n,
+        table=table,
+        schema=schema,
+        catalog=catalog,
+        namespace=namespace,
+        path=path,
+        file_format=file_format,
+        secret_store=secret_store,
+        record_credential=record_credential,
+    )
+    if asset is not None:
+        # Imported here: `column_detections` is a read-path module and must not pull this one in.
+        from backend.app.services.column_detections import record_profile_detections_safely
+
+        record_profile_detections_safely(session, asset, result.columns, full_profile=full_profile)
+    return result
+
+
+def _profile_connection(
+    connection: Connection,
+    *,
+    session: Session,
+    columns: list[str],
+    top_n: int,
+    table: str | None = None,
+    schema: str | None = None,
+    catalog: str | None = None,
+    namespace: str | None = None,
+    path: str | None = None,
+    file_format: str | None = None,
+    secret_store: SecretStore,
+    record_credential: bool = True,
+) -> ProfileResult:
     # Credential-health seam (#1697) — every profiler branch reads live data with this
-    # connection's stored credential.
-    with credential_health.credential_use(session, connection):
+    # connection's stored credential. `None` is the seam's own no-op shape.
+    with credential_health.credential_use(session, connection if record_credential else None):
         profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
         if isinstance(profiler, _IcebergProfiler):
             assert table is not None  # resolve_profiler enforced this for Iceberg
@@ -1235,11 +1288,13 @@ def list_columns(
     path: str | None = None,
     file_format: str | None = None,
     secret_store: SecretStore,
+    record_credential: bool = True,
 ) -> list[str]:
-    """List a target's column names, dispatching on the connection type."""
+    """List a target's column names, dispatching on the connection type. ``record_credential``
+    as on `profile_connection`."""
     # Credential-health seam (#1697) — introspection opens the datasource with this
     # connection's stored credential, on every type (SQL, flat-file, Iceberg).
-    with credential_health.credential_use(session, connection):
+    with credential_health.credential_use(session, connection if record_credential else None):
         profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
         if isinstance(profiler, _IcebergProfiler):
             assert table is not None  # resolve_profiler enforced this for Iceberg
@@ -1269,9 +1324,11 @@ def suggest_policy_for_target(
     file_format: str | None = None,
     top_n: int = 20,
     secret_store: SecretStore,
+    asset: Asset | None = None,
 ) -> dict[str, Any]:
     """List → profile → classify a target's columns into a redaction-policy suggestion,
-    under one warehouse login (#1645).
+    under one warehouse login (#1645). ``asset``: see `profile_connection` — every column is
+    profiled here, so this is a full profile for the classification source.
     """
     with shared_connection():
         columns = list_columns(
@@ -1297,5 +1354,7 @@ def suggest_policy_for_target(
             path=path,
             file_format=file_format,
             secret_store=secret_store,
+            asset=asset,
+            full_profile=True,
         )
     return derive_column_policy(result.columns)

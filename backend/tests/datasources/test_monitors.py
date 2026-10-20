@@ -256,7 +256,7 @@ def test_unknown_kind_raises() -> None:
         build_monitor_statement("not_a_kind", table="T", schema=None, catalog=None, config={})
 
 
-@pytest.mark.parametrize("kind", ["schema_drift", "anomaly"])
+@pytest.mark.parametrize("kind", ["schema_drift", "anomaly", "pii_drift"])
 def test_stateful_kinds_have_no_scalar_sql_form(kind: str) -> None:
     """A stateful kind is registered (so it is authorable and dispatchable) but has
     no `build_statement` — asking for one must refuse rather than fall through to a
@@ -349,10 +349,11 @@ def test_monitor_kinds_exposed() -> None:
         "schema_drift",
         "anomaly",
         "aggregate",
+        "pii_drift",
     )
     assert monitors.SCALAR_MONITOR_KINDS == ("freshness", "volume", "aggregate")
     # The partition is DERIVED from `build_statement is None`, not hand-listed.
-    assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift", "anomaly")
+    assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift", "anomaly", "pii_drift")
 
 
 # ───────────────────────── evaluate_monitors ────────────────────────
@@ -790,3 +791,47 @@ def test_freshness_age_hours_accepts_every_driver_spelling(scalar: Any) -> None:
 
 def test_freshness_age_hours_handles_a_plain_date() -> None:
     assert monitors.freshness_age_hours(date(2026, 6, 29), now=_NOW, source="MAX(d)") == 12.0
+
+
+# ───────────────────────── pii_drift outcome (ADR 0049 phase 2) ────────────────────────
+
+
+def test_pii_drift_first_run_is_a_skip_not_a_pass() -> None:
+    """The baseline run judges nothing; a `pass` would read as "nothing drifted"."""
+    out = monitor_outcome(
+        "pii_drift",
+        scalar={"baseline_captured": True, "columns_detected": 2, "columns_profiled": 9},
+        config={},
+        now=_NOW,
+    )
+    assert out.skipped is True and out.success is True
+    assert out.metric_value is None
+    assert out.observed_value == {
+        "baseline_captured": True,
+        "columns_detected": 2,
+        "columns_profiled": 9,
+    }
+
+
+def test_pii_drift_counts_new_unclassified_columns() -> None:
+    out = monitor_outcome(
+        "pii_drift",
+        scalar={"new_columns": ["contact", "notes"], "columns_detected": 3},
+        config={},
+        now=_NOW,
+    )
+    assert out.skipped is False and out.success is False
+    assert out.metric_value == 2.0
+    assert out.expected_value == {"monitor": "pii_drift", "new_unclassified_columns": 0}
+    clean = monitor_outcome("pii_drift", scalar={"new_columns": []}, config={}, now=_NOW)
+    assert clean.success is True and clean.metric_value == 0.0
+
+
+def test_pii_drift_rejects_a_non_dict_payload_and_bad_ignore_columns() -> None:
+    with pytest.raises(MonitorConfigError):
+        monitor_outcome("pii_drift", scalar=3, config={}, now=_NOW)
+    with pytest.raises(MonitorConfigError):
+        monitors.validate_monitor_config("pii_drift", {"ignore_columns": "email"})
+    with pytest.raises(MonitorConfigError):
+        monitors.validate_monitor_config("pii_drift", {"ignore_columns": ["drop table"]})
+    monitors.validate_monitor_config("pii_drift", {"ignore_columns": ["legacy_code"]})

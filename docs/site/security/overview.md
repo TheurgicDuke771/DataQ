@@ -427,6 +427,43 @@ The same list is `inherited_classifications` on `GET /api/v1/assets/{id}` and th
 tool. If the lineage is wrong, tag the downstream column `public` in the warehouse; its own tag
 wins.
 
+### Personal data the profiler detects
+
+Four datasource families have no warehouse tag at all (PostgreSQL and the other engine-generic
+SQL types, SQL Server, flat files, Iceberg), and on every datasource a column can start carrying
+personal data after it was classified. The profiler already reads every column's most frequent
+values (a row sample on files and Iceberg), and it runs two detectors that look at the **values**
+rather than the column's name: email addresses and encoded blobs. Every profile of a suite's own
+table keeps what they find as a classification of the asset, and a detected column is masked on
+every read path from then on.
+
+The rung is **additive only**, and it sits below everything a person decided:
+
+| Authority | Against a detection |
+|---|---|
+| The column's own warehouse tag, `sensitive` or `public` | Wins. A steward looked at this column |
+| `sensitive` inherited through column lineage | Wins |
+| The suite's `pii_columns` | Masks regardless |
+| The suite's `identifier_column` | **Clears it.** On a datasource with no warehouse tag this is a false positive's only exit, which is why it ranks above the detection and why a hash-like id column tripping the encoded detector costs one policy edit |
+| Fail-closed mode (`require_classification`) | A detection is never a clearance; an undetected column is not thereby cleared either |
+| The live value classifier over the failing sample | Below the detection: a persisted verdict holds even when a later sample happens to look clean |
+
+A detection does **not** flow downstream through lineage; only warehouse verdicts travel. A
+profile that no longer sees the values changes nothing, because on a SQL datasource the evidence
+is the top values and their absence from a later read proves little. The only way a detection
+stops masking is a **workspace admin dismissing it** on the asset page (**Detected personal
+data**), which is recorded in the audit log with the column and both states; a dismissal survives
+a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
+carries the values stays visible. There is no MCP tool for dismissal.
+
+The asset detail (`GET /api/v1/assets/{id}`, MCP `get_asset`) lists every detection, dismissed
+ones included, each with its **effect**: `masks`, `overridden_by_tag` (the column's own warehouse
+tag decides instead, either way) or `dismissed`. It also carries the time a **full** profile
+(every column) last fed the source. Read an empty list against that timestamp: with no
+timestamp, no full profile of the table's own target has run yet; a one-column probe from the
+column profiler records what it saw and does not move it. A column that is not listed is not
+thereby clean: only the values a profile saw were examined, and only for those two shapes.
+
 **The tag name is matched without its namespace**, and that is a constraint on
 you rather than a feature: DataQ honours a tag *named* `dataq_classification`
 wherever it lives, because knowing which database or schema should be

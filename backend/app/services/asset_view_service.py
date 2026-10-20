@@ -34,6 +34,7 @@ from backend.app.lineage.warehouse import (
 )
 from backend.app.services import (
     audit_service,
+    column_detections,
     column_tags,
     coverage_settings_service,
     scoring_settings_service,
@@ -239,6 +240,23 @@ class InheritedClassification:
 
 
 @dataclass(frozen=True)
+class DetectedClassification:
+    """A column the profiler found PII-shaped VALUES in (ADR 0049) — masked as ``sensitive``
+    unless dismissed by a workspace Admin or named as the suite's ``identifier_column``."""
+
+    column: str
+    detector: str
+    #: What the detection does right now, derived from the same precedence the redaction map
+    #: applies: ``masks`` (active, no own warehouse tag on the column), ``overridden_by_tag``
+    #: (the column's own warehouse verdict decides instead, either way), ``dismissed``.
+    effect: str
+    first_detected_at: datetime
+    last_detected_at: datetime
+    dismissed: bool
+    dismissed_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AssetDetail:
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + lineage. ``suites`` lists only suites the caller can view (ADR 0027);
@@ -270,6 +288,11 @@ class AssetDetail:
     # failed), never "none inherited"; truncated = the walk hit its depth cap.
     inherited_classifications: list[InheritedClassification] | None = field(default_factory=list)
     inherited_classifications_truncated: bool = False
+    # The profiler's persisted detections (ADR 0049), dismissed ones included so a steward can
+    # see what was overruled. None = could not be read, never "none detected".
+    detected_classifications: list[DetectedClassification] | None = field(default_factory=list)
+    # None = no profile of this asset's own target has fed the source yet ("never looked").
+    detected_classifications_refreshed_at: datetime | None = None
 
 
 # ── internals ────────────────────────────────────────────────────────────────
@@ -590,6 +613,65 @@ def _inherited_classifications(
     return entries, truncated
 
 
+def _detection_effect(row: Any, own_tags: Mapping[str, str] | None) -> str:
+    if row.dismissed_at is not None:
+        return "dismissed"
+    # `effective_column_tags` never lets a detection overwrite the column's own warehouse verdict
+    # (sensitive OR public), so the honest word for that row is "the tag decides".
+    tagged = {column_tags.fold_key(str(k)) for k in (own_tags or {})}
+    if column_tags.fold_key(row.column_name) in tagged:
+        return "overridden_by_tag"
+    return "masks"
+
+
+def _detected_classification(
+    row: Any, own_tags: Mapping[str, str] | None
+) -> DetectedClassification:
+    return DetectedClassification(
+        column=row.column_name,
+        detector=row.detector,
+        effect=_detection_effect(row, own_tags),
+        first_detected_at=row.first_detected_at,
+        last_detected_at=row.last_detected_at,
+        dismissed=row.dismissed_at is not None,
+        dismissed_at=row.dismissed_at,
+    )
+
+
+def _detected_classifications(
+    session: Session, asset: Asset
+) -> list[DetectedClassification] | None:
+    """The profiler's persisted detections (ADR 0049), fail-soft like the lineage read: an
+    error reports None (unknown) and the asset page still renders."""
+    try:
+        with session.begin_nested():
+            rows = column_detections.list_classifications(session, asset.id)
+    except Exception as exc:
+        log.warning(
+            "detected_classifications_failed",
+            asset_id=str(asset.id),
+            error_type=type(exc).__name__,
+        )
+        return None
+    return [_detected_classification(row, asset.column_tags) for row in rows]
+
+
+def set_classification_dismissed(
+    session: Session,
+    asset_id: uuid.UUID,
+    column: str,
+    *,
+    dismissed: bool,
+    actor_id: uuid.UUID | None,
+) -> DetectedClassification:
+    """Dismiss or restore one profiler detection (workspace-Admin-only; gated at the API)."""
+    asset = get_asset(session, asset_id)
+    row = column_detections.set_dismissed(
+        session, asset, column, dismissed=dismissed, actor_id=actor_id
+    )
+    return _detected_classification(row, asset.column_tags)
+
+
 def get_visible_asset(
     session: Session,
     asset_id: uuid.UUID,
@@ -645,6 +727,7 @@ def get_visible_asset(
     # `is_monitored` fact on the nodes.
     has_suite = _monitored_ids(session, neighbour_ids)
     inherited, inherited_truncated = _inherited_classifications(session, asset)
+    detected = _detected_classifications(session, asset)
     return AssetDetail(
         summary=summary,
         suites=composing,
@@ -662,6 +745,8 @@ def get_visible_asset(
         warehouse_lineage_status=warehouse_lineage_status(session),
         inherited_classifications=inherited,
         inherited_classifications_truncated=inherited_truncated,
+        detected_classifications=detected,
+        detected_classifications_refreshed_at=asset.detected_classifications_refreshed_at,
     )
 
 

@@ -996,7 +996,7 @@ def list_checks(
     check, to find its id. Returns, per check: its id, human name, kind
     (``expectation`` for a Great Expectations rule, or a monitor kind —
     ``freshness`` / ``volume`` / ``aggregate`` / ``schema_drift`` / ``anomaly`` /
-    ``comparison``),
+    ``pii_drift`` / ``comparison``),
     the expectation type, ``engine`` (ADR 0036 — ``gx`` unless it was authored
     against a platform-native engine like ``dmf``), its DQ dimension (accuracy /
     completeness / consistency / integrity / timeliness / uniqueness / validity,
@@ -2201,9 +2201,9 @@ def create_check(
     suite runs. Confirm a column name with `list_columns` first. For an
     ``expectation``-kind check, `dryrun_check` can also preview it against
     live data before creating it — but `dryrun_check` only supports
-    `expectation`, `aggregate`, `schema_drift` and `anomaly`; a `freshness` or
-    `volume` monitor has no preview and can only be checked by creating it and
-    running the suite.
+    `expectation`, `aggregate`, `schema_drift`, `anomaly` and `pii_drift`; a
+    `freshness` or `volume` monitor has no preview and can only be checked by
+    creating it and running the suite.
 
     For a monitor rather than a rule, set ``kind`` and pair it with
     ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
@@ -2211,8 +2211,27 @@ def create_check(
     counts the true dataset size on every datasource, including ADLS / S3 /
     Iceberg, unlike an ordinary row-count *expectation* check on a sampled
     suite, which measures the sample), ``aggregate`` (see below),
-    ``schema_drift`` (columns added/removed/retyped vs a learned baseline), or
-    ``anomaly`` (see below).
+    ``schema_drift`` (columns added/removed/retyped vs a learned baseline),
+    ``anomaly`` (see below), or ``pii_drift`` (see below).
+
+    **`pii_drift`** — "tell me when a column starts carrying personal data that
+    nobody classified" (ADR 0049). Every run profiles every column of the suite's
+    target, feeds the profiler classification source, and reports as the metric
+    the number of columns that newly look like email addresses or encoded blobs
+    AND carry no warehouse tag, no inherited classification, no entry in the
+    suite's `pii_columns` and were not dismissed. The suite's `identifier_column`
+    is NOT exempt — it is shown unmasked, so a detection there matters more.
+    The FIRST run only learns what already looks like personal data and reports
+    ``skip``; each later run compares with THAT baseline, which never moves on
+    its own (re-baseline from the suite page to reset it), so the check keeps
+    failing until the column is classified, dismissed or listed in the optional
+    ``ignore_columns`` — then the next run passes and the incident resolves.
+    With no thresholds the check is pass/fail (any new column fails); pass
+    ``warn_threshold``/``fail_threshold`` to band the count (the app's editor
+    defaults both to 1). Every run costs one profile of the table (a column
+    listing plus the batched top-values query). Only email and encoded shapes are
+    detected; a column it does not name is not thereby clean. Not a GX
+    expectation — never previewable against its baseline.
 
     **`aggregate`** — "the average order amount should stay between 10 and 90" —
     measures ONE statistic of ONE numeric column every run and records the value
@@ -2692,8 +2711,12 @@ def dryrun_check(
     precondition was not met), the metric it measured, and the observed vs
     expected values.
 
-    **Only ``expectation``, ``aggregate``, ``schema_drift`` and ``anomaly`` kinds
-    can be previewed with the default ``gx`` engine.** An ``aggregate`` preview
+    **Only ``expectation``, ``aggregate``, ``schema_drift``, ``anomaly`` and
+    ``pii_drift`` kinds can be previewed with the default ``gx`` engine.** A
+    ``pii_drift`` preview is the raw detector view of one profile — which columns'
+    values look like personal data right now — and reports ``skip``: it has no
+    baseline, and it subtracts nothing (warehouse tags, the suite's policy and
+    dismissed detections only apply on a persisted run). An ``aggregate`` preview
     reads the whole target (it is never sampled) and reports the measured value
     as the metric. A ``freshness`` or ``volume``
     monitor check has no ``gx`` dry-run support — refused with an error. The
@@ -3176,6 +3199,9 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),
+            # Always the suite's own target here, every column: a full profile for the
+            # classification source (ADR 0049).
+            asset=run_service.resolve_asset(session, suite),
         )
         return {
             "suite_id": suite_id,
@@ -3803,6 +3829,21 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     not listed here. `null` means it could not be determined (a lineage read failed), not that
     nothing is inherited; `inherited_classifications_truncated` means the lineage walk hit its
     depth cap, so a column further upstream was not considered.
+
+    `detected_classifications` answers the other "why is this masked?" question: each entry is
+    a column in which a profile found PII-shaped VALUES (`detector`: `email` or `encoded` today;
+    read it as a label, more may follow). Branch on `effect`, not on `dismissed` alone:
+    `masks` — DataQ masks the column as sensitive on every read path, unless a suite names it
+    as its own `identifier_column`; `overridden_by_tag` — the column carries its own warehouse
+    tag, which decides instead (a `public` tag shows it, a `sensitive` one masks it), so the
+    detection is inert; `dismissed` — a workspace Admin cleared it. Dismissal happens in the
+    app with no MCP tool, so do not offer to clear one; a dismissed entry's `last_detected_at`
+    still moves when a later profile sees the values again.
+    `detected_classifications_refreshed_at` is when a FULL profile of this asset's own target
+    (every column) last fed the source: `null` means none has, so an empty list then says
+    nothing about the data; a single-column probe records what it saw without moving it. `null`
+    for the list itself means it could not be read. A column with no entry is not thereby
+    clean — only the values a profile saw were examined, and only for those two shapes.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3894,6 +3935,27 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 ]
             ),
             "inherited_classifications_truncated": detail.inherited_classifications_truncated,
+            "detected_classifications": (
+                None
+                if detail.detected_classifications is None
+                else [
+                    {
+                        "column": dc.column,
+                        "detector": dc.detector,
+                        "effect": dc.effect,
+                        "first_detected_at": dc.first_detected_at.isoformat(),
+                        "last_detected_at": dc.last_detected_at.isoformat(),
+                        "dismissed": dc.dismissed,
+                        "dismissed_at": (dc.dismissed_at.isoformat() if dc.dismissed_at else None),
+                    }
+                    for dc in detail.detected_classifications
+                ]
+            ),
+            "detected_classifications_refreshed_at": (
+                detail.detected_classifications_refreshed_at.isoformat()
+                if detail.detected_classifications_refreshed_at
+                else None
+            ),
         }
 
 
@@ -4190,14 +4252,21 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     ``kind_detail`` names the fields specific to the failing check's monitor kind
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
-    anomaly, `aggregate`/`column`/`breached_bound` for aggregate — its measured
-    value is `failing_result.metric_value`, which is NOT column-masked the way
+    anomaly, `new_columns`/`columns_detected`/`columns_unclassified`/
+    `baseline_captured` for pii_drift (column names only, never a value;
+    `columns_detected` is what the detectors flagged in that run's profile,
+    `columns_unclassified` the number the check judges — every column still in
+    the table that carries a detection, that run's or a retained earlier one,
+    and that nothing classified — so it can exceed `columns_detected`),
+    `aggregate`/`column`/`breached_bound` for
+    aggregate — its measured value is `failing_result.metric_value`, which is NOT
+    column-masked the way
     `observed_value` is, so on a min/max over a policy-sensitive column it is one
     real cell) instead of making you parse `failing_result.observed_value`'s
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
     a comparison check — the common case, where `observed_value` already IS the
-    shape. For a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly` check it is
-    non-null whenever the card carries one at all: `evidence` is only ever
+    shape. For a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly`/`pii_drift`
+    check it is non-null whenever the card carries one at all: `evidence` is only ever
     captured from a genuinely warned/failed/critical occurrence of that check
     (never an operationally-errored or skipped one), so a null `kind_detail`
     there means the same rare thing a null `check_name` below does, not that
@@ -4264,7 +4333,8 @@ def get_incident(incident_id: str) -> dict[str, Any]:
       and an incident captured before it existed has no key at all; in both, a
       null `upstream_pipeline_run` can mean either.
     - `kind_detail` null is benign for an `expectation`/`comparison` check, but
-      NOT for a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly` one — every card
+      NOT for a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly`/`pii_drift`
+      one — every card
       is captured from a genuinely warned/failed/critical occurrence of its
       check (an operational error or skip never reaches this card), so there a
       null means the same rare thing a null `check_name` above means.
@@ -4839,6 +4909,8 @@ def profile_column(
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),
+            # The suite's own asset feeds the profiler classification source (ADR 0049).
+            asset=None if probed_other else run_service.resolve_asset(session, suite),
         )
         # Only the SQL path (Snowflake / Unity Catalog / generic SQL) aggregates the whole
         # table; ADLS / S3 / Iceberg read at most `_SAMPLE_ROWS` rows into pandas
