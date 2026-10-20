@@ -2839,6 +2839,11 @@
 <td>Per-period metrics and yearly seasonality on the anomaly monitor — two <strong>per-period metrics</strong> (<code>period_row_count</code>, <code>period_sum</code>, bucketed by a date column, complete UTC periods only, observations keyed by period); history <strong>seeded once from the table</strong> (marked <code>backfilled</code>) and then <strong>accumulated from runs</strong> (<code>observed</code>); <strong>yearly seasonality as a seasonal index</strong> over the rolling baseline, on every single-number anomaly metric (and, as a default-off switch, on the automatic row-count and freshness baselines), with every input in the result and an index of 1 when no earlier year exists; <strong>seasonal periods</strong> declared in a workspace calendar that a check attaches to, and detected from history for display only; the per-period metrics are authored checks, not automatic coverage</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0049-profiler-pii-classification-source/">0049</a></td>
+<td>Profiler-detected PII as a classification source — one <code>asset_column_classifications</code> table (<code>source = 'profiler'</code> now, the catalog pull next) holding <strong>additive-only</strong> <code>sensitive</code> verdicts from the two existing value detectors (email, encoded), overlaid on <code>effective_column_tags</code> as <code>detected</code>: a warehouse tag, inherited <code>sensitive</code> and the suite's <code>pii_columns</code> outrank it, the suite's <code>identifier_column</code> clears it, it never satisfies fail-closed clearance and never travels along lineage; cleared only by an audited Admin dismissal that survives re-detection; written on every profile of the suite's own target</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 

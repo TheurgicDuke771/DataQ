@@ -158,10 +158,25 @@ erDiagram
         string description "workspace-Admin-set (ADR 0034 §4)"
         jsonb column_tags "warehouse governance classifications, cached per read"
         timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
+        timestamptz detected_classifications_refreshed_at "last profile that fed the profiler classification source (ADR 0049)"
         bool auto_coverage_excluded "left out of its connection's automatic coverage (ADR 0047)"
         jsonb auto_coverage_config "this table's sensitivity for its automatic baselines; NULL = workspace setting"
         timestamptz first_seen
         timestamptz last_seen
+    }
+    asset_column_classifications {
+        uuid id PK
+        uuid asset_id FK "CASCADE — a classification is a fact about this asset (ADR 0049)"
+        string column_name "case-folded unique per (asset, source)"
+        string source "profiler today; the governance-catalog pull next"
+        string verdict "always sensitive — additive only, never a clearance"
+        string detector "email / encoded"
+        jsonb evidence "detector counts, never a value"
+        timestamptz first_detected_at
+        timestamptz last_detected_at "keeps moving after a dismissal, so the page can say 'still detected'"
+        timestamptz dismissed_at "cleared by a workspace Admin, never by a re-profile"
+        uuid dismissed_by FK "SET NULL on erasure"
+        timestamptz created_at
     }
     lineage_edges {
         uuid id PK
@@ -444,6 +459,8 @@ erDiagram
     users |o--o{ assets : "owner_user_id (SET NULL)"
     assets |o--o{ suites : "resolved target (SET NULL)"
     assets |o--o{ runs : "stamped at dispatch (SET NULL)"
+    assets ||--o{ asset_column_classifications : "detected on (CASCADE, ADR 0049)"
+    users |o--o{ asset_column_classifications : "dismissed_by (SET NULL)"
     assets ||--o{ lineage_edges : "upstream (CASCADE)"
     assets ||--o{ lineage_edges : "downstream (CASCADE)"
     connections ||--o{ lineage_edges : "refreshed by (CASCADE)"

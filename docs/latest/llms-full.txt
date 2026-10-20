@@ -4904,6 +4904,21 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Columns that start carrying personal data are masked without anyone tagging them.** Every
+  profile of a suite's own table now runs the two value detectors that look at data rather
+  than names (email addresses, encoded blobs) and keeps what they find as a classification of
+  the asset, on every datasource, including the ones with no warehouse tag (PostgreSQL, MySQL,
+  Trino, SQL Server, files, Iceberg). A detected column is masked in failing samples, incident
+  evidence, alert cards and over MCP from the next profile on. The rung is additive only: a
+  warehouse tag, a column inherited as sensitive through lineage and a suite's `pii_columns`
+  all outrank it, a suite's `identifier_column` clears it, it never satisfies fail-closed
+  clearance, and it does not travel along lineage. A re-profile that no longer sees the values
+  changes nothing; only a workspace admin clears a detection, from the asset page's
+  **Detected personal data** panel (`PATCH /assets/{id}/classifications`), and the
+  dismissal is recorded in the audit log and survives a later re-detection. The asset detail
+  (`GET /assets/{id}`, MCP `get_asset`) lists the detections, dismissed ones included, each with
+  what it does now (masks, overridden by the column's own warehouse tag, or dismissed), and when a
+  full profile last looked, so an empty list is never mistaken for "never looked".
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
@@ -7924,10 +7939,25 @@ erDiagram
         string description "workspace-Admin-set (ADR 0034 §4)"
         jsonb column_tags "warehouse governance classifications, cached per read"
         timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
+        timestamptz detected_classifications_refreshed_at "last profile that fed the profiler classification source (ADR 0049)"
         bool auto_coverage_excluded "left out of its connection's automatic coverage (ADR 0047)"
         jsonb auto_coverage_config "this table's sensitivity for its automatic baselines; NULL = workspace setting"
         timestamptz first_seen
         timestamptz last_seen
+    }
+    asset_column_classifications {
+        uuid id PK
+        uuid asset_id FK "CASCADE — a classification is a fact about this asset (ADR 0049)"
+        string column_name "case-folded unique per (asset, source)"
+        string source "profiler today; the governance-catalog pull next"
+        string verdict "always sensitive — additive only, never a clearance"
+        string detector "email / encoded"
+        jsonb evidence "detector counts, never a value"
+        timestamptz first_detected_at
+        timestamptz last_detected_at "keeps moving after a dismissal, so the page can say 'still detected'"
+        timestamptz dismissed_at "cleared by a workspace Admin, never by a re-profile"
+        uuid dismissed_by FK "SET NULL on erasure"
+        timestamptz created_at
     }
     lineage_edges {
         uuid id PK
@@ -8210,6 +8240,8 @@ erDiagram
     users |o--o{ assets : "owner_user_id (SET NULL)"
     assets |o--o{ suites : "resolved target (SET NULL)"
     assets |o--o{ runs : "stamped at dispatch (SET NULL)"
+    assets ||--o{ asset_column_classifications : "detected on (CASCADE, ADR 0049)"
+    users |o--o{ asset_column_classifications : "dismissed_by (SET NULL)"
     assets ||--o{ lineage_edges : "upstream (CASCADE)"
     assets ||--o{ lineage_edges : "downstream (CASCADE)"
     connections ||--o{ lineage_edges : "refreshed by (CASCADE)"
@@ -10591,6 +10623,43 @@ The same list is `inherited_classifications` on `GET /api/v1/assets/{id}` and th
 tool. If the lineage is wrong, tag the downstream column `public` in the warehouse; its own tag
 wins.
 
+### Personal data the profiler detects
+
+Four datasource families have no warehouse tag at all (PostgreSQL and the other engine-generic
+SQL types, SQL Server, flat files, Iceberg), and on every datasource a column can start carrying
+personal data after it was classified. The profiler already reads every column's most frequent
+values (a row sample on files and Iceberg), and it runs two detectors that look at the **values**
+rather than the column's name: email addresses and encoded blobs. Every profile of a suite's own
+table keeps what they find as a classification of the asset, and a detected column is masked on
+every read path from then on.
+
+The rung is **additive only**, and it sits below everything a person decided:
+
+| Authority | Against a detection |
+|---|---|
+| The column's own warehouse tag, `sensitive` or `public` | Wins. A steward looked at this column |
+| `sensitive` inherited through column lineage | Wins |
+| The suite's `pii_columns` | Masks regardless |
+| The suite's `identifier_column` | **Clears it.** On a datasource with no warehouse tag this is a false positive's only exit, which is why it ranks above the detection and why a hash-like id column tripping the encoded detector costs one policy edit |
+| Fail-closed mode (`require_classification`) | A detection is never a clearance; an undetected column is not thereby cleared either |
+| The live value classifier over the failing sample | Below the detection: a persisted verdict holds even when a later sample happens to look clean |
+
+A detection does **not** flow downstream through lineage; only warehouse verdicts travel. A
+profile that no longer sees the values changes nothing, because on a SQL datasource the evidence
+is the top values and their absence from a later read proves little. The only way a detection
+stops masking is a **workspace admin dismissing it** on the asset page (**Detected personal
+data**), which is recorded in the audit log with the column and both states; a dismissal survives
+a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
+carries the values stays visible. There is no MCP tool for dismissal.
+
+The asset detail (`GET /api/v1/assets/{id}`, MCP `get_asset`) lists every detection, dismissed
+ones included, each with its **effect**: `masks`, `overridden_by_tag` (the column's own warehouse
+tag decides instead, either way) or `dismissed`. It also carries the time a **full** profile
+(every column) last fed the source. Read an empty list against that timestamp: with no
+timestamp, no full profile of the table's own target has run yet; a one-column probe from the
+column profiler records what it saw and does not move it. A column that is not listed is not
+thereby clean: only the values a profile saw were examined, and only for those two shapes.
+
 **The tag name is matched without its namespace**, and that is a constraint on
 you rather than a feature: DataQ honours a tag *named* `dataq_classification`
 wherever it lives, because knowing which database or schema should be
@@ -12584,6 +12653,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0046](0046-pipeline-dq-gate.md) | Pipeline DQ gate — a fourth orchestration responsibility: **answer a gate request**. One provider-agnostic endpoint (`POST /orchestration/gate`) keyed by trigger bindings: **trigger-and-wait** (starts the bound suites' runs for this pipeline run under the success-event marker, so polls and the later success event are idempotent; needs `edit`) or **status only** (`view`); states `awaiting_trigger` · `running` · `passed` · `failed` (at/above `fail_on`) · `error`; a bound suite the caller can't see refuses the gate; clients are the `dataq gate` CLI, an Airflow sensor and an ADF Until-loop snippet, all fail-closed; DataQ still never mutates a pipeline | Accepted |
 | [0047](0047-automated-coverage-loop.md) | Automated coverage — **per-connection switch** (`auto_coverage`, enumerable warehouse types only, per-asset exclusion) turns every inventory table into a **system-owned suite** (`suites.origin = 'auto'`, one per asset) of ordinary checks, so runs, results, incidents, alerts, UI and MCP need nothing new; **universal baselines start without approval** (row-count and freshness anomaly, schema drift, and a new one-query `column_profile` anomaly metric over every column's null % and distinct count), while **rules that assert something** (not-null, unique, accepted values, ranges, from profiling or the LLM suggester) wait in a `check_suggestions` review queue; **full severity** (warn 3σ, fail 4σ, critical 6σ; schema change fails); the reconciler adds missing checks only and never overrides a person's edit or resurrects a deleted check; daily staggered schedules and `AUTO_COVERAGE_MAX_ASSETS` bound the warehouse cost; incident `resolution` makes the **false-positive rate** a tracked figure beside coverage; **amended 2026-10-13:** sensitivity (per baseline) and baseline shape are settings resolved **asset override → workspace setting → built-in default**, and automatic anomaly checks **inherit them at run time** until a person edits one | Accepted |
 | [0048](0048-per-period-metrics-yearly-seasonality.md) | Per-period metrics and yearly seasonality on the anomaly monitor — two **per-period metrics** (`period_row_count`, `period_sum`, bucketed by a date column, complete UTC periods only, observations keyed by period); history **seeded once from the table** (marked `backfilled`) and then **accumulated from runs** (`observed`); **yearly seasonality as a seasonal index** over the rolling baseline, on every single-number anomaly metric (and, as a default-off switch, on the automatic row-count and freshness baselines), with every input in the result and an index of 1 when no earlier year exists; **seasonal periods** declared in a workspace calendar that a check attaches to, and detected from history for display only; the per-period metrics are authored checks, not automatic coverage | Accepted |
+| [0049](0049-profiler-pii-classification-source.md) | Profiler-detected PII as a classification source — one `asset_column_classifications` table (`source = 'profiler'` now, the catalog pull next) holding **additive-only** `sensitive` verdicts from the two existing value detectors (email, encoded), overlaid on `effective_column_tags` as `detected`: a warehouse tag, inherited `sensitive` and the suite's `pii_columns` outrank it, the suite's `identifier_column` clears it, it never satisfies fail-closed clearance and never travels along lineage; cleared only by an audited Admin dismissal that survives re-detection; written on every profile of the suite's own target | Accepted |
 
 
 ---
@@ -18475,3 +18545,129 @@ this time of year usually looks like.
   verdict cannot be explained from the numbers in the result.
 - **Declared periods typed into each check:** the same sale would be entered again for every
   table it touches. A check attaches entries; it does not define them.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0049-profiler-pii-classification-source/ -->
+
+# ADR 0049 — Profiler-detected PII as a classification source
+
+- **Status:** Accepted (2026-10-20)
+- **Date:** 2026-10-20
+- **Deciders:** @TheurgicDuke771
+- **Related:** compliance gap G3 (warehouse column tags, the governance floor), ADR [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (assets; the 2026-09-27 amendment on classification propagation), ADR [0041](0041-history-audit-strategy.md) (audit events), ADR [0012](0012-monitor-kind-seam.md) (the `pii_drift` monitor kind that consumes this).
+
+## Context
+
+Failing-row samples are masked by a ladder of authorities: a column's own warehouse tag
+(`dataq_classification`, read into `assets.column_tags`), `sensitive` inherited through recorded
+column lineage, the suite's own `column_policy` (`pii_columns` masks, `identifier_column` is the
+one shown locator), and finally a live name-and-value classifier over the sample itself, with
+an unclassifiable column masked by default. Everything above the live classifier is persisted;
+the classifier's own verdicts are not.
+
+The profiler already visits every column of a table and sees its values (the most frequent
+values on SQL datasources, a row sample on files and Iceberg). `column_classification` already
+carries two value detectors that fire on data rather than on a column name: email addresses and
+encoded blobs. Today their verdicts are used once, at suite creation, to derive a policy
+(`auto_classify_columns`), and then forgotten: a column that starts carrying email addresses
+after the suite was created is masked only if the failing sample happens to contain enough of
+them. The warehouse-tag store cannot hold these verdicts. `assets.column_tags` is overwritten
+from the warehouse on every refresh, its keys suppress lineage inheritance, its values travel
+downstream as warehouse truth, and a `public` value in it satisfies fail-closed clearance.
+
+Four datasource families (PostgreSQL and the engine-generic SQL types, flat files, Iceberg)
+have no warehouse tag at all, so for them a persisted verdict is the only durable classification
+DataQ can hold.
+
+## Decision
+
+1. **A classification table, not a column.** `asset_column_classifications` holds one row per
+   `(asset, column, source)`: `verdict`, `detector`, `evidence` (counts only, never a value),
+   `first_detected_at`, `last_detected_at`, `dismissed_at`, `dismissed_by`. `source` is
+   `profiler` today; the governance-catalog pull on the roadmap is the next source and gets its
+   own value rather than a second table. `assets.detected_classifications_refreshed_at` records
+   the last **full** profile (every column of the table) that fed the source, so "looked and
+   found none" differs from "never looked", as it does for warehouse tags; a probe of one column
+   records what it saw and claims nothing about the rest.
+
+2. **Additive only.** Only `sensitive` is ever persisted. A detected verdict can add masking;
+   it can never clear a column, never satisfies fail-closed (`require_classification`)
+   clearance, and is never written to `assets.column_tags`.
+
+3. **One new rung, read through the existing choke point.** `effective_column_tags` overlays
+   active detections onto the map every redaction read already consumes (samples, incident
+   evidence, alert cards, the LLM prompt context, MCP), under the value `detected`. That value is
+   in neither the sensitive-tag set nor the clearing set, so the rung sits where it belongs: a
+   warehouse verdict (`sensitive` or `public`) on the same column wins at the merge, inherited
+   `sensitive` wins, the suite's `pii_columns` masks regardless, and the suite's
+   `identifier_column` clears a detection. Below it, the live classifier and the default mask
+   are unchanged. On datasources with no warehouse tag, `identifier_column` is the one escape
+   hatch a false positive has (hash-like ids trip the encoded detector), which is why it ranks
+   above the detection.
+
+4. **A detection is cleared by a person, never by a quiet re-profile.** The evidence on SQL is
+   the top twenty values; a later profile that does not see them proves little, so a re-profile
+   that finds nothing leaves the row alone. A workspace Admin dismisses a detection (audited,
+   `asset.classification_update`, the column named in the request body because a column name
+   may hold `/`); a dismissal survives re-detection (`last_detected_at` keeps moving so the page
+   can say "still detected, dismissed on …") and can be restored. There is no MCP tool for this:
+   dismissal loosens masking and is Admin-only, and MCP exposes no Admin-only capability by
+   standing invariant. Every surface that lists a detection states its **effect** — `masks`,
+   `overridden_by_tag` (the column's own warehouse verdict decides instead) or `dismissed` —
+   derived from the same merge the redaction map applies, so a row never reads "masked" when a
+   `public` tag is in fact showing the column.
+
+5. **Profiler verdicts do not propagate along lineage.** Only warehouse verdicts travel
+   (`inherited_sensitive` reads `assets.column_tags` alone). A heuristic that flows downstream
+   would mask a whole lineage from one false positive with no tag to clear it.
+
+6. **Detector scope: email and encoded, value-based only.** The two detectors that exist, with
+   their existing ratios. A name signal is already applied live at every rung, so persisting it
+   adds nothing. Phone, national-id, card and IP detectors are a separate issue; each needs its
+   own false-positive study across the SQL top-values basis and the file sample basis.
+
+7. **Written on every profile of the suite's own target.** `profile_connection` takes the asset
+   and records detections when the probe targets that asset — the column profiler, the policy
+   suggester (REST and MCP), the suggestion refresh, the LLM prompt context and the worker's
+   auto-classify alike; never on an explicit table or path override, whose columns may collide
+   by name. Each detection is one upsert on the case-folded cell, so two profiles racing each
+   other both land; the write runs in its own savepoint and is fail-soft: a failure to persist
+   is logged, leaves the caller's pending work untouched and never fails the profile. For a
+   probe of some *other* table, the narrowed tag floor keeps a detection like any masking
+   verdict (clearances stay with the asset they were given on).
+
+## Phases
+
+1. This ADR, the table and migration, the write path, the rung, the asset page and API, docs.
+2. `pii_drift`: a monitor kind whose `metric_value` is the count of detections first
+   seen since the last run on columns with no warehouse tag and no policy entry. Needs the
+   `kind_valid` constraints widened first, in their own migration.
+3. The governance-catalog source as `source = 'catalog'` rows.
+
+## Consequences
+
+- A column that starts carrying email addresses is masked everywhere after the next profile,
+  on every datasource, including the four families with no warehouse tag.
+- One more query per redaction read, on the same path that already reads lineage inheritance.
+- A false positive costs one Admin click, and the dismissal is audited. Until then it masks,
+  which is the safe direction.
+- Every redaction surface inherits the rung without a code change, because they all read one
+  map. A surface that reads `assets.column_tags` directly is the one way to miss it; the tests
+  pin the overlay at the choke point.
+
+## Considered and rejected
+
+- **JSONB on `assets`** beside `column_tags`: matches the warehouse-tag precedent and avoids a
+  join, but a second source per column (the catalog pull) is already planned, and a table with
+  a `source` column is where two sources per column compete. Decided by the maintainer
+  2026-10-20.
+- **Writing detections into `assets.column_tags`:** every property of that column is wrong
+  for a heuristic (see Context).
+- **Auto-clearing a detection when a re-profile finds nothing:** turns a weak absence of
+  evidence into an un-masking, on the surface where a wrong answer shows a person's data.
+- **A separate `detections` argument threaded through every redaction call:** the same rung,
+  reached by changing six call sites and every future one, instead of one function.
+- **Adding new detectors in this change:** each is new detection with its own false-positive
+  surface, in a cycle scoped to no net-new features.

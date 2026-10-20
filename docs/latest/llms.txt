@@ -130,6 +130,7 @@ lists which).
 - [ADR 0046 — Pipeline DQ gate: an orchestrator asks DataQ whether to continue](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/index.md): Orchestration providers (ADF, Airflow, dbt) have exactly three responsibilities in DataQ:
 - [ADR 0047 — Automated coverage: system-owned suites over the asset inventory](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0047-automated-coverage-loop/index.md): DataQ runs what a human authors. A table nobody wrote a check for is not monitored, and a
 - [ADR 0048 — Per-period metrics, yearly seasonality and seasonal periods on the anomaly monitor](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0048-per-period-metrics-yearly-seasonality/index.md): The anomaly monitor is the one place in DataQ with a learned baseline: every other monitor
+- [ADR 0049 — Profiler-detected PII as a classification source](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0049-profiler-pii-classification-source/index.md): Failing-row samples are masked by a ladder of authorities: a column's own warehouse tag
 
 ## Optional
 

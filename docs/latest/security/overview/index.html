@@ -1997,6 +1997,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#personal-data-the-profiler-detects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personal data the profiler detects
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#who-can-apply-the-tags-and-what-dataq-needs-to-read-them" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2906,6 +2917,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#personal-data-the-profiler-detects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personal data the profiler detects
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#who-can-apply-the-tags-and-what-dataq-needs-to-read-them" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3639,6 +3661,63 @@ lists every column masked only by inheritance, each with the upstream column it 
 The same list is <code>inherited_classifications</code> on <code>GET /api/v1/assets/{id}</code> and the MCP <code>get_asset</code>
 tool. If the lineage is wrong, tag the downstream column <code>public</code> in the warehouse; its own tag
 wins.</p>
+<h3 id="personal-data-the-profiler-detects">Personal data the profiler detects<a class="headerlink" href="#personal-data-the-profiler-detects" title="Permanent link">¶</a></h3>
+<p>Four datasource families have no warehouse tag at all (PostgreSQL and the other engine-generic
+SQL types, SQL Server, flat files, Iceberg), and on every datasource a column can start carrying
+personal data after it was classified. The profiler already reads every column's most frequent
+values (a row sample on files and Iceberg), and it runs two detectors that look at the <strong>values</strong>
+rather than the column's name: email addresses and encoded blobs. Every profile of a suite's own
+table keeps what they find as a classification of the asset, and a detected column is masked on
+every read path from then on.</p>
+<p>The rung is <strong>additive only</strong>, and it sits below everything a person decided:</p>
+<table>
+<thead>
+<tr>
+<th>Authority</th>
+<th>Against a detection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The column's own warehouse tag, <code>sensitive</code> or <code>public</code></td>
+<td>Wins. A steward looked at this column</td>
+</tr>
+<tr>
+<td><code>sensitive</code> inherited through column lineage</td>
+<td>Wins</td>
+</tr>
+<tr>
+<td>The suite's <code>pii_columns</code></td>
+<td>Masks regardless</td>
+</tr>
+<tr>
+<td>The suite's <code>identifier_column</code></td>
+<td><strong>Clears it.</strong> On a datasource with no warehouse tag this is a false positive's only exit, which is why it ranks above the detection and why a hash-like id column tripping the encoded detector costs one policy edit</td>
+</tr>
+<tr>
+<td>Fail-closed mode (<code>require_classification</code>)</td>
+<td>A detection is never a clearance; an undetected column is not thereby cleared either</td>
+</tr>
+<tr>
+<td>The live value classifier over the failing sample</td>
+<td>Below the detection: a persisted verdict holds even when a later sample happens to look clean</td>
+</tr>
+</tbody>
+</table>
+<p>A detection does <strong>not</strong> flow downstream through lineage; only warehouse verdicts travel. A
+profile that no longer sees the values changes nothing, because on a SQL datasource the evidence
+is the top values and their absence from a later read proves little. The only way a detection
+stops masking is a <strong>workspace admin dismissing it</strong> on the asset page (<strong>Detected personal
+data</strong>), which is recorded in the audit log with the column and both states; a dismissal survives
+a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
+carries the values stays visible. There is no MCP tool for dismissal.</p>
+<p>The asset detail (<code>GET /api/v1/assets/{id}</code>, MCP <code>get_asset</code>) lists every detection, dismissed
+ones included, each with its <strong>effect</strong>: <code>masks</code>, <code>overridden_by_tag</code> (the column's own warehouse
+tag decides instead, either way) or <code>dismissed</code>. It also carries the time a <strong>full</strong> profile
+(every column) last fed the source. Read an empty list against that timestamp: with no
+timestamp, no full profile of the table's own target has run yet; a one-column probe from the
+column profiler records what it saw and does not move it. A column that is not listed is not
+thereby clean: only the values a profile saw were examined, and only for those two shapes.</p>
 <p><strong>The tag name is matched without its namespace</strong>, and that is a constraint on
 you rather than a feature: DataQ honours a tag <em>named</em> <code>dataq_classification</code>
 wherever it lives, because knowing which database or schema should be

@@ -57,6 +57,21 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Columns that start carrying personal data are masked without anyone tagging them.** Every
+  profile of a suite's own table now runs the two value detectors that look at data rather
+  than names (email addresses, encoded blobs) and keeps what they find as a classification of
+  the asset, on every datasource, including the ones with no warehouse tag (PostgreSQL, MySQL,
+  Trino, SQL Server, files, Iceberg). A detected column is masked in failing samples, incident
+  evidence, alert cards and over MCP from the next profile on. The rung is additive only: a
+  warehouse tag, a column inherited as sensitive through lineage and a suite's `pii_columns`
+  all outrank it, a suite's `identifier_column` clears it, it never satisfies fail-closed
+  clearance, and it does not travel along lineage. A re-profile that no longer sees the values
+  changes nothing; only a workspace admin clears a detection, from the asset page's
+  **Detected personal data** panel (`PATCH /assets/{id}/classifications`), and the
+  dismissal is recorded in the audit log and survives a later re-detection. The asset detail
+  (`GET /assets/{id}`, MCP `get_asset`) lists the detections, dismissed ones included, each with
+  what it does now (masks, overridden by the column's own warehouse tag, or dismissed), and when a
+  full profile last looked, so an empty list is never mistaken for "never looked".
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
