@@ -6,6 +6,8 @@ from typing import Final, Literal
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from backend.app.core.s3_endpoint import S3AddressingStyle, normalize_endpoint_url
+
 # Lives here (not in `secrets.py`, which imports this module) so the startup validator and the
 # `_build_store` fallback cannot drift apart.
 _REDIS_STORE_REMOVED: Final = (
@@ -138,9 +140,34 @@ class Settings(BaseSettings):
     # Audit hash-chain external anchor (ADR 0041 §9 / #1460) — dark by default, same
     # posture as LINEAGE_PROVIDER: the chain is computed either way, only the anchor
     # publish is gated.
-    tamper_anchor: Literal["none", "webhook"] = "none"
+    tamper_anchor: Literal["none", "webhook", "object_lock"] = "none"
     tamper_anchor_webhook_url: str = ""
     tamper_anchor_webhook_secret: str = ""
+    # "object_lock" (#2310) writes each head as a WORM object: S3 Object Lock (AWS or an
+    # S3-compatible store such as MinIO) or an Azure immutable blob. The credential is read
+    # from the SecretStore under TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME — the S3 secret access
+    # key, or the Azure SAS token / service-principal client secret — never from the env.
+    tamper_anchor_object_lock_provider: Literal["s3", "azure"] = "s3"
+    #: S3 bucket or Azure container.
+    tamper_anchor_object_lock_bucket: str = ""
+    tamper_anchor_object_lock_prefix: str = "audit-anchors"
+    tamper_anchor_object_lock_retention_days: int = 365
+    #: S3: COMPLIANCE (nobody can shorten it) or GOVERNANCE (a principal holding
+    #: s3:BypassGovernanceRetention can). Azure: Locked or Unlocked immutability policy.
+    tamper_anchor_object_lock_mode: Literal["COMPLIANCE", "GOVERNANCE"] = "COMPLIANCE"
+    tamper_anchor_object_lock_secret_name: str = ""
+    # S3-only.
+    tamper_anchor_object_lock_access_key_id: str = ""
+    tamper_anchor_object_lock_region: str = ""
+    tamper_anchor_object_lock_endpoint_url: str = ""
+    tamper_anchor_object_lock_addressing_style: S3AddressingStyle = "auto"
+    # Azure-only.
+    tamper_anchor_object_lock_account_url: str = ""
+    tamper_anchor_object_lock_auth_type: Literal["sas", "service_principal"] = "sas"
+    tamper_anchor_object_lock_tenant_id: str = ""
+    tamper_anchor_object_lock_client_id: str = ""
+    #: Azure-only: additionally place a legal hold on each anchor blob.
+    tamper_anchor_object_lock_legal_hold: bool = False
 
     # OTP-code retention sweep (#1136) — hygiene.
     otp_codes_retention_hours: int = 24
@@ -669,7 +696,43 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"TAMPER_ANCHOR_WEBHOOK_URL must start with http:// or https:// (got {url!r})"
                 )
+        elif self.tamper_anchor == "object_lock":
+            self._validate_object_lock_anchor()
         return self
+
+    def _validate_object_lock_anchor(self) -> None:
+        prefix = "TAMPER_ANCHOR_OBJECT_LOCK_"
+        provider = self.tamper_anchor_object_lock_provider
+        required = ["BUCKET", "SECRET_NAME"]
+        if provider == "s3":
+            required.append("ACCESS_KEY_ID")
+            if not self.tamper_anchor_object_lock_endpoint_url.strip():
+                required.append("REGION")
+        else:
+            required.append("ACCOUNT_URL")
+            if self.tamper_anchor_object_lock_auth_type == "service_principal":
+                required.extend(["TENANT_ID", "CLIENT_ID"])
+        missing = [
+            name
+            for name in required
+            if not str(getattr(self, f"tamper_anchor_object_lock_{name.lower()}")).strip()
+        ]
+        if missing:
+            raise ValueError(
+                f"TAMPER_ANCHOR='object_lock' with provider {provider!r} requires "
+                + " and ".join(prefix + name for name in missing)
+            )
+        if self.tamper_anchor_object_lock_retention_days < 1:
+            raise ValueError(f"{prefix}RETENTION_DAYS must be at least 1")
+        if not self.tamper_anchor_object_lock_prefix.strip("/").strip():
+            raise ValueError(f"{prefix}PREFIX must not be blank")
+        if provider == "s3":
+            try:
+                normalize_endpoint_url(self.tamper_anchor_object_lock_endpoint_url)
+            except ValueError as exc:
+                raise ValueError(f"{prefix}ENDPOINT_URL: {exc}") from exc
+        elif not self.tamper_anchor_object_lock_account_url.strip().startswith("https://"):
+            raise ValueError(f"{prefix}ACCOUNT_URL must start with https://")
 
     @model_validator(mode="after")
     def _validate_otp_auth(self) -> "Settings":
