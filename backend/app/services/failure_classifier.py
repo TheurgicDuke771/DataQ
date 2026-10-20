@@ -307,6 +307,11 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "expiredtoken",
     "tokenrefreshrequired",
     "unrecognizedclientexception",
+    # Google Cloud Storage: a revoked / malformed service-account key fails the token exchange
+    # (`RefreshError: invalid_grant`), a bad bearer the request itself (#1683).
+    "invalid_grant",
+    "invalid jwt signature",
+    "invalid credentials",
     # AWS SigV4 service APIs (Athena, Glue) — S3 says "SignatureDoesNotMatch" instead (#2131).
     "invalidsignatureexception",
     # Trino: the client raises `HttpError("error 401: …")` for any rejected credential —

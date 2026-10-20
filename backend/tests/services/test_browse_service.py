@@ -567,6 +567,45 @@ def test_browse_files_names_the_root_and_carries_the_listing(
     assert seen["secret"] == _SECRET and seen["limit"] == 7
 
 
+@pytest.mark.parametrize("conn_type", ["s3", "adls_gen2", "gcs"])
+def test_a_flat_file_connection_with_no_credential_is_a_4xx_not_a_store_failure(
+    conn_type: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _never(**_kw: Any) -> flatfile.DirectoryListing:
+        raise AssertionError("the store must not be reached")
+
+    monkeypatch.setattr(flatfile, "list_directory", _never)
+    config = {"gcs": {"bucket": "landing"}, "s3": _S3_CONFIG, "adls_gen2": _ADLS_CONFIG}[conn_type]
+    with pytest.raises(BrowseInputInvalidError, match="no stored credential"):
+        browse_service.browse_files(
+            _conn(conn_type, config, secret_ref=None),
+            session=None,  # type: ignore[arg-type]
+            prefix="",
+            limit=5,
+            secret_store=_Store(),  # type: ignore[arg-type]
+        )
+
+
+def test_an_anonymous_gcs_bucket_browses_without_a_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def _list(**kwargs: Any) -> flatfile.DirectoryListing:
+        seen.update(kwargs)
+        return flatfile.DirectoryListing(folders=[], files=[], truncated=False)
+
+    monkeypatch.setattr(flatfile, "list_directory", _list)
+    listing = browse_service.browse_files(
+        _conn("gcs", {"bucket": "public-data", "auth_type": "anonymous"}, secret_ref=None),
+        session=None,  # type: ignore[arg-type]
+        prefix="",
+        limit=5,
+        secret_store=_Store(),  # type: ignore[arg-type]
+    )
+    assert listing.root == "public-data" and seen["secret"] is None
+
+
 @pytest.mark.parametrize("conn_type", ["unity_catalog", "snowflake", "iceberg", "adf"])
 def test_file_browse_is_flat_file_only(conn_type: str) -> None:
     with pytest.raises(BrowseUnsupportedError):

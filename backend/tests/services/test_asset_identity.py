@@ -282,6 +282,42 @@ def test_adls_missing_account_url_raises() -> None:
         resolve_asset_identity("adls_gen2", {"container": "raw"}, {"path": "retail/orders.csv"})
 
 
+# ───────────────────────── gcs ─────────────────────────
+
+
+def test_gcs_bucket_namespace() -> None:
+    identity = resolve_asset_identity("gcs", {"bucket": "my-bucket"}, {"path": "retail/orders.csv"})
+    assert identity.namespace == "gs://my-bucket"
+    assert identity.name == "retail/orders.csv"
+
+
+def test_gcs_batch_target_names_the_base_prefix() -> None:
+    identity = resolve_asset_identity(
+        "gcs", {"bucket": "my-bucket"}, {"pattern": r"orders_(\d+)\.csv", "prefix": "retail/"}
+    )
+    assert identity.namespace == "gs://my-bucket"
+    assert (
+        identity.name
+        == resolve_asset_identity(
+            "s3", {"bucket": "my-bucket"}, {"pattern": r"orders_(\d+)\.csv", "prefix": "retail/"}
+        ).name
+    )
+
+
+def test_gcs_emulator_endpoint_joins_the_namespace_like_s3() -> None:
+    real = resolve_asset_identity("gcs", {"bucket": "landing"}, {"path": "a.csv"})
+    fake = resolve_asset_identity(
+        "gcs", {"bucket": "landing", "endpoint_url": "http://fake-gcs:4443"}, {"path": "a.csv"}
+    )
+    assert real.namespace == "gs://landing"
+    assert fake.namespace == "gs://fake-gcs:4443/landing"
+
+
+def test_gcs_requires_a_bucket() -> None:
+    with pytest.raises(ValueError, match="bucket"):
+        resolve_asset_identity("gcs", {}, {"path": "a.csv"})
+
+
 # ───────────────────────── s3 ─────────────────────────
 
 

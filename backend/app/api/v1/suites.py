@@ -701,7 +701,7 @@ class ColumnProfileRequest(ApiRequestModel):
     catalog: str | None = Field(default=None, max_length=255, description="Unity Catalog catalog")
     # Iceberg: the table is addressed by an optional namespace (namespace.table).
     namespace: str | None = Field(default=None, max_length=255, description="Iceberg namespace")
-    # Flat-file datasources (ADLS Gen2 / S3): the target is a file path.
+    # Flat-file datasources (ADLS Gen2 / S3 / GCS): the target is a file path.
     path: str | None = Field(default=None, max_length=1024, description="Flat-file path to profile")
     file_format: Literal["csv", "parquet", "json"] | None = None
 

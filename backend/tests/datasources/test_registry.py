@@ -42,7 +42,7 @@ def test_dispatches_snowflake() -> None:
     assert isinstance(runner, SnowflakeCheckRunner)
 
 
-@pytest.mark.parametrize("conn_type", ["s3", "adls_gen2"])
+@pytest.mark.parametrize("conn_type", ["s3", "adls_gen2", "gcs"])
 def test_dispatches_flatfile(conn_type: str) -> None:
     runner = build_check_runner(
         conn_type=conn_type,
@@ -203,6 +203,7 @@ def test_every_sampling_capable_type_actually_threads_the_spec() -> None:
     config_by_type = {
         "s3": (_S3_CONFIG, None),
         "adls_gen2": (_S3_CONFIG, None),
+        "gcs": (_S3_CONFIG, None),
         "unity_catalog": (_UC_CONFIG, "main"),
     }
     assert (

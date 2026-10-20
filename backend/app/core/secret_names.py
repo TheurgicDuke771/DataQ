@@ -42,6 +42,7 @@ _TYPE_WORDS: Final = {
     "iceberg": ("iceberg", "apache"),
     "dbt": ("dbt",),
     "s3": ("s3", "aws", "amazon"),
+    "gcs": ("gcs", "google", "cloud", "storage"),
     "postgres": ("postgres", "postgresql", "pg"),
     "mysql": ("mysql", "mariadb"),
     # The engine's words only — "Azure SQL" vs "Fabric" is what tells two connections apart.

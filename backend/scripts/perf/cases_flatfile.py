@@ -236,7 +236,7 @@ def _batch_resolution(objects: int) -> list[Metric]:
     ]
     scanned = {"n": 0}
 
-    def fake_iter_files(*, conn_type: str, config: Any, prefix: str, secret: str) -> Any:
+    def fake_iter_files(*, conn_type: str, config: Any, prefix: str, secret: str | None) -> Any:
         for ref in listing:
             scanned["n"] += 1
             yield ref

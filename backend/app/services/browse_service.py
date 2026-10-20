@@ -26,6 +26,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources import flatfile, generic_sql
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.generic_sql import SqlEngineSpec
 from backend.app.datasources.sql import is_sql_identifier, object_type
 from backend.app.datasources.sql_engines import (
@@ -49,7 +50,7 @@ TABLE_BROWSE_TYPES: Final[frozenset[str]] = frozenset(
 _SCHEMA_ROOTED_TYPES: Final[frozenset[str]] = frozenset(
     {"snowflake", "iceberg", *GENERIC_SQL_TYPES}
 )
-FILE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"adls_gen2", "s3"})
+FILE_BROWSE_TYPES: Final[frozenset[str]] = FLAT_FILE_TYPES
 
 DEFAULT_LIMIT: Final = 200
 MAX_LIMIT: Final = 500
@@ -328,9 +329,10 @@ def browse_files(
             detail={"type": connection.type, "supported": sorted(FILE_BROWSE_TYPES)},
         )
     prefix = validate_prefix(prefix)
-    secret_ref = _require_credential(connection)
     config = dict(connection.config)
-    root_key = "bucket" if connection.type == "s3" else "container"
+    if flatfile.missing_credential(connection.type, config, connection.secret_ref):
+        _require_credential(connection)
+    root_key = "container" if connection.type == "adls_gen2" else "bucket"
     root = str(config.get(root_key) or "")
 
     with credential_health.credential_use(session, connection):
@@ -339,7 +341,12 @@ def browse_files(
                 conn_type=connection.type,
                 config=config,
                 prefix=prefix,
-                secret=secret_store.get(secret_ref),
+                secret=flatfile.resolve_flatfile_secret(
+                    conn_type=connection.type,
+                    config=config,
+                    secret_ref=connection.secret_ref,
+                    secret_store=secret_store,
+                ),
                 limit=limit,
             )
         except Exception as exc:

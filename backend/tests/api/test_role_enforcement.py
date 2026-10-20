@@ -697,6 +697,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         "export_suite": {"suite_id": sid},
         "get_check": {"suite_id": sid, "check_id": _REAL_CHECK},
         "get_check_history": {"suite_id": sid, "check_id": _REAL_CHECK},
+        "get_detected_seasonal_periods": {"suite_id": sid, "check_id": _REAL_CHECK},
         "list_check_versions": {"suite_id": sid, "check_id": _REAL_CHECK},
         "get_notification_config": {"suite_id": sid},
         "get_suite_results": {"suite_id": sid},

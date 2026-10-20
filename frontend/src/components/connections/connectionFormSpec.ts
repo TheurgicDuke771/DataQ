@@ -187,6 +187,44 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Secret access key',
     destinationFields: ['endpoint_url'],
   },
+  gcs: {
+    // Google Cloud Storage; an endpoint points the same connection at an emulator or a
+    // GCS-compatible store (#1683).
+    textFields: [
+      { name: 'bucket', label: 'Bucket' },
+      {
+        name: 'project_id',
+        label: 'Project ID',
+        optional: true,
+        extra:
+          'Project billed for reads — needed for a Requester Pays bucket; blank bills the bucket owner',
+      },
+      {
+        name: 'endpoint_url',
+        label: 'Endpoint URL',
+        optional: true,
+        extra:
+          'Emulator or GCS-compatible endpoint, e.g. http://fake-gcs:4443 — leave blank for Google Cloud',
+      },
+    ],
+    auth: [
+      {
+        value: 'service_account_key',
+        label: 'Service account key',
+        secretLabel: 'Service account key file (JSON)',
+        multilineSecret: true,
+        expiryNotReadable:
+          'A service-account key has no expiry DataQ can read — rotate it in IAM and re-authenticate here.',
+      },
+      {
+        value: 'anonymous',
+        label: 'Anonymous (public bucket)',
+        secretLabel: 'No credential',
+        noSecret: true,
+      },
+    ],
+    destinationFields: ['endpoint_url', 'auth_type'],
+  },
   unity_catalog: {
     textFields: [
       { name: 'workspace_url', label: 'Workspace URL' },

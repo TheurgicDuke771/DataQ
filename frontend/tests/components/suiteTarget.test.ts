@@ -354,7 +354,7 @@ describe('asBatchStrategy (#1180)', () => {
 describe('SAMPLING_CAPABLE_TYPES', () => {
   it('names exactly the datasources the backend accepts a sampling block on', () => {
     // A canary against the backend `registry.SAMPLING_CAPABLE_TYPES`.
-    expect([...SAMPLING_CAPABLE_TYPES].sort()).toEqual(['adls_gen2', 's3', 'unity_catalog']);
+    expect([...SAMPLING_CAPABLE_TYPES].sort()).toEqual(['adls_gen2', 'gcs', 's3', 'unity_catalog']);
     const cases: [ConnectionType, boolean][] = [
       ['adls_gen2', true],
       ['s3', true],

@@ -124,6 +124,8 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/admin/seasonal-periods"): "seasonal_period.create",
     ("PATCH", "/api/v1/admin/seasonal-periods/{period_id}"): "seasonal_period.update",
     ("DELETE", "/api/v1/admin/seasonal-periods/{period_id}"): "seasonal_period.delete",
+    # Promoting a detected period creates an entry (and, attached, edits the check).
+    ("POST", "/api/v1/admin/seasonal-periods/promote"): "seasonal_period.create",
     # ── The orphan-secret sweep "run now" (#1886) — an admin-triggered ops action
     # over the secret store, worth a trail even though it enqueues rather than
     # configures anything.
