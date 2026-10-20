@@ -74,6 +74,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(frontend/src/components/checks/expectationCatalog\.ts|frontend/scripts/dump-catalog\.mts|backend/app/datasources/(expectation_allowlist|unity_catalog)\.py|docs/site/reference/check-types\.md|scripts/docs/(gen-check-catalog\.py|check_examples\.py|check_examples\.results\.json))$
+      - id: check-licenses
+        name: Dependency licences stay on the rule-40 allowlist
+        entry: python scripts/check-licenses.py all
+        language: system
+        pass_filenames: false
+        files: ^(backend/requirements.*\.txt|frontend/(package\.json|pnpm-lock\.yaml)|scripts/(check-licenses\.py|licenses/.*))$
       - id: check-frontend-no-ticket-refs
         name: Frontend UI text doesn't cite ADR/issue/PR numbers
         entry: python scripts/check-frontend-no-ticket-refs.py

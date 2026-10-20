@@ -336,6 +336,31 @@ enforced", with a `membership_table_missing` WARNING per process), so the
 symptom is a log line, not an outage. Roll through the workflow anyway; the
 fail-safe is a floor, not a plan.
 
+## Release checklist
+
+A release is a `vX.Y.Z` tag on `main`. Beyond the pre-deploy checklist below (which applies to
+the tagged SHA), every release:
+
+- [ ] **States its rollback line** in the GitHub Release notes and the changelog's release
+  heading (CONTRIBUTING rule 31a):
+  `Rollback: previous images on this schema — yes | no · DB restore needed — yes | no · downgrade target <previous head>`.
+  The previous head is `alembic heads` on the previous tag's tree (the upgrade-path CI step
+  prints it as `<tag> head: <rev>`). "Yes / no" is what the two-step migration discipline
+  guarantees; anything else is a **Breaking** entry with the reason and a migration docstring
+  saying what `downgrade` loses.
+- [ ] **The upgrade-path CI step is green on the last `main` run before the tag** —
+  `Backend — tests` → "Upgrade path from the previous release" — so the previous tag's
+  schema, seeded with that release's demo data, upgrades to this release, downgrades back
+  and upgrades again. On the tagged commit itself `git describe` returns the new tag, so
+  that run only proves re-runnability (the step says so); the cross-release proof is the
+  run just before. Run it locally the same way against the previous tag explicitly:
+  `UPGRADE_PATH_DATABASE_URL=… python -m backend.scripts.upgrade_path --tag <previous tag>`.
+- [ ] **Names every one-time backfill** (`backend/scripts/…`, see the post-deploy smoke list)
+  and every `MANDATORY PRE-DEPLOY` migration step in the release notes, so an operator
+  upgrading across several releases finds them in one place.
+- [ ] **Operators have a backup to roll back to** — the runbook
+  (`docs/site/operate/backup-restore-upgrade.md`) is what the release notes point at.
+
 ## Pre-deploy checklist
 
 Confirm the change is *ready and green* before you push it to prod:
@@ -370,6 +395,12 @@ Confirm the change is *ready and green* before you push it to prod:
   `aad_object_id` + unique `lower(email)`, #735) requires a duplicate-email audit — if it
   finds duplicates, the index creation fails and the migrate job aborts, so resolve them
   first.
+- [ ] **Distribution compliance is automatic — just confirm it ran.** Both images carry
+  `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), and on a
+  release tag `publish-images.yml` attaches the notices plus a Syft SPDX SBOM per image to the
+  GitHub Release. The licence gate (`scripts/check-licenses.py`, CONTRIBUTING rule 40) is part
+  of the CI run above and of the backend image build; see
+  `docs/site/security/compliance/third-party-notices.md`.
 - [ ] **Config + secrets are in place** — the required GitHub env/vars and Key Vault secrets
   (see the [prerequisites](#before-you-deploy-production-prerequisites) above), especially any
   new key this release reads.

@@ -24,6 +24,9 @@ on:
       - "frontend/**"
       # backend/Dockerfile COPYs this into the image, so it is image content too.
       - "pyproject.toml"
+      # backend/Dockerfile runs the licence gate + notices generator from these.
+      - "scripts/check-licenses.py"
+      - "scripts/licenses/**"
       # …and BOTH halves of the eval contract, each of which docs tell evaluators to fetch from
       # `main`: the compose file, and the env template.
       - "docker-compose.ghcr.yml"
@@ -134,3 +137,90 @@ jobs:
           # qualifying merge rather than on the occasional dispatch.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ── Distribution compliance (ADR 0031): notices + SPDX SBOM per image, release tags only ──
+  # Two jobs so the token scopes stay minimal: this one only READS the just-published image
+  # (packages: read), the next one only writes release assets. Per-merge main builds keep the
+  # workflow-level read-only token.
+  compliance:
+    name: Notices + SBOM for ${{ matrix.name }}
+    if: github.ref_type == 'tag'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [backend, frontend]
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract THIRD-PARTY-NOTICES.md from the published image
+        # The Dockerfile generated it from the exact dependency set this build installed; the
+        # release tag is one of the tags the publish job just pushed.
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${OWNER}/dataq-${IMAGE_NAME}:${GITHUB_REF_NAME}"
+          docker run --rm --entrypoint cat "$image" /THIRD-PARTY-NOTICES.md \
+            > "THIRD-PARTY-NOTICES-${IMAGE_NAME}.md"
+          grep -q '^# Third-party notices' "THIRD-PARTY-NOTICES-${IMAGE_NAME}.md"
+
+      - name: SPDX SBOM (syft over the published image — OS packages included)
+        # Third-party action that receives GITHUB_TOKEN: pinned to the commit, not the tag.
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.OWNER }}/dataq-${{ matrix.name }}:${{ github.ref_name }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: sbom-dataq-${{ matrix.name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: compliance-${{ matrix.name }}
+          path: |
+            THIRD-PARTY-NOTICES-${{ matrix.name }}.md
+            sbom-dataq-${{ matrix.name }}.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+  release-assets:
+    name: Attach notices + SBOM to the GitHub Release
+    if: github.ref_type == 'tag'
+    needs: compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write  # create the draft release if needed + upload assets (as publish-client.yml)
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: compliance-*
+          merge-multiple: true
+
+      - name: Attach to the GitHub Release
+        # Same shape as publish-client.yml: create the tag's release as a DRAFT if nothing has
+        # yet (a lost create race falls back to the existing one); --clobber keeps re-runs idempotent.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}  # no checkout in this job
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes "Draft: add the curated notes, then publish." \
+              || gh release view "$GITHUB_REF_NAME" >/dev/null
+          fi
+          gh release upload "$GITHUB_REF_NAME" THIRD-PARTY-NOTICES-*.md sbom-dataq-*.spdx.json --clobber

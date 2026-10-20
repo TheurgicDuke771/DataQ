@@ -185,11 +185,13 @@ nav:
           - Data-subject-rights runbook: security/compliance/data-subject-rights-runbook.md
           - Breach-notification runbook: security/compliance/breach-notification-runbook.md
           - DPA / BAA templates (counsel-gated): security/compliance/dpa-baa-templates.md
+          - Third-party notices & SBOM: security/compliance/third-party-notices.md
   - Operate:
       - operate/index.md
       - Deployment: operate/deployment.md
       - Deployment parity (Azure · AWS · Local): operate/deployment-parity.md
       - Upgrading: operate/upgrading.md
+      - Backup, restore & rollback: operate/backup-restore-upgrade.md
       - Observability: operate/observability.md
       - Troubleshooting: operate/troubleshooting.md
       - Runbook & FAQ: operate/runbook-faq.md

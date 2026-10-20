@@ -3207,6 +3207,9 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),
+            # Always the suite's own target here, every column: a full profile for the
+            # classification source (ADR 0049).
+            asset=run_service.resolve_asset(session, suite),
         )
         return {
             "suite_id": suite_id,
@@ -3834,6 +3837,21 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     not listed here. `null` means it could not be determined (a lineage read failed), not that
     nothing is inherited; `inherited_classifications_truncated` means the lineage walk hit its
     depth cap, so a column further upstream was not considered.
+
+    `detected_classifications` answers the other "why is this masked?" question: each entry is
+    a column in which a profile found PII-shaped VALUES (`detector`: `email` or `encoded` today;
+    read it as a label, more may follow). Branch on `effect`, not on `dismissed` alone:
+    `masks` — DataQ masks the column as sensitive on every read path, unless a suite names it
+    as its own `identifier_column`; `overridden_by_tag` — the column carries its own warehouse
+    tag, which decides instead (a `public` tag shows it, a `sensitive` one masks it), so the
+    detection is inert; `dismissed` — a workspace Admin cleared it. Dismissal happens in the
+    app with no MCP tool, so do not offer to clear one; a dismissed entry's `last_detected_at`
+    still moves when a later profile sees the values again.
+    `detected_classifications_refreshed_at` is when a FULL profile of this asset's own target
+    (every column) last fed the source: `null` means none has, so an empty list then says
+    nothing about the data; a single-column probe records what it saw without moving it. `null`
+    for the list itself means it could not be read. A column with no entry is not thereby
+    clean — only the values a profile saw were examined, and only for those two shapes.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3925,6 +3943,27 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 ]
             ),
             "inherited_classifications_truncated": detail.inherited_classifications_truncated,
+            "detected_classifications": (
+                None
+                if detail.detected_classifications is None
+                else [
+                    {
+                        "column": dc.column,
+                        "detector": dc.detector,
+                        "effect": dc.effect,
+                        "first_detected_at": dc.first_detected_at.isoformat(),
+                        "last_detected_at": dc.last_detected_at.isoformat(),
+                        "dismissed": dc.dismissed,
+                        "dismissed_at": (dc.dismissed_at.isoformat() if dc.dismissed_at else None),
+                    }
+                    for dc in detail.detected_classifications
+                ]
+            ),
+            "detected_classifications_refreshed_at": (
+                detail.detected_classifications_refreshed_at.isoformat()
+                if detail.detected_classifications_refreshed_at
+                else None
+            ),
         }
 
 
@@ -4870,6 +4909,8 @@ def profile_column(
             path=path,
             file_format=file_format,
             secret_store=get_secret_store(),
+            # The suite's own asset feeds the profiler classification source (ADR 0049).
+            asset=None if probed_other else run_service.resolve_asset(session, suite),
         )
         # Only the SQL path (Snowflake / Unity Catalog / generic SQL) aggregates the whole
         # table; ADLS / S3 / Iceberg read at most `_SAMPLE_ROWS` rows into pandas

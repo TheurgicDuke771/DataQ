@@ -10,6 +10,24 @@ from sqlalchemy import text
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Asset, Connection
+from backend.app.services.classification_vocab import DETECTED, NON_SENSITIVE, SENSITIVE, fold_key
+
+__all__ = [
+    "DATAQ_TAG_KEY",
+    "DETECTED",
+    "NON_SENSITIVE",
+    "REFRESH_TTL",
+    "SENSITIVE",
+    "SNOWFLAKE_PRIVACY_TAG",
+    "TAGGABLE_TYPES",
+    "effective_column_tags",
+    "fetch_column_tags",
+    "fold_key",
+    "inherited_sensitive",
+    "inherited_sensitive_with_truncation",
+    "normalize_tag",
+    "refresh_asset_column_tags",
+]
 
 log = get_logger(__name__)
 
@@ -24,9 +42,10 @@ _SNOWFLAKE_PRIVACY_SENSITIVE: Final[frozenset[str]] = frozenset(
     {"identifier", "quasi_identifier", "sensitive"}
 )
 
-#: Normalized outputs.
-SENSITIVE: Final[str] = "sensitive"
-NON_SENSITIVE: Final[str] = "public"
+# The normalized outputs (`SENSITIVE` / `NON_SENSITIVE` / `DETECTED`) and `fold_key` live in the
+# leaf module `classification_vocab` and are re-exported here for the read paths that import them
+# from this module; `column_detections` imports them from the leaf, which keeps the lazy edge
+# below (this module → `column_detections`) one-directional.
 
 _SENSITIVE_VALUES: Final[frozenset[str]] = frozenset(
     {"sensitive", "pii", "confidential", "restricted", "secret"}
@@ -65,7 +84,7 @@ def _merge(tags: dict[str, str], column: str, verdict: str | None) -> None:
     """Record `verdict` for `column`, with **sensitive winning any conflict**."""
     if verdict is None:
         return
-    key = column.strip().lower()
+    key = fold_key(column)
     if tags.get(key) == SENSITIVE:
         return
     tags[key] = verdict
@@ -285,14 +304,19 @@ def inherited_sensitive_with_truncation(
 
 def effective_column_tags(session: Any, asset: Asset | None) -> dict[str, str] | None:
     """The asset's own warehouse classifications PLUS ``sensitive`` inherited through column
-    lineage — the map every redaction read path uses as the governance floor.
+    lineage PLUS the profiler's active detections as ``detected`` (ADR 0049) — the map every
+    redaction read path uses as the governance floor.
 
-    Fail-soft to the asset's own tags (the pre-propagation floor) inside a SAVEPOINT, so a lineage
-    read error can neither remove masking the own tags provide nor poison the caller's session.
+    Precedence is settled here, once: a column's own warehouse verdict (sensitive OR public) is
+    never overwritten, inherited ``sensitive`` fills columns with no own verdict, and a detection
+    fills only a column neither of those named. Each overlay is fail-soft inside its own
+    SAVEPOINT, so a read error can neither remove masking a stronger rung provides nor poison the
+    caller's session.
     """
     if asset is None:
         return None
     own = asset.column_tags
+    merged = dict(own or {})
     try:
         with session.begin_nested():
             inherited = inherited_sensitive(session, asset)
@@ -302,10 +326,28 @@ def effective_column_tags(session: Any, asset: Asset | None) -> dict[str, str] |
             asset_id=str(asset.id),
             error_type=type(exc).__name__,
         )
-        return own
-    if not inherited:
-        return own
-    merged = dict(own or {})
+        inherited = {}
     for column in inherited:
         merged[column] = SENSITIVE
+    try:
+        with session.begin_nested():
+            detected = _active_detections(session, asset)
+    except Exception as exc:
+        log.warning(
+            "column_detections_read_failed",
+            asset_id=str(asset.id),
+            error_type=type(exc).__name__,
+        )
+        detected = []
+    for column in detected:
+        merged.setdefault(column, DETECTED)
+    if not merged and own is None:
+        return None  # no verdict from any source — keep the "never looked" shape
     return merged
+
+
+def _active_detections(session: Any, asset: Asset) -> list[str]:
+    # Imported lazily: `column_detections` imports this module for the vocabulary.
+    from backend.app.services.column_detections import active_detected_columns
+
+    return active_detected_columns(session, asset)
