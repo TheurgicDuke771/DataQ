@@ -52,7 +52,7 @@ dbt pipeline finishes a load, and alerts the team that owns it.
 |---|---|
 | **Detect** | A pipeline finishes and the bound suite runs, or a schedule fires. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape. |
 | **Explain** | Each result carries the measured value, the expected range and a redacted sample of failing rows. With a bring-your-own LLM configured, a root-cause narrative is drafted from that evidence. |
-| **Impact** | A critical breach opens an incident on the asset it hit; lineage from dbt, OpenLineage or the warehouse shows the downstream tables that may be affected. |
+| **Impact** | A failing check (warn, fail or critical) on a run whose target is a known asset opens an incident on that asset, or joins the one already open; lineage from dbt, OpenLineage or the warehouse shows the downstream tables that may be affected. |
 | **Gate** | A pipeline stage can ask DataQ for the verdict before it publishes. DataQ answers; your DAG decides ([Gate a pipeline on DataQ](guides/orchestration.md#gate-a-pipeline-on-dataq)). |
 | **Remediate** | The owning team is alerted once, acknowledges the incident, fixes the data and re-runs the suite to confirm before resolving it — in the UI, over the API or from an AI agent over MCP. |
 

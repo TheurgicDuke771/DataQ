@@ -20,7 +20,7 @@ flowchart LR
 | **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly, PII drift), a comparison, or custom SQL | Suite → Checks |
 | **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
 | **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
-| **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
+| **Incident** | A failing check (warn, fail or critical) anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
 
 
 ## The one distinction: datasource vs orchestration
@@ -47,12 +47,13 @@ flowchart LR
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).
-- **Check** — a single data-quality rule. Seven kinds: a **Great Expectations expectation**
+- **Check** — a single data-quality rule. Eight kinds: a **Great Expectations expectation**
   (e.g. "this column is never null", or a custom SQL rule), or one of the monitor kinds —
   **freshness** (is the data stale?), **volume** (did the load land whole?),
   **aggregate** (is a column's mean / median / sum / spread / min / max inside its bands?),
   **schema drift** (did the shape change?), **anomaly** (is this value abnormal for this
-  dataset?), and **comparison** (does it reconcile against a baseline dataset?).
+  dataset?), **PII drift** (did a column start to look like personal data nobody classified?)
+  and **comparison** (does it reconcile against a baseline dataset?).
 - **Run** — one execution of a suite. Each check produces a **result** with a status:
   **pass / warn / fail / critical** (plus *skip* / *error* for operational outcomes).
 - **Severity & health score** — warn/fail/critical are weighted into a workspace **health

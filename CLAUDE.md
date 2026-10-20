@@ -6,7 +6,7 @@
 
 ## 1. Project summary
 
-**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **12 datasources** and integrates with **3 orchestration providers**.
+**DataQ** is a single-tenant data-quality control plane built around Great Expectations (GX Core). It runs DQ checks across **12 datasources** and integrates with **3 orchestration providers**.
 
 | Layer | Components |
 |---|---|

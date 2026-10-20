@@ -78,7 +78,7 @@
       <li class="flow-step">
         <span class="flow-num" aria-hidden="true">1</span>
         <h3>Detect</h3>
-        <p>A pipeline finishes and the bound suite runs. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape.</p>
+        <p>A pipeline finishes and the bound suite runs, or a schedule fires. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape.</p>
       </li>
       <li class="flow-step">
         <span class="flow-num" aria-hidden="true">2</span>
@@ -88,7 +88,7 @@
       <li class="flow-step">
         <span class="flow-num" aria-hidden="true">3</span>
         <h3>Impact</h3>
-        <p>A critical breach opens an incident on the asset it hit, and lineage from dbt, OpenLineage or the warehouse shows which downstream tables may be affected.</p>
+        <p>A failing check opens an incident on the asset it hit, and lineage from dbt, OpenLineage or the warehouse shows which downstream tables may be affected.</p>
       </li>
       <li class="flow-step">
         <span class="flow-num" aria-hidden="true">4</span>
@@ -115,7 +115,7 @@
       <div class="big-card">
         <div class="icon-badge"><svg width="24" height="24" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M888 792H200V168c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v688c0 4.4 3.6 8 8 8h752c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm-600-80h56c4.4 0 8-3.6 8-8V560c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v144c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V384c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v320c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V462c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v242c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V304c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v400c0 4.4 3.6 8 8 8z"/></svg></div>
         <h3>Checks that catch real incidents</h3>
-        <p>Freshness, volume and schema-drift monitors notice a load that never arrived, arrived half-empty or changed shape. Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, anomaly detection on a learned baseline with weekly and yearly seasonality, and cross-dataset comparison cover the rest. Switch on automatic coverage for a warehouse connection and its tables get baseline checks without anyone writing them.</p>
+        <p>Freshness, volume and schema-drift monitors notice a load that never arrived, arrived half-empty or changed shape. Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, anomaly detection on a learned baseline with weekly and yearly seasonality, aggregate bands on a column's statistics, PII-drift detection and cross-dataset comparison cover the rest. Switch on automatic coverage for a warehouse connection and its tables get baseline checks without anyone writing them.</p>
         <div class="feature-mock">
           <div class="mock-bars">
             <div class="bar-col"><div class="bar" style="height:60%"></div></div>
