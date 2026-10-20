@@ -15,7 +15,9 @@ from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import AdminUser, get_current_user
 from backend.app.db.models import SeasonalPeriod
 from backend.app.db.session import get_db
+from backend.app.services import seasonal_detection_service
 from backend.app.services import seasonal_period_service as svc
+from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(
     prefix="/admin/seasonal-periods",
@@ -82,16 +84,7 @@ class SeasonalPeriodRead(ApiModel):
     def from_model(cls, row: SeasonalPeriod, attached: int) -> SeasonalPeriodRead:
         return cls(
             id=row.id,
-            name=row.name,
-            kind=row.kind,
-            start_month=row.start_month,
-            start_day=row.start_day,
-            end_month=row.end_month,
-            end_day=row.end_day,
-            start_date=row.start_date,
-            end_date=row.end_date,
-            series=row.series,
-            note=row.note,
+            **svc.fields_of(row),
             attached_checks=attached,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -127,6 +120,50 @@ def create_seasonal_period(
     db: Annotated[Session, Depends(get_db)],
 ) -> SeasonalPeriodRead:
     row = svc.create_period(db, payload.model_dump(), actor_id=current_user.id)
+    return _read(db, row)
+
+
+class SeasonalPeriodPromote(ApiRequestModel):
+    """Promote a period detected in a check's history
+    (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
+    `start` is the detected period's `start` (its most recent season); the server reads the
+    history again and refuses a start it no longer shows (404), or a season an entry on the
+    calendar already covers (409, naming the entry to attach instead). A recurring period becomes a
+    month/day range, a period seen once a dated entry (`series` applies only to that).
+    `attach` also attaches the new entry to the check, which needs `yearly` on it."""
+
+    suite_id: uuid.UUID
+    check_id: uuid.UUID
+    start: date
+    name: str = Field(max_length=svc.NAME_MAX)
+    series: str | None = Field(default=None, max_length=svc.SERIES_MAX)
+    note: str | None = Field(default=None, max_length=svc.NOTE_MAX)
+    attach: bool = False
+
+
+@router.post(
+    "/promote",
+    response_model=SeasonalPeriodRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a detected period to the calendar (admin)",
+)
+def promote_detected_period(
+    payload: SeasonalPeriodPromote,
+    current_user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> SeasonalPeriodRead:
+    require_permission(
+        db, payload.suite_id, current_user.id, minimum="edit" if payload.attach else "view"
+    )
+    row = seasonal_detection_service.promote(
+        db,
+        suite_id=payload.suite_id,
+        check_id=payload.check_id,
+        start=payload.start,
+        fields=payload.model_dump(include={"name", "series", "note"}),
+        attach=payload.attach,
+        actor_id=current_user.id,
+    )
     return _read(db, row)
 
 

@@ -246,7 +246,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 ## AI assistants (MCP)
 
-A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **56-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
 reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
@@ -256,7 +256,7 @@ with health and lineage) and **incidents** (what is broken right now, with the e
 acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
 a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
 connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
-UI. The 54 split three ways: **30 read-only, 18 that change state**, and **6 that persist
+UI. The 56 split three ways: **32 read-only, 18 that change state**, and **6 that persist
 nothing but open a live datasource connection with stored credentials** and so are gated like
 writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
