@@ -1,5 +1,6 @@
-"""pii_drift monitor kind (ADR 0049 phase 2) — profile at run time, baseline-and-skip, roll
-forward, and every rung that takes a column out of "unclassified"."""
+"""pii_drift monitor kind (ADR 0049 phase 2) — profile at run time, baseline-and-skip, a
+baseline that never moves on its own, and every rung that takes a column out of
+"unclassified"."""
 
 from __future__ import annotations
 
@@ -129,9 +130,11 @@ def test_first_run_baselines_what_already_looks_like_pii_and_skips(
     assert graph["asset"].detected_classifications_refreshed_at is not None
 
 
-def test_a_column_that_starts_looking_like_pii_is_reported_once_then_absorbed(
+def test_a_column_that_starts_looking_like_pii_fails_until_someone_classifies_it(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The baseline is fixed (schema_drift's shape): rolling it forward would pass the very next
+    run and auto-resolve the incident with the column still unclassified."""
     fake = _Fake(monkeypatch, _profile(contact=_EMAILS, status=_PLAIN))
     run = _executor(graph)
     run(graph["check"])  # baseline: {contact}
@@ -148,25 +151,56 @@ def test_a_column_that_starts_looking_like_pii_is_reported_once_then_absorbed(
     assert drifted.observed_value["columns_detected"] == 2
     assert "baseline_captured_at" in drifted.observed_value
 
-    # Rolled forward: the next run does not report `notes` again.
+    # Nothing changed, nobody acted: still failing, baseline untouched.
     again = run(graph["check"])
-    assert again.success is True and again.metric_value == 0.0
+    assert again.success is False and again.metric_value == 1.0
+    assert again.observed_value is not None
+    assert again.observed_value["new_columns"] == ["notes"]
     row = get_baseline(graph["session"], graph["check"].id)
-    assert row is not None and row.baseline == {"columns": ["contact", "notes"]}
+    assert row is not None and row.baseline == {"columns": ["contact"]}
+
+    # Classifying it in the suite policy clears the condition: the next run passes.
+    graph["suite"].column_policy = {"pii_columns": ["notes"]}
+    graph["session"].commit()
+    cleared = run(graph["check"])
+    assert cleared.success is True and cleared.metric_value == 0.0
+
+
+def test_dismissing_then_restoring_a_baselined_column_is_not_drift(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fixed baseline means UI clicks cannot manufacture a drift event: a column the first run
+    grandfathered stays grandfathered through a dismissal and its undo."""
+    _Fake(monkeypatch, _profile(contact=_EMAILS))
+    run = _executor(graph)
+    run(graph["check"])  # baseline {contact}
+    column_detections.set_dismissed(
+        graph["session"], graph["asset"], "contact", dismissed=True, actor_id=None
+    )
+    assert run(graph["check"]).metric_value == 0.0
+    column_detections.set_dismissed(
+        graph["session"], graph["asset"], "contact", dismissed=False, actor_id=None
+    )
+    restored = run(graph["check"])
+    assert restored.success is True and restored.metric_value == 0.0
+    assert restored.observed_value is not None
+    assert restored.observed_value["new_columns"] == []
 
 
 # ── every rung that takes a column out of "unclassified" ────────────────────────────────────
 
 
-def test_a_column_the_suite_policy_already_decided_is_not_drift(
+def test_a_column_in_pii_columns_is_classified_but_the_identifier_column_is_not(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """`identifier_column` is a display decision the redaction ladder honours OVER a detection —
+    the identifier is shown unmasked — so a detection there is the one the monitor must report."""
     graph["suite"].column_policy = {"pii_columns": ["Notes"], "identifier_column": "contact"}
     graph["session"].commit()
     _Fake(monkeypatch, _profile(contact=_EMAILS, notes=_EMAILS, other=_EMAILS))
     out = _executor(graph)(graph["check"])
     assert out.observed_value is not None
-    assert out.observed_value["detected_columns"] == ["other"]
+    assert out.observed_value["detected_columns"] == ["contact", "other"]
 
 
 def test_a_column_with_its_own_warehouse_tag_is_not_drift(

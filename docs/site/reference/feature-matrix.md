@@ -47,9 +47,11 @@ Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalo
 ⁱ **PII drift.** Every run profiles every column of the target through the column profiler
 (one login: the column listing plus the batched top-values query), keeps what looks like email
 addresses or encoded blobs as a classification of the asset, and counts the columns that are new
-since the previous run and that nobody has classified: no own warehouse tag, nothing inherited
-through lineage, not in the suite's column policy, not dismissed. The first run learns the current
-set and reports `skip`. It runs wherever the profiler runs, which is every datasource in this
+against the baseline and that nobody has classified: no own warehouse tag, nothing inherited
+through lineage, not in the suite's `pii_columns`, not dismissed (the `identifier_column` is not
+exempt — it is shown unmasked). The first run learns the current set as the baseline and reports
+`skip`; the baseline never moves on its own, so the check keeps failing until the column is
+classified, dismissed or ignored, or the check is re-baselined. It runs wherever the profiler runs, which is every datasource in this
 table, and it is bounded by the profiler's own limits: on a SQL datasource the evidence is the
 top values per column, on files and Iceberg the sampled rows. Only the two shapes are detected; a
 column it does not name is not thereby clean. The ticks are earned by the executed engine tests

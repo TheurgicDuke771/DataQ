@@ -662,7 +662,7 @@ Did a column start carrying personal data that nobody classified? Profiles the t
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **PII drift** | `monitor:pii_drift` | Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new since the previous run and carry no warehouse tag, no inherited classification and no entry in this suite’s column policy. The first run only learns the current set and reports skip. | — (set it yourself) | `ignore_columns` *(optional)* | warn / fail / critical | All datasources |
+| **PII drift** | `monitor:pii_drift` | Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new against the baseline and carry no warehouse tag, no inherited classification and no entry in this suite’s pii_columns (the identifier column is not exempt). The first run only learns the current set and reports skip; the baseline never moves on its own, so the check keeps failing until the column is classified, dismissed or ignored, or the check is re-baselined. | — (set it yourself) | `ignore_columns` *(optional)* | warn / fail / critical | All datasources |
 
 ### Examples
 
@@ -683,7 +683,7 @@ Did a column start carrying personal data that nobody classified? Profiles the t
     }
     ```
 
-    The first run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and reports skip. Each later run counts the columns that are new since the previous run and that nobody has classified (no warehouse tag, no inherited classification, not in this suite's column policy, not dismissed) and fails on one. `session_token` is never counted.
+    The first run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and reports skip. Each later run counts the columns that are new against that baseline and that nobody has classified (no warehouse tag, no inherited classification, not in this suite's `pii_columns`, not dismissed) and fails on one — and keeps failing until someone classifies, dismisses or ignores the column. `session_token` is never counted.
 
 ## Comparison
 

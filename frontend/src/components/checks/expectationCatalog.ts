@@ -844,7 +844,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     kind: 'pii_drift',
     label: 'PII drift',
     description:
-      'Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new since the previous run and carry no warehouse tag, no inherited classification and no entry in this suite\u2019s column policy. The first run only learns the current set and reports skip.',
+      'Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new against the baseline and carry no warehouse tag, no inherited classification and no entry in this suite\u2019s pii_columns (the identifier column is not exempt). The first run only learns the current set and reports skip; the baseline never moves on its own, so the check keeps failing until the column is classified, dismissed or ignored, or the check is re-baselined.',
     category: 'Privacy',
     fields: [
       {

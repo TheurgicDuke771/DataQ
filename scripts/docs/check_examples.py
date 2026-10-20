@@ -367,9 +367,10 @@ EXAMPLES.update(
             {"ignore_columns": ["session_token"]},
             "The first run profiles every column, keeps what looks like email addresses or "
             "encoded blobs as a classification of the asset, and reports skip. Each later run "
-            "counts the columns that are new since the previous run and that nobody has "
+            "counts the columns that are new against that baseline and that nobody has "
             "classified (no warehouse tag, no inherited classification, not in this suite's "
-            "column policy, not dismissed) and fails on one. `session_token` is never counted.",
+            "`pii_columns`, not dismissed) and fails on one — and keeps failing until someone "
+            "classifies, dismisses or ignores the column. `session_token` is never counted.",
             kind="pii_drift",
             warn_threshold=1,
             fail_threshold=1,

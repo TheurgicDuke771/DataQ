@@ -5,9 +5,13 @@ Stateful like schema_drift. Each run profiles every column of the suite's own ta
 login: list columns, then the batched top-values query), feeds the profiler classification
 source as a full profile, and reads back the columns whose ONLY classification is a profiler
 detection — no own warehouse tag, nothing inherited through lineage, not in the suite's
-``pii_columns`` and not its ``identifier_column``. The first run records that set as the
-baseline and reports ``skip``; every later run reports the columns new against the previous
-run's set as ``metric_value`` and rolls the baseline forward to what it saw.
+``pii_columns``, not dismissed. The first run records that set as the baseline and reports
+``skip``; every later run reports the columns new against THAT baseline as ``metric_value``.
+The baseline is fixed, exactly like schema_drift's: an unclassified column is a standing
+condition, not an event, so the check keeps failing until someone classifies, dismisses or
+ignores the column (which takes it out of the current set and lets the incident resolve) or
+re-baselines the check. Rolling the baseline forward would pass the very next run and
+auto-resolve the incident while the column is still unclassified.
 """
 
 from __future__ import annotations
@@ -95,15 +99,17 @@ def profile_target(
 
 
 def policy_columns(policy: dict[str, Any] | None) -> set[str]:
-    """The columns the suite's own policy has already decided on — masked (``pii_columns``) or
-    shown as the row locator (``identifier_column``) — folded like the redaction map's keys."""
+    """The columns the suite's own policy has already classified — ``pii_columns`` — folded like
+    the redaction map's keys.
+
+    ``identifier_column`` is deliberately NOT here: it is a display decision, not a
+    classification. The redaction ladder shows the identifier unmasked even over a detection, so
+    an identifier that starts carrying email addresses is the one column that now leaks in
+    failing samples — the monitor built to say so must not be the one place it is exempt.
+    """
     if not policy:
         return set()
-    out = {fold_key(str(c)) for c in (policy.get("pii_columns") or []) if c}
-    identifier = policy.get("identifier_column")
-    if identifier:
-        out.add(fold_key(str(identifier)))
-    return out
+    return {fold_key(str(c)) for c in (policy.get("pii_columns") or []) if c}
 
 
 def unclassified_detected_columns(
@@ -180,7 +186,7 @@ def build_pii_drift_executor(
         current = unclassified_detected_columns(
             tags, policy=suite.column_policy, ignore_columns=config.get("ignore_columns")
         )
-        baseline_row = get_baseline(session, check.id, for_update=persist)
+        baseline_row = get_baseline(session, check.id)
         payload: dict[str, Any] = {
             "columns_profiled": len(result.columns),
             "columns_detected": len(current),
@@ -195,6 +201,8 @@ def build_pii_drift_executor(
             else:
                 payload["dry_run"] = True
         else:
+            # The baseline is never rewritten here (see the module docstring): the only way it
+            # moves is the suite's re-baseline action deleting the row.
             known = {str(c) for c in baseline_row.baseline.get("columns", [])}
             payload.update(
                 {
@@ -203,12 +211,7 @@ def build_pii_drift_executor(
                     "baseline_captured_at": baseline_row.captured_at.isoformat(),
                 }
             )
-            if persist:
-                # Roll forward: each run compares against what the previous run saw, so a column
-                # is reported once (its incident stays open until someone resolves it) and a
-                # column a steward has since classified or dismissed leaves the reference.
-                baseline_row.baseline = {"columns": current}
-            else:
+            if not persist:
                 payload["dry_run"] = True
         return monitor_outcome(PII_DRIFT, scalar=payload, config=config, now=datetime.now(UTC))
 

@@ -2219,15 +2219,19 @@ def create_check(
     target, feeds the profiler classification source, and reports as the metric
     the number of columns that newly look like email addresses or encoded blobs
     AND carry no warehouse tag, no inherited classification, no entry in the
-    suite's `pii_columns`, are not its `identifier_column` and were not dismissed.
+    suite's `pii_columns` and were not dismissed. The suite's `identifier_column`
+    is NOT exempt — it is shown unmasked, so a detection there matters more.
     The FIRST run only learns what already looks like personal data and reports
-    ``skip``; each later run compares with the previous run's set and rolls it
-    forward, so a column is reported once (its incident stays open until someone
-    resolves it). Default thresholds warn/fail at 1. Optional ``ignore_columns``.
-    Every run costs one profile of the table (a column listing plus the batched
-    top-values query). Only email and encoded shapes are detected; a column it does
-    not name is not thereby clean. Not a GX expectation — never previewable against
-    its baseline.
+    ``skip``; each later run compares with THAT baseline, which never moves on
+    its own (re-baseline from the suite page to reset it), so the check keeps
+    failing until the column is classified, dismissed or listed in the optional
+    ``ignore_columns`` — then the next run passes and the incident resolves.
+    With no thresholds the check is pass/fail (any new column fails); pass
+    ``warn_threshold``/``fail_threshold`` to band the count (the app's editor
+    defaults both to 1). Every run costs one profile of the table (a column
+    listing plus the batched top-values query). Only email and encoded shapes are
+    detected; a column it does not name is not thereby clean. Not a GX
+    expectation — never previewable against its baseline.
 
     **`aggregate`** — "the average order amount should stay between 10 and 90" —
     measures ONE statistic of ONE numeric column every run and records the value
@@ -4249,8 +4253,9 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
     anomaly, `new_columns`/`columns_detected`/`baseline_captured` for pii_drift
-    (column names only, never a value), `aggregate`/`column`/`breached_bound` for aggregate — its measured
-    value is `failing_result.metric_value`, which is NOT column-masked the way
+    (column names only, never a value), `aggregate`/`column`/`breached_bound` for
+    aggregate — its measured value is `failing_result.metric_value`, which is NOT
+    column-masked the way
     `observed_value` is, so on a min/max over a policy-sensitive column it is one
     real cell) instead of making you parse `failing_result.observed_value`'s
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
