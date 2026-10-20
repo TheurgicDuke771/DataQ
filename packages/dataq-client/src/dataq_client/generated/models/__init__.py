@@ -262,6 +262,7 @@ from .seasonal_period_read import SeasonalPeriodRead
 from .seasonal_period_read_kind import SeasonalPeriodReadKind
 from .seasonal_period_write import SeasonalPeriodWrite
 from .seasonal_period_write_kind import SeasonalPeriodWriteKind
+from .seasonal_point_read import SeasonalPointRead
 from .secret_sweep_report_read import SecretSweepReportRead
 from .secret_sweep_report_read_mode_type_0 import SecretSweepReportReadModeType0
 from .secret_sweep_report_read_status import SecretSweepReportReadStatus
@@ -578,6 +579,7 @@ __all__ = (
     "SeasonalPeriodReadKind",
     "SeasonalPeriodWrite",
     "SeasonalPeriodWriteKind",
+    "SeasonalPointRead",
     "SecretSweepReportRead",
     "SecretSweepReportReadModeType0",
     "SecretSweepReportReadStatus",

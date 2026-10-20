@@ -2807,6 +2807,16 @@
             "title": "Run Id",
             "type": "string"
           },
+          "seasonal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeasonalPointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -9651,6 +9661,117 @@
           "kind"
         ],
         "title": "SeasonalPeriodWrite",
+        "type": "object"
+      },
+      "SeasonalPointRead": {
+        "description": "A per-period anomaly result's period and what it was scored against (ADR 0048):\n`mean` \u00b1 `stddev` is the band, `expected` the level times the seasonal index where the\nyearly comparison applied (otherwise `yearly_reason` says why not).",
+        "properties": {
+          "banded": {
+            "title": "Banded",
+            "type": "boolean"
+          },
+          "declared_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Name"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "stddev": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stddev"
+          },
+          "verdict_changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict Changed"
+          },
+          "yearly_applied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yearly Applied"
+          },
+          "yearly_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yearly Reason"
+          }
+        },
+        "required": [
+          "period_start",
+          "mean",
+          "stddev",
+          "yearly_applied",
+          "yearly_reason",
+          "expected",
+          "declared_name",
+          "banded",
+          "verdict_changed"
+        ],
+        "title": "SeasonalPointRead",
         "type": "object"
       },
       "SecretSweepReportRead": {

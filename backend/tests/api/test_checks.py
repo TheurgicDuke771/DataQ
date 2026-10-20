@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import StatementError
 
 from backend.app.core.auth import get_current_user
@@ -1497,6 +1497,85 @@ def test_history_outsider_cannot_read(client: TestClient, db_session: Any) -> No
     # non-members (same as `test_outsider_cannot_see_checks`).
     resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history")
     assert resp.status_code == 404
+
+
+def _result_observed(db_session: Any, check_id: str, observed: dict[str, Any] | None) -> None:
+    row = db_session.scalars(select(Result).where(Result.check_id == uuid.UUID(check_id))).one()
+    row.observed_value = observed
+    db_session.commit()
+
+
+def test_history_reads_a_per_period_result_as_its_seasonal_point(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _run_with_result(db_session, sid, cid, status="pass", metric_value=5100.0, age_days=1)
+    _result_observed(
+        db_session,
+        cid,
+        {
+            "period": {"start": "2026-11-27", "end": "2026-11-27", "unit": "day"},
+            "z_score": 0.4,
+            "mean": 5050.0,
+            "stddev": 125.0,
+            "yearly": {"applied": True, "level": 1000.0, "index": 5.0, "expected": 5000.0},
+            "declared": {
+                "inside": {"name": "Black Friday", "banded": True},
+                "verdict_without": "fail",
+                "verdict_changed": True,
+            },
+        },
+    )
+
+    [point] = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()
+    assert point["seasonal"] == {
+        "period_start": "2026-11-27",
+        "mean": 5050.0,
+        "stddev": 125.0,
+        "yearly_applied": True,
+        "yearly_reason": None,
+        "expected": 5000.0,
+        "declared_name": "Black Friday",
+        "banded": True,
+        "verdict_changed": True,
+    }
+
+
+def test_history_seasonal_point_says_why_yearly_was_not_applied(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _run_with_result(db_session, sid, cid, status="pass", metric_value=10.0, age_days=1)
+    _result_observed(
+        db_session,
+        cid,
+        {
+            "period": {"start": "2026-10-01"},
+            "mean": 9.0,
+            "stddev": 1.0,
+            "yearly": {"applied": False, "reason": "no_earlier_year", "expected": 3.0},
+        },
+    )
+
+    seasonal = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"]
+    assert seasonal["yearly_applied"] is False
+    assert seasonal["yearly_reason"] == "no_earlier_year"
+    assert seasonal["expected"] is None
+    assert seasonal["verdict_changed"] is None
+    assert seasonal["declared_name"] is None
+
+
+def test_history_has_no_seasonal_point_off_a_per_period_result(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _run_with_result(db_session, sid, cid, status="pass", metric_value=1.0, age_days=1)
+    _result_observed(db_session, cid, {"observed_value": 3, "mean": 2.0})
+
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"] is None
 
 
 def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:

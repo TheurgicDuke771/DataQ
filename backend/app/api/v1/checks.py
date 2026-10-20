@@ -592,6 +592,25 @@ def restore_check_version(
 # ───────────────────────── result history (trend, ADR 0022) ─────────
 
 
+class SeasonalPointRead(ApiModel):
+    """A per-period anomaly result's period and what it was scored against (ADR 0048):
+    `mean` ± `stddev` is the band, `expected` the level times the seasonal index where the
+    yearly comparison applied (otherwise `yearly_reason` says why not)."""
+
+    period_start: date | None
+    mean: float | None
+    stddev: float | None
+    yearly_applied: bool | None
+    yearly_reason: str | None
+    expected: float | None
+    #: The declared calendar entry the period fell inside.
+    declared_name: str | None
+    #: False when a first-year declared period withheld the band.
+    banded: bool
+    #: Whether the attached calendar changed the verdict; null with no calendar attached.
+    verdict_changed: bool | None
+
+
 class CheckResultPointRead(ApiModel):
     """One past result for a check — the per-check trend datum (metric over time)."""
 
@@ -601,6 +620,7 @@ class CheckResultPointRead(ApiModel):
     status: str
     metric_value: float | None
     created_at: datetime
+    seasonal: SeasonalPointRead | None = None
 
 
 @router.get(
