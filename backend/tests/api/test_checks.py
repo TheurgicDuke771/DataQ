@@ -1499,9 +1499,15 @@ def test_history_outsider_cannot_read(client: TestClient, db_session: Any) -> No
     assert resp.status_code == 404
 
 
-def _result_observed(db_session: Any, check_id: str, observed: dict[str, Any] | None) -> None:
+def _result_observed(
+    db_session: Any, check_id: str, observed: dict[str, Any] | None, *, per_period: bool = True
+) -> None:
     row = db_session.scalars(select(Result).where(Result.check_id == uuid.UUID(check_id))).one()
     row.observed_value = observed
+    if per_period:
+        check = db_session.get(Check, uuid.UUID(check_id))
+        check.kind = "anomaly"
+        check.config = {"target_metric": "period_row_count", "date_column": "ordered_at"}
     db_session.commit()
 
 
@@ -1574,6 +1580,19 @@ def test_history_has_no_seasonal_point_off_a_per_period_result(
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
     _run_with_result(db_session, sid, cid, status="pass", metric_value=1.0, age_days=1)
     _result_observed(db_session, cid, {"observed_value": 3, "mean": 2.0})
+
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"] is None
+
+
+def test_history_reads_no_payload_off_a_per_period_check(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    _run_with_result(db_session, sid, cid, status="pass", metric_value=1.0, age_days=1)
+    _result_observed(
+        db_session, cid, {"period": {"start": "2026-10-01"}, "mean": 2.0}, per_period=False
+    )
 
     assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"] is None
 

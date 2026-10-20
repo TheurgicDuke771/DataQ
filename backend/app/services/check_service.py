@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -1884,10 +1884,17 @@ def list_check_result_history(
     """A check's recent results in chronological order (oldest→newest) for the
     per-check trend (ADR 0022). 404 if the check is missing or cross-suite.
     """
-    get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    # Only a per-period anomaly result carries a seasonal point; any other check's payload
+    # (a comparison's buckets, a column profile) is not read at all.
+    per_period = check.kind == "anomaly" and isinstance(check.config.get("date_column"), str)
     stmt = (
         select(
-            Result.run_id, Result.status, Result.metric_value, Run.created_at, Result.observed_value
+            Result.run_id,
+            Result.status,
+            Result.metric_value,
+            Run.created_at,
+            Result.observed_value if per_period else null(),
         )
         .join(Run, Result.run_id == Run.id)
         .where(Result.check_id == check_id, Run.suite_id == suite_id)

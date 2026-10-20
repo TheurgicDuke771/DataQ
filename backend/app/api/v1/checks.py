@@ -594,8 +594,10 @@ def restore_check_version(
 
 class SeasonalPointRead(ApiModel):
     """A per-period anomaly result's period and what it was scored against (ADR 0048):
-    `mean` ± `stddev` is the band, `expected` the level times the seasonal index where the
-    yearly comparison applied (otherwise `yearly_reason` says why not)."""
+    `mean` and `stddev` are the centre and spread the run was scored against; `expected` is
+    the level times the seasonal index where the yearly comparison applied (otherwise
+    `yearly_reason` says why not). With yearly the centre is the expected value shifted by how
+    far earlier periods ran from what was expected of them, so the two can differ."""
 
     period_start: date | None
     mean: float | None
