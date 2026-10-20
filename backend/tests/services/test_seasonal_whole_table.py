@@ -4,6 +4,7 @@ one-a-day series beside the run-by-run points, used only for the yearly index.""
 from __future__ import annotations
 
 import random
+import statistics
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -288,7 +289,11 @@ def test_a_declared_period_with_no_earlier_occurrence_does_not_band_a_rise() -> 
     params = _params(_ROWS)
     today = date(2025, 3, 12)
     daily = _daily_rows(date(2023, 9, 1), today)
-    runs = _hourly(datetime(2025, 3, 10, tzinfo=UTC), 48, _rows_at)
+
+    def launch(ts: datetime, rng: random.Random) -> float:
+        return _rows_at(ts, rng) * (3 if ts.date() == date(2025, 3, 11) else 1)
+
+    runs = _hourly(datetime(2025, 3, 10, tzinfo=UTC), 48, launch)
     calendar = Calendar(entries=(_entry(date(2025, 3, 11), date(2025, 3, 15)),))
 
     rise, without = _score(params, daily, runs, today, 3000.0, calendar)
@@ -296,10 +301,28 @@ def test_a_declared_period_with_no_earlier_occurrence_does_not_band_a_rise() -> 
 
     assert rise.applied and rise.declared is not None and rise.declared.first_year
     assert rise.banded is False
-    # The runs on 11 March are inside the period: left out of the level.
+    # The runs on 11 March are inside the period: left out of the level, which is March 10's.
     assert rise.excluded_from_level == 14
+    assert rise.level == pytest.approx(1000, rel=0.04)
     assert without is not None and without.declared is None
     assert drop.banded is True and drop.z_score is not None and drop.z_score > 6
+
+
+def test_years_that_disagree_about_the_peak_widen_the_spread() -> None:
+    params = _params(_ROWS)
+    today = date(2025, 11, 22)
+    daily = _daily_rows(date(2023, 9, 1), today)
+    for day in list(daily):
+        if day.year == 2023 and _in_peak(day):
+            daily[day] *= 1.5  # a peak of 3.6 then, 2.4 last year
+    runs = _hourly(datetime(2025, 11, 21, tzinfo=UTC), 24, _rows_at)
+
+    scored, _ = _score(params, daily, runs, today, 3000.0)
+
+    assert scored.applied and len(scored.ratios) == 2
+    disagreement = statistics.stdev(scored.ratios) * scored.level
+    assert disagreement > 300
+    assert scored.spread is not None and scored.spread >= disagreement
 
 
 def test_the_index_is_the_same_one_the_per_period_history_gives() -> None:
