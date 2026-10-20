@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from structlog.testing import capture_logs
 
 from backend.app.services import audit_anchor_service, audit_chain
 from backend.app.services.audit_anchor_service import AnchorCheck, AnchorVerification
@@ -16,6 +15,27 @@ from backend.app.worker import tasks
 class _Session:
     def close(self) -> None:
         pass
+
+
+class _Log:
+    """Records the task module's own logger calls — immune to whatever structlog
+    configuration (and cached loggers) earlier tests in the session left behind."""
+
+    def __init__(self) -> None:
+        self.errors: list[dict[str, Any]] = []
+
+    def error(self, event: str, **kw: Any) -> None:
+        self.errors.append({"event": event, **kw})
+
+    def __getattr__(self, _name: str) -> Any:
+        return lambda *_a, **_k: None
+
+
+@pytest.fixture
+def logs(monkeypatch: pytest.MonkeyPatch) -> _Log:
+    recorder = _Log()
+    monkeypatch.setattr(tasks, "log", recorder)
+    return recorder
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +59,9 @@ def test_a_clean_chain_with_no_readable_anchor_verifies(monkeypatch: pytest.Monk
     assert tasks.verify_audit_chain() is True
 
 
-def test_an_anchor_mismatch_is_logged_and_fails_the_task(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_anchor_mismatch_is_logged_and_fails_the_task(
+    monkeypatch: pytest.MonkeyPatch, logs: _Log
+) -> None:
     """A restore leaves the chain internally consistent; only the anchors see it, so
     the unattended daily check must not report the chain as clean."""
     _anchors(
@@ -52,21 +74,18 @@ def test_an_anchor_mismatch_is_logged_and_fails_the_task(monkeypatch: pytest.Mon
             findings=[AnchorCheck("audit-anchors/x.json", "d", "ff", None, "missing")],
         ),
     )
-    with capture_logs() as logs:
-        assert tasks.verify_audit_chain() is False
-    [entry] = [e for e in logs if e.get("event") == "audit_anchor_mismatch"]
-    assert entry["log_level"] == "error"
+    assert tasks.verify_audit_chain() is False
+    [entry] = [e for e in logs.errors if e["event"] == "audit_anchor_mismatch"]
     assert entry["missing_count"] == 1
     assert entry["findings"] == ["missing:audit-anchors/x.json"]
 
 
 def test_an_unreadable_anchor_store_is_logged_and_fails_the_task(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, logs: _Log
 ) -> None:
     _anchors(monkeypatch, AnchorVerification(status="unavailable", error="ConnectError: x"))
-    with capture_logs() as logs:
-        assert tasks.verify_audit_chain() is False
-    assert any(e.get("event") == "audit_anchor_unverified" for e in logs)
+    assert tasks.verify_audit_chain() is False
+    assert [e["event"] for e in logs.errors] == ["audit_anchor_unverified"]
 
 
 @pytest.mark.parametrize("status", ["ok", "empty"])
