@@ -39,6 +39,7 @@ from backend.app.core.roles import (
     resolve_role,
 )
 from backend.app.core.secrets import get_secret_store
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.db.models import (
     CONNECTION_TYPES,
     ENVS,
@@ -1410,10 +1411,10 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
 
     Use this for 'what are we connected to?', 'which connections are broken?', or
     to find the connection a suite should run against. Returns, per connection:
-    its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
-    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` for datasources; ``adf`` /
-    ``airflow`` / ``dbt`` for
-    orchestration providers), environment, whether a credential is stored, and
+    its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``gcs`` / ``unity_catalog``
+    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` / ``athena`` / ``redshift``
+    for datasources; ``adf`` / ``airflow`` / ``dbt`` for orchestration providers),
+    environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
     when it is failing, how many consecutive failures it has had, and when its
     credential expires if the credential states a lifetime. Optionally filter by
@@ -4668,7 +4669,7 @@ def _profile_target_defaults(
             ) from exc
     else:
         concrete = resolved.table
-    if connection.type in ("adls_gen2", "s3"):
+    if connection.type in FLAT_FILE_TYPES:
         return None, schema, catalog, concrete, file_format or suite.target.get("file_format")
     return concrete, schema or resolved.schema, catalog or resolved.catalog, None, file_format
 

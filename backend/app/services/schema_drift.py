@@ -11,8 +11,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome
-from backend.app.datasources.flatfile import RangeReader, json_schema, read_csv_head
+from backend.app.datasources.base import FLAT_FILE_TYPES, CheckOutcome
+from backend.app.datasources.flatfile import (
+    RangeReader,
+    json_schema,
+    read_csv_head,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -41,7 +46,7 @@ log = get_logger(__name__)
 ColumnSpec = dict[str, str]
 
 _SQL_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
-_FILE_TYPES = frozenset({"adls_gen2", "s3"})
+_FILE_TYPES = FLAT_FILE_TYPES
 # How many CSV rows the dtype inference samples — a header-only read types every column `object`,
 # which would report a phantom type change on the first run after baselining from a sampled read.
 _CSV_TYPE_SAMPLE_ROWS = 1000
@@ -157,7 +162,12 @@ def _file_columns(
     types a sampled read gives it — strings as text).
     """
     fmt = infer_file_format(path, file_format)
-    secret = secret_store.get(connection.secret_ref or "")
+    secret = resolve_flatfile_secret(
+        conn_type=connection.type,
+        config=dict(connection.config),
+        secret_ref=connection.secret_ref,
+        secret_store=secret_store,
+    )
     reader_args: dict[str, Any] = {
         "conn_type": connection.type,
         "config": connection.config,

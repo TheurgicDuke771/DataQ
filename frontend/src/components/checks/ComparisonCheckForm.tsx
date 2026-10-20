@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 
 import {
   DATASOURCE_TYPES,
+  isFileDatasource,
   isSqlQueryable,
   type Connection,
   type ConnectionType,
@@ -182,7 +183,7 @@ export function ComparisonCheckForm({
 
 /** Dataset address fields tailored to the picked source connection's type. */
 function SourceDatasetFields({ sourceType }: { sourceType: ConnectionType | undefined }) {
-  if (sourceType === 'adls_gen2' || sourceType === 's3') {
+  if (sourceType !== undefined && isFileDatasource(sourceType)) {
     return (
       <Form.Item
         name={['source', 'path']}

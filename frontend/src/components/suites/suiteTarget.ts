@@ -29,6 +29,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
       return 'iceberg';
     case 'adls_gen2':
     case 's3':
+    case 'gcs':
       return 'flatfile';
     default:
       return null; // adf / airflow / dbt — not a datasource
@@ -124,6 +125,7 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
 export const SAMPLING_CAPABLE_TYPES: ReadonlySet<ConnectionType> = new Set([
   'adls_gen2',
   's3',
+  'gcs',
   'unity_catalog',
 ]);
 

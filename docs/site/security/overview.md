@@ -228,7 +228,7 @@ are the reason this mode is opt-in rather than the default:
   else's secret and have the server resolve it on their behalf.
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
-  S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
+  S3/dbt `endpoint_url`, GCS `endpoint_url`/`auth_type`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
   `properties`/`secret_property`, the SQL engines' `host`/`port` (plus Trino's `sslmode`/`ca_bundle`/`auth_type`,
   SQL Server's `auth_type`/`tenant_id`/`client_id`/`ca_bundle`/`driver`, Athena's `region`/`work_group`/
   `s3_staging_dir`), Airflow `base_url`, dbt `artifacts_uri`/`endpoint_url`/`account_url` — requires re-supplying that

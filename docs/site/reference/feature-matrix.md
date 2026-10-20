@@ -6,23 +6,23 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ (namespace → table) |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -48,7 +48,7 @@ diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a `CheckRunner`/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
 `information_schema` for Snowflake/Unity Catalog, the Parquet footer, a bounded
-CSV header sample or a JSON file's first 1 MiB for ADLS/S3 flat files, and the loaded
+CSV header sample or a JSON file's first 1 MiB for ADLS/S3/GCS flat files, and the loaded
 table's own metadata for Iceberg (no data scan on any of them except the CSV and JSON
 samples). Re-baseline explicitly
 once a drift is expected and reviewed.
@@ -148,6 +148,12 @@ CI without a commercial licence. The four regex expectations are refused on SQL 
 translation in GX), and Fabric SQL endpoints need the user-installed ODBC lane — see
 [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
 
+ᵏ **Google Cloud Storage** — the same flat-file runner as ADLS Gen2 and S3 (CSV, Parquet, JSON;
+batch patterns, browsing, sampling, arrival-time freshness). Service-account key file or
+anonymous (public bucket); an optional endpoint URL points it at an emulator or a GCS-compatible
+store. Verified against `fake-gcs-server` (an opt-in integration lane), not against Google Cloud
+itself. See [Datasources & checks](../guides/datasources-checks.md#google-cloud-storage).
+
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
@@ -167,7 +173,7 @@ query projection.
 
 The freshness/volume monitors run on **every datasource** — the SQL datasources, Apache
 Iceberg (computed natively via `pyiceberg` scans, not SQL; ADR 0012/0030), and ADLS Gen2 /
-S3 flat files (over the resolved batch). On a flat file, a freshness monitor with **no
+S3 / GCS flat files (over the resolved batch). On a flat file, a freshness monitor with **no
 timestamp column** measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
@@ -219,6 +225,7 @@ five mechanisms:
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` (a sovereign cloud or another ADLS-compatible endpoint keeps its own DFS host: `abfss://{container}@{account}.dfs.core.chinacloudapi.cn`, `abfss://{workspace}@onelake.dfs.fabric.microsoft.com`; a path-style emulator endpoint such as Azurite's is named after its own host and the account in its path: `abfss://{container}@{host}:{port}/{account}`) / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
+| GCS (files) | `gs://{bucket}` (an emulator / compatible endpoint: `gs://{host[:port]}/{bucket}`) / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
 | MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ (dbt-mysql naming) | ✅ | ✅ | —⁴ |
 | Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |

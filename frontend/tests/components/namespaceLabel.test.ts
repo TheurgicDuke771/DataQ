@@ -141,6 +141,7 @@ describe('datasourceKind', () => {
     ['unitycatalog://h.example.com', 'unity_catalog'],
     ['abfss://c@a.dfs.core.windows.net', 'adls_gen2'],
     ['s3://bucket', 's3'],
+    ['gs://bucket', 'gcs'],
     ['postgres://db.internal:5432', 'postgres'],
     ['mysql://db.internal:3306', 'mysql'],
     ['trino://trino.internal:443', 'trino'],
@@ -165,6 +166,7 @@ describe('datasourceKind', () => {
       'unitycatalog://h.example.com',
       'abfss://c@a.dfs.core.windows.net',
       's3://bucket',
+      'gs://bucket',
       'postgres://db.internal:5432',
       'mysql://db.internal:3306',
       'trino://trino.internal:443',
@@ -183,6 +185,13 @@ describe('datasourceKind', () => {
 describe('Athena namespace', () => {
   it('labels the region, not the endpoint', () => {
     expect(namespaceLabel('awsathena://athena.us-east-2.amazonaws.com')).toBe('Athena · us-east-2');
+  });
+});
+
+describe('GCS namespace', () => {
+  it('labels the bucket, and an emulator endpoint with its bucket', () => {
+    expect(namespaceLabel('gs://landing')).toBe('GCS · landing');
+    expect(namespaceLabel('gs://fake-gcs:4443/landing')).toBe('GCS · fake-gcs:4443/landing');
   });
 });
 

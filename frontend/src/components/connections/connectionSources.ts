@@ -25,6 +25,7 @@ export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
   mssql: 'Databases',
   adls_gen2: 'Cloud Storage',
   s3: 'Cloud Storage',
+  gcs: 'Cloud Storage',
 };
 
 /** One-line "what is this" subtitle under each source's label in the picker. */
@@ -40,6 +41,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   mssql: 'SQL Server, Azure SQL, Synapse and Fabric SQL endpoints',
   adls_gen2: 'Azure Data Lake Storage',
   s3: 'Object storage buckets',
+  gcs: 'Google Cloud Storage buckets',
   adf: 'Trigger & monitor pipeline runs',
   airflow: 'Monitor DAG runs',
   dbt: 'Poll dbt run artifacts & trigger suites',

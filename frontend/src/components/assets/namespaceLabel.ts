@@ -8,6 +8,7 @@ export type DatasourceKind =
   | 'unity_catalog'
   | 'adls_gen2'
   | 's3'
+  | 'gcs'
   | 'iceberg'
   | 'postgres'
   | 'mysql'
@@ -56,6 +57,9 @@ const SCHEMES: SchemeSpec[] = [
     },
   },
   { prefix: 's3://', kind: 's3', source: 'S3', instance: (rest) => rest },
+  // `gs://{bucket}` (an emulator endpoint: `gs://{host:port}/{bucket}`) — the OpenLineage GCS
+  // namespace (#1683).
+  { prefix: 'gs://', kind: 'gcs', source: 'GCS', instance: (rest) => rest },
   // `postgres://host:port` — the OpenLineage PostgreSQL namespace (#1678).
   { prefix: 'postgres://', kind: 'postgres', source: 'PostgreSQL', instance: (rest) => rest },
   { prefix: 'mysql://', kind: 'mysql', source: 'MySQL', instance: (rest) => rest },

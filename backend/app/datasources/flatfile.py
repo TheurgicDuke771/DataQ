@@ -1,4 +1,4 @@
-"""Flat-file (ADLS Gen2 / S3) IO + GX `CheckRunner`."""
+"""Flat-file (ADLS Gen2 / S3 / GCS) IO + GX `CheckRunner`."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources import jsonfile
 from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.datasources.base import (
+    FLAT_FILE_TYPES,
     SAMPLE_HEAD,
     CheckOutcome,
     CheckSpec,
@@ -28,6 +29,7 @@ from backend.app.datasources.base import (
     SampleSpec,
     SuiteOutcome,
 )
+from backend.app.datasources.gcs import GcsConfig, gcs_client, is_not_found
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     AGGREGATE,
@@ -62,7 +64,7 @@ _READ_TIMEOUT = 60
 
 log = get_logger(__name__)
 
-_FILE_TYPES = {"adls_gen2", "s3"}
+_FILE_TYPES = FLAT_FILE_TYPES
 
 # Sort floor for files the store reports without a modified time.
 _MIN_DT = datetime.min.replace(tzinfo=UTC)
@@ -188,6 +190,21 @@ def _blob_service(acfg: AdlsConfig, secret: str) -> Any:
     return blob_service_client(acfg, secret)
 
 
+def _gcs_client(gcfg: GcsConfig, secret: str | None) -> Any:
+    """A GCS `storage.Client` for `gcfg` (caller must `.close()` it)."""
+    return gcs_client(gcfg, secret)
+
+
+#: Per-call timeout for the GCS client — (connect, read), like the S3 client's config.
+_GCS_TIMEOUT = (_CONNECT_TIMEOUT, _READ_TIMEOUT)
+
+
+def _require_secret(secret: str | None, conn_type: str) -> str:
+    if secret is None:
+        raise ValueError(f"{conn_type} connection requires a credential")
+    return secret
+
+
 class StoreSession:
     """One store client, reused across the reads of a single logical operation (#1329).
 
@@ -198,13 +215,14 @@ class StoreSession:
     prefork child could inherit.
     """
 
-    def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str) -> None:
+    def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str | None) -> None:
         self.conn_type = conn_type
         self._config = config
         self._secret = secret
         self._client: Any = None
         self._s3_config: S3Config | None = None
         self._adls_config: AdlsConfig | None = None
+        self._gcs_config: GcsConfig | None = None
         #: Clients constructed by this session — asserted by the seam tests.
         self.clients_created = 0
         #: Byte sizes already known per path, for THIS session's lifetime only —
@@ -225,18 +243,37 @@ class StoreSession:
         return self._adls_config
 
     @property
+    def gcs_config(self) -> GcsConfig:
+        if self._gcs_config is None:
+            self._gcs_config = GcsConfig.model_validate(self._config)
+        return self._gcs_config
+
+    @property
     def s3(self) -> Any:
         if self._client is None:
-            self._client = _s3_client(self.s3_config, self._secret)
+            self._client = _s3_client(self.s3_config, _require_secret(self._secret, "s3"))
             self.clients_created += 1
         return self._client
 
     @property
     def blob_service(self) -> Any:
         if self._client is None:
-            self._client = _blob_service(self.adls_config, self._secret)
+            self._client = _blob_service(
+                self.adls_config, _require_secret(self._secret, "adls_gen2")
+            )
             self.clients_created += 1
         return self._client
+
+    @property
+    def gcs(self) -> Any:
+        if self._client is None:
+            self._client = _gcs_client(self.gcs_config, self._secret)
+            self.clients_created += 1
+        return self._client
+
+    def gcs_blob(self, path: str) -> Any:
+        """A blob handle for ``path`` in this session's bucket (no request until used)."""
+        return self.gcs.bucket(self.gcs_config.bucket).blob(path)
 
     def blob(self, path: str) -> Any:
         """A blob client for ``path`` on this session's service client."""
@@ -257,7 +294,7 @@ class StoreSession:
 
 @contextmanager
 def _session(
-    session: StoreSession | None, *, conn_type: str, config: dict[str, Any], secret: str
+    session: StoreSession | None, *, conn_type: str, config: dict[str, Any], secret: str | None
 ) -> Iterator[StoreSession]:
     """Yield ``session``, or a throwaway one closed on the way out."""
     if session is not None:
@@ -272,14 +309,17 @@ def download_bytes(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> bytes:
-    """Fetch the object/blob bytes from S3 or ADLS Gen2 (live seam)."""
+    """Fetch the object/blob bytes from S3, ADLS Gen2 or GCS (live seam)."""
     with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
         if conn_type == "s3":
             body: bytes = ses.s3.get_object(Bucket=ses.s3_config.bucket, Key=path)["Body"].read()
             return body
+        if conn_type == "gcs":
+            fetched: bytes = ses.gcs_blob(path).download_as_bytes(timeout=_GCS_TIMEOUT)
+            return fetched
         downloaded: bytes = ses.blob(path).download_blob().readall()
         return downloaded
 
@@ -289,7 +329,7 @@ def object_size(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> int:
     """Byte length of exactly ``path`` — one metadata call (live seam, #882).
@@ -312,7 +352,7 @@ def read_range(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     start: int,
     length: int,
     session: StoreSession | None = None,
@@ -329,6 +369,12 @@ def read_range(
                 Range=f"bytes={start}-{start + length - 1}",
             )["Body"].read()
             return body
+        if conn_type == "gcs":
+            # `end` is inclusive, like the HTTP Range header it becomes.
+            fetched: bytes = ses.gcs_blob(path).download_as_bytes(
+                start=start, end=start + length - 1, timeout=_GCS_TIMEOUT
+            )
+            return fetched
         downloaded: bytes = ses.blob(path).download_blob(offset=start, length=length).readall()
         return downloaded
 
@@ -345,7 +391,7 @@ class RangeReader(io.RawIOBase):
         conn_type: str,
         config: dict[str, Any],
         path: str,
-        secret: str,
+        secret: str | None,
         chunk: int | None = None,
         session: StoreSession | None = None,
     ) -> None:
@@ -444,7 +490,7 @@ def parquet_row_count(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> int:
     """Row count from the Parquet footer — a couple of range GETs, no data read (#942)."""
@@ -463,7 +509,7 @@ def csv_row_count(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> int:
     """Row count of a CSV, streamed in batches — never a full DataFrame (#942)."""
@@ -500,7 +546,7 @@ def json_row_count(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> int:
     """Objects in a JSON file, streamed — never a full DataFrame (#1677)."""
@@ -521,7 +567,7 @@ def read_json_head(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     rows: int,
     session: StoreSession | None = None,
 ) -> Any:
@@ -542,7 +588,7 @@ def json_schema(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> Any:
     """A JSON file's columns and types as a streamed read types them — from its first
@@ -655,7 +701,7 @@ def _reader_args(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> dict[str, Any]:
     """The kwargs every store-read helper (`object_size`/`read_range`/`RangeReader`)
@@ -675,7 +721,7 @@ def read_csv_head(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     rows: int,
     session: StoreSession | None = None,
 ) -> Any:
@@ -705,7 +751,7 @@ def row_count(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> int:
     """Rows in a flat file by the cheapest route: Parquet footer, CSV or JSON stream (#942)."""
@@ -716,7 +762,7 @@ def row_count(
     return counter(conn_type=conn_type, config=config, path=path, secret=secret, session=session)
 
 
-def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> Any:
+def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret: str | None) -> Any:
     """Download and parse the whole file into pandas (live seam); `ValueError` on
     an unknown format. Checks need every row/column — counts must be exact.
     """
@@ -944,7 +990,7 @@ def read_csv_projected_sample(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     rows: int,
     usecols: CsvUseCols = None,
 ) -> Any:
@@ -973,7 +1019,7 @@ def read_sampled_dataframe(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     sample: SampleSpec,
 ) -> tuple[Any, dict[str, Any]]:
     """A bounded sample of a flat file, plus the record of what was sampled (#595).
@@ -1137,6 +1183,10 @@ def _head_stat(ses: StoreSession, path: str) -> FileStat:
     if ses.conn_type == "s3":
         head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
         return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
+    if ses.conn_type == "gcs":
+        blob = ses.gcs_blob(path)
+        blob.reload(timeout=_GCS_TIMEOUT)
+        return FileStat(last_modified=blob.updated, size=blob.size)
     properties = ses.blob(path).get_blob_properties()
     return FileStat(last_modified=properties.last_modified, size=properties.size)
 
@@ -1146,7 +1196,7 @@ def file_stat(
     conn_type: str,
     config: dict[str, Any],
     path: str,
-    secret: str,
+    secret: str | None,
     session: StoreSession | None = None,
 ) -> FileStat:
     """The store's metadata for exactly ``path`` (live seam, #520/#595)."""
@@ -1161,6 +1211,13 @@ def file_stat(
                 return _head_stat(ses, path)
             except ClientError as exc:
                 if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                    return FileStat()
+                raise
+        if ses.conn_type == "gcs":
+            try:
+                return _head_stat(ses, path)
+            except Exception as exc:
+                if is_not_found(exc):
                     return FileStat()
                 raise
 
@@ -1182,7 +1239,7 @@ class FlatFileCheckRunner:
         *,
         conn_type: str,
         config: dict[str, Any],
-        secret: str,
+        secret: str | None,
         sampling: SampleSpec | None = None,
     ) -> None:
         self._conn_type = conn_type
@@ -1417,10 +1474,32 @@ def build_flatfile_runner(
     """
     if conn_type not in _FILE_TYPES:
         raise ValueError(f"{conn_type!r} is not a flat-file datasource")
-    if not secret_ref:
-        raise ValueError("flat-file connection requires secret_ref for the credential")
-    secret = secret_store.get(secret_ref)
+    secret = resolve_flatfile_secret(
+        conn_type=conn_type, config=config, secret_ref=secret_ref, secret_store=secret_store
+    )
     return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
+
+
+def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
+    """Whether a flat-file connection of this config needs no stored secret at all (a GCS
+    ``auth_type: anonymous`` public bucket) — so a missing ``secret_ref`` is its normal state.
+    """
+    return conn_type == "gcs" and not GcsConfig.model_validate(config).requires_secret()
+
+
+def resolve_flatfile_secret(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret_ref: str | None,
+    secret_store: SecretStore,
+) -> str | None:
+    """The credential every flat-file read presents, or ``None`` for an anonymous connection."""
+    if secret_ref:
+        return secret_store.get(secret_ref)
+    if authenticates_without_secret(conn_type, config):
+        return None
+    raise ValueError("flat-file connection requires secret_ref for the credential")
 
 
 # ───────────────────────── batch resolution ────────────────────────
@@ -1506,19 +1585,31 @@ def resolve_batch(
 
 
 def iter_files(
-    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str | None
 ) -> Generator[FileRef]:
     """Stream objects/blobs under `prefix` (live seam, generator — #943)."""
     if conn_type == "s3":
         cfg = S3Config.model_validate(config)
-        paginator = _s3_client(cfg, secret).get_paginator("list_objects_v2")
+        paginator = _s3_client(cfg, _require_secret(secret, conn_type)).get_paginator(
+            "list_objects_v2"
+        )
         for page in paginator.paginate(Bucket=cfg.bucket, Prefix=prefix):
             for obj in page.get("Contents", []):
                 yield FileRef(path=obj["Key"], last_modified=obj.get("LastModified"))
         return
+    if conn_type == "gcs":
+        gcfg = GcsConfig.model_validate(config)
+        client_gs = _gcs_client(gcfg, secret)
+        try:
+            # A lazy page iterator: the listing streams, it is never held whole (#943).
+            for blob in client_gs.list_blobs(gcfg.bucket, prefix=prefix, timeout=_GCS_TIMEOUT):
+                yield FileRef(path=blob.name, last_modified=blob.updated)
+        finally:
+            client_gs.close()
+        return
 
     acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
+    client_az = _blob_service(acfg, _require_secret(secret, conn_type))
     try:
         container = client_az.get_container_client(acfg.container)
         for blob in container.list_blobs(name_starts_with=prefix):
@@ -1528,7 +1619,7 @@ def iter_files(
 
 
 def list_files(
-    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str | None
 ) -> list[FileRef]:
     """The whole listing under `prefix` as a list (live seam); batch resolution
     uses `iter_files` instead (#943).
@@ -1580,12 +1671,12 @@ def _cap(
 
 
 def list_directory(
-    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str, limit: int
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str | None, limit: int
 ) -> DirectoryListing:
     """The folders and files immediately under ``prefix`` (live seam, one bounded page)."""
     if conn_type == "s3":
         cfg = S3Config.model_validate(config)
-        page = _s3_client(cfg, secret).list_objects_v2(
+        page = _s3_client(cfg, _require_secret(secret, conn_type)).list_objects_v2(
             Bucket=cfg.bucket, Prefix=prefix, Delimiter="/", MaxKeys=limit + 1
         )
         folders = [p["Prefix"] for p in page.get("CommonPrefixes", []) if p.get("Prefix")]
@@ -1595,11 +1686,33 @@ def list_directory(
             if o.get("Key") and o["Key"] != prefix  # the prefix's own folder marker
         ]
         return _cap(folders, files, limit=limit, more=bool(page.get("IsTruncated")))
+    if conn_type == "gcs":
+        gcfg = GcsConfig.model_validate(config)
+        client_gs = _gcs_client(gcfg, secret)
+        try:
+            # `max_results` bounds objects AND prefixes together, so one page of limit+1 entries
+            # is the whole request; the API reports prefixes only once a page has been read.
+            listing = client_gs.list_blobs(
+                gcfg.bucket,
+                prefix=prefix,
+                delimiter="/",
+                max_results=limit + 1,
+                timeout=_GCS_TIMEOUT,
+            )
+            files = [
+                BrowseFile(path=blob.name, size=blob.size, last_modified=blob.updated)
+                for blob in listing
+                if blob.name != prefix  # the prefix's own folder marker
+            ]
+            folders = sorted(listing.prefixes)
+            return _cap(folders, files, limit=limit, more=len(files) + len(folders) > limit)
+        finally:
+            client_gs.close()
 
     from azure.storage.blob import BlobPrefix
 
     acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
+    client_az = _blob_service(acfg, _require_secret(secret, conn_type))
     try:
         container = client_az.get_container_client(acfg.container)
         walk = container.walk_blobs(
@@ -1658,7 +1771,7 @@ def resolve_batch_file(
     *,
     conn_type: str,
     config: dict[str, Any],
-    secret: str,
+    secret: str | None,
     prefix: str,
     pattern: str,
     strategy: str = "latest",
@@ -1747,7 +1860,7 @@ def resolve_batch_file_preview(
     *,
     conn_type: str,
     config: dict[str, Any],
-    secret: str,
+    secret: str | None,
     prefix: str,
     pattern: str,
     strategy: str = "latest",

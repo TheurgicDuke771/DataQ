@@ -4041,3 +4041,238 @@ def test_a_volume_beside_an_aggregate_counts_off_the_frame_the_aggregate_reads(
     assert volume.observed_value == {"row_count": 4, "deviation_pct": 0.0}
     assert mean.metric_value == pytest.approx(61 / 3)
     assert (len(reads), ranges) == (1, [])
+
+
+# ───────────────────────── GCS seams (#1683) ─────────────────────────
+#
+# The stubs carry the value shapes `google-cloud-storage` 3.17 returned against a real
+# fake-gcs-server (see tests/integration/test_gcs_datasource.py, which runs the same seams
+# live): `blob.size` is an int, `blob.updated` a tz-aware datetime, a missing object raises
+# `google.api_core.exceptions.NotFound`, and a delimited listing's folders arrive on the
+# iterator's `.prefixes` only once its items have been read.
+
+_GCS_CONFIG = {"bucket": "raw", "auth_type": "service_account_key"}
+
+
+class _GcsBlobStub:
+    def __init__(
+        self,
+        name: str,
+        *,
+        data: bytes = b"col\n1\n",
+        size: int | None = 4096,
+        updated: datetime | None = _LANDED,
+        missing: bool = False,
+    ) -> None:
+        self.name = name
+        self._data = data
+        self.size = size
+        self.updated = updated
+        self._missing = missing
+        self.calls: list[Any] = []
+
+    def _not_found(self) -> Exception:
+        from google.api_core.exceptions import NotFound
+
+        return NotFound(f"404 GET …/o/{self.name}: Not Found")
+
+    def reload(self, **kwargs: Any) -> None:
+        self.calls.append(("reload", kwargs))
+        if self._missing:
+            raise self._not_found()
+
+    def download_as_bytes(
+        self, *, start: int | None = None, end: int | None = None, **kw: Any
+    ) -> bytes:
+        self.calls.append(("download", start, end))
+        if self._missing:
+            raise self._not_found()
+        if start is None:
+            return self._data
+        return self._data[start : (end + 1) if end is not None else None]
+
+
+class _GcsListing:
+    """`list_blobs`'s page iterator: items, then `.prefixes` populated by the read."""
+
+    def __init__(self, blobs: list[_GcsBlobStub], prefixes: set[str]) -> None:
+        self._blobs = blobs
+        self._prefixes = prefixes
+        self.prefixes: set[str] = set()
+
+    def __iter__(self) -> Any:
+        yield from self._blobs
+        self.prefixes = set(self._prefixes)
+
+
+class _GcsClientStub:
+    def __init__(self, blobs: list[_GcsBlobStub], *, prefixes: set[str] = frozenset()) -> None:
+        self._blobs = {b.name: b for b in blobs}
+        self._prefixes = set(prefixes)
+        self.list_calls: list[dict[str, Any]] = []
+        self.closed = False
+
+    def bucket(self, name: str) -> Any:
+        assert name == "raw"
+        blobs = self._blobs
+
+        class _Bucket:
+            def blob(self, path: str) -> _GcsBlobStub:
+                return blobs.get(path) or _GcsBlobStub(path, missing=True)
+
+        return _Bucket()
+
+    def list_blobs(self, bucket: str, **kwargs: Any) -> _GcsListing:
+        assert bucket == "raw"
+        self.list_calls.append(kwargs)
+        prefix = kwargs.get("prefix") or ""
+        matched = [b for b in self._blobs.values() if b.name.startswith(prefix)]
+        return _GcsListing(matched, self._prefixes if kwargs.get("delimiter") else set())
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _gcs(monkeypatch: pytest.MonkeyPatch, stub: _GcsClientStub) -> _GcsClientStub:
+    monkeypatch.setattr(flatfile, "_gcs_client", lambda gcfg, secret: stub)
+    return stub
+
+
+def test_file_stat_gcs_reloads_the_exact_blob(monkeypatch: pytest.MonkeyPatch) -> None:
+    blob = _GcsBlobStub("orders/a.csv", size=128)
+    _gcs(monkeypatch, _GcsClientStub([blob]))
+    stat = flatfile.file_stat(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
+    assert stat == flatfile.FileStat(last_modified=_LANDED, size=128)
+    assert blob.calls == [("reload", {"timeout": flatfile._GCS_TIMEOUT})]
+
+
+def test_file_stat_gcs_missing_object_is_an_empty_stat(monkeypatch: pytest.MonkeyPatch) -> None:
+    _gcs(monkeypatch, _GcsClientStub([]))
+    assert (
+        _last_modified(conn_type="gcs", config=_GCS_CONFIG, path="orders/gone.csv", secret="k")
+        is None
+    )
+
+
+def test_file_stat_gcs_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+    from google.api_core.exceptions import Forbidden
+
+    class _Denied(_GcsBlobStub):
+        def reload(self, **kwargs: Any) -> None:
+            raise Forbidden("403")
+
+    _gcs(monkeypatch, _GcsClientStub([_Denied("orders/a.csv")]))
+    with pytest.raises(Forbidden):
+        _last_modified(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
+
+
+def test_download_bytes_gcs(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _gcs(monkeypatch, _GcsClientStub([_GcsBlobStub("orders/a.csv")]))
+    data = flatfile.download_bytes(
+        conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k"
+    )
+    assert data == b"col\n1\n"
+    assert stub.closed
+
+
+def test_read_range_gcs_uses_an_inclusive_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    blob = _GcsBlobStub("orders/a.csv", data=b"0123456789")
+    _gcs(monkeypatch, _GcsClientStub([blob]))
+    got = flatfile.read_range(
+        conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k", start=2, length=3
+    )
+    assert got == b"234"
+    assert blob.calls == [("download", 2, 4)]
+
+
+def test_an_anonymous_gcs_session_opens_without_a_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[Any] = []
+
+    def _client(gcfg: Any, secret: Any) -> _GcsClientStub:
+        seen.append((gcfg.auth_type, secret))
+        return _GcsClientStub([_GcsBlobStub("orders/a.csv")])
+
+    monkeypatch.setattr(flatfile, "_gcs_client", _client)
+    config = {"bucket": "raw", "auth_type": "anonymous"}
+    assert (
+        flatfile.download_bytes(conn_type="gcs", config=config, path="orders/a.csv", secret=None)
+        == b"col\n1\n"
+    )
+    assert seen == [("anonymous", None)]
+
+
+@pytest.mark.parametrize("conn_type", ["s3", "adls_gen2"])
+def test_the_other_stores_still_refuse_a_missing_secret(conn_type: str) -> None:
+    config = _S3_CONFIG if conn_type == "s3" else _ADLS_CONFIG
+    with pytest.raises(ValueError, match="requires a credential"):
+        flatfile.download_bytes(conn_type=conn_type, config=config, path="a.csv", secret=None)
+
+
+def test_list_files_gcs_streams_the_prefix_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = _gcs(
+        monkeypatch,
+        _GcsClientStub(
+            [
+                _GcsBlobStub("orders/a.csv", updated=datetime(2026, 7, 1, tzinfo=UTC)),
+                _GcsBlobStub("orders/b.csv", updated=None),
+                _GcsBlobStub("other/c.csv"),
+            ]
+        ),
+    )
+    refs = flatfile.list_files(conn_type="gcs", config=_GCS_CONFIG, prefix="orders/", secret="k")
+    assert [r.path for r in refs] == ["orders/a.csv", "orders/b.csv"]
+    assert refs[0].last_modified is not None and refs[1].last_modified is None
+    assert stub.list_calls == [{"prefix": "orders/", "timeout": flatfile._GCS_TIMEOUT}]
+    assert stub.closed
+
+
+def test_list_directory_gcs_reads_folders_off_the_consumed_iterator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _gcs(
+        monkeypatch,
+        _GcsClientStub(
+            [_GcsBlobStub("orders/", size=0), _GcsBlobStub("orders/a.csv", size=7)],
+            prefixes={"orders/2026/", "orders/archive/"},
+        ),
+    )
+    listing = flatfile.list_directory(
+        conn_type="gcs", config=_GCS_CONFIG, prefix="orders/", secret="k", limit=10
+    )
+    assert listing.folders == ["orders/2026/", "orders/archive/"]
+    assert [(f.path, f.size, f.last_modified) for f in listing.files] == [
+        ("orders/a.csv", 7, _LANDED)
+    ]
+    assert not listing.truncated
+    assert stub.list_calls[0]["delimiter"] == "/" and stub.list_calls[0]["max_results"] == 11
+    assert stub.closed
+
+
+def test_list_directory_gcs_reports_truncation_past_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _gcs(
+        monkeypatch,
+        _GcsClientStub([_GcsBlobStub(f"orders/{i}.csv") for i in range(3)], prefixes={"orders/x/"}),
+    )
+    listing = flatfile.list_directory(
+        conn_type="gcs", config=_GCS_CONFIG, prefix="orders/", secret="k", limit=3
+    )
+    assert listing.truncated
+    assert len(listing.folders) + len(listing.files) == 3
+
+
+def test_build_flatfile_runner_gcs_anonymous_needs_no_secret_ref() -> None:
+    from backend.tests.support.fake_secret_store import FakeSecretStore
+
+    runner = flatfile.build_flatfile_runner(
+        conn_type="gcs",
+        config={"bucket": "raw", "auth_type": "anonymous"},
+        secret_ref=None,
+        secret_store=FakeSecretStore(),
+    )
+    assert isinstance(runner, flatfile.FlatFileCheckRunner)
+    with pytest.raises(ValueError, match="requires secret_ref"):
+        flatfile.build_flatfile_runner(
+            conn_type="gcs", config=_GCS_CONFIG, secret_ref=None, secret_store=FakeSecretStore()
+        )
