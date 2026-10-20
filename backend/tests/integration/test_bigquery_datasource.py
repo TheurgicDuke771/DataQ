@@ -54,14 +54,22 @@ _SECRET_REF = "bigquery-key"
 
 
 class _TokenStub(BaseHTTPRequestHandler):
-    """The OAuth token endpoint a key file's ``token_uri`` names: hands out one bearer."""
+    """The OAuth token endpoint a key file's ``token_uri`` names: hands out one bearer, or —
+    under ``/revoked`` — refuses the grant the way Google does for a deleted key."""
 
     grants: list[bytes] = []  # noqa: RUF012 — module-scoped
 
     def do_POST(self) -> None:
         _TokenStub.grants.append(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-        out = json.dumps({"access_token": "stub", "expires_in": 3600, "token_type": "Bearer"})
-        self.send_response(200)
+        if self.path.startswith("/revoked"):
+            status = 400
+            out = json.dumps(
+                {"error": "invalid_grant", "error_description": "Invalid JWT Signature."}
+            )
+        else:
+            status = 200
+            out = json.dumps({"access_token": "stub", "expires_in": 3600, "token_type": "Bearer"})
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
@@ -104,7 +112,7 @@ def _admin() -> Any:
 
     return bigquery.Client(
         project=_PROJECT,
-        credentials=AnonymousCredentials(),  # type: ignore[no-untyped-call]
+        credentials=AnonymousCredentials(),
         client_options=ClientOptions(api_endpoint=_URL),
     )
 
@@ -156,6 +164,25 @@ def _seed(admin: Any, dataset: str) -> None:
     ).result()
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _string_parameter_values() -> Iterator[None]:
+    """The REST API documents a query parameter's ``value`` as a string; the client sends a
+    FLOAT64/NUMERIC parameter as a JSON number, which BigQuery accepts and the emulator refuses
+    (``cannot unmarshal number``). Sending the documented form lets the emulator evaluate the
+    exact SQL GX generates; production keeps the client's own encoding."""
+    from google.cloud.bigquery import _helpers
+
+    with pytest.MonkeyPatch.context() as patch:
+        for kind in ("FLOAT", "FLOAT64", "NUMERIC", "BIGNUMERIC"):
+            encode = _helpers._SCALAR_VALUE_TO_JSON_PARAM[kind]
+            patch.setitem(
+                _helpers._SCALAR_VALUE_TO_JSON_PARAM,
+                kind,
+                lambda value, encode=encode: None if value is None else str(encode(value)),
+            )
+        yield
+
+
 @dataclass(frozen=True)
 class BigQueryTarget:
     config: dict[str, Any]
@@ -171,9 +198,15 @@ def bq() -> Iterator[BigQueryTarget]:
     dataset = f"dq_bq_{uuid.uuid4().hex[:8]}"
     try:
         _seed(admin, dataset)
-        key = _key_file(f"http://127.0.0.1:{server.server_address[1]}/token")
+        token_uri = f"http://127.0.0.1:{server.server_address[1]}"
         config = {"project_id": _PROJECT, "schema": dataset, "endpoint_url": _URL}
-        yield BigQueryTarget(config, dataset, FakeSecretStore({_SECRET_REF: key}))
+        store = FakeSecretStore(
+            {
+                _SECRET_REF: _key_file(f"{token_uri}/token"),
+                "revoked": _key_file(f"{token_uri}/revoked"),
+            }
+        )
+        yield BigQueryTarget(config, dataset, store)
     finally:
         admin.delete_dataset(f"{_PROJECT}.{dataset}", delete_contents=True, not_found_ok=True)
         admin.close()
@@ -220,6 +253,14 @@ def test_the_connection_test_runs_the_service_account_flow(bq: BigQueryTarget) -
     get_connection_adapter("bigquery").test(bq.config, _secret(bq))
     assert len(_TokenStub.grants) > before
     assert b"jwt-bearer" in _TokenStub.grants[-1]
+
+
+def test_a_revoked_key_is_an_auth_failure(bq: BigQueryTarget) -> None:
+    from backend.app.services.failure_classifier import is_auth_failure
+
+    with pytest.raises(Exception) as exc:
+        get_connection_adapter("bigquery").test(bq.config, bq.store.get("revoked"))
+    assert is_auth_failure(exc.value), repr(exc.value)
 
 
 def test_a_malformed_key_file_is_refused_before_any_request(bq: BigQueryTarget) -> None:

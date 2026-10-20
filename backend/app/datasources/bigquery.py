@@ -23,7 +23,7 @@ BigQuery is a service, not a server DataQ opens a session on, which shapes this 
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
@@ -73,7 +73,8 @@ class BigQueryConfig(GenericSqlConfig):
 
     # The project is the base's `database` — the level a connection pins.
     database: str = Field(alias="project_id")
-    # A service account authenticates by its key file alone.
+    # A service account authenticates by its key file alone (keyless auth would be a new mode).
+    auth_type: Literal["service_account_key"] = "service_account_key"
     user: str | None = None  # type: ignore[assignment]
     # Where query jobs run. Unset lets BigQuery infer it from the datasets a query reads.
     location: str | None = None
@@ -114,6 +115,13 @@ class BigQueryConfig(GenericSqlConfig):
         if not isinstance(value, str) or not _LOCATION.fullmatch(value.strip()):
             raise ValueError("location must be a BigQuery location such as US, EU or us-central1")
         return value.strip()
+
+    @field_validator("maximum_bytes_billed", mode="before")
+    @classmethod
+    def _blank_cap_is_the_default(cls, value: Any) -> Any:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return DEFAULT_MAXIMUM_BYTES_BILLED
+        return value
 
     @field_validator("port")
     @classmethod
@@ -222,6 +230,22 @@ def _auth_connect_args(config: BigQueryConfig, secret: str | None) -> dict[str, 
     return {"client": bigquery_client(config, secret)}
 
 
+_BYTES_BILLED = re.compile(r"exceeded limit for bytes billed", re.IGNORECASE)
+
+
+def _explain_failure(config: GenericSqlConfig, exc: BaseException) -> str | None:
+    """The byte cap refusing a query is a 403 the generic classifier would call a permission
+    problem; say what it is instead."""
+    if not _BYTES_BILLED.search(str(exc)):
+        return None
+    cap = getattr(config, "maximum_bytes_billed", DEFAULT_MAXIMUM_BYTES_BILLED)
+    return (
+        f"BigQuery refused the query because it would bill more than this connection's "
+        f"maximum_bytes_billed ({cap:,} bytes); it was not run and not charged. Raise the cap "
+        "on the connection, or narrow the check (a partitioned or smaller table)."
+    )
+
+
 def _add_gx_datasource(
     context: Any, name: str, connection_string: str, engine_kwargs: dict[str, Any]
 ) -> Any:
@@ -307,9 +331,10 @@ BIGQUERY = SqlEngineSpec(
     namespace_override=_namespace,
     database_in_name=True,
     # The bearer the key file yields is presented to the endpoint.
-    destination_fields=("endpoint_url", "host"),
+    destination_fields=("endpoint_url", "auth_type"),
     credential_noun="service-account key file",
     catalog=SqlCatalog(api=_CATALOG),
     column_caps=_column_caps,
+    explain_failure=_explain_failure,
     llm_dialect="BigQuery GoogleSQL (backtick-quoted identifiers)",
 )

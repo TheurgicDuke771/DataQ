@@ -244,6 +244,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   trino: <DatabaseOutlined />,
   athena: <DatabaseOutlined />,
   redshift: <DatabaseOutlined />,
+  bigquery: <DatabaseOutlined />,
   mssql: <DatabaseOutlined />,
   other: <FileOutlined />,
 };

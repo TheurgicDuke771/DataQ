@@ -30,6 +30,7 @@ const TYPE_VISUAL: Record<ConnectionType, { icon: ReactNode; color: string }> = 
   trino: { icon: <DatabaseOutlined />, color: '#dd00a1' },
   athena: { icon: <DatabaseOutlined />, color: '#8c4fff' },
   redshift: { icon: <DatabaseOutlined />, color: '#2e27ad' },
+  bigquery: { icon: <DatabaseOutlined />, color: '#4285f4' },
   mssql: { icon: <DatabaseOutlined />, color: '#a91d22' },
   adf: { icon: <DeploymentUnitOutlined />, color: '#0078d4' },
   airflow: { icon: <NodeIndexOutlined />, color: '#017cee' },
