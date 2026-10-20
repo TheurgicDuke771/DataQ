@@ -498,6 +498,16 @@ def _dry_run_pii_drift(
         )
     except pii_drift_service.PiiDriftProfileError as exc:
         raise DryRunFailedError(str(exc), detail={"table": table}) from exc
+    except DataQError as exc:
+        # The profiler's own 422-class refusals (no schema, no credential, a bad identifier)
+        # pass through with their author-facing message; its 5xx outage shape becomes the
+        # dry-run contract's failure, as schema_drift's introspection failure does.
+        if exc.status_code >= 500:
+            log.warning(
+                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+            )
+            raise DryRunFailedError(str(exc), detail={"table": table}) from exc
+        raise
     ignore = {fold_key(str(name)) for name in (config.get("ignore_columns") or ())}
     detected = sorted({fold_key(d.column): d.detector for d in detect(result.columns)}.items())
     considered = [{"column": c, "detector": det} for c, det in detected if c not in ignore]
