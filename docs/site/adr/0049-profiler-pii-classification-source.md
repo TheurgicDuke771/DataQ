@@ -34,9 +34,10 @@ DataQ can hold.
    `(asset, column, source)`: `verdict`, `detector`, `evidence` (counts only, never a value),
    `first_detected_at`, `last_detected_at`, `dismissed_at`, `dismissed_by`. `source` is
    `profiler` today; the governance-catalog pull on the roadmap is the next source and gets its
-   own value rather than a second table. `assets.detected_classifications_refreshed_at` records the
-   last profile that was checked, so "looked and found none" differs from "never looked", as it
-   does for warehouse tags.
+   own value rather than a second table. `assets.detected_classifications_refreshed_at` records
+   the last **full** profile (every column of the table) that fed the source, so "looked and
+   found none" differs from "never looked", as it does for warehouse tags; a probe of one column
+   records what it saw and claims nothing about the rest.
 
 2. **Additive only.** Only `sensitive` is ever persisted. A detected verdict can add masking;
    it can never clear a column, never satisfies fail-closed (`require_classification`)
@@ -56,10 +57,14 @@ DataQ can hold.
 4. **A detection is cleared by a person, never by a quiet re-profile.** The evidence on SQL is
    the top twenty values; a later profile that does not see them proves little, so a re-profile
    that finds nothing leaves the row alone. A workspace Admin dismisses a detection (audited,
-   `asset.classification_update`); a dismissal survives re-detection (`last_detected_at` keeps
-   moving so the page can say "still detected, dismissed on …") and can be restored. There is no
-   MCP tool for this: dismissal loosens masking and is Admin-only, and MCP exposes no Admin-only
-   capability by standing invariant.
+   `asset.classification_update`, the column named in the request body because a column name
+   may hold `/`); a dismissal survives re-detection (`last_detected_at` keeps moving so the page
+   can say "still detected, dismissed on …") and can be restored. There is no MCP tool for this:
+   dismissal loosens masking and is Admin-only, and MCP exposes no Admin-only capability by
+   standing invariant. Every surface that lists a detection states its **effect** — `masks`,
+   `overridden_by_tag` (the column's own warehouse verdict decides instead) or `dismissed` —
+   derived from the same merge the redaction map applies, so a row never reads "masked" when a
+   `public` tag is in fact showing the column.
 
 5. **Profiler verdicts do not propagate along lineage.** Only warehouse verdicts travel
    (`inherited_sensitive` reads `assets.column_tags` alone). A heuristic that flows downstream
@@ -71,9 +76,14 @@ DataQ can hold.
    own false-positive study across the SQL top-values basis and the file sample basis.
 
 7. **Written on every profile of the suite's own target.** `profile_connection` takes the asset
-   and records detections when the probe targets that asset (never on an explicit table or path
-   override, whose columns may collide by name). The write is fail-soft: a failure to persist is
-   logged and never fails the profile.
+   and records detections when the probe targets that asset — the column profiler, the policy
+   suggester (REST and MCP), the suggestion refresh, the LLM prompt context and the worker's
+   auto-classify alike; never on an explicit table or path override, whose columns may collide
+   by name. Each detection is one upsert on the case-folded cell, so two profiles racing each
+   other both land; the write runs in its own savepoint and is fail-soft: a failure to persist
+   is logged, leaves the caller's pending work untouched and never fails the profile. For a
+   probe of some *other* table, the narrowed tag floor keeps a detection like any masking
+   verdict (clearances stay with the asset they were given on).
 
 ## Phases
 

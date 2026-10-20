@@ -457,10 +457,12 @@ a later re-detection, and the panel keeps showing "last seen" so a dismissed col
 carries the values stays visible. There is no MCP tool for dismissal.
 
 The asset detail (`GET /api/v1/assets/{id}`, MCP `get_asset`) lists every detection, dismissed
-ones included, and the time a profile last fed the source. Read an empty list against that
-timestamp: with no timestamp, no profile of the table's own target has run yet. A column that is
-not listed is not thereby clean: only the values a profile saw were examined, and only for those
-two shapes.
+ones included, each with its **effect**: `masks`, `overridden_by_tag` (the column's own warehouse
+tag decides instead, either way) or `dismissed`. It also carries the time a **full** profile
+(every column) last fed the source. Read an empty list against that timestamp: with no
+timestamp, no full profile of the table's own target has run yet; a one-column probe from the
+column profiler records what it saw and does not move it. A column that is not listed is not
+thereby clean: only the values a profile saw were examined, and only for those two shapes.
 
 **The tag name is matched without its namespace**, and that is a constraint on
 you rather than a feature: DataQ honours a tag *named* `dataq_classification`
