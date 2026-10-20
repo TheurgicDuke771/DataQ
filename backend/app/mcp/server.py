@@ -2407,13 +2407,14 @@ def create_check(
       its first yearly verdict is a year away. Until then the check scores as if
       the setting were off, and ``observed_value.yearly`` says ``applied:
       false`` with the ``reason`` (``no_earlier_year`` while the year
-      accumulates). Do not tell a user the check is "accounting for seasonality"
-      without reading that field. When applied, ``yearly`` carries ``level``,
+      accumulates, or ``insufficient_history`` with too few recent runs). Do
+      not tell a user the check is "accounting for seasonality" without reading
+      that field. When applied, ``yearly`` carries ``level``,
       ``expected``, ``index``, the earlier days or periods ``matched`` and the
       ``ratios`` each ran at, and ``mean`` / ``stddev`` are the centre and
-      spread the run was scored against, not an average of recent runs. On a
+      spread the run was scored against, not a plain average of recent runs. On a
       whole-table metric ``yearly.basis`` is ``runs``: the run is still scored
-      against its recent runs (each scaled back by its own day's index), and
+      against its recent runs (each divided by its own day's index), and
       ``observed_value.daily`` says how many days of history stand behind the
       index (``days``, ``first``) and the ``timezone`` they are kept in (config
       ``timezone``, an IANA name, default UTC; only with ``yearly`` on). One
@@ -2454,7 +2455,9 @@ def create_check(
     ``row_count`` has no normal to return to ('alert me when daily orders look
     wrong', 'weekly sales amount'). ``period_row_count`` counts the rows whose date
     falls in one calendar period; ``period_sum`` sums a numeric column over them.
-    They add these keys, which are refused on every other metric:
+    They add these keys, which are refused on every other metric (except
+    ``timezone`` and ``seasonal_periods``, which ``row_count`` and
+    ``freshness_age_hours`` also take when ``yearly`` is on):
     - ``date_column`` (required): the column that dates a row. It is not checked
       against the table here; confirm it with ``list_columns``.
     - ``value_column`` (required for ``period_sum``, refused for the count).
@@ -2464,7 +2467,8 @@ def create_check(
       is over; it does not change which period a row falls in, which is the date
       the warehouse returns for the column. Do not set it to the user's own zone
       when the data is in another: a zone ahead of the data's judges a day
-      before it has finished and stores that short value.
+      before it has finished and stores that short value. On a whole-table metric
+      with ``yearly`` on it is instead the zone a run's calendar day is taken in.
     - ``settle_hours`` (optional, default 6): a period is judged only once it has
       been closed that long.
     - ``backfill`` (optional, default true): seed the history on the first run.
