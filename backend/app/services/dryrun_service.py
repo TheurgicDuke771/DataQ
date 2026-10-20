@@ -13,7 +13,13 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorRunner, MonitorSpec
+from backend.app.datasources.base import (
+    CheckOutcome,
+    CheckSpec,
+    MonitorRunner,
+    MonitorSpec,
+    ResolvedTarget,
+)
 from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.gx_runner import GxContextBusyError
@@ -68,6 +74,38 @@ class DryRunOutcome:
     metric_value: Decimal | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
+
+
+def _materialize_dry_run_target(
+    connection: Connection, resolved: ResolvedTarget, secret_store: SecretStore
+) -> str:
+    """Materialize a flat-file batch target to a concrete file (lists the store) — a no-op for
+    SQL / UC / literal flat-file targets — mapping the failure modes once for every dry-run path:
+    no file yet → 404-shaped, a malformed batch spec (a ``DataQError``, 422) passes through, and
+    anything else is a classified dry-run failure."""
+    try:
+        return run_target.materialize_path(
+            connection.type,
+            connection.config,
+            resolved,
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
+    except BatchNotFoundError as exc:
+        raise DryRunNoDataError(
+            "no file has landed for the suite's batch target yet — dry-run needs live data",
+            detail={"connection_type": connection.type},
+        ) from exc
+    except DataQError:
+        raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
+    except Exception as exc:
+        log.warning(
+            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise DryRunFailedError(
+            "dry run could not list the datasource store",
+            detail={"reason": safe_failure_reason(exc)},
+        ) from exc
 
 
 def dry_run_check(
@@ -208,29 +246,7 @@ def dry_run_check(
         with owned_runner(runner):
             # Materialize a flat-file batch target to a concrete file (lists the store)
             # — a no-op for SQL / UC / literal flat-file targets.
-            try:
-                table = run_target.materialize_path(
-                    connection.type,
-                    connection.config,
-                    resolved,
-                    secret_ref=connection.secret_ref,
-                    secret_store=secret_store,
-                )
-            except BatchNotFoundError as exc:
-                raise DryRunNoDataError(
-                    "no file has landed for the suite's batch target yet — dry-run needs live data",
-                    detail={"connection_type": connection.type},
-                ) from exc
-            except DataQError:
-                raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
-            except Exception as exc:
-                log.warning(
-                    "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-                )
-                raise DryRunFailedError(
-                    "dry run could not list the datasource store",
-                    detail={"reason": safe_failure_reason(exc)},
-                ) from exc
+            table = _materialize_dry_run_target(connection, resolved, secret_store)
 
             try:
                 if kind == AGGREGATE:
@@ -352,29 +368,7 @@ def _dry_run_native(
                 "cannot run this platform-native engine (ADR 0036)",
                 detail={"engine": engine, "connection_type": connection.type},
             )
-        try:
-            table = run_target.materialize_path(
-                connection.type,
-                connection.config,
-                resolved,
-                secret_ref=connection.secret_ref,
-                secret_store=secret_store,
-            )
-        except BatchNotFoundError as exc:
-            raise DryRunNoDataError(
-                "no file has landed for the suite's batch target yet — dry-run needs live data",
-                detail={"connection_type": connection.type},
-            ) from exc
-        except DataQError:
-            raise
-        except Exception as exc:
-            log.warning(
-                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-            )
-            raise DryRunFailedError(
-                "dry run could not list the datasource store",
-                detail={"reason": safe_failure_reason(exc)},
-            ) from exc
+        table = _materialize_dry_run_target(connection, resolved, secret_store)
 
         try:
             check_outcome = cast(
@@ -435,29 +429,7 @@ def _dry_run_schema_drift(
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": SCHEMA_DRIFT}) from exc
     resolved = run_target.resolve_target(connection.type, target)
-    try:
-        table = run_target.materialize_path(
-            connection.type,
-            connection.config,
-            resolved,
-            secret_ref=connection.secret_ref,
-            secret_store=secret_store,
-        )
-    except BatchNotFoundError as exc:
-        raise DryRunNoDataError(
-            "no file has landed for the suite's batch target yet — dry-run needs live data",
-            detail={"connection_type": connection.type},
-        ) from exc
-    except DataQError:
-        raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
-    except Exception as exc:
-        log.warning(
-            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-        )
-        raise DryRunFailedError(
-            "dry run could not list the datasource store",
-            detail={"reason": safe_failure_reason(exc)},
-        ) from exc
+    table = _materialize_dry_run_target(connection, resolved, secret_store)
     try:
         columns = schema_drift_service.introspect_columns(
             connection,
@@ -508,29 +480,7 @@ def _dry_run_pii_drift(
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": PII_DRIFT}) from exc
     resolved = run_target.resolve_target(connection.type, target)
-    try:
-        table = run_target.materialize_path(
-            connection.type,
-            connection.config,
-            resolved,
-            secret_ref=connection.secret_ref,
-            secret_store=secret_store,
-        )
-    except BatchNotFoundError as exc:
-        raise DryRunNoDataError(
-            "no file has landed for the suite's batch target yet — dry-run needs live data",
-            detail={"connection_type": connection.type},
-        ) from exc
-    except DataQError:
-        raise
-    except Exception as exc:
-        log.warning(
-            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-        )
-        raise DryRunFailedError(
-            "dry run could not list the datasource store",
-            detail={"reason": safe_failure_reason(exc)},
-        ) from exc
+    table = _materialize_dry_run_target(connection, resolved, secret_store)
     try:
         result = pii_drift_service.profile_target(
             connection,
