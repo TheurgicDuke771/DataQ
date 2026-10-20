@@ -294,13 +294,14 @@ def test_the_webhook_destination_is_shown_without_userinfo_or_query(
 ) -> None:
     """A signed ingest URL carries a credential in its query or userinfo; this
     response is meant for auditors."""
+    user, token, sig = (uuid.uuid4().hex for _ in range(3))
     monkeypatch.setenv("TAMPER_ANCHOR", "webhook")
     monkeypatch.setenv(
-        "TAMPER_ANCHOR_WEBHOOK_URL", "https://ingest-user:tok3n@sink.example:8443/in?sig=abc123"
+        "TAMPER_ANCHOR_WEBHOOK_URL", f"https://{user}:{token}@sink.example:8443/in?sig={sig}"
     )
     monkeypatch.setenv("TAMPER_ANCHOR_WEBHOOK_SECRET", "s")
     get_settings.cache_clear()
     detail = _transfer(client, "tamper_anchor")["detail"]
     assert _names(detail, "https://sink.example:8443/in")
-    for leaked in ("tok3n", "ingest-user", "sig=", "abc123"):
+    for leaked in (user, token, sig, "sig="):
         assert leaked not in detail, leaked
