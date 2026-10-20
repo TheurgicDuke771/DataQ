@@ -8373,6 +8373,11 @@ erDiagram
         jsonb config "per-baseline thresholds + baseline shape; absent row = built-in defaults"
         uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
     }
+    telemetry_settings {
+        int id PK "always 1 - singleton usage-telemetry opt-in (ADR 0050)"
+        bool enabled "default false - absent row = off"
+        uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
+    }
     seasonal_periods {
         uuid id PK
         string name "unique case-insensitively (lower(name) index)"
