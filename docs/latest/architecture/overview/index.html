@@ -3116,6 +3116,16 @@ flowchart LR
         jsonb config "per-baseline thresholds + baseline shape; absent row = built-in defaults"
         uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
     }
+    seasonal_periods {
+        uuid id PK
+        string name "unique case-insensitively (lower(name) index)"
+        string kind "recurring (month-and-day range every year, may wrap the year end) / dated"
+        smallint start_month "recurring only, with start_day / end_month / end_day"
+        date start_date "dated only, with end_date &gt;= start_date"
+        string series "dated only - entries sharing one are occurrences of one period (ADR 0048)"
+        uuid created_by FK "SET NULL on erasure"
+        uuid updated_by FK "SET NULL on erasure"
+    }
     llm_settings {
         int id PK "always 1 - singleton provider config (ADR 0042)"
         string provider "anthropic / openai_compatible"
