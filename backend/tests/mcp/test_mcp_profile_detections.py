@@ -59,6 +59,22 @@ def test_an_explicit_location_feeds_nothing(db_session: Any, monkeypatch: Any) -
     assert seen["asset"] is None
 
 
+def test_suggest_column_policy_is_a_full_profile_of_the_suites_asset(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    asset = _attach_asset(db_session, suite)
+    seen = _capture(monkeypatch)
+    monkeypatch.setattr(profile_service, "list_columns", lambda *a, **k: ["revenue"])
+    _as(monkeypatch, db_session, user)
+
+    server.suggest_column_policy(str(suite.id))
+
+    assert seen["asset"] is not None and seen["asset"].id == asset.id
+    assert seen["full_profile"] is True
+
+
 # ── get_asset reports the detections, and when it last looked ───────────────────────────────
 
 
@@ -84,12 +100,13 @@ def test_get_asset_lists_detected_classifications(db_session: Any, monkeypatch: 
             SimpleNamespace(column="Contact", top_values=emails),
             SimpleNamespace(column="notes", top_values=emails),
         ],
+        full_profile=True,
     )
     set_dismissed(db_session, asset, "notes", dismissed=True, actor_id=user.id)
 
     out = server.get_asset(str(asset.id))
     entries = {e["column"]: e for e in out["detected_classifications"]}
-    assert entries["Contact"]["detector"] == "email" and entries["Contact"]["dismissed"] is False
-    assert entries["notes"]["dismissed"] is True and entries["notes"]["dismissed_at"]
+    assert entries["Contact"]["detector"] == "email" and entries["Contact"]["effect"] == "masks"
+    assert entries["notes"]["effect"] == "dismissed" and entries["notes"]["dismissed_at"]
     assert isinstance(entries["Contact"]["first_detected_at"], str)
     assert out["detected_classifications_refreshed_at"] is not None

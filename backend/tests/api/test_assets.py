@@ -980,7 +980,14 @@ def _detect(db_session: Any, asset_id: Any, column: str = "Contact") -> None:
     emails = [{"value": f"u{i}@example.com", "count": 1} for i in range(10)]
     asset = db_session.get(Asset, asset_id)
     record_profile_detections(
-        db_session, asset, [SimpleNamespace(column=column, top_values=emails)]
+        db_session, asset, [SimpleNamespace(column=column, top_values=emails)], full_profile=True
+    )
+
+
+def _dismiss(client: TestClient, asset_id: Any, column: str, dismissed: bool) -> Any:
+    return client.patch(
+        f"/api/v1/assets/{asset_id}/classifications",
+        json={"column": column, "dismissed": dismissed},
     )
 
 
@@ -996,18 +1003,33 @@ def test_detail_lists_detected_classifications_and_when_it_last_looked(
     body = client.get(f"/api/v1/assets/{world['asset_x']}").json()
     (entry,) = body["detected_classifications"]
     assert entry["column"] == "Contact" and entry["detector"] == "email"
+    assert entry["effect"] == "masks"
     assert entry["dismissed"] is False and entry["dismissed_at"] is None
     assert entry["first_detected_at"] == entry["last_detected_at"]
     assert body["detected_classifications_refreshed_at"] is not None
 
 
+def test_a_detection_under_the_columns_own_warehouse_tag_says_the_tag_decides(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """`effective_column_tags` never lets a detection overwrite an own verdict, so the row must
+    not read "masked" when a `public` tag is in fact showing the column."""
+    from backend.app.db.models import Asset
+
+    db = client_db(client)
+    asset = db.get(Asset, world["asset_x"])
+    asset.column_tags = {"contact": "public"}
+    db.commit()
+    _detect(db, world["asset_x"])
+    _as(world["owner"])
+    (entry,) = client.get(f"/api/v1/assets/{world['asset_x']}").json()["detected_classifications"]
+    assert entry["effect"] == "overridden_by_tag" and entry["dismissed"] is False
+
+
 def test_dismissing_a_detection_is_admin_only(client: TestClient, world: dict[str, Any]) -> None:
     _detect(client_db(client), world["asset_x"])
     _as(world["owner"])  # the SUITE owner, not a workspace admin: dismissal loosens masking
-    resp = client.patch(
-        f"/api/v1/assets/{world['asset_x']}/classifications/contact", json={"dismissed": True}
-    )
-    assert resp.status_code == 403
+    assert _dismiss(client, world["asset_x"], "contact", True).status_code == 403
 
 
 def test_admin_dismisses_and_restores_a_detection_and_the_floor_follows(
@@ -1026,20 +1048,18 @@ def test_admin_dismisses_and_restores_a_detection_and_the_floor_follows(
     asset = db.get(Asset, world["asset_x"])
     assert effective_column_tags(db, asset) == {"contact": DETECTED}, "precondition: masked"
 
-    resp = client.patch(
-        f"/api/v1/assets/{world['asset_x']}/classifications/CONTACT", json={"dismissed": True}
-    )
+    resp = _dismiss(client, world["asset_x"], "CONTACT", True)
     assert resp.status_code == 200
     body = resp.json()
     assert body["column"] == "Contact" and body["dismissed"] is True and body["dismissed_at"]
+    assert body["effect"] == "dismissed"
     assert effective_column_tags(db, asset) is None, "the rung is gone from the floor"
     detail = client.get(f"/api/v1/assets/{world['asset_x']}").json()
     assert detail["detected_classifications"][0]["dismissed"] is True, "still listed, as overruled"
 
-    restored = client.patch(
-        f"/api/v1/assets/{world['asset_x']}/classifications/contact", json={"dismissed": False}
-    ).json()
+    restored = _dismiss(client, world["asset_x"], "contact", False).json()
     assert restored["dismissed"] is False and restored["dismissed_at"] is None
+    assert restored["effect"] == "masks"
     assert effective_column_tags(db, asset) == {"contact": DETECTED}
 
     events = db.scalars(
@@ -1058,12 +1078,20 @@ def test_dismissing_an_unknown_column_or_asset_is_404(
     admin = _user(client_db(client), _ADMIN_EMAIL)
     make_workspace_admin(_ADMIN_EMAIL)
     _as(admin)
-    no_column = client.patch(
-        f"/api/v1/assets/{world['asset_x']}/classifications/nothing", json={"dismissed": True}
-    )
+    no_column = _dismiss(client, world["asset_x"], "nothing", True)
     assert no_column.status_code == 404
     assert no_column.json()["error"]["code"] == "classification_not_found"
-    no_asset = client.patch(
-        f"/api/v1/assets/{uuid.uuid4()}/classifications/contact", json={"dismissed": True}
-    )
-    assert no_asset.status_code == 404
+    assert _dismiss(client, uuid.uuid4(), "contact", True).status_code == 404
+
+
+def test_a_column_name_with_a_slash_can_be_dismissed(
+    client: TestClient, world: dict[str, Any], make_workspace_admin: Any
+) -> None:
+    """File headers and quoted identifiers may hold `/`; the column travels in the body."""
+    db = client_db(client)
+    _detect(db, world["asset_x"], column="contact/email")
+    admin = _user(db, _ADMIN_EMAIL)
+    make_workspace_admin(_ADMIN_EMAIL)
+    _as(admin)
+    resp = _dismiss(client, world["asset_x"], "contact/email", True)
+    assert resp.status_code == 200 and resp.json()["effect"] == "dismissed"

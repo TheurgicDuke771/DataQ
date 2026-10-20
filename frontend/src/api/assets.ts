@@ -200,10 +200,16 @@ export interface AssetDetail {
   detected_classifications_refreshed_at?: string | null;
 }
 
-/** One profiler detection: masked as sensitive everywhere unless dismissed by a workspace admin. */
+/**
+ * One profiler detection. `effect` is what it does now: `masks` (sensitive on every read path,
+ * unless a suite names the column as its identifier column), `overridden_by_tag` (the column's
+ * own warehouse tag decides instead), `dismissed` (a workspace admin cleared it).
+ */
 export interface DetectedClassification {
   column: string;
-  detector: 'email' | 'encoded';
+  /** `email` or `encoded` today — a label, not a closed set. */
+  detector: string;
+  effect: 'masks' | 'overridden_by_tag' | 'dismissed';
   first_detected_at: string;
   last_detected_at: string;
   dismissed: boolean;
@@ -301,9 +307,10 @@ export async function setAssetClassificationDismissed(
   column: string,
   dismissed: boolean,
 ): Promise<DetectedClassification> {
-  const { data } = await api.patch<DetectedClassification>(
-    `/assets/${assetId}/classifications/${encodeURIComponent(column)}`,
-    { dismissed },
-  );
+  // The column travels in the body: a name may hold `/`, which a path segment cannot carry.
+  const { data } = await api.patch<DetectedClassification>(`/assets/${assetId}/classifications`, {
+    column,
+    dismissed,
+  });
   return data;
 }

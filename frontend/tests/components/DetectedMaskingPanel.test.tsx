@@ -11,7 +11,8 @@ const mockSet = vi.mocked(setAssetClassificationDismissed);
 
 const masked = {
   column: 'contact',
-  detector: 'email' as const,
+  detector: 'email',
+  effect: 'masks' as const,
   first_detected_at: '2026-10-19T08:00:00Z',
   last_detected_at: '2026-10-20T08:00:00Z',
   dismissed: false,
@@ -20,9 +21,16 @@ const masked = {
 const dismissed = {
   ...masked,
   column: 'payload',
-  detector: 'encoded' as const,
+  detector: 'encoded',
+  effect: 'dismissed' as const,
   dismissed: true,
   dismissed_at: '2026-10-20T09:00:00Z',
+};
+const overridden = {
+  ...masked,
+  column: 'ssn',
+  detector: 'phone',
+  effect: 'overridden_by_tag' as const,
 };
 
 const renderPanel = (props: Partial<Parameters<typeof DetectedMaskingPanel>[0]> = {}) =>
@@ -30,7 +38,7 @@ const renderPanel = (props: Partial<Parameters<typeof DetectedMaskingPanel>[0]> 
     <AntApp>
       <DetectedMaskingPanel
         assetId="a1"
-        entries={[masked, dismissed]}
+        entries={[masked, dismissed, overridden]}
         refreshedAt="2026-10-20T08:00:00Z"
         canDismiss={false}
         onChanged={() => {}}
@@ -61,7 +69,7 @@ describe('DetectedMaskingPanel (ADR 0049)', () => {
   it('distinguishes "looked and found none" from "never looked"', () => {
     renderPanel({ entries: [] });
     expect(screen.getByTestId('detected-masking-none')).toBeInTheDocument();
-    expect(screen.getByText(/Last profiled/)).toBeInTheDocument();
+    expect(screen.getByText(/Last full profile/)).toBeInTheDocument();
   });
 
   it('names each column, what it looked like, and whether it still masks', () => {
@@ -71,6 +79,12 @@ describe('DetectedMaskingPanel (ADR 0049)', () => {
     expect(screen.getByText('email addresses')).toBeInTheDocument();
     expect(screen.getByTestId('detection-contact-masked')).toHaveTextContent('masked');
     expect(screen.getByTestId('detection-payload-dismissed')).toHaveTextContent('dismissed');
+    // The tag never overclaims: a column with its own warehouse tag is not "masked" by this.
+    expect(screen.getByTestId('detection-ssn-overridden')).toHaveTextContent(
+      'warehouse tag decides',
+    );
+    // An unknown detector renders as its label rather than breaking the row.
+    expect(screen.getByText('phone')).toBeInTheDocument();
     // The caveat an empty-looking table must carry.
     expect(screen.getByText(/A column not listed is not thereby clean/)).toBeInTheDocument();
   });
@@ -83,14 +97,20 @@ describe('DetectedMaskingPanel (ADR 0049)', () => {
 
   it('lets an admin dismiss after confirming, and restore directly', async () => {
     const onChanged = vi.fn();
-    mockSet.mockResolvedValue({ ...masked, dismissed: true, dismissed_at: '2026-10-20T10:00:00Z' });
+    mockSet.mockResolvedValue({
+      ...masked,
+      effect: 'dismissed',
+      dismissed: true,
+      dismissed_at: '2026-10-20T10:00:00Z',
+    });
     renderPanel({ canDismiss: true, onChanged });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    // Two rows still mask (`contact`, and `ssn` under its tag), so two triggers: take the first.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]);
     expect(mockSet).not.toHaveBeenCalled(); // behind a confirmation: it loosens masking
     // Popconfirm — wait for the confirming "Dismiss" to render; the trigger is the first match.
     await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'Dismiss' }).length).toBeGreaterThan(1),
+      expect(screen.getAllByRole('button', { name: 'Dismiss' }).length).toBeGreaterThan(2),
     );
     const confirms = screen.getAllByRole('button', { name: 'Dismiss' });
     await userEvent.click(confirms[confirms.length - 1]);

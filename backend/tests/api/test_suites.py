@@ -3337,6 +3337,22 @@ def test_profiling_the_suites_own_target_hands_the_profiler_its_asset(
     assert seen["asset"] is not None and seen["asset"].id == asset.id
 
 
+def test_suggesting_a_policy_on_the_suites_own_target_is_a_full_profile_for_the_source(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second door to the same profile: it must feed the source like the worker's
+    auto-classify does, and as a FULL profile (every column is listed)."""
+    seen = _capture_profile(monkeypatch)
+    monkeypatch.setattr(profile_service, "list_columns", lambda *a, **k: ["amount"])
+    sid, asset = _suite_with_asset(client, db_session)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/column-policy/suggest", json={"table": "orders", "schema": "sales"}
+    )
+    assert resp.status_code == 200
+    assert seen["asset"] is not None and seen["asset"].id == asset.id
+    assert seen["full_profile"] is True
+
+
 def test_profiling_another_table_hands_the_profiler_no_asset(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

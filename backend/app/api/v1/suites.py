@@ -1108,5 +1108,20 @@ def suggest_column_policy(
         file_format=payload.file_format,
         top_n=payload.top_n,
         secret_store=secret_store,
+        # Every column of the suite's own target: a full profile for the classification source
+        # (ADR 0049) — the same door the worker's auto-classify uses, so the two agree.
+        asset=(
+            run_service.resolve_asset(db, suite)
+            if live_probe.probe_is_own_target(
+                suite,
+                connection,
+                table=payload.table,
+                schema=payload.schema_,
+                catalog=payload.catalog,
+                path=payload.path,
+                namespace=payload.namespace,
+            )
+            else None
+        ),
     )
     return ColumnPolicyRead.of(policy)

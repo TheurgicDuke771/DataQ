@@ -246,6 +246,10 @@ class DetectedClassification:
 
     column: str
     detector: str
+    #: What the detection does right now, derived from the same precedence the redaction map
+    #: applies: ``masks`` (active, no own warehouse tag on the column), ``overridden_by_tag``
+    #: (the column's own warehouse verdict decides instead, either way), ``dismissed``.
+    effect: str
     first_detected_at: datetime
     last_detected_at: datetime
     dismissed: bool
@@ -609,10 +613,24 @@ def _inherited_classifications(
     return entries, truncated
 
 
-def _detected_classification(row: Any) -> DetectedClassification:
+def _detection_effect(row: Any, own_tags: Mapping[str, str] | None) -> str:
+    if row.dismissed_at is not None:
+        return "dismissed"
+    # `effective_column_tags` never lets a detection overwrite the column's own warehouse verdict
+    # (sensitive OR public), so the honest word for that row is "the tag decides".
+    tagged = {column_tags.fold_key(str(k)) for k in (own_tags or {})}
+    if column_tags.fold_key(row.column_name) in tagged:
+        return "overridden_by_tag"
+    return "masks"
+
+
+def _detected_classification(
+    row: Any, own_tags: Mapping[str, str] | None
+) -> DetectedClassification:
     return DetectedClassification(
         column=row.column_name,
         detector=row.detector,
+        effect=_detection_effect(row, own_tags),
         first_detected_at=row.first_detected_at,
         last_detected_at=row.last_detected_at,
         dismissed=row.dismissed_at is not None,
@@ -635,7 +653,7 @@ def _detected_classifications(
             error_type=type(exc).__name__,
         )
         return None
-    return [_detected_classification(row) for row in rows]
+    return [_detected_classification(row, asset.column_tags) for row in rows]
 
 
 def set_classification_dismissed(
@@ -651,7 +669,7 @@ def set_classification_dismissed(
     row = column_detections.set_dismissed(
         session, asset, column, dismissed=dismissed, actor_id=actor_id
     )
-    return _detected_classification(row)
+    return _detected_classification(row, asset.column_tags)
 
 
 def get_visible_asset(

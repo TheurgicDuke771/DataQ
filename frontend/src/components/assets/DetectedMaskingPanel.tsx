@@ -1,11 +1,11 @@
-import { Alert, Button, Card, Popconfirm, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import { type DetectedClassification, setAssetClassificationDismissed } from '../../api/assets';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { formatTimestamp } from '../results/resultsFormat';
 
-const DETECTOR_LABEL: Record<DetectedClassification['detector'], string> = {
+const DETECTOR_LABEL: Record<string, string> = {
   email: 'email addresses',
   encoded: 'encoded blobs',
 };
@@ -60,7 +60,7 @@ export function DetectedMaskingPanel({
     {
       title: 'Looked like',
       dataIndex: 'detector',
-      render: (value: DetectedClassification['detector']) => DETECTOR_LABEL[value],
+      render: (value: string) => DETECTOR_LABEL[value] ?? value,
     },
     {
       title: 'First seen',
@@ -75,16 +75,27 @@ export function DetectedMaskingPanel({
     {
       title: 'Masking',
       key: 'masking',
-      render: (_: unknown, row: DetectedClassification) =>
-        row.dismissed ? (
-          <Tag data-testid={`detection-${row.column}-dismissed`}>
-            dismissed {formatTimestamp(row.dismissed_at)}
-          </Tag>
-        ) : (
+      render: (_: unknown, row: DetectedClassification) => {
+        if (row.effect === 'dismissed') {
+          return (
+            <Tag data-testid={`detection-${row.column}-dismissed`}>
+              dismissed {formatTimestamp(row.dismissed_at)}
+            </Tag>
+          );
+        }
+        if (row.effect === 'overridden_by_tag') {
+          return (
+            <Tooltip title="This column carries its own warehouse tag, which decides instead; the detection changes nothing.">
+              <Tag data-testid={`detection-${row.column}-overridden`}>warehouse tag decides</Tag>
+            </Tooltip>
+          );
+        }
+        return (
           <Tag color="orange" data-testid={`detection-${row.column}-masked`}>
             masked
           </Tag>
-        ),
+        );
+      },
     },
     ...(canDismiss
       ? [
@@ -125,11 +136,11 @@ export function DetectedMaskingPanel({
         overrides a detection; so does a workspace admin dismissing it here. A column not listed is
         not thereby clean: only the values a profile saw were examined, and only for these two
         shapes.
-        {refreshedAt && <> Last profiled {formatTimestamp(refreshedAt)}.</>}
+        {refreshedAt && <> Last full profile {formatTimestamp(refreshedAt)}.</>}
       </Typography.Paragraph>
       {entries.length === 0 ? (
         <Typography.Text type="secondary" data-testid="detected-masking-none">
-          Nothing detected in the last profile.
+          Nothing detected in the last full profile.
         </Typography.Text>
       ) : (
         <Table
