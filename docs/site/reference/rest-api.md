@@ -67,7 +67,7 @@ in production — this page is the reference.)
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
-| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift): schemas → tables (`?catalog=&schema=&limit=`). |
+| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, BigQuery): schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates

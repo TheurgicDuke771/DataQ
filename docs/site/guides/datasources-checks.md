@@ -16,6 +16,7 @@
 | SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 | Amazon Athena (serverless SQL over S3 through the Glue catalog) | region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog | ✅ | ✅ |
 | Amazon Redshift (provisioned clusters and Serverless workgroups) | endpoint + port + database + user, password; TLS mode | ✅ | ✅ |
+| [Google BigQuery](#google-bigquery) | project + optional default dataset and location, service-account key file; a per-query byte cap (+ optional emulator endpoint) | ✅ | ✅ |
 
 ## Add a connection
 
@@ -115,7 +116,7 @@ Editing a field that decides *where* the credential is sent — Snowflake `accou
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
 `tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
-`s3_staging_dir`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
+`s3_staging_dir`, BigQuery `endpoint_url` / `auth_type`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
 `auth_type` / `tenant_id` / `client_id` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -463,6 +464,49 @@ speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in 
 - **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".
 
+### Google BigQuery
+
+Google's serverless warehouse, on the generic SQL base through the `sqlalchemy-bigquery`
+dialect over the `google-cloud-bigquery` client.
+
+- **Fields:** the **project ID** (where every query job runs and is billed), an optional
+  **default dataset** (where an unqualified run target resolves), an optional **location**
+  (`US`, `EU` or a region such as `us-central1`; blank lets BigQuery infer it from the data),
+  the **maximum bytes billed** per query, and the service account's **JSON key file**, pasted
+  whole, as the stored secret. A dataset is the schema, so a target is `dataset.table` and its
+  asset is `project.dataset.table`. An optional **endpoint URL** points the connection at an
+  emulator. Workload identity and other keyless auth are not supported yet.
+- **Every check is a billed query, and every query is capped.** BigQuery bills on-demand
+  queries by bytes processed. Each query DataQ runs (checks, monitors, custom SQL, profiling,
+  the anomaly baselines, the connection test) carries the connection's
+  `maximum_bytes_billed`, which defaults to **10 GiB**. A query that would bill more is refused
+  before it runs and is not charged; the run reports the cap rather than a permission error.
+  Raise it on the connection, or point the check at a partitioned or smaller table. BigQuery
+  bills at least 10 MiB per table a query reads, so the cap cannot be set lower than that. On
+  capacity (reservation) pricing you pay for slots rather than bytes, so the cap does not bound
+  that cost. Browsing, the inventory sync, the column list and schema drift use BigQuery's
+  free metadata API rather than `INFORMATION_SCHEMA` queries.
+- **Not read-only at the session — the IAM roles are the guarantee.** BigQuery has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give the service account only:
+  - `roles/bigquery.dataViewer` on the datasets DataQ checks (or the project), and
+  - `roles/bigquery.jobUser` on the project, which lets it run query jobs.
+
+  Neither role can create, change or delete a table.
+- **Names are case-sensitive.** Dataset and table names are resolved exactly as typed, so
+  `Sales.Orders` and `sales.orders` are different tables. A name containing `$` is refused when
+  you save, because `orders$20260101` addresses a partition, not a table. Names must be plain
+  identifiers (letters, digits and underscores, not starting with a digit).
+- **The profiler** reports min/max, distinct count and top values as unavailable for
+  `STRUCT`/`RECORD`, `ARRAY` (repeated), `GEOGRAPHY`, `JSON` and `RANGE` columns.
+- **Median** is exact (BigQuery's `PERCENTILE_CONT`), so the aggregate monitor offers it.
+- **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".
+- **Verification.** This connection has been exercised end to end against the
+  `goccy/bigquery-emulator`, not against Google's service: no BigQuery test project exists
+  yet. The emulator does not enforce `maximum_bytes_billed` or IAM, so those two guarantees are
+  untested against a real project.
+
 ### SQL Server / Azure SQL / Fabric (T-SQL)
 
 One connection type (`mssql`) for **anything that speaks SQL Server's TDS protocol** — SQL
@@ -670,7 +714,7 @@ set") rather than filed under a dimension — otherwise "Not covered" would be w
 ### Automatic coverage: watch every table without writing checks
 
 Switch on **Automatic coverage** on a Snowflake, Unity Catalog or SQL-database connection
-(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift) and every table its inventory
+(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery) and every table its inventory
 lists gets watched, with no check written by hand. Only a workspace admin can switch it on, like
 any connection change.
 
@@ -765,7 +809,7 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 - **Cost.** Each covered table runs its checks once a day, at a time spread across the day by
   table. The row-count and freshness checks are cheap aggregates, but the **column-profile check
   reads the whole table**: it counts nulls and distinct values for up to 100 columns. On an engine
-  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  that bills by data scanned, Amazon Athena and BigQuery especially, that is a full scan of every covered table
   every day, so estimate it before switching coverage on, and exclude large tables you don't need
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
@@ -1014,7 +1058,7 @@ timestamp stored as text against a Python `strftime` format, and *Column values 
 JSON* parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but **not on
 Snowflake or the generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
-Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+Redshift, BigQuery), where the editor hides them and the API rejects them — use a custom-SQL check
 (or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.
 
 ### Which expectation types are available
@@ -1037,7 +1081,7 @@ shape properly, with two-sided bands and a trend. **Whole-table set comparisons*
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift / BigQuery — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -1223,7 +1267,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views; BigQuery reads the table's schema from its metadata API), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
@@ -1516,6 +1560,7 @@ the type your warehouse/catalog shows you:
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
 | Amazon Athena | SQL (bare type name) | `DECIMAL`, `TIMESTAMP`, `VARCHAR`, `BIGINT`, `BOOLEAN` |
 | Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
+| Google BigQuery | SQL (BigQuery type name) | `INTEGER` or `INT64`, `NUMERIC` (not `DECIMAL`), `STRING` (not `VARCHAR`), `TIMESTAMP`, `DATETIME`, `DATE`, `BOOLEAN` or `BOOL` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 / GCS (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |

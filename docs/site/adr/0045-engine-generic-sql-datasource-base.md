@@ -204,3 +204,40 @@ view is listed as a view. Every SQL-batch expectation type, custom SQL, the moni
 profiler over a table and a late-binding view, schema drift, comparison reads, inventory,
 browsing and an end-to-end persisted run were **executed** against a Redshift Serverless
 workgroup as a user granted only `USAGE` and `SELECT` on one schema.
+
+## Amendment — Google BigQuery (2026-10-20)
+
+BigQuery is the seventh engine and, like Athena, a service with no server session. The dialect
+is `bigquery` from `sqlalchemy-bigquery` (MIT) over `google-cloud-bigquery` (Apache-2.0), which
+GX's BigQuery datasource uses. The Storage Read API extra (`google-cloud-bigquery-storage`) is
+not installed: results page over REST. Four hooks were added:
+
+- **`url_host` / `url_port`** (config hooks). The dialect reads the *project* from the URL's
+  host and the default dataset from its database, so the BigQuery config returns the project as
+  the host and no port. `host` itself is derived (`bigquery.googleapis.com`, or an emulator's
+  endpoint host) and a configured host that disagrees is refused, as on Athena.
+- **The credential is a client, not a URL part.** `auth_connect_args` builds one
+  `bigquery.Client` from the service-account key file (validated like the GCS connection's)
+  and hands it to the dialect as a connect arg (`user_supplied_client`). The client's default
+  job config carries the connection's `maximum_bytes_billed` (default 10 GiB) and the default
+  dataset, so every query DataQ runs is capped. Its query retries are bounded to two minutes
+  (the library's defaults are 10 and 40). A query the cap refuses is explained
+  (`explain_failure`) rather than reported as a permission failure.
+- **`SqlCatalog.api`** (a spec field). The catalog is the client's metadata API (list datasets,
+  list tables, the table's schema), not SQL views: those calls are free, while
+  `INFORMATION_SCHEMA` is a billed, region-scoped query. Browsing, the inventory sync and schema
+  drift all read it.
+- **`namespace_override`** (a spec hook). OpenLineage's BigQuery namespace is the bare
+  `bigquery`; an emulator endpoint keeps its own (`bigquery://host:port`).
+
+§4 does not hold, as on Athena: BigQuery has no read-only session, so the guarantee is a service
+account holding only `roles/bigquery.dataViewer` and `roles/bigquery.jobUser`. Dataset and table
+names are case-sensitive and resolved exactly as spelled, and `$` is refused in a name because it
+addresses a partition. The median is exact (a windowed `PERCENTILE_CONT`).
+
+Every SQL-batch expectation type, custom SQL, the monitors, the profiler, schema drift,
+comparison reads, inventory, browsing and an end-to-end persisted run were **executed** against
+`goccy/bigquery-emulator`, with the service-account JWT flow running against a local token
+endpoint. Real BigQuery is unverified: no test project exists. The emulator enforces neither IAM
+nor `maximum_bytes_billed`, and it refuses numeric query parameters sent as JSON numbers, which
+BigQuery accepts; the lane sends them as the strings the API documents.

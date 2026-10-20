@@ -6,24 +6,24 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — |
-| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | BigQueryᵛ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ (dataset → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -42,7 +42,7 @@ exact wherever it is offered; MySQL/MariaDB, Trino and Athena have only an appro
 percentile, so it is refused there at author time. Verified by executed runs, author → worker
 → `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
-Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
+Trino, the BigQuery emulator, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
 
 ⁱ **PII drift.** Every run profiles every column of the target through the column profiler
 (one login: the column listing plus the batched top-values query), keeps what looks like email
@@ -138,6 +138,16 @@ table and a late-binding view, schema drift, comparison reads, inventory, browsi
 end-to-end persisted run. Sessions are read-only at the server (a write by the reader was
 refused); a materialized view is listed as a view.
 
+ᵛ **Google BigQuery** — one project per connection, a dataset as the schema. Every query
+DataQ runs carries the connection's `maximum_bytes_billed` (default 10 GiB), so a query that
+would bill more is refused uncharged; browsing, the inventory, column lists and schema drift
+use the free metadata API. There is **no read-only session** — the service account's IAM
+roles (`bigquery.dataViewer` + `bigquery.jobUser`) are the guarantee. Every ticked row was
+**executed** against `goccy/bigquery-emulator` (an opt-in integration lane), including a
+persisted end-to-end run; real BigQuery is unverified (no test project exists), and the
+emulator enforces neither the byte cap nor IAM. See
+[Datasources & checks](../guides/datasources-checks.md#google-bigquery).
+
 ᵗ **Trino** — any cluster (incl. Starburst), one catalog per connection, and every store that
 catalog federates; everything runs by pushdown on the cluster. The same battery was
 **executed** against Trino 483 (the `memory` connector, and a mixed-case PostgreSQL table
@@ -174,7 +184,7 @@ endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino, SQL Server, Athena, Redshift;
+MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -193,7 +203,7 @@ stopped sending files, which a timestamp inside the data cannot see. Flat-file s
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
 refused); Iceberg suites target a `namespace.table`. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, the generic SQL
-engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift), flat files and Iceberg.
+engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery), flat files and Iceberg.
 
 ## Assets & lineage × datasources
 
@@ -247,6 +257,7 @@ five mechanisms:
 | SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
 | Amazon Athena | `awsathena://athena.{region}.amazonaws.com` / `catalog.database.table` | ✅ (+ inventory sync) | ✅ where dbt-athena emits `catalog.database.table` names | ✅ | ✅ | —⁴ |
 | Amazon Redshift | `redshift://{cluster or workgroup}.{region}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-redshift naming) | ✅ | ✅ | —⁴ |
+| Google BigQuery | `bigquery` (an emulator endpoint: `bigquery://{host:port}`) / `project.dataset.table` | ✅ (+ inventory sync) | ✅ (dbt-bigquery naming) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -254,7 +265,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena and Redshift keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift and BigQuery (whose job-history lineage DataQ does not read) keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
