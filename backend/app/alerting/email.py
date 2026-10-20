@@ -17,6 +17,7 @@ from backend.app.alerting.base import (
     WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import route_for
+from backend.app.core import usage_telemetry
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
 from backend.app.services import channel_service, notification_service
@@ -392,6 +393,9 @@ class EmailPublisher:
             html=render_html_body(report),
         )
         self._send(message, password=password)
+        usage_telemetry.emit(
+            usage_telemetry.UsageEvent.ALERT_DELIVERED, session=session, channel="email"
+        )
         log.info(
             "email_alert_sent",
             run_id=str(report.run_id),

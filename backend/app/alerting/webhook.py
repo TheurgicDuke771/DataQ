@@ -24,6 +24,7 @@ from backend.app.alerting.base import (
     WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import route_for
+from backend.app.core import usage_telemetry
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.services import channel_service, notification_service
@@ -231,6 +232,9 @@ class WebhookPublisher:
                 log.exception("webhook_destination_send_failed", run_id=str(report.run_id))
                 continue
             delivered += 1
+            usage_telemetry.emit(
+                usage_telemetry.UsageEvent.ALERT_DELIVERED, session=session, channel="webhook"
+            )
             log.info(
                 "webhook_alert_sent",
                 run_id=str(report.run_id),
