@@ -349,6 +349,10 @@ Confirm the change is *ready and green* before you push it to prod:
 - [ ] **Docs are up to date** for what's shipping — `CLAUDE.md` §13 headline + `docs/progress.md`
   ticked; an **ADR** for any significant decision; the **env-var reference** + this deploy
   guide for any new config; and **user docs** for any new user-facing feature.
+- [ ] **For a release tag: the changelog fragments are assembled** —
+  `python scripts/changelog.py assemble --version X.Y.Z --date YYYY-MM-DD` merged to `main`
+  before the tag is pushed (the release checklist in `docs/site/operate/runbook-faq.md`), so
+  `changelog.d/` is empty at the tag and the docs build publishes the dated section.
 - [ ] **DB migrations are safe** — additive/backward-compatible (nullable `ADD COLUMN` / new
   table; no `DROP`/rename/`NOT NULL`-without-default in the same PR as the code that needs
   it), `upgrade` **and** `downgrade` tested locally. The workflow runs `alembic upgrade head`

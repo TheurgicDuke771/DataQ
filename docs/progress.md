@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **86** open repo-wide (2026-10-14, live re-count), in the eight v1.3 weekly milestones, apart from #2440 in `v1.3 Backlog`; `v1.2 Backlog` is closed. |
-| **Open PRs** | **0 open** (2026-10-14), apart from the one carrying this update. |
+| **Open issues** | **85** open repo-wide (2026-10-19, live re-count), in the eight v1.3 weekly milestones, apart from #2440 in `v1.3 Backlog`; `v1.2 Backlog` is closed. |
+| **Open PRs** | **3 feature PRs open** (2026-10-19: #2447 seasonal_periods migration, #2459 backup/restore + upgrade gate, #2461 notices + SBOM — review threads being resolved) plus 12 Dependabot bumps, apart from the one carrying this update. |
 
 ---
 
@@ -74,7 +74,7 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 | ⬜ | [#2388](https://github.com/TheurgicDuke771/DataQ/issues/2388) Portable install artifact: a Helm chart (ADR 0013 Phase 2) |
 | ⬜ | [#2253](https://github.com/TheurgicDuke771/DataQ/issues/2253) docs(marketing): a walkthrough of the demo profile on the marketing page (video or annotated screenshots) |
 | ⬜ | [#1664](https://github.com/TheurgicDuke771/DataQ/issues/1664) docs(positioning): adopt the 'Data Quality Control Plane' framing on the marketing page + docs site |
-| ⬜ | [#2395](https://github.com/TheurgicDuke771/DataQ/issues/2395) Changelog fragments: one file per PR, assembled at release |
+| ✅ | [#2395](https://github.com/TheurgicDuke771/DataQ/issues/2395) Changelog fragments: one file per PR, assembled at release — [PR #2460](https://github.com/TheurgicDuke771/DataQ/pull/2460): `changelog.d/<n>.<section>.md`, rendered into the docs page by a mkdocs hook, assembled by `scripts/changelog.py` at release, CI requires a fragment (or the `no-changelog` label) on user-facing PRs; CONTRIBUTING rule 43 |
 | 🟡 | [#2440](https://github.com/TheurgicDuke771/DataQ/issues/2440) feat(monitors): per-period metrics with yearly seasonality and seasonal periods on the anomaly monitor — **unplanned, net-new, taken on the maintainer's direction 2026-10-13** in a cycle scoped as no net-new features. ADR 0048 ([#2441](https://github.com/TheurgicDuke771/DataQ/pull/2441)). Shipped: per-period metrics ([#2442](https://github.com/TheurgicDuke771/DataQ/pull/2442)), history seeded from the table ([#2444](https://github.com/TheurgicDuke771/DataQ/pull/2444)), yearly seasonality in scoring for the per-period metrics ([#2445](https://github.com/TheurgicDuke771/DataQ/pull/2445)). Remaining: declared seasonal calendar, detected periods and their reads, calendar and trend UI, yearly on the whole-table metrics and the automatic-coverage switch. Filed: [#2443](https://github.com/TheurgicDuke771/DataQ/issues/2443) |
 
 ### v1.3 Week 3 — datasources, deploy targets & auth (due 2026-10-25)

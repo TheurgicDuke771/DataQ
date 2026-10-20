@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Input, Modal, Typography } from 'antd';
+import { Alert, Button, Flex, Input, Typography } from 'antd';
 import { useState } from 'react';
 
 import {
@@ -11,6 +11,7 @@ import { downloadJson, toFilenameStem } from '../../utils/download';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 import { Filter } from '../../components/shared/Filter';
 import { Section } from './parts';
+import { Modal } from '../../components/shared/Modal';
 
 type Receipt =
   { kind: 'export'; data: DataSubjectExport } | { kind: 'erase'; data: DataSubjectErasure };

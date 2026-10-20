@@ -1,17 +1,4 @@
-import {
-  App,
-  Alert,
-  Button,
-  Card,
-  Flex,
-  Input,
-  Modal,
-  Select,
-  Spin,
-  Switch,
-  Tag,
-  Typography,
-} from 'antd';
+import { App, Alert, Button, Card, Flex, Input, Select, Spin, Switch, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -35,6 +22,7 @@ import { useIsWorkspaceAdmin } from '../../auth/useMe';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
+import { Modal } from '../shared/Modal';
 
 const ALERT_ON_OPTIONS: { value: AlertOn; label: string }[] = [
   { value: 'fail', label: 'On fail / critical' },

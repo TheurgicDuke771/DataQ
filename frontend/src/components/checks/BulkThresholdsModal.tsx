@@ -1,7 +1,8 @@
-import { Alert, Flex, InputNumber, Modal, Select, Typography } from 'antd';
+import { Alert, Flex, InputNumber, Select, Typography } from 'antd';
 import { useState } from 'react';
 
 import type { BulkThresholds } from '../../api/suites';
+import { Modal } from '../shared/Modal';
 
 /**
  * Set the same severity thresholds on every selected check. Each tier is left as it is, set to

@@ -79,6 +79,7 @@ import { useRunTrigger } from '../hooks/useRunTrigger';
 import { errorMessage } from '../utils/errors';
 import { PageError } from '../components/feedback/PageError';
 import { RowLink } from '../components/shared/RowLink';
+import { useAppModal } from '../hooks/useAppModal';
 
 /**
  * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
@@ -636,7 +637,8 @@ function ChecksList({
   /** The suite's "Suggested rules" queue changed from inside the Suggest-checks drawer. */
   onQueueChanged?: () => void;
 }) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const modal = useAppModal();
   const confirmDelete = useConfirmDelete();
   const [suggestOpen, setSuggestOpen] = useState(false);
   // Ticks so isSnoozed() re-evaluates while the page stays open: without it an

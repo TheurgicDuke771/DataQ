@@ -86,6 +86,12 @@ repos:
         language: system
         files: ^frontend/src/.*\.tsx?$
         exclude: \.(test|spec)\.tsx?$
+      - id: changelog-fragments
+        name: Changelog fragments are well-formed (changelog.d/<number>.<section>.md)
+        entry: python scripts/changelog.py lint
+        language: system
+        pass_filenames: false
+        files: ^(changelog\.d/|scripts/changelog\.py|docs/site/reference/changelog\.md)
 
   # ── Secret scanning ─────────────────────────────────────────────────────────
   - repo: https://github.com/betterleaks/betterleaks
