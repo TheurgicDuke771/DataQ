@@ -187,3 +187,97 @@ def test_a_linked_channel_counts_as_an_alert_transfer(client: TestClient, db_ses
         if t["name"] == "alert_delivery"
     )
     assert alert["enabled"] is True
+
+
+# ───────────────── the two vectors #2397 found missing ─────────────────
+
+
+def _transfer(client: TestClient, name: str) -> dict[str, Any]:
+    transfers = client.get("/api/v1/admin/deployment").json()["external_transfers"]
+    return next(t for t in transfers if t["name"] == name)
+
+
+def test_an_unconfigured_tamper_anchor_is_listed_as_off(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("TAMPER_ANCHOR", "none")
+    get_settings.cache_clear()
+    row = _transfer(client, "tamper_anchor")
+    assert row["enabled"] is False
+    assert "never leaves the database" in row["detail"]
+
+
+def test_a_webhook_tamper_anchor_names_its_destination(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("TAMPER_ANCHOR", "webhook")
+    monkeypatch.setenv("TAMPER_ANCHOR_WEBHOOK_URL", "https://sink.example/ingest")
+    monkeypatch.setenv("TAMPER_ANCHOR_WEBHOOK_SECRET", "hmac-signing-secret-value")
+    get_settings.cache_clear()
+    row = _transfer(client, "tamper_anchor")
+    assert row["enabled"] is True
+    assert "https://sink.example/ingest" in row["detail"]
+    assert "never an audit event" in row["detail"]
+    assert "hmac-signing-secret-value" not in row["detail"]
+
+
+def test_an_object_lock_tamper_anchor_names_bucket_endpoint_and_retention(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("TAMPER_ANCHOR", "object_lock")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_BUCKET", "audit-anchors")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME", "anchor-key")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID", "AKIA")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_ENDPOINT_URL", "https://minio.internal:9000")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS", "730")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_MODE", "GOVERNANCE")
+    get_settings.cache_clear()
+    row = _transfer(client, "tamper_anchor")
+    assert row["enabled"] is True
+    for fragment in (
+        "'audit-anchors'",
+        "https://minio.internal:9000",
+        "GOVERNANCE",
+        "730 days",
+    ):
+        assert fragment in row["detail"], fragment
+
+
+def test_an_azure_object_lock_anchor_names_the_container(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("TAMPER_ANCHOR", "object_lock")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_PROVIDER", "azure")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_BUCKET", "anchors")
+    monkeypatch.setenv("TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME", "anchor-sas")
+    monkeypatch.setenv(
+        "TAMPER_ANCHOR_OBJECT_LOCK_ACCOUNT_URL", "https://acct.blob.core.windows.net"
+    )
+    get_settings.cache_clear()
+    row = _transfer(client, "tamper_anchor")
+    assert row["enabled"] is True
+    assert "https://acct.blob.core.windows.net" in row["detail"]
+    assert "immutability policy" in row["detail"]
+
+
+def test_openlineage_emission_is_listed_off_when_unconfigured(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    import backend.app.api.v1.admin as admin_module
+
+    monkeypatch.setattr(admin_module, "is_emission_configured", lambda: False)
+    row = _transfer(client, "openlineage_emission")
+    assert row["enabled"] is False
+    assert "no run event leaves" in row["detail"]
+
+
+def test_openlineage_emission_is_listed_on_when_configured(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    import backend.app.api.v1.admin as admin_module
+
+    monkeypatch.setattr(admin_module, "is_emission_configured", lambda: True)
+    row = _transfer(client, "openlineage_emission")
+    assert row["enabled"] is True
+    assert "RunEvent" in row["detail"]
+    assert "Never a failing-row sample" in row["detail"]

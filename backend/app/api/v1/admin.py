@@ -27,6 +27,7 @@ from backend.app.db.models import (
     User,
 )
 from backend.app.db.session import get_db
+from backend.app.lineage.emitter import is_emission_configured
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
 from backend.app.services import (
@@ -997,6 +998,93 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     )
 
 
+def _tamper_anchor_transfer(settings: Any) -> ExternalTransfer:
+    """The audit-chain anchor (ADR 0041 §9) as a transfer vector (#2397): the
+    head hash, a label, an event count and a timestamp leave the database — never
+    an audit row's content."""
+    payload = (
+        "What leaves is the chain head: a SHA-256 hash, a label, the hashed-event "
+        "count and a timestamp — never an audit event's actor, action or payload."
+    )
+    if settings.tamper_anchor == "webhook":
+        return ExternalTransfer(
+            name="tamper_anchor",
+            enabled=True,
+            detail=(
+                f"The audit hash-chain head is HMAC-signed and POSTed daily, and before "
+                f"every retention purge, to {settings.tamper_anchor_webhook_url} — an "
+                "operator-chosen endpoint DataQ never reads back. " + payload
+            ),
+        )
+    if settings.tamper_anchor == "object_lock":
+        provider = settings.tamper_anchor_object_lock_provider
+        where = (
+            f"Azure container '{settings.tamper_anchor_object_lock_bucket}' at "
+            f"{settings.tamper_anchor_object_lock_account_url} (immutability policy)"
+            if provider == "azure"
+            else (
+                f"S3 bucket '{settings.tamper_anchor_object_lock_bucket}' "
+                + (
+                    f"at {settings.tamper_anchor_object_lock_endpoint_url}"
+                    if settings.tamper_anchor_object_lock_endpoint_url
+                    else f"in region {settings.tamper_anchor_object_lock_region}"
+                )
+                + f" (Object Lock {settings.tamper_anchor_object_lock_mode})"
+            )
+        )
+        return ExternalTransfer(
+            name="tamper_anchor",
+            enabled=True,
+            detail=(
+                f"The audit hash-chain head is written daily, and before every retention "
+                f"purge, as an immutable object under "
+                f"'{settings.tamper_anchor_object_lock_prefix}/' in {where}, retained "
+                f"{settings.tamper_anchor_object_lock_retention_days} days. DataQ reads it "
+                "back only to verify the chain. " + payload
+            ),
+        )
+    return ExternalTransfer(
+        name="tamper_anchor",
+        enabled=False,
+        detail=(
+            "No external anchor is configured (TAMPER_ANCHOR=none): the audit hash chain "
+            "is computed but never leaves the database, so it is only internally "
+            "consistent — an actor who can rewrite the whole table can rewrite the "
+            "hashes with it. When enabled (webhook or object_lock), "
+            + payload[0].lower()
+            + payload[1:]
+        ),
+    )
+
+
+def _openlineage_transfer() -> ExternalTransfer:
+    """OpenLineage emission (ADR 0034) as a transfer vector (#2397)."""
+    configured = is_emission_configured()
+    return ExternalTransfer(
+        name="openlineage_emission",
+        enabled=configured,
+        detail=(
+            (
+                "Every suite run emits a START and a terminal OpenLineage RunEvent to the "
+                "configured OpenLineage endpoint (OPENLINEAGE_URL or the library's own "
+                "transport env), with DQ facets: dataset and job names, check names, "
+                "statuses and aggregate counts. Never a failing-row sample or an "
+                "observed value. The catalog behind that endpoint is operator-chosen."
+            )
+            if configured
+            else (
+                "OpenLineage emission is not configured: no run event leaves this "
+                "deployment. When enabled (OPENLINEAGE_URL, or the library's transport "
+                "env, with OPENLINEAGE_DISABLED unset) every suite run emits a START and "
+                "a terminal RunEvent carrying dataset and job names, check names, "
+                "statuses and aggregate counts — never a failing-row sample — to an "
+                "operator-chosen catalog. Listed while absent so an auditor sees it was "
+                "considered."
+            )
+        ),
+    )
+
+
 @router.get(
     "/deployment",
     response_model=DeploymentPostureRead,
@@ -1106,6 +1194,8 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 "operator and may sit in another jurisdiction."
             ),
         ),
+        _openlineage_transfer(),
+        _tamper_anchor_transfer(settings),
     ]
     return DeploymentPostureRead(
         region=settings.deployment_region or None,
