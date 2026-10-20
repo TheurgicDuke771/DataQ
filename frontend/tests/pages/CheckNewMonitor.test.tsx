@@ -179,7 +179,13 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
       expectation_type: 'monitor:anomaly',
       // window/min_points/seasonality submit their catalog defaults (14/7/false)
       // even though the author never touched them.
-      config: { target_metric: 'row_count', window: 14, min_points: 7, seasonality: false },
+      config: {
+        target_metric: 'row_count',
+        window: 14,
+        min_points: 7,
+        seasonality: false,
+        yearly: false,
+      },
       dimension: undefined,
       warn_threshold: null,
       fail_threshold: 3,
@@ -214,7 +220,13 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
     expect(mockCreate).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
-        config: { target_metric: 'row_count', window: 14, min_points: 7, seasonality: false },
+        config: {
+          target_metric: 'row_count',
+          window: 14,
+          min_points: 7,
+          seasonality: false,
+          yearly: false,
+        },
       }),
     );
   });
@@ -269,7 +281,13 @@ describe('CheckNew — anomaly authoring (#593, stricter SQL-only gating than fr
     expect(mockCreate).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({
-        config: { target_metric: 'row_count', window: 5, min_points: 3, seasonality: false },
+        config: {
+          target_metric: 'row_count',
+          window: 5,
+          min_points: 3,
+          seasonality: false,
+          yearly: false,
+        },
       }),
     );
   });

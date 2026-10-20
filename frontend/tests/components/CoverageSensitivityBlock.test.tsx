@@ -30,7 +30,7 @@ const D = { warn: 3, fail: 4, critical: 6, source: 'default' as const };
 const W = { warn: 5, fail: 7, critical: 9, source: 'workspace' as const };
 const WORKSPACE_EFFECTIVE: EffectiveCoverage = {
   sensitivity: { volume: W, freshness: D, profile: D },
-  baseline: { window: 8, min_points: 4, seasonality: true, source: 'default' },
+  baseline: { window: 8, min_points: 4, seasonality: true, yearly: false, source: 'default' },
 };
 const WORKSPACE = { effective: WORKSPACE_EFFECTIVE } as CoverageSettings;
 const NO_OVERRIDE: AssetCoverageSettings = { override: null, effective: WORKSPACE_EFFECTIVE };

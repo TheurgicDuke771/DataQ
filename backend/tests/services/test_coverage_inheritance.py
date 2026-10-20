@@ -373,8 +373,10 @@ def test_the_reconciler_creates_inheriting_checks_holding_the_values_in_effect(
         "window": 14,
         "min_points": 7,
         "seasonality": False,
+        "yearly": False,
         KEY: True,
     }
+    assert "yearly" not in profile.config  # the column profile takes none
     assert _thresholds(volume) == (3.0, 4.0, 6.0)
     assert _thresholds(profile) == (5.0, 7.0, 9.0)
     assert _named(db_session, suite, cov.SCHEMA_CHECK).config == {}
@@ -654,3 +656,146 @@ def test_a_person_cannot_author_a_check_that_claims_to_inherit(
             critical_threshold=None,
             actor_id=admin.id,
         )
+
+
+# ── yearly (ADR 0048 phase 7) ────────────────────────────────────────────────
+
+_YEARLY_SHAPE = {"window": 14, "min_points": 7, "seasonality": False, "yearly": True}
+_NOT_YEARLY = {"window": 14, "min_points": 7, "seasonality": False}
+
+
+def test_yearly_is_part_of_the_shape_group_and_off_when_left_out() -> None:
+    assert svc.validate({"baseline": _YEARLY_SHAPE}) == {"baseline": _YEARLY_SHAPE}
+    # A document that sets the group without it is the group with yearly off; one saved
+    # before the switch existed reads the same.
+    assert svc.validate({"baseline": _NOT_YEARLY}) == {"baseline": _NOT_YEARLY}
+    assert svc.resolve({"baseline": _NOT_YEARLY}).shape.yearly is False
+    with pytest.raises(svc.CoverageSettingsInvalidError, match="yearly must be true or false"):
+        svc.validate({"baseline": {**_YEARLY_SHAPE, "yearly": "yes"}})
+
+
+@pytest.mark.parametrize(
+    ("workspace", "asset", "yearly", "level"),
+    [
+        (None, None, False, "default"),
+        ({"baseline": _YEARLY_SHAPE}, None, True, "workspace"),
+        # A level sets the group whole: an asset shape without yearly switches it off there.
+        ({"baseline": _YEARLY_SHAPE}, {"baseline": _NOT_YEARLY}, False, "asset"),
+        (None, {"baseline": _YEARLY_SHAPE}, True, "asset"),
+    ],
+)
+def test_yearly_resolves_asset_then_workspace_then_default(
+    workspace: dict[str, Any] | None,
+    asset: dict[str, Any] | None,
+    yearly: bool,
+    level: str,
+) -> None:
+    effective = svc.resolve(workspace, asset)
+
+    assert (effective.shape.yearly, effective.shape_from) == (yearly, level)
+
+
+def test_yearly_reaches_the_row_count_and_freshness_baselines_only() -> None:
+    coverage = _coverage({"baseline": _YEARLY_SHAPE})
+    volume = _check()
+    freshness = _check(metric="freshness_age_hours", column="loaded_at")
+    profile = _check(metric="column_profile")
+
+    configs = {}
+    for check in (volume, freshness, profile):
+        settings = coverage.for_check(check)
+        assert settings is not None
+        configs[check.config["target_metric"]] = settings.config(dict(check.config))
+
+    assert anomaly_params(configs["row_count"]).yearly is True
+    assert anomaly_params(configs["freshness_age_hours"]).yearly is True
+    assert "yearly" not in configs["column_profile"]
+    assert anomaly_params(configs["column_profile"]).yearly is False
+
+
+def test_a_stored_yearly_does_not_outlive_the_setting() -> None:
+    """The snapshot an inheriting check was created with says yearly on; the setting now says
+    off. The run uses the setting."""
+    check = _check(yearly=True, **_flag(True))
+
+    settings = _coverage(None).for_check(check)
+
+    assert settings is not None
+    assert settings.config(dict(check.config))["yearly"] is False
+
+
+def test_switching_yearly_on_an_inheriting_check_is_an_edit() -> None:
+    check = _check(**_flag(True))
+
+    echoed, _ = _settle(
+        check, config={**svc.strip_flag(check.config), "yearly": False}, workspace=None
+    )
+    switched, _ = _settle(
+        check, config={**svc.strip_flag(check.config), "yearly": True}, workspace=None
+    )
+
+    assert echoed[KEY] is True
+    assert (switched[KEY], switched["yearly"]) == (False, True)
+
+
+def test_an_inheriting_check_runs_yearly_when_the_setting_turns_it_on_and_keeps_its_days_when_off(
+    db_session: Any, conn: Connection, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asset, suite = _covered(db_session, conn)
+    volume = _named(db_session, suite, cov.VOLUME_CHECK)
+    svc.set_workspace(db_session, {"baseline": _YEARLY_SHAPE}, actor=admin)
+    db_session.commit()
+
+    on = _executor(db_session, conn, suite, 100, monkeypatch)(volume)
+    db_session.flush()
+
+    assert on.observed_value is not None and on.expected_value is not None
+    assert on.observed_value["yearly"] == {
+        "applied": False,
+        "reason": "no_earlier_year",
+    }
+    assert on.expected_value["yearly"] is True
+    assert on.expected_value["inherited_from"]["baseline"] == "workspace"
+    row = get_baseline(db_session, volume.id)
+    assert row is not None
+    days = row.baseline["daily"]
+    assert len(days["points"]) == 1
+
+    # An asset override without yearly switches it off for this table only.
+    asset.auto_coverage_config = {"baseline": _NOT_YEARLY}
+    db_session.commit()
+    off = _executor(db_session, conn, suite, 101, monkeypatch)(volume)
+    db_session.flush()
+    db_session.refresh(row)
+
+    assert off.observed_value is not None and "yearly" not in off.observed_value
+    assert row.baseline["daily"] == days
+    assert len(row.baseline["observations"]) == 2
+
+
+def test_an_untouched_edit_carries_the_yearly_in_effect_so_a_calendar_can_be_attached() -> None:
+    """Workspace switched yearly on after the check was made (no key, or a stale false):
+    attaching a calendar entry and echoing yearly true keeps it inheriting, and the config
+    the author-time checks see has yearly on."""
+    stored_configs: list[dict[str, Any]] = [{}, {"yearly": False}]
+    for stored in stored_configs:
+        check = _check(**stored, **_flag(True))
+        sent = {
+            **svc.strip_flag(check.config),
+            "yearly": True,
+            "seasonal_periods": ["x"],
+        }
+
+        config, _ = _settle(check, config=sent, workspace={"baseline": _YEARLY_LEGACY})
+
+        assert config[KEY] is True
+        assert config["yearly"] is True
+
+
+def test_an_untouched_edit_adds_no_yearly_key_while_it_is_off() -> None:
+    config, _ = _settle(_check(**_flag(True)), config=None, workspace=None)
+
+    assert "yearly" not in config
+
+
+_YEARLY_LEGACY = {"window": 8, "min_points": 4, "seasonality": True, "yearly": True}

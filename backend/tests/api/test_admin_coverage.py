@@ -44,7 +44,13 @@ def test_read_reports_the_defaults_when_nothing_is_stored(client: TestClient) ->
 
     defaults = {
         "sensitivity": dict.fromkeys(svc.BASELINES, _DEFAULT),
-        "baseline": {"window": 8, "min_points": 4, "seasonality": True, "source": "default"},
+        "baseline": {
+            "window": 8,
+            "min_points": 4,
+            "seasonality": True,
+            "yearly": False,
+            "source": "default",
+        },
     }
     assert body == {
         "setting": {},
@@ -193,7 +199,7 @@ def test_an_override_wins_for_its_group_only_and_is_audited(
         "critical": 10.0,
         "source": "asset",
     }
-    assert body["effective"]["baseline"] == {**_SHAPE, "source": "workspace"}
+    assert body["effective"]["baseline"] == {**_SHAPE, "yearly": False, "source": "workspace"}
     event = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "asset.update")).one()
     assert event.before["auto_coverage_config"] is None
     assert event.after["auto_coverage_config"] == body["override"]
@@ -279,3 +285,33 @@ def test_settings_of_an_unknown_asset_are_a_404(client: TestClient) -> None:
     resp = client.get(f"/api/v1/assets/{uuid.uuid4()}/coverage-settings")
 
     assert resp.status_code == 404
+
+
+def test_yearly_is_set_with_the_baseline_shape_at_either_level(
+    client: TestClient, asset: Asset
+) -> None:
+    yearly = {**_SHAPE, "yearly": True}
+
+    resp = client.put("/api/v1/admin/coverage", json={"baseline": yearly})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["setting"] == {"baseline": yearly}
+    assert body["effective"]["baseline"] == {**yearly, "source": "workspace"}
+    # The asset sets the group whole: left out, yearly is off for this table.
+    client.patch(
+        f"/api/v1/assets/{asset.id}",
+        json={"auto_coverage_config": {"baseline": _SHAPE}},
+    )
+    assert _settings(client, asset).json()["effective"]["baseline"] == {
+        **_SHAPE,
+        "yearly": False,
+        "source": "asset",
+    }
+
+
+@pytest.mark.parametrize("value", ["yes", 1, None])
+def test_yearly_must_be_a_boolean(client: TestClient, value: Any) -> None:
+    resp = client.put("/api/v1/admin/coverage", json={"baseline": {**_SHAPE, "yearly": value}})
+
+    assert resp.status_code == 422

@@ -12,7 +12,7 @@ import {
 const D = { warn: 3, fail: 4, critical: 6, source: 'default' as const };
 const EFFECTIVE: EffectiveCoverage = {
   sensitivity: { volume: D, freshness: D, profile: D },
-  baseline: { window: 8, min_points: 4, seasonality: true, source: 'default' },
+  baseline: { window: 8, min_points: 4, seasonality: true, yearly: false, source: 'default' },
 };
 const LOOSE = { warn: 5, fail: 7, critical: 9 };
 
@@ -23,6 +23,16 @@ describe('coverageDraft', () => {
     expect(draft.sensitivity.volume).toBeNull();
     expect(draft.baseline).toBeNull();
     expect(documentOf(draft)).toEqual(doc);
+  });
+
+  it('stores yearly only when it is on, and reads a group without it as off', () => {
+    const shape = { window: 8, min_points: 4, seasonality: false };
+    const off = draftOf({ baseline: shape });
+    expect(off.baseline?.yearly).toBe(false);
+    expect(documentOf(off)).toEqual({ baseline: shape });
+    const on = { ...off, baseline: { ...shape, yearly: true } };
+    expect(documentOf(on)).toEqual({ baseline: { ...shape, yearly: true } });
+    expect(draftOf(documentOf(on)).baseline?.yearly).toBe(true);
   });
 
   it('a draft that sets nothing is empty and saves as {}', () => {
@@ -58,9 +68,9 @@ describe('coverageDraft', () => {
       'History: the minimum must be at least 3 and no more than the window.',
     ],
   ])('refuses an invalid history group', (shape, reason) => {
-    expect(invalidReason({ ...draftOf(null), baseline: { ...shape, seasonality: true } })).toBe(
-      reason,
-    );
+    expect(
+      invalidReason({ ...draftOf(null), baseline: { ...shape, seasonality: true, yearly: false } }),
+    ).toBe(reason);
   });
 
   it('accepts the boundaries and a draft that sets nothing', () => {
@@ -87,7 +97,13 @@ describe('coverageDraft', () => {
   it('flags a level that stops setting a window longer than the one below', () => {
     const longer: EffectiveCoverage = {
       ...EFFECTIVE,
-      baseline: { window: 30, min_points: 4, seasonality: true, source: 'workspace' },
+      baseline: {
+        window: 30,
+        min_points: 4,
+        seasonality: true,
+        yearly: false,
+        source: 'workspace',
+      },
     };
     // Switching History off falls from 30 to the built-in 8.
     expect(shortensWindow(draftOf(null), EFFECTIVE, longer)).toBe(true);
