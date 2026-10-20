@@ -36,6 +36,11 @@ function formToConfig(
     if (field.type === 'list') {
       const items = parseList(value);
       if (items.length > 0) config[field.name] = items;
+    } else if (field.type === 'calendar') {
+      // An attachment applies only with yearly on; the field says so before a save drops it.
+      if (raw.yearly === true && Array.isArray(value) && value.length > 0) {
+        config[field.name] = value;
+      }
     } else {
       config[field.name] = value;
     }

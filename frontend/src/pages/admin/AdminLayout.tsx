@@ -9,6 +9,7 @@ const ADMIN_TABS = [
   { key: 'members', label: 'Members' },
   { key: 'suites', label: 'Suites' },
   { key: 'settings', label: 'Settings' },
+  { key: 'calendar', label: 'Calendar' },
   { key: 'compliance', label: 'Compliance' },
   { key: 'integrations', label: 'Integrations' },
 ] as const;

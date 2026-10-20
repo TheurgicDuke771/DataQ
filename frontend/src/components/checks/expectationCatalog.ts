@@ -11,7 +11,15 @@ import {
 import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
 export type ConfigFieldType =
-  'string' | 'number' | 'list' | 'sql' | 'select' | 'boolean' | 'dmf_function';
+  | 'string'
+  | 'number'
+  | 'list'
+  | 'sql'
+  | 'select'
+  | 'boolean'
+  | 'dmf_function'
+  /** Ids of workspace seasonal-calendar entries, picked from the calendar. */
+  | 'calendar';
 
 /** A customer-defined Snowflake DMF, named by its fully qualified identifier. */
 export const CUSTOM_DMF_EXPECTATION_TYPE = 'dmf:custom';
@@ -152,7 +160,16 @@ export interface ConfigField {
    * Show (and submit) this field only when a SIBLING config field equals a given value — a generic
    * conditional-field mechanism.
    */
-  showWhen?: { field: string; equals?: unknown; oneOf?: unknown[] };
+  showWhen?: ShowWhen | ShowWhen[];
+  /** A `string` field picked from a list: the target's columns, or the IANA time zones. */
+  picker?: 'column' | 'timezone';
+}
+
+/** One sibling condition; a list of them must all hold. */
+export interface ShowWhen {
+  field: string;
+  equals?: unknown;
+  oneOf?: unknown[];
 }
 
 /**
@@ -164,10 +181,11 @@ export function fieldVisible(
   configValues: Record<string, unknown> | undefined,
 ): boolean {
   if (!field.showWhen) return true;
-  const value = (configValues ?? {})[field.showWhen.field];
-  return field.showWhen.oneOf
-    ? field.showWhen.oneOf.includes(value)
-    : value === field.showWhen.equals;
+  const conditions = Array.isArray(field.showWhen) ? field.showWhen : [field.showWhen];
+  return conditions.every((c) => {
+    const value = (configValues ?? {})[c.field];
+    return c.oneOf ? c.oneOf.includes(value) : value === c.equals;
+  });
 }
 
 /** Severity-threshold semantics for a monitor kind (ADR 0012/0016). */
@@ -887,6 +905,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         name: 'date_column',
         label: 'Date column',
         type: 'string',
+        picker: 'column',
         help: 'The column that dates a row. A row counts toward the day the warehouse returns for it.',
         showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
@@ -894,6 +913,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         name: 'value_column',
         label: 'Column to sum',
         type: 'string',
+        picker: 'column',
         help: 'The numeric column summed over each period. A period with no rows sums to 0.',
         showWhen: { field: 'target_metric', equals: 'period_sum' },
       },
@@ -914,6 +934,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         name: 'timezone',
         label: 'Time zone of the dates',
         type: 'string',
+        picker: 'timezone',
         optional: true,
         defaultValue: 'UTC',
         help: 'An IANA name such as UTC or Europe/London: the zone the date column’s values are written in. It decides when a day is over. Set it ahead of the data’s own zone and a day is judged before it has finished.',
@@ -985,15 +1006,15 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         type: 'boolean',
         optional: true,
         defaultValue: false,
-        help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It applies once the history reaches back a year, which seeding from the table can supply at once; until then the check scores as usual and each result says so.',
+        help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It needs a year of history, which seeding from the table supplies at once when the table still holds its past; until then the check scores as usual and each result says why. Needed for attaching calendar entries.',
         showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
       {
         name: 'seasonal_periods',
         label: 'Declared seasonal periods',
-        type: 'list',
+        type: 'calendar',
         optional: true,
-        help: 'Comma-separated ids of workspace calendar entries (Admin → seasonal periods) that apply to this table. A day inside one is compared with the same day of the period’s previous occurrence; needs yearly seasonality on.',
+        help: 'Workspace calendar entries that apply to this table. A day inside one is compared with the same day of the period’s previous occurrence, and the period is left out of the level the days after it are judged against. An entry changes no check until it is attached here.',
         showWhen: { field: 'target_metric', oneOf: PERIOD_METRICS },
       },
     ],

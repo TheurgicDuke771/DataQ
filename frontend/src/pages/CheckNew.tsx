@@ -163,6 +163,7 @@ export function CheckNew() {
                   connectionType={connectionType}
                   configValues={configValues}
                   dmfCapability={dmfCapability}
+                  columnSource={suiteId ? { suiteId, target } : undefined}
                 />
               ))
           )}

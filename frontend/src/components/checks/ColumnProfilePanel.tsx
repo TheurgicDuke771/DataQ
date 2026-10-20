@@ -14,14 +14,12 @@ import { useState } from 'react';
 
 import {
   type ColumnProfile,
-  type ColumnProfileRequest,
   listColumns,
   profileColumns,
   type ProfileResult,
-  targetString,
 } from '../../api/suites';
 import { formatScalar } from '../results/resultsFormat';
-import { asFileFormat } from '../suites/suiteTarget';
+import { extractProfileTarget } from './columnTarget';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -145,28 +143,6 @@ export function ColumnProfilePanel({
       ]}
     />
   );
-}
-
-/** Pull the datasource-shaped identity out of the suite target, or null when no
- *  profilable target is set (the backend needs a `table` or a `path`). */
-function extractProfileTarget(
-  target: Record<string, unknown> | null,
-): Pick<
-  ColumnProfileRequest,
-  'table' | 'schema' | 'catalog' | 'namespace' | 'path' | 'file_format'
-> | null {
-  const table = targetString(target, 'table');
-  const path = targetString(target, 'path');
-  if (!table && !path) return null;
-  return {
-    table,
-    schema: targetString(target, 'schema'),
-    catalog: targetString(target, 'catalog'),
-    // Iceberg addresses `namespace.table`; the namespace rides alongside table.
-    namespace: targetString(target, 'namespace'),
-    path,
-    file_format: asFileFormat(target?.file_format),
-  };
 }
 
 function ProfileView({ result }: { result: ProfileResult }) {

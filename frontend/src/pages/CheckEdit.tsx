@@ -304,6 +304,7 @@ function CheckEditForm({
                   connectionType={connectionType}
                   configValues={configValues}
                   dmfCapability={dmfCapability}
+                  columnSource={suiteId ? { suiteId, target } : undefined}
                 />
               ))}
             <DimensionField spec={spec} />

@@ -6,6 +6,7 @@ const ADMIN_PAGES: Record<string, string> = {
   suites: 'Suites',
   integrations: 'Integrations',
   settings: 'Settings',
+  calendar: 'Seasonal calendar',
   compliance: 'Compliance',
 };
 
