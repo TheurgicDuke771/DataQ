@@ -94,8 +94,9 @@ def test_opt_in_with_a_sink_is_effective(
 
 
 def test_the_write_is_strict(client: TestClient) -> None:
-    assert client.put("/api/v1/admin/telemetry", json={"enabled": "yes"}).status_code == 422
-    assert client.put("/api/v1/admin/telemetry", json={"enabled": True, "x": 1}).status_code == 422
+    coerced = client.put("/api/v1/admin/telemetry", json={"enabled": "yes"})
+    extra = client.put("/api/v1/admin/telemetry", json={"enabled": True, "x": 1})
+    assert (coerced.status_code, extra.status_code) == (422, 422)
 
 
 @pytest.mark.parametrize("role", ["member", "viewer"])
@@ -150,7 +151,8 @@ def test_client_events_are_emitted_only_with_both_gates(
     second = client.post("/api/v1/telemetry/events", json=body)
     assert second.json() == {"accepted": 1, "enabled": True}
     assert _names(capture) == ["dataq.usage.page_viewed"]
-    assert client.get("/api/v1/telemetry").json() == {
+    status = client.get("/api/v1/telemetry")
+    assert status.json() == {
         "enabled": True,
         "events": ["check_editor_abandoned", "page_viewed"],
     }
@@ -196,8 +198,9 @@ def test_one_bad_event_refuses_the_whole_batch(
 
 def test_a_batch_is_bounded(client: TestClient) -> None:
     event = {"name": "page_viewed", "attributes": {"route": "suites"}}
-    assert client.post("/api/v1/telemetry/events", json={"events": [event] * 21}).status_code == 422
-    assert client.post("/api/v1/telemetry/events", json={"events": []}).status_code == 422
+    too_many = client.post("/api/v1/telemetry/events", json={"events": [event] * 21})
+    none = client.post("/api/v1/telemetry/events", json={"events": []})
+    assert (too_many.status_code, none.status_code) == (422, 422)
 
 
 def test_the_route_needs_a_signed_in_user(

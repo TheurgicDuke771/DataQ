@@ -9,10 +9,11 @@ import { NotificationChannelsPanel } from '../../components/admin/NotificationCh
 import { CoveragePanel } from './CoveragePanel';
 import { PrivacyPanel } from './PrivacyPanel';
 import { ScoringPanel } from './ScoringPanel';
+import { TelemetryPanel } from './TelemetryPanel';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 
 /** Workspace settings: general facts + SMTP pre-flight, notification channels, LLM provider,
- *  the privacy, scoring and automatic-coverage settings, the secret-store notice and the danger zone (folded in from `/settings`, #1694). */
+ *  the privacy, scoring, automatic-coverage and usage-telemetry settings, the secret-store notice and the danger zone. */
 export function AdminSettings() {
   return (
     <Flex vertical gap={16}>
@@ -22,6 +23,7 @@ export function AdminSettings() {
       <PrivacyPanel />
       <ScoringPanel />
       <CoveragePanel />
+      <TelemetryPanel />
       <SecretsCard />
       <DangerCard />
     </Flex>
