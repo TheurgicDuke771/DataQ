@@ -1413,7 +1413,7 @@
       },
       "BaselineShapeWrite": {
         "additionalProperties": false,
-        "description": "How much history a baseline compares against. All three are set together.",
+        "description": "How much history a baseline compares against. `window`, `min_points` and\n`seasonality` are set together; `yearly` (compare with the same time in earlier years,\non the row-count and freshness baselines only) is off when left out, so a level that sets\nthis group without it switches it off for its tables.",
         "properties": {
           "min_points": {
             "title": "Min Points",
@@ -1426,6 +1426,11 @@
           "window": {
             "title": "Window",
             "type": "integer"
+          },
+          "yearly": {
+            "default": false,
+            "title": "Yearly",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5478,12 +5483,17 @@
           "window": {
             "title": "Window",
             "type": "integer"
+          },
+          "yearly": {
+            "title": "Yearly",
+            "type": "boolean"
           }
         },
         "required": [
           "window",
           "min_points",
           "seasonality",
+          "yearly",
           "source"
         ],
         "title": "EffectiveShape",

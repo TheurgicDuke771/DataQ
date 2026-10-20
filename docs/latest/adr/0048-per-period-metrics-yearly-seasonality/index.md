@@ -110,6 +110,44 @@ this time of year usually looks like.
    > for the yearly index beside them. That is its own phase; until it ships, `yearly` is
    > accepted on the per-period metrics only.
 
+   > **Amended 2026-10-20 (phase 7).** As built for `row_count` and `freshness_age_hours`:
+   >
+   > - **Two series.** The run-by-run points are kept and trimmed exactly as without `yearly`,
+   >   and the run is scored against them. Beside them, under `daily` in the same baseline row,
+   >   one point per calendar day in the check's `timezone` (an IANA name, default UTC, accepted
+   >   on these metrics only with `yearly` on). Switching `yearly` off stops adding days and
+   >   deletes nothing; switching it on carries on from both series.
+   > - **A day's value is the median of its runs** (the day in progress keeps up to 288 run
+   >   values to take it from; a closed day keeps only its median and run count). Not the last
+   >   run: its hour decides what it says (a freshness age is one at 03:00 and twenty-one at
+   >   23:00), and a day checked hourly would not mean the same as a day checked once. Not the
+   >   mean: one failed run would move it. The day in progress is not history until it closes.
+   > - **Scoring.** The index for today is taken from the daily series exactly as for a
+   >   per-period metric (decision 3: matched day, level the median of the window of days before
+   >   it, years' median). The run is then scored against its usual run-by-run priors, each
+   >   first divided by its own day's index: their mean is the `level`, `expected` is the level
+   >   times today's index, and the spread is their standard deviation times the index, widened
+   >   by the years' disagreement as in decision 3. So the third day of a sale is not judged
+   >   against the sale's first two days as a new normal, and an hourly check is never judged
+   >   against other days' single values. The result marks it `yearly.basis: runs` and reports
+   >   `daily` (`days`, `first`, `timezone`).
+   > - **Not applied** for the reasons of decision 3; `no_earlier_year` is what a whole-table
+   >   check reports until a year of days has accumulated, since nothing can be seeded.
+   > - **Declared periods** attach as on a per-period metric. Runs on a day inside an attached
+   >   period are left out of the run-by-run priors, and the first-year rule compares the value
+   >   with the level of the priors left. Detection (decision 5) does not read the daily series:
+   >   a whole-table check reports `not_a_per_period_metric`.
+   > - **Retention.** The daily series keeps three years of days plus the window (seven times
+   >   the window with weekday seasonality), by date; the run-by-run points keep what they kept.
+   > - **A prior day with no index** (no earlier year matched, or a zero level then) is divided
+   >   by 1, which is decision 3's rule that the index is 1 where it does not apply; a prior
+   >   whose day's index is 0 is left out, since it says nothing about scale. With weekday
+   >   seasonality, priors are picked by their weekday in the check's zone, as the days are.
+   > - **Changing the time zone** keeps the stored days as they were bucketed (a day near
+   >   midnight may be matched one day off until the history turns over), and for the hours
+   >   after moving the zone west, a run dated before the newest stored day adds nothing to
+   >   the series. The result reports the zone in use.
+
    Automatic coverage (ADR 0047) gets it through the setting it already has: the baseline
    shape gains a `yearly` switch, default off, which applies to the automatic row-count and
    freshness baselines. The per-period metrics are **not** added to automatic coverage: an
@@ -184,7 +222,8 @@ this time of year usually looks like.
 
 6. **Retention.** A check with `yearly` on, or on a per-period metric, keeps three years of
    periods plus its window (about 1,100 daily points). Other anomaly checks keep what they
-   keep today.
+   keep today. A whole-table check keeps those years in its one-a-day series only (decision
+   4, amended 2026-10-20).
 
 ## Phases
 

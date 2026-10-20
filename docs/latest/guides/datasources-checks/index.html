@@ -4097,12 +4097,16 @@ a check. There are two groups of settings:</p>
   freshness and column profile. The column profile watches many series at once and is the one
   most likely to need loosening on its own.</li>
 <li><strong>Baseline shape</strong>: how many earlier runs are compared (the window), how many are needed
-  before scoring starts, and whether only the same weekday counts. One shape is shared by the
-  three checks.</li>
+  before scoring starts, whether only the same weekday counts, and whether to <strong>compare with
+  the same time in earlier years</strong> (yearly seasonality, off by default). One shape is shared by
+  the three checks; the yearly switch reaches the row-count and freshness checks only, never
+  the column profile.</li>
 </ul>
 <p>Each group is taken from the nearest level that sets it: <strong>this table's override</strong>, then the
 <strong>workspace setting</strong>, then the built-in default. A level sets a group whole (all three
-deviations for one check, or all three shape values) or leaves it alone.</p>
+deviations for one check, or the shape values) or leaves it alone. The yearly switch belongs to
+the shape: a table override that sets the shape without it has yearly off for that table, even
+when the workspace has it on.</p>
 <p>The workspace setting is in <strong>Admin → Settings → Automatic coverage</strong>. A table's own override is
 on its asset page, under <strong>Sensitivity of this table's automatic checks</strong>. In both places each
 group has a switch: off, it shows the value it follows and where that comes from; on, the group
@@ -4132,6 +4136,13 @@ every other table stays on the workspace values.</p>
 next run, and lengthening it again means waiting for that history to build back up; the form
 warns before a shorter window is saved. Switching
 seasonality off and on again loses nothing.</p>
+<p>Switching <strong>yearly</strong> on makes each covered table's row-count and freshness checks keep a daily
+history (one value a day, three years of it) beside their usual run-by-run history, which is
+why it is off by default: across every covered table that is a lot more stored history. It
+needs a year of that history before it changes a verdict, since a row count's past cannot be
+read back from the table; until then each result says <code>no_earlier_year</code>. Days are counted in
+UTC. Switching it off keeps the daily history, so switching it on again carries on where it
+stopped. See yearly seasonality under the anomaly monitor below for how it scores.</p>
 <p>For example, with coverage on for a connection whose inventory lists <code>shop.public.orders</code>, the
 next daily pass creates <em>Auto: shop.public.orders</em> with the row-count, schema and column-profile
 checks and a daily schedule. After its first run it adds <em>Data is fresh</em> on <code>ordered_at</code>.</p>
@@ -4653,7 +4664,8 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
   on the next two runs and then stops; dropping the check's baseline starts over.</li>
 <li>A per-period check keeps three years of periods on top of its window.</li>
 </ul>
-<p><strong>Yearly seasonality</strong> (<code>yearly: true</code>, on the per-period metrics) makes a check compare
+<p><strong>Yearly seasonality</strong> (<code>yearly: true</code>, on the per-period metrics and on the whole-table row
+count and freshness age) makes a check compare
 with the same time in earlier years as well as with its recent window. It is for data with a
 yearly rhythm: a sale every November, a quiet week at the end of December.</p>
 <ul>
@@ -4680,12 +4692,39 @@ yearly rhythm: a sale every November, a quiet week at the end of December.</p>
   one did not), the comparison is loose, and <code>ratios</code> shows why.</li>
 <li>A peak tied to a fixed date (25 December) or one that moves by more than a few days is not
   lined up by this matching.</li>
-<li>Not available for whole-table row count, freshness age or the column profile.</li>
+<li>Not available for the column profile: it is hundreds of series a check.</li>
 </ul>
 <p>For example, a daily <code>period_sum</code> check on <code>orders.amount</code> with <code>yearly</code> on, created in
 October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the sale, it
 expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
 2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.</p>
+<p><strong>On a whole-table row count or freshness age</strong>, a check runs several times a day and
+has no period of its own, so it keeps two histories:</p>
+<ul>
+<li>Its run-by-run points, exactly as without the setting. The run is scored against these:
+  an hourly check is compared with its recent runs, not with one value from each earlier
+  day. A freshness check on a table loaded at 02:00 reads one hour old at 03:00 and
+  twenty-one at 23:00, and both are ordinary.</li>
+<li>A <strong>daily history</strong> beside them, used only to work out the yearly index: one value per
+  calendar day, the <strong>median</strong> of that day's runs (one failed run does not move a day, and a
+  day checked hourly and a day checked once mean the same thing). Days are taken in the
+  check's <code>timezone</code> (an IANA name, default UTC; it may be set only with <code>yearly</code> on). It
+  keeps three years plus the window.</li>
+<li>Each recent run is divided by its own day's index before the mean and spread are taken,
+  and those are multiplied by today's index. So on the third day of a sale, the first two
+  days' runs count as ordinary runs scaled up, not as a new normal.</li>
+<li>The daily history cannot be seeded from the table: there is nothing to read a past row
+  count from. It starts the day <code>yearly</code> is switched on, and the first yearly verdict comes a
+  year later. Until then <code>yearly.applied</code> is <code>false</code> with <code>reason: no_earlier_year</code>, and the
+  result's <code>daily</code> says how many days the history holds (<code>days</code>, <code>first</code>, <code>timezone</code>).</li>
+<li>Switching <code>yearly</code> off stops adding days but keeps both histories; switching it back on
+  carries on from them.</li>
+<li>When applied, <code>yearly.basis</code> is <code>runs</code>, and <code>yearly.level</code> is the recent runs' mean with
+  each scaled back by its day's index; <code>expected</code> is that times <code>index</code>.</li>
+<li>Declared seasonal periods (below) can be attached the same way; runs on a day inside an
+  attached period are left out of the recent runs the check is scored against. Detected
+  periods are not read from the daily history.</li>
+</ul>
 <p><strong>Declared seasonal periods</strong> line up the peaks the weekday matching cannot: a sale that
 moves by more than a few days, or a fixed date such as 25 December. They live in one
 workspace calendar, managed through the REST API under <code>/api/v1/admin/seasonal-periods</code>
@@ -4697,7 +4736,7 @@ December to 5 January; a 29 February bound is taken as 28 February in a year wit
 or <strong>dated</strong>, an explicit start and end. Dated entries that share a <strong>series</strong> (compared
 case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
 "Spring sale 2026" with series "Spring sale".</p>
-<p>An entry changes no check until it is attached: a per-period anomaly check with <code>yearly</code> on
+<p>An entry changes no check until it is attached: an anomaly check with <code>yearly</code> on
 lists the entries that apply to its table in <code>seasonal_periods</code> (their ids; an unknown id is
 refused when the check is saved, and an entry that any check still names cannot be deleted —
 the refusal names the checks). While attached:</p>
