@@ -129,10 +129,14 @@ def test_saving_a_document_that_sets_nothing_is_a_reset(db_session: Any) -> None
 
 
 def test_an_empty_first_save_stores_no_row_and_no_audit_event(db_session: Any) -> None:
+    # Against what is already there, not an empty table: tests that commit on raw sessions
+    # (the role-management interleavings) leave their audit rows in the chain for good.
+    before = db_session.scalars(select(AuditEvent.id)).all()
+
     svc.set_workspace(db_session, {}, actor=_admin(db_session))
 
     assert svc.get_row(db_session) is None
-    assert db_session.scalars(select(AuditEvent.id)).all() == []
+    assert db_session.scalars(select(AuditEvent.id)).all() == before
 
 
 def test_a_second_save_records_the_first_as_its_before(db_session: Any) -> None:
