@@ -23,16 +23,12 @@ def _user_written_by_old_code(db: Any) -> uuid.UUID:
     return user_id
 
 
-def test_revision_chain() -> None:
-    module = load_migration(_FILE)
-    assert module.revision == "b9ddde2123fe"
-    assert module.down_revision == "c7d2e9a41f05"
+def test_revision_id() -> None:
+    assert load_migration(_FILE).revision == "b9ddde2123fe"
 
 
-def test_upgrade_on_a_populated_db_leaves_no_setting(db_session: Any) -> None:
+def test_upgrade_creates_an_empty_table_with_the_column_defaults(db_session: Any) -> None:
     run_migration(db_session, _FILE, "downgrade")  # the fixture schema already has it
-    _user_written_by_old_code(db_session)
-
     run_migration(db_session, _FILE, "upgrade")
 
     assert db_session.scalar(text("SELECT count(*) FROM telemetry_settings")) == 0

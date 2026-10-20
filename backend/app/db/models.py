@@ -1460,9 +1460,7 @@ class CoverageSetting(Base):
 
 class TelemetrySetting(Base):
     """The workspace's usage-telemetry opt-in (#1707). One row, the `CoverageSetting` idiom;
-    an absent row means off. The operator's `TELEMETRY_SINK` is the other gate: both must
-    be on for anything to be emitted.
-    """
+    an absent row means off."""
 
     __tablename__ = "telemetry_settings"
     __table_args__ = (CheckConstraint("id = 1", name="singleton"),)

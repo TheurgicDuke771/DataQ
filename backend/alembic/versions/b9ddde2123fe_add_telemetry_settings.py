@@ -1,12 +1,7 @@
 """telemetry_settings — the usage-telemetry opt-in as a workspace setting (#1707)
 
-Additive: one new singleton table. Nothing is dropped and no existing column changes
-meaning. The table ships EMPTY, and an absent row resolves the same as `enabled = false`,
-so this migration changes no behaviour on any deployment: usage telemetry stays off until
-an admin opts in AND the operator configures a sink. No code reads the table yet.
-
-Rollback: `alembic downgrade -1` drops the table. Tested up, down and up again against a
-scratch Postgres database.
+Additive: one new singleton table, shipped empty; an absent row reads as `enabled = false`.
+Rollback: `alembic downgrade -1` drops the table.
 """
 
 from collections.abc import Sequence
