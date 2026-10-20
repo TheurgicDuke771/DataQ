@@ -28,6 +28,7 @@ class TelemetrySettingsRead:
             enabled (bool):
             events (list[TelemetryEventRead]):
             sink (TelemetrySettingsReadSink):
+            sink_ready (bool):
             stored (bool):
             updated_at (datetime.datetime | None):
             updated_by (None | str):
@@ -36,6 +37,7 @@ class TelemetrySettingsRead:
     enabled: bool
     events: list[TelemetryEventRead]
     sink: TelemetrySettingsReadSink
+    sink_ready: bool
     stored: bool
     updated_at: datetime.datetime | None
     updated_by: None | str
@@ -50,6 +52,8 @@ class TelemetrySettingsRead:
             events.append(events_item)
 
         sink = self.sink.value
+
+        sink_ready = self.sink_ready
 
         stored = self.stored
 
@@ -69,6 +73,7 @@ class TelemetrySettingsRead:
                 "enabled": enabled,
                 "events": events,
                 "sink": sink,
+                "sink_ready": sink_ready,
                 "stored": stored,
                 "updated_at": updated_at,
                 "updated_by": updated_by,
@@ -92,6 +97,8 @@ class TelemetrySettingsRead:
             events.append(events_item)
 
         sink = TelemetrySettingsReadSink(d.pop("sink"))
+
+        sink_ready = d.pop("sink_ready")
 
         stored = d.pop("stored")
 
@@ -121,6 +128,7 @@ class TelemetrySettingsRead:
             enabled=enabled,
             events=events,
             sink=sink,
+            sink_ready=sink_ready,
             stored=stored,
             updated_at=updated_at,
             updated_by=updated_by,
