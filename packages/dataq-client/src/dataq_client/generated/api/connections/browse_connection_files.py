@@ -75,7 +75,7 @@ def sync_detailed(
     prefix: str | Unset = "",
     limit: int | Unset = 200,
 ) -> Response[FileBrowseRead | HTTPValidationError]:
-    """List the folders and files under a prefix of an ADLS Gen2 / S3 connection
+    """List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection
 
     Args:
         connection_id (UUID):
@@ -110,7 +110,7 @@ def sync(
     prefix: str | Unset = "",
     limit: int | Unset = 200,
 ) -> FileBrowseRead | HTTPValidationError | None:
-    """List the folders and files under a prefix of an ADLS Gen2 / S3 connection
+    """List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection
 
     Args:
         connection_id (UUID):
@@ -140,7 +140,7 @@ async def asyncio_detailed(
     prefix: str | Unset = "",
     limit: int | Unset = 200,
 ) -> Response[FileBrowseRead | HTTPValidationError]:
-    """List the folders and files under a prefix of an ADLS Gen2 / S3 connection
+    """List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection
 
     Args:
         connection_id (UUID):
@@ -173,7 +173,7 @@ async def asyncio(
     prefix: str | Unset = "",
     limit: int | Unset = 200,
 ) -> FileBrowseRead | HTTPValidationError | None:
-    """List the folders and files under a prefix of an ADLS Gen2 / S3 connection
+    """List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection
 
     Args:
         connection_id (UUID):
