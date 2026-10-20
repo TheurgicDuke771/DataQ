@@ -9,8 +9,10 @@ from typing_extensions import Self
 
 from ..models.audit_chain_status_anchor_mode import AuditChainStatusAnchorMode
 from ..models.audit_chain_status_status import AuditChainStatusStatus
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.anchor_verification_read import AnchorVerificationRead
     from ..models.audit_chain_status_first_break_type_0 import AuditChainStatusFirstBreakType0
 
 
@@ -29,6 +31,7 @@ class AuditChainStatus:
             status (AuditChainStatusStatus):
             unverifiable_legacy_count (int):
             verified_count (int):
+            anchors (AnchorVerificationRead | None | Unset):
     """
 
     anchor_mode: AuditChainStatusAnchorMode
@@ -37,9 +40,11 @@ class AuditChainStatus:
     status: AuditChainStatusStatus
     unverifiable_legacy_count: int
     verified_count: int
+    anchors: AnchorVerificationRead | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.anchor_verification_read import AnchorVerificationRead
         from ..models.audit_chain_status_first_break_type_0 import (
             AuditChainStatusFirstBreakType0,
         )
@@ -61,6 +66,14 @@ class AuditChainStatus:
 
         verified_count = self.verified_count
 
+        anchors: dict[str, Any] | None | Unset
+        if isinstance(self.anchors, Unset):
+            anchors = UNSET
+        elif isinstance(self.anchors, AnchorVerificationRead):
+            anchors = self.anchors.to_dict()
+        else:
+            anchors = self.anchors
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -73,11 +86,14 @@ class AuditChainStatus:
                 "verified_count": verified_count,
             }
         )
+        if anchors is not UNSET:
+            field_dict["anchors"] = anchors
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.anchor_verification_read import AnchorVerificationRead
         from ..models.audit_chain_status_first_break_type_0 import (
             AuditChainStatusFirstBreakType0,
         )
@@ -113,6 +129,23 @@ class AuditChainStatus:
 
         verified_count = d.pop("verified_count")
 
+        def _parse_anchors(data: object) -> AnchorVerificationRead | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                anchors_type_0 = AnchorVerificationRead.from_dict(data)
+
+                return anchors_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(AnchorVerificationRead | None | Unset, data)
+
+        anchors = _parse_anchors(d.pop("anchors", UNSET))
+
         audit_chain_status = cls(
             anchor_mode=anchor_mode,
             chain_head_hash=chain_head_hash,
@@ -120,6 +153,7 @@ class AuditChainStatus:
             status=status,
             unverifiable_legacy_count=unverifiable_legacy_count,
             verified_count=verified_count,
+            anchors=anchors,
         )
 
         audit_chain_status.additional_properties = d
