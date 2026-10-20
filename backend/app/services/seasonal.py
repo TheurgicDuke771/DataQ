@@ -18,6 +18,7 @@ below it is judged as usual.
 
 from __future__ import annotations
 
+import bisect
 import calendar
 import math
 import statistics
@@ -279,7 +280,7 @@ class History:
         return self._declared(day) is None
 
     def _earlier(self, day: date) -> list[date]:
-        earlier = [d for d in self._days if d < day]
+        earlier = self._days[: bisect.bisect_left(self._days, day)]
         if self._params.seasonality:
             earlier = [d for d in earlier if d.weekday() == day.weekday()]
         return earlier
@@ -454,3 +455,260 @@ class History:
             declared=effect,
             excluded_from_level=excluded,
         )
+
+
+# ───────────────────────── detected periods (decision 5) ─────────────────────────
+
+#: A period qualifies when its value is at least this many times its level.
+DETECT_RATIO = 1.5
+#: Consecutive qualifying periods a run needs: two days (one day is a spike, not a
+#: period), one week.
+DETECT_MIN_DAYS = 2
+DETECT_MIN_WEEKS = 1
+#: Two runs in different years are "the same time" when, laid on one year, they come
+#: within this many days of each other: a sale that moves by up to a week still matches.
+DETECT_SAME_TIME_DAYS = 7
+
+SEEN_ONCE = "seen_once"
+_RANGE_KEYS = ("start_month", "start_day", "end_month", "end_day")
+
+# Why a detection had nothing to look at (``Detection.reason``).
+NOT_PER_PERIOD = "not_a_per_period_metric"
+NO_HISTORY = "no_history"
+
+
+@dataclass(frozen=True)
+class DetectedOccurrence:
+    """One run of qualifying periods: ``[start, end]`` inclusive (a week ends on Sunday)."""
+
+    start: date
+    end: date
+    peak_ratio: float
+    periods: int
+    backfilled: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "year": self.start.year,
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "peak_ratio": round(self.peak_ratio, 4),
+            "periods": self.periods,
+            "backfilled_periods": self.backfilled,
+        }
+
+
+@dataclass(frozen=True)
+class DetectedPeriod:
+    """Occurrences at the same time of year, oldest first. ``range`` is the month/day span
+    they cover laid on one year, for a recurring one."""
+
+    kind: str
+    occurrences: tuple[DetectedOccurrence, ...]
+    years_seen: int
+    range: tuple[int, int, int, int] | None = None
+    declared: tuple[DeclaredPeriod, ...] = ()
+
+    @property
+    def start(self) -> date:
+        return self.occurrences[-1].start
+
+    @property
+    def end(self) -> date:
+        return self.occurrences[-1].end
+
+    @property
+    def peak_ratio(self) -> float:
+        return max(o.peak_ratio for o in self.occurrences)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "peak_ratio": round(self.peak_ratio, 4),
+            "years_seen": self.years_seen,
+            "range": (
+                None if self.range is None else dict(zip(_RANGE_KEYS, self.range, strict=True))
+            ),
+            "occurrences": [o.as_dict() for o in self.occurrences],
+            "declared": [{"id": str(e.id), "name": e.name} for e in self.declared],
+        }
+
+
+@dataclass(frozen=True)
+class Detection:
+    """What a check's history shows, or why it shows nothing."""
+
+    periods: tuple[DetectedPeriod, ...] = ()
+    reason: str | None = None
+    unit: str | None = None
+    points: int = 0
+    backfilled: int = 0
+    #: Periods with enough history before them to have a level.
+    evaluated: int = 0
+    first: date | None = None
+    last: date | None = None
+
+    @property
+    def years_of_history(self) -> float:
+        if self.first is None or self.last is None:
+            return 0.0
+        return round((self.last - self.first).days / 365.25, 2)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "reason": self.reason,
+            "periods": [p.as_dict() for p in self.periods],
+            "thresholds": {
+                "ratio": DETECT_RATIO,
+                "min_consecutive": (DETECT_MIN_WEEKS if self.unit == "week" else DETECT_MIN_DAYS),
+                "same_time_days": DETECT_SAME_TIME_DAYS,
+            },
+            "history": {
+                "unit": self.unit,
+                "points": self.points,
+                "backfilled": self.backfilled,
+                "evaluated": self.evaluated,
+                "first": self.first.isoformat() if self.first else None,
+                "last": self.last.isoformat() if self.last else None,
+                "years": self.years_of_history,
+            },
+        }
+
+
+def _laid_on(occ: DetectedOccurrence, anchor: date) -> tuple[int, date, date]:
+    """``occ`` moved the whole number of years that lays it nearest ``anchor`` (zero when it
+    is already the same season): the shift and the moved span."""
+    best: tuple[int, date, date] | None = None
+    for years in (anchor.year - occ.start.year + d for d in (-1, 0, 1)):
+        start = month_day(occ.start.year + years, occ.start.month, occ.start.day)
+        if best is None or abs((start - anchor).days) < abs((best[1] - anchor).days):
+            best = (years, start, start + (occ.end - occ.start))
+    assert best is not None
+    return best
+
+
+def _same_time(a: DetectedOccurrence, b: DetectedOccurrence) -> bool:
+    _, start, end = _laid_on(b, a.start)
+    tolerance = timedelta(days=DETECT_SAME_TIME_DAYS)
+    return start <= a.end + tolerance and end >= a.start - tolerance
+
+
+def _group(occurrences: list[DetectedOccurrence], calendar: Calendar) -> list[DetectedPeriod]:
+    parent = list(range(len(occurrences)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, a in enumerate(occurrences):
+        for j in range(i + 1, len(occurrences)):
+            if _same_time(a, occurrences[j]):
+                parent[root(j)] = root(i)
+    groups: dict[int, list[DetectedOccurrence]] = {}
+    for i, occ in enumerate(occurrences):
+        groups.setdefault(root(i), []).append(occ)
+    out: list[DetectedPeriod] = []
+    for members in groups.values():
+        members.sort(key=lambda o: o.start)
+        anchor = members[-1]
+        # Each occurrence laid on the newest one's season; two in one season (a sale split
+        # by an ordinary day) are one year.
+        spans = [_laid_on(occ, anchor.start) for occ in members]
+        cycles = {years for years, _, _ in spans}
+        first = min(s for _, s, _ in spans)
+        last = max(e for _, _, e in spans)
+        recurring = len(cycles) >= 2
+        declared = {
+            entry.id: entry
+            for occ in members
+            for entry in calendar.entries
+            for offset in range((occ.end - occ.start).days + 1)
+            if entry.containing(occ.start + timedelta(days=offset)) is not None
+        }
+        out.append(
+            DetectedPeriod(
+                kind=RECURRING if recurring else SEEN_ONCE,
+                occurrences=tuple(members),
+                years_seen=len(cycles),
+                range=(
+                    (first.month, first.day, last.month, last.day)
+                    if recurring and (last - first).days < 365
+                    else None
+                ),
+                declared=tuple(sorted(declared.values(), key=lambda e: e.name.lower())),
+            )
+        )
+    out.sort(key=lambda p: p.start)
+    return out
+
+
+def detect(
+    points: dict[date, float],
+    params: AnomalyParams,
+    calendar: Calendar | None = None,
+    *,
+    backfilled: frozenset[date] = frozenset(),
+) -> Detection:
+    """The periods in a per-period check's history that ran at or above ``DETECT_RATIO``
+    times their level, the level being the one scoring uses (the median of the ``window``
+    ordinary periods before, by weekday with ``seasonality``, declared periods left out).
+    A period is judged only with ``min_points`` periods before it, the bar scoring sets.
+    Runs of consecutive qualifying periods are occurrences; occurrences at the same time
+    in different years are one detected period, ``recurring`` from two years and
+    ``seen_once`` from one. A description: nothing here reaches a score."""
+    if params.period is None:
+        return Detection(reason=NOT_PER_PERIOD)
+    unit = params.period.unit
+    days = sorted(points)
+    if not days:
+        return Detection(reason=NO_HISTORY, unit=unit)
+    calendar = calendar or Calendar()
+    history = History(points, params, calendar)
+    step = params.period.length
+    minimum = DETECT_MIN_WEEKS if unit == "week" else DETECT_MIN_DAYS
+    occurrences: list[DetectedOccurrence] = []
+    run: list[tuple[date, float]] = []
+    evaluated = 0
+
+    def close() -> None:
+        if len(run) >= minimum:
+            occurrences.append(
+                DetectedOccurrence(
+                    start=run[0][0],
+                    end=run[-1][0] + step - timedelta(days=1),
+                    peak_ratio=max(r for _, r in run),
+                    periods=len(run),
+                    backfilled=sum(1 for d, _ in run if d in backfilled),
+                )
+            )
+        run.clear()
+
+    for day in days:
+        if run and run[-1][0] + step != day:
+            close()
+        priors = history.priors(day)
+        ratio: float | None = None
+        if len(priors) >= max(_LEVEL_MIN_POINTS, params.min_points):
+            evaluated += 1
+            level = statistics.median(points[d] for d in priors)
+            if level > 0 and points[day] >= 0:
+                ratio = points[day] / level
+        if ratio is not None and ratio >= DETECT_RATIO:
+            run.append((day, ratio))
+        else:
+            close()
+    close()
+    return Detection(
+        periods=tuple(_group(occurrences, calendar)),
+        reason=None if evaluated else INSUFFICIENT_HISTORY,
+        unit=unit,
+        points=len(days),
+        backfilled=sum(1 for d in days if d in backfilled),
+        evaluated=evaluated,
+        first=days[0],
+        last=days[-1],
+    )
