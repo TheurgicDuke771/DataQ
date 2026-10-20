@@ -1,12 +1,13 @@
 # DataQ
 
-**Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
-against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
-PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
-Amazon Redshift, ADLS Gen2 or
-Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
-team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
-checks the moment a load finishes.
+**The data-quality control plane: know your data is right before anyone else finds out it
+isn't.** DataQ is an engineering-first, extensible place that connects quality checks, the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your tables and files — in Snowflake,
+Databricks Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure
+SQL, Synapse, Fabric), Amazon Athena, Amazon Redshift, ADLS Gen2 or Fabric OneLake, AWS S3 or
+any S3-compatible store, or Google Cloud Storage — the moment your Azure Data Factory, Airflow or
+dbt pipeline finishes a load, and alerts the team that owns it.
 
 <video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">
@@ -45,6 +46,20 @@ checks the moment a load finishes.
 
 </div>
 
+## From a bad load to a fixed one
+
+| Step | What DataQ does |
+|---|---|
+| **Detect** | A pipeline finishes and the bound suite runs, or a schedule fires. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape. |
+| **Explain** | Each result carries the measured value, the expected range and a redacted sample of failing rows. With a bring-your-own LLM configured, a root-cause narrative is drafted from that evidence. |
+| **Impact** | A critical breach opens an incident on the asset it hit; lineage from dbt, OpenLineage or the warehouse shows the downstream tables that may be affected. |
+| **Gate** | A pipeline stage can ask DataQ for the verdict before it publishes. DataQ answers; your DAG decides ([Gate a pipeline on DataQ](guides/orchestration.md#gate-a-pipeline-on-dataq)). |
+| **Remediate** | The owning team is alerted once, acknowledges the incident, fixes the data and re-runs the suite to confirm before resolving it — in the UI, over the API or from an AI agent over MCP. |
+
+Where it stands today: a data-quality platform with an emerging observability layer. It
+watches what you point it at, plus every table of a warehouse connection you switch
+[automatic coverage](guides/datasources-checks.md#automatic-coverage-watch-every-table-without-writing-checks) on for.
+
 ## What you can do with it
 
 | | |
@@ -54,7 +69,7 @@ checks the moment a load finishes.
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
-| **Let assistants do the work** | Fifty-four MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Let assistants do the work** | Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
 
 ## Who it is for
 

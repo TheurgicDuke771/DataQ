@@ -1,6 +1,8 @@
 # DataQ
 
-> Data quality monitoring built on Great Expectations — checks your tables and files, alerts the team that owns them, and reacts to the pipelines that load them.
+> The data-quality control plane, built on Great Expectations — connects quality checks, the pipelines that load your data, the assets it lands in, the incidents a failure opens and the AI agents your team works with.
+>
+> **Detect → Explain → Impact → Gate → Remediate:** checks run when a pipeline finishes, failures come with evidence and their downstream impact, a pipeline stage can wait for the verdict, and the owning team tracks the incident to resolution.
 
 - **📖 Docs:** <https://theurgicduke771.github.io/DataQ/docs/latest/>
 - **Status:** `v1.2.0` released 2026-10-04 — [changelog](CHANGELOG.md) · [tracker](docs/progress.md)
@@ -52,7 +54,7 @@
 |---|---|
 | Warehouses / lakehouses | Snowflake (incl. native DMF checks) · Databricks Unity Catalog (incl. DQX) · Apache Iceberg (native read) |
 | SQL databases | PostgreSQL · MySQL / MariaDB · Trino · SQL Server — Azure SQL, Synapse, Fabric SQL · Amazon Athena · Amazon Redshift ([driver notes](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/)) |
-| Files (CSV / Parquet / JSON, batch patterns) | ADLS Gen2 · Fabric OneLake · AWS S3 and any S3-compatible store (MinIO, R2, Ceph, …) |
+| Files (CSV / Parquet / JSON, batch patterns) | ADLS Gen2 · Fabric OneLake · AWS S3 and any S3-compatible store (MinIO, R2, Ceph, …) · Google Cloud Storage |
 | Orchestration (monitor + trigger, not checked) | Azure Data Factory · Apache Airflow · dbt |
 
 ## Quick start
