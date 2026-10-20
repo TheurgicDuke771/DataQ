@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from backend.app.db.models import AuditEvent, Connection, User
+from backend.app.db.models import AuditEvent, Check, Connection, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 
@@ -216,6 +216,56 @@ def test_a_check_attaches_known_entries_only_and_the_entry_then_cannot_be_delete
     assert delete.json()["error"]["code"] == "seasonal_period_in_use"
     assert [c["id"] for c in delete.json()["error"]["detail"]["checks"]] == [saved.json()["id"]]
     assert client.get(f"{_BASE}/{entry['id']}").json()["attached_checks"] == 1
+
+
+def test_an_attached_id_is_stored_canonically_and_matched_whatever_its_spelling(
+    client: TestClient, db_session: Any
+) -> None:
+    """The delete guard searches the stored config: an id spelled in upper case or without
+    hyphens must still count as an attachment."""
+    entry = client.post(_BASE, json=_BF).json()
+    suite_id = _suite(client, db_session)
+    shouted = entry["id"].upper()
+
+    saved = _check(client, suite_id, [shouted])
+    stored = db_session.get(Check, uuid.UUID(saved.json()["id"]))
+    # A row written by another door with a non-canonical spelling.
+    stored.config = {**stored.config, "seasonal_periods": [entry["id"].replace("-", "")]}
+    db_session.commit()
+    delete = client.delete(f"{_BASE}/{entry['id']}")
+    read, listed = client.get(f"{_BASE}/{entry['id']}").json(), client.get(_BASE).json()
+
+    assert saved.status_code == 201
+    assert saved.json()["config"]["seasonal_periods"] == [entry["id"]]
+    assert delete.status_code == 409
+    assert (read["attached_checks"], listed[0]["attached_checks"]) == (1, 1)
+
+
+def test_a_kind_change_sends_the_new_kinds_fields_only(client: TestClient) -> None:
+    entry = client.post(_BASE, json=_BF).json()
+
+    resp = client.patch(
+        f"{_BASE}/{entry['id']}",
+        json={"kind": "dated", "start_date": "2026-11-24", "end_date": "2026-11-30"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["kind"], body["start_date"], body["start_month"], body["end_day"]) == (
+        "dated",
+        "2026-11-24",
+        None,
+        None,
+    )
+
+
+def test_a_case_only_correction_of_the_only_entry_of_a_series_lands(client: TestClient) -> None:
+    entry = client.post(_BASE, json={**_SPRING, "series": "spring sale"}).json()
+
+    resp = client.patch(f"{_BASE}/{entry['id']}", json={"series": "Spring Sale"})
+
+    assert resp.status_code == 200
+    assert resp.json()["series"] == "Spring Sale"
 
 
 def test_attaching_without_yearly_or_on_a_whole_table_metric_is_refused(

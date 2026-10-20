@@ -183,16 +183,63 @@ def test_days_inside_a_declared_period_are_left_out_of_the_level() -> None:
 
 
 def test_an_ordinary_day_is_not_matched_to_an_earlier_years_sale_day() -> None:
-    sale = _recurring("Sale", (11, 20), (11, 26))
-    points = _noisy(date(2025, 10, 1), date(2026, 11, 19), peaks=((*_SALE_2025, 5.0),))
-    thursday = date(2026, 11, 19)  # the day before this year's sale; last year's 20th was in it
+    """Each earlier year's matching day fell in that year's (dated) sale, which this year
+    has no entry for yet."""
+    sales = tuple(
+        _dated(f"Sale {year}", date(year, 11, 1), date(year, 11, 30)) for year in (2025, 2024, 2023)
+    )
+    points = _noisy(date(2023, 10, 1), date(2026, 11, 14), peaks=((*_SALE_2025, 5.0),))
 
-    scored = History(points, _params(), Calendar(entries=(sale,))).score(thursday, 1000.0)
+    scored = History(points, _params(), Calendar(entries=sales)).score(date(2026, 11, 13), 1000.0)
 
     assert scored.as_dict() == {
         "applied": False,
         "reason": seasonal.EARLIER_YEAR_IN_DECLARED_PERIOD,
     }
+
+
+def test_missing_history_is_not_blamed_on_a_declared_period() -> None:
+    """One year back the matching day was in the sale; two and three years back it was an
+    ordinary day the history does not hold. The blocker is the missing history."""
+    sale = _recurring("Sale", (11, 20), (11, 26))
+    points = _noisy(date(2025, 10, 1), date(2026, 11, 19), peaks=((*_SALE_2025, 5.0),))
+    thursday = date(2026, 11, 19)
+
+    scored = History(points, _params(), Calendar(entries=(sale,))).score(thursday, 1000.0)
+
+    assert scored.as_dict() == {"applied": False, "reason": seasonal.NO_EARLIER_YEAR}
+
+
+def test_an_earlier_occurrence_with_a_zero_level_is_not_a_first_year() -> None:
+    """The shop was closed for the fortnight before last year's sale: the earlier occurrence
+    exists but cannot size the period. That reason stands; the first-year rule does not
+    withhold the band."""
+    sale = _recurring("Sale", (11, 20), (11, 26))
+    points = _noisy(date(2024, 12, 1), date(2026, 11, 22), peaks=((*_SALE_2025, 5.0),))
+    for day in list(points):
+        if date(2025, 10, 20) <= day < date(2025, 11, 20):
+            points[day] = 0.0
+
+    scored = History(points, _params(), Calendar(entries=(sale,))).score(date(2026, 11, 22), 5000.0)
+
+    assert scored.as_dict() == {"applied": False, "reason": seasonal.ZERO_LEVEL}
+    assert scored.declared is not None and not scored.declared.first_year
+    assert scored.banded
+
+
+def test_a_weekly_match_must_lie_inside_the_earlier_occurrence_on_both_sides() -> None:
+    """Last year's sale began on a Thursday; this year's on a Monday. The week at offset 0
+    snaps back to the Monday before last year's sale, which is not a sale week."""
+    last_year = _dated("Sale 2025", date(2025, 11, 20), date(2025, 11, 30))  # a Thursday
+    this_year = _dated("Sale 2026", date(2026, 11, 23), date(2026, 12, 6))  # a Monday
+    points = {d: 7000.0 for d in _noisy(date(2024, 10, 7), date(2026, 11, 23)) if d.weekday() == 0}
+    history = History(points, _params(period="week"), Calendar(entries=(last_year, this_year)))
+
+    scored = history.score(date(2026, 11, 23), 7000.0)
+
+    assert scored.applied and scored.declared is not None
+    assert date(2025, 11, 17) not in scored.declared.matched
+    assert scored.declared.first_year
 
 
 def test_in_a_periods_first_year_a_rise_is_not_banded_and_a_drop_is_judged_as_usual() -> None:
@@ -288,14 +335,14 @@ def admin(db_session: Any) -> User:
     return user
 
 
-_BF = {
-    "name": "Black Friday",
+_BF_COLUMNS = {
     "kind": "recurring",
     "start_month": 11,
     "start_day": 24,
     "end_month": 11,
     "end_day": 30,
 }
+_BF = {"name": "Black Friday", **_BF_COLUMNS}
 
 
 def test_create_normalises_and_audits_and_refuses_a_case_variant_name(
@@ -467,6 +514,72 @@ def test_authoring_refuses_an_unknown_entry_and_accepts_a_known_one(
 
     assert refused.value.detail["unknown_seasonal_periods"] == [str(ghost)]
     assert str(ghost) in refused.value.message
+
+
+def test_a_save_share_locks_the_attached_entries_and_a_preview_does_not(
+    _db_engine: Any, db_session: Any
+) -> None:
+    """A delete takes FOR UPDATE on the row: it must wait behind a save that is attaching
+    the entry, and must not wait behind a dry run, which saves nothing but holds its
+    transaction across the live measurement."""
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session as SASession
+
+    pid = _ID()
+    setup = SASession(bind=_db_engine)
+    setup.add(SeasonalPeriod(id=pid, name=f"Lock {pid.hex[:6]}", **_BF_COLUMNS))
+    setup.commit()
+    probe = SASession(bind=_db_engine)
+    config = {**_DAILY, "seasonal_periods": [str(pid)]}
+
+    def delete_would_wait() -> bool:
+        try:
+            probe.execute(
+                select(SeasonalPeriod).where(SeasonalPeriod.id == pid).with_for_update(nowait=True)
+            ).all()
+            return False
+        except OperationalError:
+            return True
+        finally:
+            probe.rollback()
+
+    try:
+        require_seasonal_periods(db_session, config, lock=False)
+        preview_blocks = delete_would_wait()
+        require_seasonal_periods(db_session, config)
+        save_blocks = delete_would_wait()
+    finally:
+        db_session.rollback()
+        probe.close()
+        row = setup.get(SeasonalPeriod, pid)
+        if row is not None:
+            setup.delete(row)
+        setup.commit()
+        setup.close()
+
+    assert (preview_blocks, save_blocks) == (False, True)
+
+
+def test_the_dry_run_resolves_attached_entries_without_the_lock(monkeypatch: Any) -> None:
+    from backend.app.services import dryrun_service
+
+    seen: list[bool] = []
+
+    def record(session: Any, config: Any, *, lock: bool = True) -> None:
+        seen.append(lock)
+        raise RuntimeError("stop before the measurement")
+
+    monkeypatch.setattr(dryrun_service, "require_seasonal_periods", record)
+    with pytest.raises(RuntimeError, match="stop before"):
+        dryrun_service._dry_run_anomaly(
+            None,  # type: ignore[arg-type]
+            Connection(name="pg", type="postgres", env="dev", config={}, secret_ref="r"),
+            config={**_DAILY, "seasonal_periods": [str(_ID())]},
+            target={"schema": "shop", "table": "orders"},
+            secret_store=FakeSecretStore(),
+        )
+
+    assert seen == [False]
 
 
 def test_a_vanished_entry_is_reported_and_the_check_keeps_running(db_session: Any) -> None:

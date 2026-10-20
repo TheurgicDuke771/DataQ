@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import calendar as _calendar
 import uuid
+from collections.abc import Sequence
 from datetime import date
 from typing import Any, Final
 
@@ -138,37 +139,43 @@ def list_periods(session: Session) -> list[SeasonalPeriod]:
     return list(session.scalars(select(SeasonalPeriod).order_by(func.lower(SeasonalPeriod.name))))
 
 
-def _attached_filter(period_id: uuid.UUID) -> Any:
-    return Check.config.contains({CONFIG_KEY: [str(period_id)]})
+def attached_ids(config: Any) -> set[uuid.UUID]:
+    """The entry ids a stored config names, whatever their spelling (the authoring path
+    canonicalises them, but a match must not depend on it)."""
+    raw = config.get(CONFIG_KEY) if isinstance(config, dict) else None
+    found: set[uuid.UUID] = set()
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            found.add(uuid.UUID(str(item)))
+        except ValueError:
+            continue
+    return found
+
+
+def _attached_rows(session: Session) -> Sequence[Any]:
+    return session.execute(
+        select(Check.id, Check.name, Check.config, Suite.id, Suite.name)
+        .join(Suite, Suite.id == Check.suite_id)
+        .where(Check.kind == ANOMALY, Check.config.has_key(CONFIG_KEY))
+        .order_by(Suite.name, Check.name)
+    ).all()
 
 
 def attached_checks(session: Session, period_id: uuid.UUID) -> list[dict[str, Any]]:
     """The checks whose config names ``period_id``, with their suites."""
-    rows = session.execute(
-        select(Check.id, Check.name, Suite.id, Suite.name)
-        .join(Suite, Suite.id == Check.suite_id)
-        .where(Check.kind == ANOMALY, _attached_filter(period_id))
-        .order_by(Suite.name, Check.name)
-    ).all()
     return [
         {"id": str(cid), "name": cname, "suite_id": str(sid), "suite_name": sname}
-        for cid, cname, sid, sname in rows
+        for cid, cname, config, sid, sname in _attached_rows(session)
+        if period_id in attached_ids(config)
     ]
 
 
 def attached_counts(session: Session) -> dict[uuid.UUID, int]:
     """How many checks name each entry, for the listing."""
     counts: dict[uuid.UUID, int] = {}
-    configs = session.scalars(
-        select(Check.config).where(Check.kind == ANOMALY, Check.config.has_key(CONFIG_KEY))
-    )
-    for config in configs:
-        raw = config.get(CONFIG_KEY) if isinstance(config, dict) else None
-        for item in raw if isinstance(raw, list) else []:
-            try:
-                counts[uuid.UUID(str(item))] = counts.get(uuid.UUID(str(item)), 0) + 1
-            except ValueError:
-                continue
+    for _, _, config, _, _ in _attached_rows(session):
+        for found in attached_ids(config):
+            counts[found] = counts.get(found, 0) + 1
     return counts
 
 
@@ -211,9 +218,12 @@ def calendar_for(session: Session, ids: tuple[uuid.UUID, ...]) -> seasonal.Calen
     return seasonal.Calendar(entries=tuple(_declared(r) for r in rows), missing=tuple(missing))
 
 
-def unknown_ids(session: Session, ids: tuple[uuid.UUID, ...]) -> list[uuid.UUID]:
-    """The ids among ``ids`` that name no entry, read under a share lock (authoring)."""
-    return load_entries(session, ids, lock=True)[1]
+def unknown_ids(
+    session: Session, ids: tuple[uuid.UUID, ...], *, lock: bool = True
+) -> list[uuid.UUID]:
+    """The ids among ``ids`` that name no entry. A save reads them under a share lock so a
+    delete cannot land before it commits; a preview, which saves nothing, reads without."""
+    return load_entries(session, ids, lock=lock)[1]
 
 
 # ───────────────────────── writes ─────────────────────────
@@ -226,18 +236,23 @@ def _name_taken(session: Session, name: str, *, except_id: uuid.UUID | None) -> 
     return session.scalar(stmt) is not None
 
 
-def _series_spelling(session: Session, series: str | None) -> str | None:
+def _series_spelling(
+    session: Session, series: str | None, *, except_id: uuid.UUID | None = None
+) -> str | None:
     """A series is one period across years whatever its case: a new entry takes the spelling
-    the calendar already uses."""
+    the calendar already uses. The row being edited is not "the calendar": a case-only
+    correction of the only entry of a series must land."""
     if series is None:
         return None
-    existing = session.scalar(
+    stmt = (
         select(SeasonalPeriod.series)
         .where(func.lower(SeasonalPeriod.series) == series.lower())
         .order_by(SeasonalPeriod.created_at)
         .limit(1)
     )
-    return existing or series
+    if except_id is not None:
+        stmt = stmt.where(SeasonalPeriod.id != except_id)
+    return session.scalar(stmt) or series
 
 
 def _taken(name: str) -> SeasonalPeriodNameTakenError:
@@ -279,13 +294,17 @@ def update_period(
     session: Session, period_id: uuid.UUID, fields: dict[str, Any], *, actor_id: uuid.UUID
 ) -> SeasonalPeriod:
     """Replace an entry's definition. Checks keep their attachment: a changed range applies
-    from their next run."""
+    from their next run. A field left out keeps its value, except that a change of kind
+    drops the old kind's fields, so the new kind's are the ones the edit must send."""
     row = get_period(session, period_id)
     before = audit_service.snapshot("seasonal_period", row)
-    values = normalise({**_fields_of(row), **fields})
+    current = _fields_of(row)
+    if fields.get("kind") not in (None, row.kind):
+        current = {k: v for k, v in current.items() if k in ("name", "kind", "note")}
+    values = normalise({**current, **fields})
     if _name_taken(session, values["name"], except_id=row.id):
         raise _taken(values["name"])
-    values["series"] = _series_spelling(session, values["series"])
+    values["series"] = _series_spelling(session, values["series"], except_id=row.id)
     for key, value in values.items():
         setattr(row, key, value)
     row.updated_by = actor_id

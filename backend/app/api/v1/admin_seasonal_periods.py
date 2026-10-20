@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import AdminUser, get_current_user
-from backend.app.db.models import SeasonalPeriod, User
+from backend.app.db.models import SeasonalPeriod
 from backend.app.db.session import get_db
 from backend.app.services import seasonal_period_service as svc
 
@@ -153,6 +153,3 @@ def delete_seasonal_period(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     svc.delete_period(db, period_id, actor_id=current_user.id)
-
-
-__all__ = ["User", "router"]

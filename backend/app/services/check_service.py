@@ -429,14 +429,19 @@ def validate_monitor_check(
         )
 
 
-def require_seasonal_periods(session: Session, config: dict[str, Any]) -> None:
-    """Every calendar entry an anomaly config attaches must exist (ADR 0048 decision 5). The
-    rows are share-locked for the caller's transaction, so a delete cannot land between
-    this check and the save."""
+def require_seasonal_periods(
+    session: Session, config: dict[str, Any], *, lock: bool = True
+) -> None:
+    """Every calendar entry an anomaly config attaches must exist (ADR 0048 decision 5). On
+    a save the rows are share-locked for the caller's transaction, so a delete cannot land
+    between this check and the commit; a preview passes ``lock=False``. The ids are written
+    back in their canonical spelling, which is what the delete guard searches for."""
     from backend.app.services import seasonal_period_service
 
     ids = anomaly_params(config, authoring=True).seasonal_periods
-    unknown = seasonal_period_service.unknown_ids(session, ids)
+    if config.get(seasonal_period_service.CONFIG_KEY) is not None:
+        config[seasonal_period_service.CONFIG_KEY] = [str(i) for i in ids]
+    unknown = seasonal_period_service.unknown_ids(session, ids, lock=lock)
     if unknown:
         raise CheckConfigInvalidError(
             "seasonal_periods names calendar entries that do not exist: "

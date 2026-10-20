@@ -43,7 +43,8 @@ ZERO_LEVEL = "zero_level_in_earlier_year"
 NEGATIVE_VALUE = "negative_value"
 INSUFFICIENT_HISTORY = "insufficient_history"
 #: Every earlier year's matching day fell inside a declared period, so none is an ordinary
-#: comparison for an ordinary day.
+#: comparison for an ordinary day. (If any year's matching day was ordinary and merely has
+#: no point, the blocker is missing history and the reason is ``NO_EARLIER_YEAR``.)
 EARLIER_YEAR_IN_DECLARED_PERIOD = "earlier_year_in_declared_period"
 
 RECURRING = "recurring"
@@ -262,9 +263,17 @@ class History:
         self._params = params
         self._weekly = params.period is not None and params.period.unit == "week"
         self._calendar = calendar or Calendar()
+        # Which declared period each day is in, memoised: the level of every prior asks it
+        # for every earlier day, and a calendar lookup walks every entry.
+        self._inside: dict[date, tuple[DeclaredPeriod, Occurrence] | None] = {}
+        self._candidates_of: dict[date, tuple[list[date], str, DeclaredEffect | None]] = {}
 
     def _declared(self, day: date) -> tuple[DeclaredPeriod, Occurrence] | None:
-        return self._calendar.inside(day) if self._calendar.entries else None
+        if not self._calendar.entries:
+            return None
+        if day not in self._inside:
+            self._inside[day] = self._calendar.inside(day)
+        return self._inside[day]
 
     def _ordinary(self, day: date) -> bool:
         return self._declared(day) is None
@@ -299,25 +308,31 @@ class History:
     def _candidates(self, day: date) -> tuple[list[date], str, DeclaredEffect | None]:
         """The earlier periods ``day`` may be compared with, newest first; the reason to give
         if none is usable; and the declared period it is in, if any."""
+        if day not in self._candidates_of:
+            self._candidates_of[day] = self._find_candidates(day)
+        return self._candidates_of[day]
+
+    def _find_candidates(self, day: date) -> tuple[list[date], str, DeclaredEffect | None]:
         declared = self._declared(day)
         if declared is None:
-            candidates: list[date] = []
-            reason = NO_EARLIER_YEAR
-            for years_back in range(1, PERIOD_HISTORY_YEARS + 1):
-                then = matched_day(day, years_back, weekly=self._weekly)
-                if not self._ordinary(then):
-                    # Last year's sale is not what an ordinary day looked like.
-                    reason = EARLIER_YEAR_IN_DECLARED_PERIOD
-                    continue
-                candidates.append(then)
+            # Last year's sale is not what an ordinary day looked like; but a year whose
+            # matching day was ordinary and simply has no point is missing history.
+            candidates = [
+                then
+                for years_back in range(1, PERIOD_HISTORY_YEARS + 1)
+                if self._ordinary(then := matched_day(day, years_back, weekly=self._weekly))
+            ]
+            reason = NO_EARLIER_YEAR if candidates else EARLIER_YEAR_IN_DECLARED_PERIOD
             return candidates, reason, None
         entry, occurrence = declared
         offset = day - occurrence.start
         effect = DeclaredEffect(entry=entry, occurrence=occurrence, offset_days=offset.days)
         matched: list[date] = []
         for earlier in self._calendar.earlier_occurrences(entry, occurrence):
+            # A week is the Monday it starts on, which can fall before an occurrence that
+            # began mid-week: a match must lie inside the earlier occurrence on both sides.
             then = self._period_of(earlier.start + offset)
-            if then <= earlier.end:
+            if earlier.start <= then <= earlier.end:
                 matched.append(then)
         return matched, NO_EARLIER_YEAR, effect
 
@@ -370,8 +385,10 @@ class History:
         _, _, effect = self._candidates(day)
         found = self._ratios(day)
         if isinstance(found, str):
-            if effect is None:
-                return YearlyScore(applied=False, reason=found)
+            if effect is None or found != NO_EARLIER_YEAR:
+                # An earlier occurrence that exists but cannot size the period (a zero or
+                # negative level then) is not a first year: the reason stands.
+                return YearlyScore(applied=False, reason=found, declared=effect)
             # Inside a declared period with no earlier occurrence to size it by: a rise is
             # expected, and how large it should be is unknown. Above the level is not
             # banded; below it is judged as an ordinary day would be.

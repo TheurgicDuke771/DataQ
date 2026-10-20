@@ -1327,7 +1327,10 @@ the refusal names the checks). While attached:
   occurrence** (recurring: the same range the year before, then two and three years back;
   dated: the earlier entries of its series), instead of the nearest weekday. The result's
   `declared.inside` names the entry and the occurrence, and `declared.inside.matched` the
-  earlier days it was compared with.
+  earlier days it was compared with. A weekly check works in weeks that start on Monday: a
+  week is inside a period when its Monday is, and it is matched only to a week that lies
+  inside the earlier occurrence on both sides, so a period that began mid-week last year
+  may have one week fewer to match.
 - Days inside any attached period are left out of the level, so the weeks after a sale are
   not judged against it (`declared.excluded_from_level` counts them), and an ordinary day is
   not matched to an earlier year's sale day.

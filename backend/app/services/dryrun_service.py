@@ -506,7 +506,9 @@ def _dry_run_anomaly(
         params = anomaly_params(config, authoring=True)
     except MonitorConfigError as exc:
         raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": ANOMALY}) from exc
-    require_seasonal_periods(session, config)
+    # Nothing is saved here, so no lock: it would hold every attached calendar row across
+    # the live measurement and block an admin's delete behind each in-flight preview.
+    require_seasonal_periods(session, config, lock=False)
     resolved = run_target.resolve_target(connection.type, target)
     now = datetime.now(UTC)
     try:
