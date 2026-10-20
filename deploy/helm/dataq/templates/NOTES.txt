@@ -1,0 +1,12 @@
+DataQ {{ .Chart.AppVersion }} is installed as {{ include "dataq.fullname" . }} in {{ .Release.Namespace }}.
+
+The frontend is the only way in; the api has no external address.
+{{- if .Values.ingress.enabled }}
+  {{ include "dataq.publicBaseUrl" . }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "dataq.fullname" . }}-frontend 8080:{{ .Values.frontend.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+Check it: GET /healthz through the frontend returns 200, you can sign in, and one suite run
+completes.

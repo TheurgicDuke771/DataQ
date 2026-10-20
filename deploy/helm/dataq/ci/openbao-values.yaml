@@ -1,0 +1,24 @@
+# OpenBao over TLS with a private CA, OTP sign-in through a relay with its own CA.
+existingSecret: dataq-env
+extraEnvFromSecrets: [dataq-extra]
+auth:
+  otp:
+    smtpHost: smtp.internal.example.com
+    tlsMode: implicit
+    smtpPort: 465
+    username: dataq
+    from: dataq@example.com
+    passwordSecretName: dataq-smtp
+    caBundle: /etc/dataq/ca/ca.pem
+    allowedEmails: alice@example.com,bob@example.com
+secretStore:
+  openbao:
+    addr: https://openbao.vault.svc:8200
+    mount: dataq
+    caBundle: /etc/dataq/ca/ca.pem
+trustedCA:
+  existingConfigMap: dataq-ca
+config:
+  extraEnv:
+    WORKER_CONCURRENCY: "4"
+    SLACK_WEBHOOK_SECRET_NAME: channel-slack

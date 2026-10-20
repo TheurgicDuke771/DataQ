@@ -111,6 +111,8 @@ repos:
         # --unsafe = syntax-check only, no object construction: mkdocs.yml uses
         # mkdocs-material's `!!python/name:` tag, which the default loader refuses.
         args: [--unsafe]
+        # Helm templates are Go templates, not YAML; scripts/check-helm-chart.py renders them.
+        exclude: ^deploy/helm/[^/]+/templates/
       - id: check-json
       - id: check-toml
       - id: check-merge-conflict
