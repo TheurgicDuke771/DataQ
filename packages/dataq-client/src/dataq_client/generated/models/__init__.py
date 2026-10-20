@@ -72,6 +72,7 @@ from .check_update import CheckUpdate
 from .check_update_config_type_0 import CheckUpdateConfigType0
 from .check_version_read import CheckVersionRead
 from .check_version_read_config import CheckVersionReadConfig
+from .classification_dismiss_update import ClassificationDismissUpdate
 from .column_hop_read import ColumnHopRead
 from .column_node_read import ColumnNodeRead
 from .column_origin_read import ColumnOriginRead
@@ -123,6 +124,8 @@ from .data_subject_match_sample_failures_type_0 import DataSubjectMatchSampleFai
 from .data_subject_request import DataSubjectRequest
 from .deployment_posture_read import DeploymentPostureRead
 from .deployment_posture_read_zero_sample_source import DeploymentPostureReadZeroSampleSource
+from .detected_classification_read import DetectedClassificationRead
+from .detected_classification_read_detector import DetectedClassificationReadDetector
 from .dimension_score_read import DimensionScoreRead
 from .document_problem_read import DocumentProblemRead
 from .effective_coverage_read import EffectiveCoverageRead
@@ -369,6 +372,7 @@ __all__ = (
     "CheckUpdateConfigType0",
     "CheckVersionRead",
     "CheckVersionReadConfig",
+    "ClassificationDismissUpdate",
     "ColumnHopRead",
     "ColumnNodeRead",
     "ColumnOriginRead",
@@ -416,6 +420,8 @@ __all__ = (
     "DataSubjectRequest",
     "DeploymentPostureRead",
     "DeploymentPostureReadZeroSampleSource",
+    "DetectedClassificationRead",
+    "DetectedClassificationReadDetector",
     "DimensionScoreRead",
     "DocumentProblemRead",
     "EffectiveCoverageRead",
