@@ -730,7 +730,9 @@ function ChecksList({
     modal.confirm({
       title: `Re-baseline “${check.name}”?`,
       content:
-        'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.',
+        check.kind === 'pii_drift'
+          ? 'Drops the stored baseline of PII-looking unclassified columns. The next run learns the CURRENT set as the new reference and reports skip — columns that drifted so far will read as “known”.'
+          : 'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.',
       okText: 'Re-baseline',
       onOk: async () => {
         try {
@@ -961,9 +963,9 @@ function ChecksList({
                             </Button>
                           </Dropdown>,
                         ]),
-                  // Re-baseline is schema_drift-only (the backend 422s other
-                  // kinds) and edit-gated like snooze.
-                  ...(canEditChecks && check.kind === 'schema_drift'
+                  // Re-baseline is for the baseline-diff kinds (schema_drift, pii_drift —
+                  // the backend 422s other kinds) and edit-gated like snooze.
+                  ...(canEditChecks && (check.kind === 'schema_drift' || check.kind === 'pii_drift')
                     ? [
                         <Button
                           key="rebaseline"

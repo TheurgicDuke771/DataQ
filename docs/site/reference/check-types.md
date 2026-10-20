@@ -6,7 +6,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 48 |
+| Check types in the editor | 49 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -655,6 +655,35 @@ Is today's value unusual against a rolling baseline of this check's own history?
     ```
 
     Reports the z-score of today's row count against the last 14 runs on the same weekday (`seasonality` keeps only those; off, it is the last 14 runs of any day). It skips until 7 such runs exist, so on a daily schedule about seven weeks.
+
+## Privacy
+
+Did a column start carrying personal data that nobody classified? Profiles the table every run; the first run learns the current set and reports skip.
+
+| Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
+|---|---|---|---|---|---|---|
+| **PII drift** | `monitor:pii_drift` | Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new since the previous run and carry no warehouse tag, no inherited classification and no entry in this suite’s column policy. The first run only learns the current set and reports skip. | — (set it yourself) | `ignore_columns` *(optional)* | warn / fail / critical | All datasources |
+
+### Examples
+
+??? example "PII drift"
+
+    ```json
+    {
+      "name": "PII drift",
+      "expectation_type": "monitor:pii_drift",
+      "kind": "pii_drift",
+      "config": {
+        "ignore_columns": [
+          "session_token"
+        ]
+      },
+      "warn_threshold": 1,
+      "fail_threshold": 1
+    }
+    ```
+
+    The first run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and reports skip. Each later run counts the columns that are new since the previous run and that nobody has classified (no warehouse tag, no inherited classification, not in this suite's column policy, not dismissed) and fails on one. `session_token` is never counted.
 
 ## Comparison
 
