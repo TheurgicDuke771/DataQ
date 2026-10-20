@@ -61,6 +61,40 @@ describe('buildCheckPayload — per-period anomaly metrics', () => {
   });
 });
 
+describe('buildCheckPayload — attached calendar entries', () => {
+  const base = { name: 'daily sales', expectation_type: 'monitor:anomaly', fail_threshold: 3 };
+  const period = { target_metric: 'period_row_count', date_column: 'ordered_at' };
+
+  it('sends the attached ids with yearly on', () => {
+    const config = { ...period, yearly: true, seasonal_periods: ['a', 'b'] };
+    expect(buildCheckPayload({ ...base, config }).config).toEqual(config);
+  });
+
+  it('drops them with yearly off, where the backend would refuse them', () => {
+    const config = buildCheckPayload({
+      ...base,
+      config: { ...period, yearly: false, seasonal_periods: ['a'] },
+    }).config;
+    expect(config).not.toHaveProperty('seasonal_periods');
+  });
+
+  it('sends no empty list for a check with nothing attached', () => {
+    const config = buildCheckPayload({
+      ...base,
+      config: { ...period, yearly: true, seasonal_periods: [] },
+    }).config;
+    expect(config).not.toHaveProperty('seasonal_periods');
+  });
+
+  it('never sends them for a whole-table metric', () => {
+    const config = buildCheckPayload({
+      ...base,
+      config: { target_metric: 'row_count', yearly: true, seasonal_periods: ['a'] },
+    }).config;
+    expect(config).toEqual({ target_metric: 'row_count' });
+  });
+});
+
 describe('buildCheckPayload — anomaly conditional column field (#593)', () => {
   it('omits column from the submitted config when target_metric is row_count, even with a stale value present', () => {
     const payload = buildCheckPayload({
