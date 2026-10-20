@@ -250,6 +250,18 @@ function daysIn(month: number | undefined): number {
   return month ? new Date(Date.UTC(2024, month, 0)).getUTCDate() : 31;
 }
 
+/** A day the chosen month can hold in some year (29 February is allowed). */
+function dayInMonth(monthField: 'start_month' | 'end_month') {
+  return ({ getFieldValue }: { getFieldValue: (name: string) => unknown }) => ({
+    validator: (_: unknown, value: number | undefined) => {
+      const month = getFieldValue(monthField) as number | undefined;
+      return month && value && value > daysIn(month)
+        ? Promise.reject(new Error(`That month has at most ${daysIn(month)} days`))
+        : Promise.resolve();
+    },
+  });
+}
+
 /** The whole entry as the API takes it: the other kind's fields are sent empty, so a kind change
  *  on edit does not leave the old kind's bounds behind. */
 function toWrite(values: FormValues): SeasonalPeriodWrite {
@@ -317,6 +329,7 @@ function PeriodFormModal({
       onOk={() => form.submit()}
     >
       <Form<FormValues>
+        name="calendar-entry"
         form={form}
         layout="vertical"
         onFinish={(v) => void onFinish(v)}
@@ -354,7 +367,13 @@ function PeriodFormModal({
               <Form.Item name="start_month" label="From month" rules={required} style={{ flex: 1 }}>
                 <Select options={MONTH_OPTIONS} placeholder="Month" />
               </Form.Item>
-              <Form.Item name="start_day" label="From day" rules={required} style={{ flex: 1 }}>
+              <Form.Item
+                name="start_day"
+                label="From day"
+                dependencies={['start_month']}
+                rules={[...required, dayInMonth('start_month')]}
+                style={{ flex: 1 }}
+              >
                 <InputNumber min={1} max={daysIn(startMonth)} style={{ width: '100%' }} />
               </Form.Item>
             </Flex>
@@ -362,7 +381,13 @@ function PeriodFormModal({
               <Form.Item name="end_month" label="To month" rules={required} style={{ flex: 1 }}>
                 <Select options={MONTH_OPTIONS} placeholder="Month" />
               </Form.Item>
-              <Form.Item name="end_day" label="To day" rules={required} style={{ flex: 1 }}>
+              <Form.Item
+                name="end_day"
+                label="To day"
+                dependencies={['end_month']}
+                rules={[...required, dayInMonth('end_month')]}
+                style={{ flex: 1 }}
+              >
                 <InputNumber min={1} max={daysIn(endMonth)} style={{ width: '100%' }} />
               </Form.Item>
             </Flex>

@@ -379,7 +379,19 @@ function CheckEditForm({
         onClose={() => setTrendOpen(false)}
         size={520}
       >
-        {trendOpen && <CheckTrend suiteId={suiteId} check={check} onCheckChanged={onRestored} />}
+        {trendOpen && (
+          <CheckTrend
+            suiteId={suiteId}
+            check={check}
+            onAttached={(entryId) => {
+              const current = form.getFieldValue(['config', 'seasonal_periods']) as unknown;
+              const ids = Array.isArray(current) ? (current as string[]) : [];
+              if (!ids.includes(entryId)) {
+                form.setFieldValue(['config', 'seasonal_periods'], [...ids, entryId]);
+              }
+            }}
+          />
+        )}
       </Drawer>
     </>
   );

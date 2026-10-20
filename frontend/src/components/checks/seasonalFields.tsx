@@ -155,7 +155,13 @@ export function CalendarEntriesInput({
           // An attached id the calendar no longer lists is kept visible rather than dropped.
           ...attached
             .filter((i) => !byId.has(i))
-            .map((i) => ({ value: i, label: `Unknown (${i})` })),
+            .map((i) => ({
+              value: i,
+              label:
+                state.status === 'ok'
+                  ? `Not on the calendar (${i})`
+                  : `Entry ${i} (calendar not loaded)`,
+            })),
         ]}
       />
       {state.status === 'error' && (

@@ -38,7 +38,13 @@ import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
 import { ResultStatusTag } from '../shared/StatusTag';
 import { DetectedPeriodsList, PeriodBaselineChart, type PeriodRow } from './SeasonalTrend';
-import { isoDay, resultsByPeriod, yearlyReasonLabel, yearlySummary } from './seasonalTrendData';
+import {
+  declaredAreasBetween,
+  isoDay,
+  resultsByPeriod,
+  yearlyReasonLabel,
+  yearlySummary,
+} from './seasonalTrendData';
 
 /**
  * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal chart): a check's
@@ -60,9 +66,9 @@ interface CheckTrendProps {
   /** History window (backend caps at 180); 90 gives a debugger-useful span
    *  without ever hitting the cap. A per-period check reads 180, one per plotted period. */
   limit?: number;
-  /** Called after a detected period was promoted and attached to this check, which changed its
-   *  config: an open editor must re-read it. */
-  onCheckChanged?: () => void;
+  /** Called with the new entry's id after a detected period was promoted and attached to this
+   *  check: an open editor must add it to its own copy of the config, or a save drops it. */
+  onAttached?: (entryId: string) => void;
 }
 
 /** A per-period anomaly check (`period_row_count` / `period_sum`) names its date column. */
@@ -238,8 +244,9 @@ function nextScoredAt(observations: Observation[], check: CheckTrendCheck): Date
   return next;
 }
 
-export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: CheckTrendProps) {
+export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTrendProps) {
   const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [promoted, setPromoted] = useState<string[]>([]);
   const isAnomaly = check.kind === 'anomaly';
   const perPeriod = isPerPeriod(check);
 
@@ -248,7 +255,9 @@ export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: Check
       listCheckHistory(suiteId, check.id, perPeriod ? 180 : limit),
       // Baseline is a debugging overlay, not the main story: a fetch failure (or simply no baseline
       // yet) degrades to "no overlay", never an error for the whole trend.
-      isAnomaly ? getCheckBaseline(suiteId, check.id).catch(() => null) : Promise.resolve(null),
+      isAnomaly
+        ? getCheckBaseline(suiteId, check.id).catch(() => 'failed' as const)
+        : Promise.resolve(null),
       // Likewise the seasonal overlays: without them the chart still shows the points.
       perPeriod
         ? getDetectedSeasonalPeriods(suiteId, check.id).catch(() => null)
@@ -263,8 +272,10 @@ export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: Check
     return <Alert type="error" showIcon title="Failed to load trend" description={state.error} />;
   }
 
-  const { history, baseline, detected, calendar } = state.data;
-  const attached = attachedIds(check);
+  const { history, detected, calendar } = state.data;
+  const baselineFailed = state.data.baseline === 'failed';
+  const baseline = baselineFailed ? null : (state.data.baseline as CheckBaseline | null);
+  const attached = [...attachedIds(check), ...promoted];
   const declared = (calendar ?? []).filter((p) => attached.includes(p.id));
   const withMetric = history.filter((p) => p.metric_value !== null);
   const bands = thresholdBands(check);
@@ -312,7 +323,16 @@ export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: Check
               {`Column profile baseline — a separate history per column (null % and distinct count), ${columnProfileRuns(baseline)} run(s) recorded. The chart above is each run's largest deviation; a run's detail names the columns that moved.`}
             </Typography.Text>
           )}
-          {isAnomaly && !isColumnProfile(baseline) && (
+          {isAnomaly && baselineFailed && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: 12 }}
+              title="The stored baseline could not be loaded"
+              description="The learned band and the stored periods are not shown; the results above are."
+            />
+          )}
+          {isAnomaly && !baselineFailed && !isColumnProfile(baseline) && (
             <AnomalyBaselinePanel
               observations={observations}
               meta={anomalyMeta}
@@ -324,6 +344,7 @@ export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: Check
                       declared,
                       detected,
                       calendarMissing: calendar === null && attached.length > 0,
+                      historyCapped: history.length >= 180,
                     }
                   : null
               }
@@ -336,9 +357,12 @@ export function CheckTrend({ suiteId, check, limit = 90, onCheckChanged }: Check
                 suiteId={suiteId}
                 checkId={check.id}
                 yearly={check.config?.yearly === true}
-                onPromoted={(didAttach) => {
+                onPromoted={(entryId, didAttach) => {
                   reload();
-                  if (didAttach) onCheckChanged?.();
+                  if (didAttach) {
+                    setPromoted((ids) => [...ids, entryId]);
+                    onAttached?.(entryId);
+                  }
                 }}
               />
             </div>
@@ -422,6 +446,8 @@ interface SeasonalOverlay {
   detected: DetectedSeasonalPeriods | null;
   /** The calendar could not be read, though entries are attached. */
   calendarMissing: boolean;
+  /** The history read hit its cap, so older judged periods have no band. */
+  historyCapped: boolean;
 }
 
 function AnomalyBaselinePanel({
@@ -501,6 +527,7 @@ function AnomalyBaselinePanel({
           judged={judged}
           seeded={seeded > 0}
           seasonal={seasonal}
+          shown={rows.length > 0 ? { first: rows[0].day, last: rows[rows.length - 1].day } : null}
         />
       )}
       {seasonal ? (
@@ -562,12 +589,15 @@ function SeasonalCaption({
   judged,
   seeded,
   seasonal,
+  shown,
 }: {
   yearly: boolean;
   k: number;
   judged: SeasonalPoint[];
   seeded: boolean;
   seasonal: SeasonalOverlay;
+  /** The first and last plotted period. */
+  shown: { first: string; last: string } | null;
 }) {
   const { applied, notApplied } = yearlySummary(judged);
   const withheld = judged.filter((j) => !j.banded).length;
@@ -582,7 +612,7 @@ function SeasonalCaption({
     );
   } else {
     lines.push(
-      `Shaded band: for each period a run judged (${judged.length} shown), what it was scored against, ± ${k}× the spread. Where the yearly comparison applied (${applied} of ${judged.length}) it is centred on the expected value, the dashed line: the level times what this time of year ran at in earlier years.`,
+      `Shaded band: for each period a run judged (${judged.length} shown), the centre it was scored against ± ${k}× the spread. Where the yearly comparison applied (${applied} of ${judged.length}) the dashed line is the expected value, the level times what this time of year ran at in earlier years; the centre is that value shifted by how far earlier periods ran from what was expected of them, so the band need not sit on the line.`,
     );
     if (notApplied.length > 0) {
       const why = notApplied.map((n) => `${n.reason} (${n.count})`).join('; ');
@@ -591,15 +621,29 @@ function SeasonalCaption({
       );
     }
   }
+  if (seasonal.historyCapped) {
+    lines.push(
+      'Bands and expected values come from the most recent 180 results, so older periods shown have none.',
+    );
+  }
   if (withheld > 0) {
     lines.push(
       `${withheld} judged period${withheld === 1 ? ' fell' : 's fell'} inside a declared period with no earlier occurrence: a rise was expected and its size unknown, so no band is drawn there.`,
     );
   }
   if (seasonal.declared.length > 0) {
-    lines.push(
-      `Highlighted: the attached calendar entries (${seasonal.declared.map((d) => d.name).join(', ')}).`,
+    const inView = new Set(
+      shown
+        ? declaredAreasBetween(seasonal.declared, shown.first, shown.last).map((a) => a.name)
+        : [],
     );
+    const outOfView = seasonal.declared.filter((d) => !inView.has(d.name)).map((d) => d.name);
+    if (inView.size > 0) {
+      lines.push(`Highlighted: the attached calendar entries (${[...inView].join(', ')}).`);
+    }
+    if (outOfView.length > 0) {
+      lines.push(`Attached but with no occurrence in the periods shown: ${outOfView.join(', ')}.`);
+    }
   } else if (seasonal.calendarMissing) {
     lines.push('The calendar could not be loaded, so attached entries are not highlighted.');
   }

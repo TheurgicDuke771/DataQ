@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +17,13 @@ import {
   type Suite,
   updateCheck,
 } from '../../src/api/suites';
-import { listSeasonalPeriods, type SeasonalPeriod } from '../../src/api/seasonalPeriods';
+import {
+  getDetectedSeasonalPeriods,
+  listSeasonalPeriods,
+  promoteDetectedPeriod,
+  type SeasonalPeriod,
+} from '../../src/api/seasonalPeriods';
+import { WithMe } from '../support/me';
 import { CheckEdit } from '../../src/pages/CheckEdit';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -42,7 +48,12 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
 
 vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/seasonalPeriods')>();
-  return { ...actual, listSeasonalPeriods: vi.fn() };
+  return {
+    ...actual,
+    listSeasonalPeriods: vi.fn(),
+    getDetectedSeasonalPeriods: vi.fn(),
+    promoteDetectedPeriod: vi.fn(),
+  };
 });
 
 const mockGetSuite = vi.mocked(getSuite);
@@ -55,6 +66,8 @@ const mockBaseline = vi.mocked(getCheckBaseline);
 const mockRestore = vi.mocked(restoreCheckVersion);
 const mockColumns = vi.mocked(listColumns);
 const mockCalendar = vi.mocked(listSeasonalPeriods);
+const mockDetected = vi.mocked(getDetectedSeasonalPeriods);
+const mockPromote = vi.mocked(promoteDetectedPeriod);
 
 const suite: Suite = {
   id: 's1',
@@ -863,5 +876,76 @@ describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
     await user.clear(input);
     await user.type(input, 'ship');
     expect((await screen.findAllByText('shipped_at')).length).toBeGreaterThan(0);
+  });
+
+  it('keeps an entry attached from the trend, and the unsaved edits, on the next save', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(perPeriod);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(perPeriod);
+    mockCalendar.mockResolvedValue(calendar);
+    mockHistory.mockResolvedValue([]);
+    mockBaseline.mockResolvedValue(null);
+    mockDetected.mockResolvedValue({
+      reason: null,
+      periods: [
+        {
+          kind: 'seen_once',
+          start: '2026-03-02',
+          end: '2026-03-04',
+          peak_ratio: 3,
+          years_seen: 1,
+          range: null,
+          occurrences: [],
+          declared: [],
+        },
+      ],
+      thresholds: { ratio: 1.5, min_consecutive: 2, same_time_days: 7, level: 'median' },
+      history: {
+        unit: 'day',
+        points: 10,
+        backfilled: 0,
+        evaluated: 5,
+        first: null,
+        last: null,
+        years: 0,
+      },
+    });
+    mockPromote.mockResolvedValue({ ...calendar[0], id: 'spring', name: 'Spring' });
+    render(
+      <MemoryRouter initialEntries={['/suites/s1/checks/chk5/edit']}>
+        <AntApp>
+          <WithMe role="admin">
+            <Routes>
+              <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
+              <Route path="/suites/:suiteId" element={<div>Suite detail</div>} />
+            </Routes>
+          </WithMe>
+        </AntApp>
+      </MemoryRouter>,
+    );
+    await screen.findByText('Black Friday (27 Nov – 30 Nov, every year)');
+    // An unsaved edit the attach must not wipe.
+    const fail = screen.getByLabelText('Fail ≥');
+    await user.clear(fail);
+    await user.type(fail, '4');
+
+    await user.click(screen.getByRole('button', { name: /Trend/ }));
+    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    const dialog = (await screen.findByText('Add this period to the calendar')).closest(
+      '.ant-modal',
+    ) as HTMLElement;
+    await user.type(within(dialog).getByLabelText('Name'), 'Spring');
+    await user.click(within(dialog).getByRole('button', { name: 'Add to calendar' }));
+    await waitFor(() =>
+      expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ attach: true })),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const payload = mockUpdate.mock.calls[0][2];
+    expect(payload.config?.seasonal_periods).toEqual(['bf', 'spring']);
+    expect(payload.fail_threshold).toBe(4);
   });
 });

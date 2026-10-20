@@ -209,4 +209,20 @@ describe('AdminCalendar', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
   });
+
+  it('refuses a day the month cannot hold when the month is picked after the day', async () => {
+    const user = userEvent.setup();
+    mockList.mockResolvedValue([]);
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /New entry/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Name'), 'Month end');
+    await user.type(within(dialog).getByLabelText('From day'), '31');
+    await pickMonth(user, 'Feb', 0);
+    await pickMonth(user, 'Mar', 1);
+    await user.type(within(dialog).getByLabelText('To day'), '1');
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }));
+    expect(await within(dialog).findByText('That month has at most 29 days')).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });

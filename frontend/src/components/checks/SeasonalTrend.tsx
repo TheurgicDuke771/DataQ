@@ -1,11 +1,13 @@
-import { App, Button, Checkbox, Flex, Form, Input, List, Tag, Typography } from 'antd';
+import { Alert, App, Button, Checkbox, Flex, Form, Input, List, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import {
   Area,
   CartesianGrid,
   ComposedChart,
+  ErrorBar,
   Line,
   ReferenceArea,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -14,7 +16,6 @@ import {
 import {
   type DetectedPeriod,
   type DetectedSeasonalPeriods,
-  occurrencesBetween,
   promoteDetectedPeriod,
   type SeasonalPeriod,
 } from '../../api/seasonalPeriods';
@@ -26,7 +27,7 @@ import { SEVERITY_SCALE } from '../../theme';
 import { AXIS_TICK, CHART_COLORS, GRID_PROPS, TOOLTIP_STYLE } from '../charts/chartTheme';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { Modal } from '../shared/Modal';
-import { snapToDays } from './seasonalTrendData';
+import { DAY_MS, dayMs, declaredAreasBetween, spanMs } from './seasonalTrendData';
 
 /** One plotted period of a per-period anomaly check. */
 export interface PeriodRow {
@@ -38,6 +39,14 @@ export interface PeriodRow {
 }
 
 const DECLARED_FILL = SEVERITY_SCALE.warning;
+
+/** What a detection that looked at nothing says instead of "none found". */
+const DETECTION_REASON: Record<string, string> = {
+  no_history: 'Detected periods: not looked for yet — the check has no stored periods.',
+  insufficient_history: 'Detected periods: not enough history yet to look for recurring peaks.',
+  invalid_config: 'Detected periods: not looked for — the check’s settings could not be read.',
+  not_a_per_period_metric: 'Detected periods: only a per-period metric is looked at.',
+};
 const DETECTED_STROKE = CHART_COLORS.axis;
 
 function SourceDot(props: unknown) {
@@ -67,7 +76,7 @@ function SourceDot(props: unknown) {
 /**
  * The stored periods with, for each period a run judged, the band it was scored against and,
  * where the yearly comparison applied, the expected value; attached calendar entries shaded and
- * detected periods outlined.
+ * detected periods outlined, each over the dates it covers.
  */
 export function PeriodBaselineChart({
   rows,
@@ -82,31 +91,31 @@ export function PeriodBaselineChart({
   detected: DetectedPeriod[];
   formatDay: (day: string) => string;
 }) {
-  const days = rows.map((r) => r.day);
   const data = rows.map((r) => {
     const j = r.judged;
-    const band =
-      j && j.banded && j.mean !== null && j.stddev !== null
-        ? [j.mean - k * j.stddev, j.mean + k * j.stddev]
-        : null;
-    return { day: r.day, value: r.value, backfilled: r.backfilled, expected: j?.expected, band };
+    const mean = j?.banded ? j.mean : null;
+    const stddev = j?.banded ? j.stddev : null;
+    const banded = mean !== null && stddev !== null;
+    return {
+      x: dayMs(r.day),
+      value: r.value,
+      backfilled: r.backfilled,
+      expected: j?.expected ?? null,
+      band: banded ? [mean - k * stddev, mean + k * stddev] : null,
+      // The centre with a whisker of k spreads: visible even for a period with no judged
+      // neighbour, where the shaded band has nothing to join.
+      centre: banded ? mean : null,
+      spread: banded ? k * stddev : null,
+    };
   });
-  const first = days[0];
-  const last = days[days.length - 1];
-  const declaredAreas = first
-    ? declared.flatMap((p) =>
-        occurrencesBetween(p, first, last).flatMap((o) => {
-          const snapped = snapToDays(days, o);
-          return snapped ? [{ key: `${p.id}${o.start}`, name: p.name, ...snapped }] : [];
-        }),
-      )
-    : [];
+  const first = rows[0]?.day;
+  const last = rows[rows.length - 1]?.day;
+  const declaredAreas = first ? declaredAreasBetween(declared, first, last) : [];
   const detectedAreas = detected.flatMap((d) =>
-    d.occurrences.flatMap((o) => {
-      const snapped = snapToDays(days, o);
-      return snapped ? [{ key: `${d.start}${o.start}`, ...snapped }] : [];
-    }),
+    d.occurrences.map((o) => ({ key: `${d.start}${o.start}`, ...spanMs(o) })),
   );
+  const domain: [number, number] = first ? [dayMs(first), dayMs(last) + DAY_MS] : [0, DAY_MS];
+  const tick = (ms: number) => formatDay(new Date(ms).toISOString().slice(0, 10));
 
   return (
     <ResponsiveChart
@@ -117,19 +126,23 @@ export function PeriodBaselineChart({
       <ComposedChart data={data} margin={{ top: 14, right: 12, left: -16, bottom: 0 }}>
         <CartesianGrid {...GRID_PROPS} vertical={false} />
         <XAxis
-          dataKey="day"
+          dataKey="x"
+          type="number"
+          scale="time"
+          domain={domain}
           tick={AXIS_TICK}
           tickLine={false}
           minTickGap={24}
-          tickFormatter={formatDay}
+          tickFormatter={tick}
         />
         <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(d) => formatDay(String(d))} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(ms) => tick(Number(ms))} />
         {declaredAreas.map((a) => (
           <ReferenceArea
             key={a.key}
             x1={a.x1}
             x2={a.x2}
+            ifOverflow="hidden"
             fill={DECLARED_FILL}
             fillOpacity={0.12}
             label={{ value: a.name, position: 'insideTop', fontSize: 10 }}
@@ -140,6 +153,7 @@ export function PeriodBaselineChart({
             key={a.key}
             x1={a.x1}
             x2={a.x2}
+            ifOverflow="hidden"
             fill="none"
             stroke={DETECTED_STROKE}
             strokeDasharray="4 3"
@@ -154,13 +168,21 @@ export function PeriodBaselineChart({
           connectNulls={false}
           isAnimationActive={false}
         />
+        <Scatter
+          dataKey="centre"
+          name="Scored-against centre"
+          fill="none"
+          isAnimationActive={false}
+        >
+          <ErrorBar dataKey="spread" direction="y" stroke={CHART_COLORS.primary} width={4} />
+        </Scatter>
         <Line
           dataKey="expected"
           name="Expected"
           stroke={CHART_COLORS.axis}
           strokeDasharray="6 3"
           strokeWidth={1.5}
-          dot={false}
+          dot={{ r: 2, fill: CHART_COLORS.axis }}
           connectNulls={false}
           isAnimationActive={false}
         />
@@ -194,7 +216,7 @@ export function DetectedPeriodsList({
   suiteId: string;
   checkId: string;
   yearly: boolean;
-  onPromoted: (attached: boolean) => void;
+  onPromoted: (entryId: string, attached: boolean) => void;
 }) {
   const isAdmin = useIsWorkspaceAdmin();
   const [promoting, setPromoting] = useState<DetectedPeriod | null>(null);
@@ -203,9 +225,8 @@ export function DetectedPeriodsList({
   if (detected.periods.length === 0) {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="detected-none">
-        {detected.reason === 'insufficient_history' || detected.reason === 'no_history'
-          ? 'Detected periods: not enough history yet to look for recurring peaks.'
-          : `Detected periods: none — no run of periods at ${ratio}× the level or more in ${detected.history.points} stored points.`}
+        {DETECTION_REASON[detected.reason ?? ''] ??
+          `Detected periods: none — no run of periods at ${ratio}× the level or more in ${detected.history.points} stored points.`}
       </Typography.Text>
     );
   }
@@ -256,9 +277,9 @@ export function DetectedPeriodsList({
           checkId={checkId}
           yearly={yearly}
           onClose={() => setPromoting(null)}
-          onDone={(attached) => {
+          onDone={(entryId, attached) => {
             setPromoting(null);
-            onPromoted(attached);
+            onPromoted(entryId, attached);
           }}
         />
       )}
@@ -286,18 +307,20 @@ function PromoteModal({
   checkId: string;
   yearly: boolean;
   onClose: () => void;
-  onDone: (attached: boolean) => void;
+  onDone: (entryId: string, attached: boolean) => void;
 }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<PromoteValues>();
   const [saving, setSaving] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const recurring = period.kind === 'recurring';
 
   const onFinish = async (values: PromoteValues) => {
     setSaving(true);
     try {
       const text = (v?: string) => (v?.trim() ? v.trim() : null);
-      await promoteDetectedPeriod({
+      setRefusal(null);
+      const created = await promoteDetectedPeriod({
         suite_id: suiteId,
         check_id: checkId,
         start: period.start,
@@ -311,11 +334,14 @@ function PromoteModal({
           ? `${values.name.trim()} added to the calendar and attached to this check`
           : `${values.name.trim()} added to the calendar`,
       );
-      onDone(yearly && values.attach);
+      onDone(created.id, yearly && values.attach);
     } catch (err) {
       const api = apiFieldError(err);
       if (api?.code === 'seasonal_period_name_taken') {
         form.setFields([{ name: 'name', errors: [api.message] }]);
+      } else if (api) {
+        // e.g. an entry already covers the season, or the history no longer shows it.
+        setRefusal(api.message);
       } else {
         message.error(`Promote failed: ${errorMessage(err)}`);
       }
@@ -334,12 +360,22 @@ function PromoteModal({
       okButtonProps={{ loading: saving }}
       onOk={() => form.submit()}
     >
+      {refusal && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          data-testid="promote-refusal"
+          title={refusal}
+        />
+      )}
       <Typography.Paragraph type="secondary">
         {recurring && period.range
           ? 'It recurs at the same time each year, so it becomes an entry for every year over the span it covered.'
           : `It was seen once (${spanText(period)}), so it becomes a dated entry. Give it a series to match it with next year’s.`}
       </Typography.Paragraph>
       <Form<PromoteValues>
+        name="promote-period"
         form={form}
         layout="vertical"
         initialValues={{ name: '', attach: yearly }}

@@ -531,7 +531,9 @@ describe('CheckTrend — per-period seasonal overlays', () => {
 
     const caption = await screen.findByTestId('seasonal-caption');
     expect(caption).toHaveTextContent(/Where the yearly comparison applied \(1 of 2\)/);
-    expect(caption).toHaveTextContent(/centred on the expected value, the dashed line/);
+    expect(caption).toHaveTextContent(/the dashed line is the expected value/);
+    // The backend's centre is the expected value shifted by the prior bias; never claimed equal.
+    expect(caption).toHaveTextContent(/so the band need not sit on the line/);
     expect(caption).toHaveTextContent(
       /Not applied on 1, so those bands are the recent window.*no earlier year in the history \(1\)/,
     );
@@ -623,13 +625,13 @@ describe('CheckTrend — per-period seasonal overlays', () => {
     seed();
     mockDetected.mockResolvedValue(DETECTED);
     mockPromote.mockResolvedValue({ ...BLACK_FRIDAY, id: 'new' });
-    const onCheckChanged = vi.fn();
+    const onAttached = vi.fn();
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
     render(
       <AntApp>
         <WithMe role="admin">
-          <CheckTrend suiteId="s1" check={yearlyCheck} onCheckChanged={onCheckChanged} />
+          <CheckTrend suiteId="s1" check={yearlyCheck} onAttached={onAttached} />
         </WithMe>
       </AntApp>,
     );
@@ -650,14 +652,14 @@ describe('CheckTrend — per-period seasonal overlays', () => {
         attach: true,
       }),
     );
-    await vi.waitFor(() => expect(onCheckChanged).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onAttached).toHaveBeenCalledWith('new'));
   });
 
   it('does not attach when the check has no yearly seasonality, and says why', async () => {
     seed();
     mockDetected.mockResolvedValue(DETECTED);
     mockPromote.mockResolvedValue({ ...BLACK_FRIDAY, id: 'new' });
-    const onCheckChanged = vi.fn();
+    const onAttached = vi.fn();
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
     render(
@@ -666,7 +668,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
           <CheckTrend
             suiteId="s1"
             check={{ ...anomalyCheck, config: { target_metric: 'period_sum', date_column: 'd' } }}
-            onCheckChanged={onCheckChanged}
+            onAttached={onAttached}
           />
         </WithMe>
       </AntApp>,
@@ -680,7 +682,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
     await vi.waitFor(() =>
       expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ attach: false })),
     );
-    expect(onCheckChanged).not.toHaveBeenCalled();
+    expect(onAttached).not.toHaveBeenCalled();
   });
 
   it('shows detected periods to a member without the promote action', async () => {
@@ -722,5 +724,83 @@ describe('CheckTrend — per-period seasonal overlays', () => {
     await screen.findByText(/no observations captured yet/);
     expect(mockDetected).not.toHaveBeenCalled();
     expect(mockCalendar).not.toHaveBeenCalled();
+  });
+
+  it('says the baseline could not be loaded instead of claiming nothing was judged', async () => {
+    seed();
+    mockBaseline.mockRejectedValue(new Error('boom'));
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    expect(await screen.findByText('The stored baseline could not be loaded')).toBeInTheDocument();
+    expect(screen.queryByText(/No shown period has a result yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no observations captured yet/)).not.toBeInTheDocument();
+  });
+
+  it('names an attached entry with no occurrence in view rather than claiming it is highlighted', async () => {
+    seed();
+    mockCalendar.mockResolvedValue([
+      { ...BLACK_FRIDAY, id: 'bf', start_month: 6, end_month: 6, name: 'Midsummer' },
+    ]);
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    const caption = await screen.findByTestId('seasonal-caption');
+    expect(caption).toHaveTextContent(
+      'Attached but with no occurrence in the periods shown: Midsummer.',
+    );
+    expect(caption).not.toHaveTextContent(/Highlighted/);
+  });
+
+  it('says older periods have no band when the history read hit its 180-result cap', async () => {
+    seed();
+    const [judged] = await mockHistory('s1', 'c1', 180);
+    mockHistory.mockResolvedValue(Array.from({ length: 180 }, () => judged));
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    expect(await screen.findByTestId('seasonal-caption')).toHaveTextContent(
+      /come from the most recent 180 results/,
+    );
+  });
+
+  it('says why detection looked at nothing instead of reporting none found', async () => {
+    seed();
+    mockDetected.mockResolvedValue({ ...NO_DETECTION, reason: 'invalid_config' });
+    render(<CheckTrend suiteId="s1" check={yearlyCheck} />);
+    expect(await screen.findByTestId('detected-none')).toHaveTextContent(
+      'not looked for — the check’s settings could not be read',
+    );
+  });
+
+  it('keeps a promote refusal on screen in the dialog', async () => {
+    seed();
+    mockDetected.mockResolvedValue(DETECTED);
+    const { AxiosError, AxiosHeaders } = await import('axios');
+    mockPromote.mockRejectedValue(
+      new AxiosError('conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: '',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          error: {
+            code: 'detected_period_already_declared',
+            message: 'Black Friday already covers this season; attach it instead',
+            detail: {},
+          },
+        },
+      }),
+    );
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    render(
+      <AntApp>
+        <WithMe role="admin">
+          <CheckTrend suiteId="s1" check={yearlyCheck} />
+        </WithMe>
+      </AntApp>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Name'), 'BF');
+    await user.click(within(dialog).getByRole('button', { name: 'Add to calendar' }));
+    expect(await within(dialog).findByTestId('promote-refusal')).toHaveTextContent(
+      'Black Friday already covers this season',
+    );
   });
 });

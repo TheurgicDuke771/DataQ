@@ -1,3 +1,4 @@
+import { occurrencesBetween, type SeasonalPeriod } from '../../api/seasonalPeriods';
 import type { CheckResultPoint, SeasonalPoint } from '../../api/suites';
 
 /** Why a run was scored without the yearly comparison (backend `seasonal.py` reasons). */
@@ -49,11 +50,30 @@ export function yearlySummary(judged: SeasonalPoint[]): {
   return { applied, notApplied };
 }
 
-/** `[start, end]` snapped to the first and last plotted days inside it, or null if none is. */
-export function snapToDays(
-  days: string[],
-  range: { start: string; end: string },
-): { x1: string; x2: string } | null {
-  const inside = days.filter((d) => d >= range.start && d <= range.end);
-  return inside.length > 0 ? { x1: inside[0], x2: inside[inside.length - 1] } : null;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A `YYYY-MM-DD` day as epoch milliseconds at UTC midnight. */
+export function dayMs(day: string): number {
+  return Date.parse(`${day}T00:00:00Z`);
+}
+
+/** An inclusive day range as the span it covers on a time axis: its first day's start to the
+ *  end of its last day. */
+export function spanMs(range: { start: string; end: string }): { x1: number; x2: number } {
+  return { x1: dayMs(range.start), x2: dayMs(range.end) + DAY_MS };
+}
+
+/** Each occurrence of the attached entries that touches `[first, last]`, named. */
+export function declaredAreasBetween(
+  declared: SeasonalPeriod[],
+  first: string,
+  last: string,
+): { key: string; name: string; x1: number; x2: number }[] {
+  return declared.flatMap((p) =>
+    occurrencesBetween(p, first, last).map((o) => ({
+      key: `${p.id}${o.start}`,
+      name: p.name,
+      ...spanMs(o),
+    })),
+  );
 }
