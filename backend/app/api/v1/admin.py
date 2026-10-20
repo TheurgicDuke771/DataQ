@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -27,9 +28,11 @@ from backend.app.db.models import (
     User,
 )
 from backend.app.db.session import get_db
+from backend.app.lineage.emitter import is_emission_configured
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
 from backend.app.services import (
+    audit_anchor_service,
     audit_chain,
     audit_read_service,
     audit_service,
@@ -787,8 +790,36 @@ class AuditChainStatus(ApiModel):
     #: Whether TAMPER_ANCHOR is configured. "ok" with anchor_mode="none" means the
     #: chain is internally consistent but NOT independently verifiable by anyone
     #: who could also rewrite the whole table — see ADR 0041 §9.
-    anchor_mode: Literal["none", "webhook"]
+    anchor_mode: Literal["none", "webhook", "object_lock"]
     first_break: dict[str, Any] | None
+    #: The published heads read back from the anchor and matched against the local
+    #: chain (#2310) — only an anchor DataQ can read (object_lock) fills this; null
+    #: for none/webhook. "unavailable" is a store outage, never folded into "empty".
+    anchors: AnchorVerificationRead | None = None
+
+
+class AnchorFinding(ApiModel):
+    key: str
+    label: str | None
+    head_hash: str | None
+    as_of: datetime | None
+    match: Literal["present", "purged", "missing", "malformed"]
+
+
+class AnchorVerificationRead(ApiModel):
+    #: "ok" (every anchor's head is in the chain or explained by a purge) |
+    #: "mismatch" (a published head is missing — a restore to before it, or a
+    #: rewritten chain — or an object under the prefix is not an anchor) |
+    #: "empty" (nothing published yet) | "unavailable" (the store could not be read).
+    status: Literal["ok", "mismatch", "empty", "unavailable"]
+    checked_count: int
+    present_count: int
+    purged_count: int
+    missing_count: int
+    malformed_count: int
+    findings: list[AnchorFinding]
+    truncated: bool
+    error: str | None
 
 
 @router.get(
@@ -799,6 +830,7 @@ class AuditChainStatus(ApiModel):
 def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainStatus:
     """The verification tooling for the tamper-evidence hash chain (#1460)."""
     result = audit_chain.verify_chain(db)
+    anchors = audit_anchor_service.verify_anchors(db)
     if result.first_break is not None:
         status: Literal["ok", "broken", "empty"] = "broken"
     elif result.verified_count == 0:
@@ -827,6 +859,30 @@ def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainSta
         chain_head_hash=result.chain_head_hash,
         anchor_mode=settings.tamper_anchor,
         first_break=break_info,
+        anchors=(
+            None
+            if anchors is None
+            else AnchorVerificationRead(
+                status=anchors.status,
+                checked_count=anchors.checked_count,
+                present_count=anchors.present_count,
+                purged_count=anchors.purged_count,
+                missing_count=anchors.missing_count,
+                malformed_count=anchors.malformed_count,
+                findings=[
+                    AnchorFinding(
+                        key=f.key,
+                        label=f.label,
+                        head_hash=f.head_hash,
+                        as_of=f.as_of,
+                        match=f.match,
+                    )
+                    for f in anchors.findings
+                ],
+                truncated=anchors.truncated,
+                error=anchors.error,
+            )
+        ),
     )
 
 
@@ -976,6 +1032,104 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     )
 
 
+def _display_url(url: str) -> str:
+    """Scheme, host and path only: a signed ingest URL can carry a credential in its
+    userinfo or query, and this response is meant to be shown to auditors."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
+def _tamper_anchor_transfer(settings: Any) -> ExternalTransfer:
+    """The audit-chain anchor (ADR 0041 §9) as a transfer vector (#2397): the
+    head hash, a label, an event count and a timestamp leave the database — never
+    an audit row's content."""
+    payload = (
+        "What leaves is the chain head: a SHA-256 hash, a label, the hashed-event "
+        "count and a timestamp — never an audit event's actor, action or payload."
+    )
+    if settings.tamper_anchor == "webhook":
+        destination = _display_url(settings.tamper_anchor_webhook_url)
+        return ExternalTransfer(
+            name="tamper_anchor",
+            enabled=True,
+            detail=(
+                f"The audit hash-chain head is HMAC-signed and POSTed daily, and before "
+                f"every retention purge, to {destination} — an "
+                "operator-chosen endpoint DataQ never reads back. " + payload
+            ),
+        )
+    if settings.tamper_anchor == "object_lock":
+        provider = settings.tamper_anchor_object_lock_provider
+        where = (
+            f"Azure container '{settings.tamper_anchor_object_lock_bucket}' at "
+            f"{settings.tamper_anchor_object_lock_account_url} (immutability policy)"
+            if provider == "azure"
+            else (
+                f"S3 bucket '{settings.tamper_anchor_object_lock_bucket}' "
+                + (
+                    f"at {settings.tamper_anchor_object_lock_endpoint_url}"
+                    if settings.tamper_anchor_object_lock_endpoint_url
+                    else f"in region {settings.tamper_anchor_object_lock_region}"
+                )
+                + f" (Object Lock {settings.tamper_anchor_object_lock_mode})"
+            )
+        )
+        return ExternalTransfer(
+            name="tamper_anchor",
+            enabled=True,
+            detail=(
+                f"The audit hash-chain head is written daily, and before every retention "
+                f"purge, as an immutable object under "
+                f"'{settings.tamper_anchor_object_lock_prefix}/' in {where}, retained "
+                f"{settings.tamper_anchor_object_lock_retention_days} days. DataQ reads it "
+                "back only to verify the chain. " + payload
+            ),
+        )
+    return ExternalTransfer(
+        name="tamper_anchor",
+        enabled=False,
+        detail=(
+            "No external anchor is configured (TAMPER_ANCHOR=none): the audit hash chain "
+            "is computed but never leaves the database, so it is only internally "
+            "consistent — an actor who can rewrite the whole table can rewrite the "
+            "hashes with it. When enabled (webhook or object_lock), "
+            + payload[0].lower()
+            + payload[1:]
+        ),
+    )
+
+
+def _openlineage_transfer() -> ExternalTransfer:
+    """OpenLineage emission (ADR 0034) as a transfer vector (#2397)."""
+    configured = is_emission_configured()
+    return ExternalTransfer(
+        name="openlineage_emission",
+        enabled=configured,
+        detail=(
+            (
+                "Every suite run emits a START and a terminal OpenLineage RunEvent to the "
+                "configured OpenLineage endpoint (OPENLINEAGE_URL or the library's own "
+                "transport env), with DQ facets: dataset and job names, check names, "
+                "statuses and aggregate counts. Never a failing-row sample or an "
+                "observed value. The catalog behind that endpoint is operator-chosen."
+            )
+            if configured
+            else (
+                "OpenLineage emission is not configured: no run event leaves this "
+                "deployment. When enabled (OPENLINEAGE_URL, or the library's transport "
+                "env, with OPENLINEAGE_DISABLED unset) every suite run emits a START and "
+                "a terminal RunEvent carrying dataset and job names, check names, "
+                "statuses and aggregate counts — never a failing-row sample — to an "
+                "operator-chosen catalog. Listed while absent so an auditor sees it was "
+                "considered."
+            )
+        ),
+    )
+
+
 @router.get(
     "/deployment",
     response_model=DeploymentPostureRead,
@@ -1086,6 +1240,8 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             ),
         ),
         _usage_telemetry_transfer(db, settings),
+        _openlineage_transfer(),
+        _tamper_anchor_transfer(settings),
     ]
     return DeploymentPostureRead(
         region=settings.deployment_region or None,

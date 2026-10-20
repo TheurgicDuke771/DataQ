@@ -36,6 +36,7 @@ from backend.app.lineage import pull as lineage_pull
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import (
     asset_service,
+    audit_anchor_service,
     audit_chain,
     audit_read_service,
     column_tags,
@@ -829,7 +830,17 @@ def verify_audit_chain() -> bool:
                 expected_prev_hash=result.first_break.expected_prev_hash,
                 actual_prev_hash=result.first_break.actual_prev_hash,
             )
-        return result.ok
+        anchors = audit_anchor_service.verify_anchors(session)
+        if anchors is not None and anchors.status == "mismatch":
+            log.error(
+                "audit_anchor_mismatch",
+                missing_count=anchors.missing_count,
+                malformed_count=anchors.malformed_count,
+                findings=[f"{f.match}:{f.key}" for f in anchors.findings],
+            )
+        elif anchors is not None and anchors.status == "unavailable":
+            log.error("audit_anchor_unverified", error=anchors.error)
+        return result.ok and (anchors is None or anchors.status in ("ok", "empty"))
     finally:
         session.close()
 

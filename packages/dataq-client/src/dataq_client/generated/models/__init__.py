@@ -9,6 +9,10 @@ from .admin_overview_read import AdminOverviewRead
 from .admin_suite_read import AdminSuiteRead
 from .admin_user_read import AdminUserRead
 from .admin_webhook_read import AdminWebhookRead
+from .anchor_finding import AnchorFinding
+from .anchor_finding_match import AnchorFindingMatch
+from .anchor_verification_read import AnchorVerificationRead
+from .anchor_verification_read_status import AnchorVerificationReadStatus
 from .api_key_create import ApiKeyCreate
 from .api_key_created import ApiKeyCreated
 from .api_key_read import ApiKeyRead
@@ -246,6 +250,12 @@ from .scorecard_read import ScorecardRead
 from .scoring_weights_read import ScoringWeightsRead
 from .scoring_weights_read_defaults import ScoringWeightsReadDefaults
 from .scoring_weights_write import ScoringWeightsWrite
+from .seasonal_period_patch import SeasonalPeriodPatch
+from .seasonal_period_patch_kind_type_0 import SeasonalPeriodPatchKindType0
+from .seasonal_period_read import SeasonalPeriodRead
+from .seasonal_period_read_kind import SeasonalPeriodReadKind
+from .seasonal_period_write import SeasonalPeriodWrite
+from .seasonal_period_write_kind import SeasonalPeriodWriteKind
 from .secret_sweep_report_read import SecretSweepReportRead
 from .secret_sweep_report_read_mode_type_0 import SecretSweepReportReadModeType0
 from .secret_sweep_report_read_status import SecretSweepReportReadStatus
@@ -319,6 +329,10 @@ __all__ = (
     "AdminSuiteRead",
     "AdminUserRead",
     "AdminWebhookRead",
+    "AnchorFinding",
+    "AnchorFindingMatch",
+    "AnchorVerificationRead",
+    "AnchorVerificationReadStatus",
     "ApiKeyCreate",
     "ApiKeyCreated",
     "ApiKeyRead",
@@ -552,6 +566,12 @@ __all__ = (
     "ScoringWeightsRead",
     "ScoringWeightsReadDefaults",
     "ScoringWeightsWrite",
+    "SeasonalPeriodPatch",
+    "SeasonalPeriodPatchKindType0",
+    "SeasonalPeriodRead",
+    "SeasonalPeriodReadKind",
+    "SeasonalPeriodWrite",
+    "SeasonalPeriodWriteKind",
     "SecretSweepReportRead",
     "SecretSweepReportReadModeType0",
     "SecretSweepReportReadStatus",

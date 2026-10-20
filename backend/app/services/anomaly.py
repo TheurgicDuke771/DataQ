@@ -7,6 +7,7 @@ import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -40,7 +41,7 @@ from backend.app.datasources.monitors import (
     row_count_from_scalar,
 )
 from backend.app.db.models import Check, Connection, MonitorBaseline, Run
-from backend.app.services import seasonal
+from backend.app.services import seasonal, seasonal_period_service
 from backend.app.services.coverage_settings_service import CheckSettings, SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -50,6 +51,7 @@ from backend.app.services.profile_service import (
     build_columns_query,
     resolve_effective_schema,
 )
+from backend.app.services.severity import derive_status
 
 log = get_logger(__name__)
 
@@ -615,6 +617,45 @@ def build_score_payload(value: float, priors: list[float], params: AnomalyParams
     return payload
 
 
+def _banded(check: Check, z_score: float | None) -> str:
+    """The tier ``z_score`` lands in under the check's own thresholds."""
+    if z_score is None:
+        return "skipped"
+    return derive_status(
+        success=True,
+        metric_value=Decimal(str(round(z_score, 6))),
+        warn_threshold=check.warn_threshold,
+        fail_threshold=check.fail_threshold,
+        critical_threshold=check.critical_threshold,
+    )
+
+
+def declared_payload(
+    check: Check,
+    compared: seasonal.YearlyScore,
+    *,
+    without: seasonal.YearlyScore,
+    ordinary_z: float | None,
+    calendar: seasonal.Calendar,
+) -> dict[str, Any]:
+    """``observed_value.declared``: which entry the judged period fell in and how it was
+    matched, how many earlier points the calendar kept out of the level, and the z-score and
+    tier the run would have had with no calendar attached."""
+    z_without = without.z_score if without.applied else ordinary_z
+    z_with = compared.z_score if compared.applied and compared.banded else None
+    with_status = _banded(check, z_with) if compared.applied else _banded(check, ordinary_z)
+    without_status = _banded(check, z_without)
+    return {
+        "attached": [str(e.id) for e in calendar.entries],
+        "missing": [str(i) for i in calendar.missing],
+        "inside": compared.declared.as_dict() if compared.declared is not None else None,
+        "excluded_from_level": compared.excluded_from_level,
+        "z_score_without": None if z_without is None else round(z_without, 6),
+        "verdict_without": without_status,
+        "verdict_changed": with_status != without_status,
+    }
+
+
 # ───────────────────────── run executor ─────────────────────────
 
 
@@ -727,10 +768,28 @@ def build_anomaly_executor(
             **period_fields,
         }
         if params.yearly:
-            compared = seasonal.History({o.ts.date(): o.value for o in earlier}, params).score(
-                at.date(), value
+            by_day = {o.ts.date(): o.value for o in earlier}
+            calendar = (
+                seasonal_period_service.calendar_for(session, params.seasonal_periods)
+                if params.seasonal_periods
+                else None
             )
+            compared = seasonal.History(by_day, params, calendar).score(at.date(), value)
             payload["yearly"] = compared.as_dict()
+            if calendar is not None:
+                # What the calendar did to this run, beside what the run would have scored
+                # without it, so a reader can tell when the calendar changed the verdict.
+                payload["declared"] = declared_payload(
+                    check,
+                    compared,
+                    without=seasonal.History(by_day, params).score(at.date(), value),
+                    ordinary_z=payload.get("z_score"),
+                    calendar=calendar,
+                )
+            if compared.applied and not compared.banded:
+                # A first-year declared period: a rise was expected and its size unknown.
+                payload["within_declared_period"] = True
+                payload["reason"] = "within_declared_period"
             if compared.applied and compared.centre is not None:
                 # `mean` and `stddev` are what the run was scored against, in the metric's
                 # own units, so `|value - mean| / stddev` is the z-score for any reader.
