@@ -191,6 +191,29 @@ export interface AssetDetail {
   inherited_classifications?: InheritedClassification[] | null;
   /** The lineage walk hit its depth cap, so columns further upstream were not considered. */
   inherited_classifications_truncated?: boolean;
+  /**
+   * Columns a profile found PII-shaped VALUES in (ADR 0049), dismissed ones included. `null` =
+   * could not be read; absent = an API predating the profiler classification source.
+   */
+  detected_classifications?: DetectedClassification[] | null;
+  /** When a profile of this asset's own target last fed the source; `null` = never looked. */
+  detected_classifications_refreshed_at?: string | null;
+}
+
+/**
+ * One profiler detection. `effect` is what it does now: `masks` (sensitive on every read path,
+ * unless a suite names the column as its identifier column), `overridden_by_tag` (the column's
+ * own warehouse tag decides instead), `dismissed` (a workspace admin cleared it).
+ */
+export interface DetectedClassification {
+  column: string;
+  /** `email` or `encoded` today — a label, not a closed set. */
+  detector: string;
+  effect: 'masks' | 'overridden_by_tag' | 'dismissed';
+  first_detected_at: string;
+  last_detected_at: string;
+  dismissed: boolean;
+  dismissed_at: string | null;
 }
 
 export interface InheritedClassification {
@@ -272,5 +295,22 @@ export async function updateAsset(
   payload: AssetMetadataUpdate,
 ): Promise<AssetSummary> {
   const { data } = await api.patch<AssetSummary>(`/assets/${assetId}`, payload);
+  return data;
+}
+
+/**
+ * Dismiss (`true`) or restore (`false`) one profiler detection — workspace-admin only (the
+ * backend 403s others); the one way a detection stops masking, and an audited one.
+ */
+export async function setAssetClassificationDismissed(
+  assetId: string,
+  column: string,
+  dismissed: boolean,
+): Promise<DetectedClassification> {
+  // The column travels in the body: a name may hold `/`, which a path segment cannot carry.
+  const { data } = await api.patch<DetectedClassification>(`/assets/${assetId}/classifications`, {
+    column,
+    dismissed,
+  });
   return data;
 }

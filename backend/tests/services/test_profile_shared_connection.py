@@ -288,7 +288,13 @@ def test_list_then_profile_without_the_scope_costs_two_logins(
         connection, session=db_session, secret_store=store, **target
     )
     profile_service.profile_connection(
-        connection, session=db_session, columns=columns, top_n=5, secret_store=store, **target
+        connection,
+        session=db_session,
+        columns=columns,
+        top_n=5,
+        secret_store=store,
+        table=warehouse_table,
+        schema="public",
     )
     assert len(logins) == 2
 

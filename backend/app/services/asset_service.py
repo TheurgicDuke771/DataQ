@@ -34,6 +34,10 @@ _SWEEP_REFERENCE_GUARDS: tuple[tuple[str, str], ...] = (
     # #761: incidents CASCADE from their asset — an asset with incident history
     # (open or resolved) is never swept, or that history would be silently wiped.
     ("incidents", "asset_id"),
+    # ADR 0049: a profiler classification CASCADEs from its asset too, and a DISMISSED one is a
+    # steward's recorded decision — sweeping the asset would erase it silently, and the column
+    # would re-mask on the next profile with no trace of ever having been cleared.
+    ("asset_column_classifications", "asset_id"),
 )
 
 

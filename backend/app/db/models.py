@@ -78,6 +78,12 @@ CHECK_KINDS = (
     "aggregate",
 )
 COMPARISON_KIND = "comparison"
+# Persisted column classifications below the warehouse-tag floor (ADR 0049). `profiler` is the
+# only source today; the governance-catalog pull (#1690) is the next. Only `sensitive` is ever
+# persisted — a detection can add masking and never clear a column.
+CLASSIFICATION_SOURCES = ("profiler",)
+CLASSIFICATION_VERDICTS = ("sensitive",)
+CLASSIFICATION_DETECTORS = ("email", "encoded")
 # Check engines (ADR 0036) — WHO evaluates, orthogonal to `kind`.
 CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")
 
@@ -326,6 +332,12 @@ class Asset(Base):
     column_tags: Mapped[dict[str, str] | None] = mapped_column(JSONB)
     #: Distinguishes "never looked" from "looked and found none" for auditors.
     column_tags_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: When a profile of this asset's own target last fed the profiler classification source
+    #: (ADR 0049) — the same "never looked" vs "looked and found none" distinction for the
+    #: `asset_column_classifications` rows.
+    detected_classifications_refreshed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -1080,6 +1092,51 @@ class SuiteNotificationChannel(Base):
         UUID(as_uuid=True),
         ForeignKey("notification_channels.id", ondelete="RESTRICT"),
         primary_key=True,
+    )
+    created_at: Mapped[datetime] = _created_at()
+
+
+class AssetColumnClassification(Base):
+    """One persisted column classification from a source below the warehouse-tag floor
+    (ADR 0049): today the profiler's email / encoded value detectors. Additive only — the
+    verdict is always `sensitive`, so a row can add masking and never clear a column, and it
+    never satisfies fail-closed clearance. `evidence` holds the detector's counts, never a
+    value. A row is cleared by a workspace Admin (`dismissed_at`), not by a re-profile that
+    happens not to see the values again; a dismissal survives re-detection, which keeps
+    moving `last_detected_at`.
+    """
+
+    __tablename__ = "asset_column_classifications"
+    __table_args__ = (
+        _in_check("source", CLASSIFICATION_SOURCES, "source_valid"),
+        _in_check("verdict", CLASSIFICATION_VERDICTS, "verdict_valid"),
+        _in_check("detector", CLASSIFICATION_DETECTORS, "detector_valid"),
+        CheckConstraint("jsonb_typeof(evidence) = 'object'", name="evidence_is_object"),
+        CheckConstraint("last_detected_at >= first_detected_at", name="detected_order"),
+        # One row per (asset, source, column), case-folded like the tags map's keys.
+        Index(
+            "uq_asset_column_classifications_cell",
+            "asset_id",
+            "source",
+            text("lower(column_name)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    column_name: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    verdict: Mapped[str] = mapped_column(String(16), nullable=False)
+    detector: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    first_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dismissed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
 
