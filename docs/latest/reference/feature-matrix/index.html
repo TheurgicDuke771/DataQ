@@ -2704,6 +2704,7 @@
 <th style="text-align: center;">SQL Serverᵉ</th>
 <th style="text-align: center;">Athenaᵒ</th>
 <th style="text-align: center;">Redshiftʳ</th>
+<th style="text-align: center;">BigQueryᵛ</th>
 <th style="text-align: center;">ADLS Gen2 (files)</th>
 <th style="text-align: center;">S3 (files)ˢ</th>
 <th style="text-align: center;">GCS (files)ᵏ</th>
@@ -2725,10 +2726,12 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Snowflake DMF (native metric functions)ᵈ</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2755,9 +2758,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2785,9 +2790,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Freshness from <strong>file arrival time</strong> (no column — catches "no new file")</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2815,6 +2822,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ</td>
@@ -2826,6 +2834,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅ (no median)</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (no median)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2833,6 +2842,7 @@
 </tr>
 <tr>
 <td>Anomaly monitor (z-score vs a learned baseline)ᵃ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2860,9 +2870,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2890,9 +2902,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Column profiler (nulls, distinct, min/max, top values)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2916,6 +2930,7 @@
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (database → table)</td>
 <td style="text-align: center;">✅ (schema → table)</td>
+<td style="text-align: center;">✅ (dataset → table)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2935,9 +2950,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Dry-run preview</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2966,10 +2983,11 @@ runners, which stateful kinds never reach.</p>
 <p>ᵍ <strong>Aggregate monitor.</strong> One statistic over one numeric column, recorded as the
 result's metric, with nested two-sided warn / fail / critical bounds in its config. Median is
 exact wherever it is offered; MySQL/MariaDB, Trino and Athena have only an approximate
-percentile, so it is refused there at author time. Verified by executed runs, author → worker
+percentile, and BigQuery's exact one is a window that runs the whole table on one worker, so it
+is refused there at author time. Verified by executed runs, author → worker
 → <code>metric_value</code> and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
-Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.</p>
+Trino, the BigQuery emulator, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.</p>
 <p>ⁱ <strong>PII drift.</strong> Every run profiles every column of the target through the column profiler
 (one login: the column listing plus the batched top-values query), keeps what looks like email
 addresses or encoded blobs as a classification of the asset, and counts the columns that are new
@@ -3055,6 +3073,15 @@ freshness (<code>TIMESTAMP</code>, <code>TIMESTAMPTZ</code>, <code>DATE</code>),
 table and a late-binding view, schema drift, comparison reads, inventory, browsing and an
 end-to-end persisted run. Sessions are read-only at the server (a write by the reader was
 refused); a materialized view is listed as a view.</p>
+<p>ᵛ <strong>Google BigQuery</strong> — one project per connection, a dataset as the schema. Every query
+DataQ runs carries the connection's <code>maximum_bytes_billed</code> (default 10 GiB), so a query that
+would bill more is refused uncharged; browsing, the inventory, column lists and schema drift
+use the free metadata API. There is <strong>no read-only session</strong> — the service account's IAM
+roles (<code>bigquery.dataViewer</code> + <code>bigquery.jobUser</code>) are the guarantee. Every ticked row was
+<strong>executed</strong> against <code>goccy/bigquery-emulator</code> (an opt-in integration lane), including a
+persisted end-to-end run; real BigQuery is unverified (no test project exists), and the
+emulator enforces neither the byte cap nor IAM. See
+<a href="../../guides/datasources-checks/#google-bigquery">Datasources &amp; checks</a>.</p>
 <p>ᵗ <strong>Trino</strong> — any cluster (incl. Starburst), one catalog per connection, and every store that
 catalog federates; everything runs by pushdown on the cluster. The same battery was
 <strong>executed</strong> against Trino 483 (the <code>memory</code> connector, and a mixed-case PostgreSQL table
@@ -3087,7 +3114,7 @@ Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's opti
 endpoint URL; every row in this column applies identically either way. See
 <a href="../../guides/datasources-checks/#s3-compatible-object-stores">Datasources &amp; checks</a>.</p>
 <p>Custom SQL runs a SQL query, so it's <strong>SQL-datasource only</strong> (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino, SQL Server, Athena, Redshift;
+MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through <code>pyiceberg</code> scans, not a query engine).
 <strong>Comparison checks</strong> (ADR <a href="../../adr/0015-two-connection-comparison-check-model/">0015</a>)
@@ -3105,7 +3132,7 @@ stopped sending files, which a timestamp inside the data cannot see. Flat-file s
 <code>orders_*.csv</code>) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
 refused); Iceberg suites target a <code>namespace.table</code>. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, the generic SQL
-engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift), flat files and Iceberg.</p>
+engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery), flat files and Iceberg.</p>
 <h2 id="assets-lineage-datasources">Assets &amp; lineage × datasources<a class="headerlink" href="#assets-lineage-datasources" title="Permanent link">¶</a></h2>
 <p>Every datasource gets a first-class <strong>asset</strong> (identity = the OpenLineage dataset naming
 spec, ADR 0034); lineage edges are <strong>observed, never inferred</strong>, and can arrive through
@@ -3265,6 +3292,15 @@ five mechanisms:</p>
 <td style="text-align: center;">—⁴</td>
 </tr>
 <tr>
+<td>Google BigQuery</td>
+<td><code>bigquery</code> (an emulator endpoint: <code>bigquery://{host:port}</code>) / <code>project.dataset.table</code></td>
+<td style="text-align: center;">✅ (+ inventory sync)</td>
+<td style="text-align: center;">✅ (dbt-bigquery naming)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—⁴</td>
+</tr>
+<tr>
 <td>BI reports / dashboards</td>
 <td>not yet materialized²</td>
 <td style="text-align: center;">—</td>
@@ -3280,7 +3316,7 @@ native <code>pyiceberg</code> connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native <code>pyiceberg</code>
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena and Redshift keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift and BigQuery (whose job-history lineage DataQ does not read) keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves <code>bi_report</code>/<code>dashboard</code> — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable

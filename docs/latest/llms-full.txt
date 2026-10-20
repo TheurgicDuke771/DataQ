@@ -10,7 +10,7 @@
 **Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
 against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
 PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
-Amazon Redshift, ADLS Gen2 or
+Amazon Redshift, Google BigQuery, ADLS Gen2 or
 Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
 team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
 checks the moment a load finishes.
@@ -244,7 +244,7 @@ flowchart LR
   **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
   **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
   **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
-  and Fabric SQL), **Amazon Athena** and **Amazon Redshift**. Fabric **OneLake** files are reached through an ADLS Gen2 connection.
+  and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery**. Fabric **OneLake** files are reached through an ADLS Gen2 connection.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
   Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
@@ -446,7 +446,7 @@ like this:
     *Adding a Snowflake connection, start to finish (12 s)*
 
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Google Cloud Storage, Apache Iceberg,
-   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.
+   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift or Google BigQuery). The form is spec-driven — it asks only for what that type needs.
 
     ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 
@@ -1628,7 +1628,7 @@ re-runs the check and never changes the suite.
 
 Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
 whose target is a table on a SQL datasource (Snowflake, Unity Catalog or one of the generic
-SQL engines — PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift), start a check,
+SQL engines — PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, BigQuery), start a check,
 pick **Custom SQL**, and describe the rule instead of writing it. **Generate from a
 description** sits beside the hand-written Custom SQL card — same check type underneath,
 just a different starting point. The description box appears only when you start from that
@@ -1971,6 +1971,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 | SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 | Amazon Athena (serverless SQL over S3 through the Glue catalog) | region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog | ✅ | ✅ |
 | Amazon Redshift (provisioned clusters and Serverless workgroups) | endpoint + port + database + user, password; TLS mode | ✅ | ✅ |
+| [Google BigQuery](#google-bigquery) | project + optional default dataset and location, service-account key file; a per-query byte cap (+ optional emulator endpoint) | ✅ | ✅ |
 
 ## Add a connection
 
@@ -2070,7 +2071,7 @@ Editing a field that decides *where* the credential is sent — Snowflake `accou
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
 `tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
-`s3_staging_dir`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
+`s3_staging_dir`, BigQuery `endpoint_url` / `auth_type`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
 `auth_type` / `tenant_id` / `client_id` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -2418,6 +2419,58 @@ speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in 
 - **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".
 
+### Google BigQuery
+
+Google's serverless warehouse, on the generic SQL base through the `sqlalchemy-bigquery`
+dialect over the `google-cloud-bigquery` client.
+
+- **Fields:** the **project ID** (where every query job runs and is billed), an optional
+  **default dataset** (where an unqualified run target resolves), an optional **location**
+  (`US`, `EU` or a region such as `us-central1`; blank lets BigQuery infer it from the data),
+  the **maximum bytes billed** per query, and the service account's **JSON key file**, pasted
+  whole, as the stored secret. A dataset is the schema, so a target is `dataset.table` and its
+  asset is `project.dataset.table`. An optional **endpoint URL** points the connection at an
+  emulator. Workload identity and other keyless auth are not supported yet.
+- **Every check is a billed query, and every query is capped.** BigQuery bills on-demand
+  queries by bytes processed. Each query DataQ runs (checks, monitors, custom SQL, profiling,
+  the anomaly baselines, the connection test) carries the connection's
+  `maximum_bytes_billed`, which defaults to **10 GiB**. A query that would bill more is refused
+  before it runs and is not charged; the run reports the cap rather than a permission error.
+  Raise it on the connection, or point the check at a partitioned or smaller table. BigQuery
+  bills at least 10 MiB per table a query reads, so the cap cannot be set lower than that. On
+  capacity (reservation) pricing you pay for slots rather than bytes, so the cap does not bound
+  that cost. Browsing, the inventory sync, the column list and schema drift use BigQuery's
+  free metadata API rather than `INFORMATION_SCHEMA` queries.
+- **Not read-only at the session — the IAM roles are the guarantee.** BigQuery has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give the service account only:
+  - `roles/bigquery.dataViewer` on the datasets DataQ checks (or the project), and
+  - `roles/bigquery.jobUser` on the project, which lets it run query jobs.
+
+  Neither role can create, change or delete a table.
+- **Names are case-sensitive.** Dataset and table names are resolved exactly as typed, so
+  `Sales.Orders` and `sales.orders` are different tables. A name containing `$` is refused when
+  you save, because `orders$20260101` addresses a partition, not a table. Names must be plain
+  identifiers (letters, digits and underscores, not starting with a digit).
+- **The profiler** reports min/max, distinct count and top values as unavailable for
+  `STRUCT`/`RECORD`, `ARRAY` (repeated), `GEOGRAPHY`, `JSON` and `RANGE` columns.
+- **No median** in the aggregate monitor: BigQuery's exact `PERCENTILE_CONT` is a window
+  function that sends the whole table to one worker, which fails (still billed) on a large
+  table. Use the mean, or a custom-SQL check with `APPROX_QUANTILES`.
+- **Freshness over a `DATETIME` column** reads the value as UTC, since a `DATETIME` carries no
+  time zone. If the producer writes local wall-clock time, the reported age is off by the UTC
+  offset; prefer a `TIMESTAMP` column.
+- **Schema drift** compares each column's full type: the fields inside a `STRUCT`, an `ARRAY`,
+  and a type's length, precision and scale (`STRING(20)`, `NUMERIC(10, 2)`). A legacy and a
+  GoogleSQL name for one type (`INTEGER` and `INT64`) read the same. A column switching
+  between `NULLABLE` and `REQUIRED` is not reported.
+- **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".
+- **Verification.** This connection has been exercised end to end against the
+  `goccy/bigquery-emulator`, not against Google's service: no BigQuery test project exists
+  yet. The emulator does not enforce `maximum_bytes_billed` or IAM, so those two guarantees are
+  untested against a real project.
+
 ### SQL Server / Azure SQL / Fabric (T-SQL)
 
 One connection type (`mssql`) for **anything that speaks SQL Server's TDS protocol** — SQL
@@ -2625,7 +2678,7 @@ set") rather than filed under a dimension — otherwise "Not covered" would be w
 ### Automatic coverage: watch every table without writing checks
 
 Switch on **Automatic coverage** on a Snowflake, Unity Catalog or SQL-database connection
-(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift) and every table its inventory
+(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery) and every table its inventory
 lists gets watched, with no check written by hand. Only a workspace admin can switch it on, like
 any connection change.
 
@@ -2732,7 +2785,7 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 - **Cost.** Each covered table runs its checks once a day, at a time spread across the day by
   table. The row-count and freshness checks are cheap aggregates, but the **column-profile check
   reads the whole table**: it counts nulls and distinct values for up to 100 columns. On an engine
-  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  that bills by data scanned, Amazon Athena and BigQuery especially, that is a full scan of every covered table
   every day, so estimate it before switching coverage on, and exclude large tables you don't need
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
@@ -2981,7 +3034,7 @@ timestamp stored as text against a Python `strftime` format, and *Column values 
 JSON* parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but **not on
 Snowflake or the generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
-Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+Redshift, BigQuery), where the editor hides them and the API rejects them — use a custom-SQL check
 (or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.
 
 ### Which expectation types are available
@@ -3004,7 +3057,7 @@ shape properly, with two-sided bands and a trend. **Whole-table set comparisons*
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift / BigQuery — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -3180,7 +3233,7 @@ error too: the monitor needs a numeric column.
 Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
 read the one column into the worker, under the same scan caps as a check. **Median** is exact
 wherever it is offered and is **not offered on MySQL/MariaDB, Trino or Athena**, which have
-only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+only an approximate percentile, or on **BigQuery**, whose exact percentile does not scale — use the mean there, or a custom-SQL check with the engine's
 `approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
 **min or max** result keeps its status but not its value: that value is one cell of the table.
@@ -3190,7 +3243,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views; BigQuery reads the table's schema from its metadata API), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
@@ -3511,6 +3564,7 @@ the type your warehouse/catalog shows you:
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
 | Amazon Athena | SQL (bare type name) | `DECIMAL`, `TIMESTAMP`, `VARCHAR`, `BIGINT`, `BOOLEAN` |
 | Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
+| Google BigQuery | SQL (BigQuery type name) | `INTEGER` or `INT64`, `NUMERIC` (not `DECIMAL`), `STRING` (not `VARCHAR`), `TIMESTAMP`, `DATETIME`, `DATE`, `BOOLEAN` or `BOOL` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 / GCS (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
@@ -3569,7 +3623,7 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
 - **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
-  and Fabric SQL), **Amazon Athena** and **Amazon Redshift** — the generic SQL engines
+  and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery** — the generic SQL engines
   (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
 - **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
   principal, not a separate type.
@@ -3602,7 +3656,7 @@ schema-drift / anomaly / comparison** monitor kinds:
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
   datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
-  Redshift), Apache Iceberg (computed natively via a
+  Redshift / BigQuery), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
@@ -5091,6 +5145,14 @@ section below.
   over a GCS bucket, authenticated with a service-account key file (read-only scope) or
   anonymously for a public bucket, with an optional endpoint for an emulator or a GCS-compatible
   store. Verified against `fake-gcs-server`; a real Google Cloud bucket has not yet been exercised.
+- **Google BigQuery is a datasource.** Checks, custom SQL, the freshness, volume, aggregate
+  (all but the median) and anomaly monitors, the profiler, schema drift, comparison reads,
+  browsing and the inventory sync run against a BigQuery project, authenticated with a
+  service-account key file. Every query DataQ runs carries the connection's maximum bytes billed
+  (10 GiB unless you set it), so a query that would bill more is refused before it runs and is not
+  charged; catalog reads use BigQuery's free metadata API. BigQuery has no read-only session: give
+  the service account only the BigQuery Data Viewer and Job User roles. Verified against the
+  `goccy/bigquery-emulator`; a real BigQuery project has not yet been exercised.
 - **A monitor that fires when a column starts carrying personal data nobody classified.** The
   new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
   suite's table on each run, keeps what looks like email addresses or encoded blobs as a
@@ -5593,11 +5655,11 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values not in set** | `expect_column_values_to_not_be_in_set` | No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”. | Validity | `column`, `value_set`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths in range** | `expect_column_value_lengths_to_be_between` | String lengths fall within [min, max]. | Validity | `column`, `min_value` *(optional)*, `max_value` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths equal** | `expect_column_value_lengths_to_equal` | Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number). | Validity | `column`, `value`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift, Google BigQuery — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift, Google BigQuery — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift, Google BigQuery — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift, Google BigQuery — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift or BigQuery: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift, Google BigQuery (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -5607,7 +5669,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift or BigQuery: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift, Google BigQuery (no SQL implementation; refused at author time) |
 
 ### Examples
 
@@ -6123,7 +6185,7 @@ Does a column statistic — mean, median, sum, standard deviation, min or max �
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Aggregate statistic** | `monitor:aggregate` | A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0. | — (set it yourself) | `aggregate`, `column`, `min_value` *(optional)*, `max_value` *(optional)*, `warn_min` *(optional)*, `warn_max` *(optional)*, `critical_min` *(optional)*, `critical_max` *(optional)* | Two-sided warn / fail / critical bounds, set as parameters | All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena (no exact median; refused at author time) |
+| **Aggregate statistic** | `monitor:aggregate` | A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0. | — (set it yourself) | `aggregate`, `column`, `min_value` *(optional)*, `max_value` *(optional)*, `warn_min` *(optional)*, `warn_max` *(optional)*, `critical_min` *(optional)*, `critical_max` *(optional)* | Two-sided warn / fail / critical bounds, set as parameters | All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena, Google BigQuery (no exact median; refused at author time) |
 
 ### Examples
 
@@ -6178,7 +6240,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `date_column`, `value_column`, `period` *(optional)*, `timezone` *(optional)*, `settle_hours` *(optional)*, `backfill` *(optional)*, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)*, `yearly` *(optional)*, `seasonal_periods` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
+| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `date_column`, `value_column`, `period` *(optional)*, `timezone` *(optional)*, `settle_hours` *(optional)*, `backfill` *(optional)*, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)*, `yearly` *(optional)*, `seasonal_periods` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift, Google BigQuery |
 
 ### Examples
 
@@ -6296,7 +6358,7 @@ Any predicate you can write in SQL, validated before it runs.
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift |
+| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift, Google BigQuery |
 
 ### Examples
 
@@ -6655,24 +6717,24 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — |
-| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | BigQueryᵛ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ (dataset → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -6688,10 +6750,11 @@ runners, which stateful kinds never reach.
 ᵍ **Aggregate monitor.** One statistic over one numeric column, recorded as the
 result's metric, with nested two-sided warn / fail / critical bounds in its config. Median is
 exact wherever it is offered; MySQL/MariaDB, Trino and Athena have only an approximate
-percentile, so it is refused there at author time. Verified by executed runs, author → worker
+percentile, and BigQuery's exact one is a window that runs the whole table on one worker, so it
+is refused there at author time. Verified by executed runs, author → worker
 → `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
-Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
+Trino, the BigQuery emulator, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
 
 ⁱ **PII drift.** Every run profiles every column of the target through the column profiler
 (one login: the column listing plus the batched top-values query), keeps what looks like email
@@ -6787,6 +6850,16 @@ table and a late-binding view, schema drift, comparison reads, inventory, browsi
 end-to-end persisted run. Sessions are read-only at the server (a write by the reader was
 refused); a materialized view is listed as a view.
 
+ᵛ **Google BigQuery** — one project per connection, a dataset as the schema. Every query
+DataQ runs carries the connection's `maximum_bytes_billed` (default 10 GiB), so a query that
+would bill more is refused uncharged; browsing, the inventory, column lists and schema drift
+use the free metadata API. There is **no read-only session** — the service account's IAM
+roles (`bigquery.dataViewer` + `bigquery.jobUser`) are the guarantee. Every ticked row was
+**executed** against `goccy/bigquery-emulator` (an opt-in integration lane), including a
+persisted end-to-end run; real BigQuery is unverified (no test project exists), and the
+emulator enforces neither the byte cap nor IAM. See
+[Datasources & checks](../guides/datasources-checks.md#google-bigquery).
+
 ᵗ **Trino** — any cluster (incl. Starburst), one catalog per connection, and every store that
 catalog federates; everything runs by pushdown on the cluster. The same battery was
 **executed** against Trino 483 (the `memory` connector, and a mixed-case PostgreSQL table
@@ -6823,7 +6896,7 @@ endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino, SQL Server, Athena, Redshift;
+MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -6842,7 +6915,7 @@ stopped sending files, which a timestamp inside the data cannot see. Flat-file s
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
 refused); Iceberg suites target a `namespace.table`. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, the generic SQL
-engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift), flat files and Iceberg.
+engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery), flat files and Iceberg.
 
 ## Assets & lineage × datasources
 
@@ -6896,6 +6969,7 @@ five mechanisms:
 | SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
 | Amazon Athena | `awsathena://athena.{region}.amazonaws.com` / `catalog.database.table` | ✅ (+ inventory sync) | ✅ where dbt-athena emits `catalog.database.table` names | ✅ | ✅ | —⁴ |
 | Amazon Redshift | `redshift://{cluster or workgroup}.{region}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-redshift naming) | ✅ | ✅ | —⁴ |
+| Google BigQuery | `bigquery` (an emulator endpoint: `bigquery://{host:port}`) / `project.dataset.table` | ✅ (+ inventory sync) | ✅ (dbt-bigquery naming) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -6903,7 +6977,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena and Redshift keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift and BigQuery (whose job-history lineage DataQ does not read) keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
@@ -7018,7 +7092,7 @@ risk that carries.
 
 | Term | Meaning |
 |---|---|
-| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL), Amazon Athena, Amazon Redshift. |
+| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL), Amazon Athena, Amazon Redshift, Google BigQuery. |
 | **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow, dbt. Not a datasource. |
 | **Connection** | Stored credentials + config for one datasource or orchestration provider. |
 | **Suite** | A named set of checks that runs against one connection's target. |
@@ -7214,7 +7288,7 @@ in production — this page is the reference.)
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
-| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift): schemas → tables (`?catalog=&schema=&limit=`). |
+| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, BigQuery): schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
@@ -8065,7 +8139,7 @@ flowchart LR
         Files["ADLS Gen2 · S3 · GCS · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
-        PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server · Athena · Redshift<br/>generic SQL base, pushdown"]
+        PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server · Athena · Redshift · BigQuery<br/>generic SQL base, pushdown"]
     end
 
     Web -->|HTTPS| Frontend
@@ -8703,7 +8777,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · GCS · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift"]
+        DS["Datasources — Snowflake · ADLS · S3 · GCS · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift · BigQuery"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
@@ -10749,8 +10823,9 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   checks the certificate chain against Amazon's certificate authorities. See
   [Datasources & checks](../guides/datasources-checks.md).
 - **Datasource writes:** PostgreSQL, MySQL and Redshift sessions are read-only at the server.
-  **Trino, SQL Server and Athena have no equivalent session setting**, so there the protection is the
-  custom-SQL validator plus the account's own access control — on SQL Server a
+  **Trino, SQL Server, Athena and BigQuery have no equivalent session setting**, so there the protection is the
+  custom-SQL validator plus the account's own access control (on BigQuery, a service account
+  holding only `roles/bigquery.dataViewer` and `roles/bigquery.jobUser`) — on SQL Server a
   `db_datareader`-only login, on Athena an IAM policy that can only read, as the datasource
   guide shows.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
@@ -10962,7 +11037,7 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, BigQuery, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -11014,7 +11089,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing rows of the table already in memory (up to 5,000): from the failing-row list the check builds when an identifier column is set, otherwise read directly off the in-memory table. No extra query either way |
-| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, BigQuery, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still
@@ -11845,7 +11920,7 @@ a third-party endpoint.
 
 | # | Service (operator-chosen) | What DataQ sends | Personal data? | When active |
 |---|---|---|---|---|
-| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift | Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace) | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
+| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift, Google BigQuery | Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace) | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
 | 2 | **Orchestration providers** — ADF, Airflow, dbt | Polling reads of pipeline/DAG run status; inbound webhooks | No — pipeline metadata only | When orchestration connections exist |
 | 3 | **Alert delivery** — MS Teams / Slack webhooks, SMTP email (incl. SES) | Check names, statuses, suite names and — when a failing sample is attached — **redacted** sample values | Potentially, in redacted failing samples; recipient addresses | When notifications are configured |
 | 4 | **Sign-in email (OTP)** — the configured SMTP relay | One-time codes to user email addresses | User email addresses (account identifiers, not warehouse content) | `otp` auth mode |
@@ -12213,7 +12288,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
 | Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
-| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena and Redshift need the cloud service itself) |
+| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift, BigQuery | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena, Redshift and BigQuery need the cloud service itself — BigQuery also runs against an emulator) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
@@ -12458,7 +12533,7 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake, ADLS, Athena or Redshift **connection** needs the live service to run against.
+Snowflake, ADLS, Athena, Redshift or BigQuery **connection** needs the live service to run against.
 The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
 Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
 SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
@@ -12663,7 +12738,7 @@ the credential again.**
 
 You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
-`workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
+`workspace_url`, BigQuery `endpoint_url` / `auth_type`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
 PostgreSQL / MySQL / Redshift `host` / `port`, Trino `host` / `port` / `sslmode` / `ca_bundle` /
 `auth_type`, SQL Server `host` / `port` / `auth_type` / `tenant_id` / `client_id` / `ca_bundle` /
 `driver`, Athena `host` / `region` / `work_group` / `s3_staging_dir`, Airflow `base_url`, dbt
@@ -12949,7 +13024,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0042](0042-llm-provider-seam.md) | `LLMProvider` seam — outbound LLM for authoring assistance (NL→SQL generation, check suggestions, future RCA narrative), **admin-configured, BYO credential, default-OFF**; two wire impls only (`anthropic` official SDK + `openai_compatible` httpx — the latter covers Azure OpenAI, Bedrock chat-completions, and local Ollama/vLLM/TGI; no model server in the image per 0025); structured output is a `native \| prompt_json` capability ladder and **never a trust boundary** — callers re-validate, generated SQL rides the 0019 validator + dry-run, suggestions the server-side allowlist; config = `llm_settings` DB singleton behind `require_workspace_admin`, API key write-only in `SecretStore` with the credential-destination re-supply rule on `base_url`; execution worker-side through `llm_invocations` (poll + audit + token/cost record; G4 posture reads it); prompt context = schema + masked aggregate profiler stats only, never sample rows; rejected: proxying a vendor key we own, bundling weights, MCP exposure, per-feature providers | Accepted |
 | [0043](0043-in-app-workspace-membership.md) | In-app workspace membership — one `workspace_members` table an admin manages from Admin → Members; **empty table = today's behaviour, non-empty = member if in the env allowlist OR the table**, checked on every request at four points (`_upsert_user`, OTP session resolve, PAT resolve, OTP eligibility) so removing someone stops their browser session and their PATs on the next request; env allowlists become a starting seed plus an emergency way in that can only grant (OTP mode still needs a non-empty one to boot); the first row imports every existing user as a **provisional** member shown for review, never a silent backfill; last-admin removal refused, self-removal confirmed; `initial_role` applies only when the user row is first created; the IdP account stays a prerequisite — DataQ controls its own door only; REST denies with 403, `/mcp` with 401 | Accepted |
 | [0044](0044-mssql-tds-driver-and-entra-auth.md) | MSSQL / T-SQL adapter driver + auth — **`python-tds` + `sqlalchemy-pytds` (MIT, pure Python, FEDAUTH token) by default** for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); **Fabric SQL endpoints via an optional ODBC lane** (`mssql+pyodbc` when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic `mssql` type with `sql` / `entra_service_principal` auth, `destination_fields` host/port/tenant_id/auth_type | Accepted |
-| [0045](0045-engine-generic-sql-datasource-base.md) | Engine-generic SQL datasource base — one config/adapter/runner/enumerator parameterized by a **`SqlEngineSpec`** (driver, GX datasource factory, `connect_args`, namespace scheme, catalog queries, optional profiler and run-engine hooks), one registry every SQL capability set derives from; **pushdown only** (no sampling), **read-only sessions** at the server, names resolved **exactly as spelled** (GX session scoped to the target schema, never a lower-cased GX schema), identifier limits enforced at save time; honest gaps — no column-tag source, no warehouse-native lineage (enumeration only, via a separate `TableEnumerator` seam), GX engine only; PostgreSQL first, then MySQL/MariaDB (amendment: `temp_table_types` — GX's MySQL uniqueness check runs on its own non-read-only session; `url_database`), then Trino (amendment: `auth_connect_args` — auth object, secret never in the URL; `requires_secret` for auth `none`; JWT `credential_expiry`; per-spec `destination_fields`; `names_are_lower_case` — and **no read-only session** on Trino, where the credential's access control is the guarantee), then SQL Server, then Amazon Athena (amendment: host derived from the region, `url_query`, `namespace_includes_port`, an IAM policy as the read-only guarantee, and a GX regex branch for the pyathena dialect), then Amazon Redshift (amendment: read-only like PostgreSQL; `gx_schema_with_session` for GX's name-only column lookup, `columns_view` for late-binding views, `namespace_authority` for OpenLineage's `<cluster>.<region>`) | Accepted |
+| [0045](0045-engine-generic-sql-datasource-base.md) | Engine-generic SQL datasource base — one config/adapter/runner/enumerator parameterized by a **`SqlEngineSpec`** (driver, GX datasource factory, `connect_args`, namespace scheme, catalog queries, optional profiler and run-engine hooks), one registry every SQL capability set derives from; **pushdown only** (no sampling), **read-only sessions** at the server, names resolved **exactly as spelled** (GX session scoped to the target schema, never a lower-cased GX schema), identifier limits enforced at save time; honest gaps — no column-tag source, no warehouse-native lineage (enumeration only, via a separate `TableEnumerator` seam), GX engine only; PostgreSQL first, then MySQL/MariaDB (amendment: `temp_table_types` — GX's MySQL uniqueness check runs on its own non-read-only session; `url_database`), then Trino (amendment: `auth_connect_args` — auth object, secret never in the URL; `requires_secret` for auth `none`; JWT `credential_expiry`; per-spec `destination_fields`; `names_are_lower_case` — and **no read-only session** on Trino, where the credential's access control is the guarantee), then SQL Server, then Amazon Athena (amendment: host derived from the region, `url_query`, `namespace_includes_port`, an IAM policy as the read-only guarantee, and a GX regex branch for the pyathena dialect), then Amazon Redshift (amendment: read-only like PostgreSQL; `gx_schema_with_session` for GX's name-only column lookup, `columns_view` for late-binding views, `namespace_authority` for OpenLineage's `<cluster>.<region>`), then Google BigQuery (amendment: `url_host`/`url_port`, a client connect arg carrying a per-query `maximum_bytes_billed` cap, `SqlCatalog.api` for the free metadata API, `namespace_override` for the bare `bigquery` namespace; IAM roles as the read-only guarantee) | Accepted |
 | [0046](0046-pipeline-dq-gate.md) | Pipeline DQ gate — a fourth orchestration responsibility: **answer a gate request**. One provider-agnostic endpoint (`POST /orchestration/gate`) keyed by trigger bindings: **trigger-and-wait** (starts the bound suites' runs for this pipeline run under the success-event marker, so polls and the later success event are idempotent; needs `edit`) or **status only** (`view`); states `awaiting_trigger` · `running` · `passed` · `failed` (at/above `fail_on`) · `error`; a bound suite the caller can't see refuses the gate; clients are the `dataq gate` CLI, an Airflow sensor and an ADF Until-loop snippet, all fail-closed; DataQ still never mutates a pipeline | Accepted |
 | [0047](0047-automated-coverage-loop.md) | Automated coverage — **per-connection switch** (`auto_coverage`, enumerable warehouse types only, per-asset exclusion) turns every inventory table into a **system-owned suite** (`suites.origin = 'auto'`, one per asset) of ordinary checks, so runs, results, incidents, alerts, UI and MCP need nothing new; **universal baselines start without approval** (row-count and freshness anomaly, schema drift, and a new one-query `column_profile` anomaly metric over every column's null % and distinct count), while **rules that assert something** (not-null, unique, accepted values, ranges, from profiling or the LLM suggester) wait in a `check_suggestions` review queue; **full severity** (warn 3σ, fail 4σ, critical 6σ; schema change fails); the reconciler adds missing checks only and never overrides a person's edit or resurrects a deleted check; daily staggered schedules and `AUTO_COVERAGE_MAX_ASSETS` bound the warehouse cost; incident `resolution` makes the **false-positive rate** a tracked figure beside coverage; **amended 2026-10-13:** sensitivity (per baseline) and baseline shape are settings resolved **asset override → workspace setting → built-in default**, and automatic anomaly checks **inherit them at run time** until a person edits one | Accepted |
 | [0048](0048-per-period-metrics-yearly-seasonality.md) | Per-period metrics and yearly seasonality on the anomaly monitor — two **per-period metrics** (`period_row_count`, `period_sum`, bucketed by a date column, complete UTC periods only, observations keyed by period); history **seeded once from the table** (marked `backfilled`) and then **accumulated from runs** (`observed`); **yearly seasonality as a seasonal index** over the rolling baseline, on every single-number anomaly metric (and, as a default-off switch, on the automatic row-count and freshness baselines), with every input in the result and an index of 1 when no earlier year exists; **seasonal periods** declared in a workspace calendar that a check attaches to, and detected from history for display only; the per-period metrics are authored checks, not automatic coverage | Accepted |
@@ -14273,7 +14348,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 | **Secrets** | New backends (AWS Secrets Manager, GCP Secret Manager, Vault) are additive `SecretStore` classes; no call site changes. (ADR 0010 §1) | already abstracted |
 | **Observability** | App Insights stays behind the `core/logging.py` handler; second backend arrives via **OpenTelemetry/OTLP**, not a parallel hardcoded path. (ADR 0010 §3) | seam reserved |
 | **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart** (build deferred). | images portable; chart deferred |
-| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, keyless auth still additive). | seam exists; three object stores behind it |
+| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, and the BigQuery adapter a service-account key file, keyless auth still additive). With Redshift, GCS and BigQuery the BYOL claim covers a warehouse **and** an object store on each of the three clouds (Azure: Synapse/Fabric SQL + ADLS Gen2; AWS: Redshift/Athena + S3; GCP: BigQuery + GCS). | seam exists; three object stores and a warehouse per cloud behind it |
 | **Config** | No hardcoded Azure resource names/endpoints in business logic — everything via Pydantic Settings (12-factor). | in place |
 
 **4. Phasing (post-v1).** Sequenced so the portability spend happens once and unlocks both non-Azure clouds together:
@@ -18421,6 +18496,48 @@ view is listed as a view. Every SQL-batch expectation type, custom SQL, the moni
 profiler over a table and a late-binding view, schema drift, comparison reads, inventory,
 browsing and an end-to-end persisted run were **executed** against a Redshift Serverless
 workgroup as a user granted only `USAGE` and `SELECT` on one schema.
+
+## Amendment — Google BigQuery (2026-10-20)
+
+BigQuery is the seventh engine and, like Athena, a service with no server session. The dialect
+is `bigquery` from `sqlalchemy-bigquery` (MIT) over `google-cloud-bigquery` (Apache-2.0), which
+GX's BigQuery datasource uses. The Storage Read API extra (`google-cloud-bigquery-storage`) is
+not installed: results page over REST. Four hooks were added:
+
+- **`url_host` / `url_port`** (config hooks). The dialect reads the *project* from the URL's
+  host and the default dataset from its database, so the BigQuery config returns the project as
+  the host and no port. `host` itself is derived (`bigquery.googleapis.com`, or an emulator's
+  endpoint host) and a configured host that disagrees is refused, as on Athena.
+- **The credential is a client, not a URL part.** `auth_connect_args` builds one
+  `bigquery.Client` from the service-account key file (validated like the GCS connection's)
+  and hands it to the dialect as a connect arg (`user_supplied_client`). The client's default
+  job config carries the connection's `maximum_bytes_billed` (default 10 GiB) and the default
+  dataset, so every query DataQ runs is capped. Its query retries are bounded to two minutes
+  (the library's defaults are 10 and 40). A query the cap refuses is explained
+  (`explain_failure`) rather than reported as a permission failure.
+- **`SqlCatalog.api`** (a spec field). The catalog is the client's metadata API (list datasets,
+  list tables, the table's schema), not SQL views: those calls are free, while
+  `INFORMATION_SCHEMA` is a billed, region-scoped query. Browsing, the inventory sync and schema
+  drift all read it.
+- **`namespace_override`** (a spec hook). OpenLineage's BigQuery namespace is the bare
+  `bigquery`; an emulator endpoint keeps its own (`bigquery://host:port`).
+
+§4 does not hold, as on Athena: BigQuery has no read-only session, so the guarantee is a service
+account holding only `roles/bigquery.dataViewer` and `roles/bigquery.jobUser`. Dataset and table
+names are case-sensitive and resolved exactly as spelled, and `$` is refused in a name because it
+addresses a partition. The median is refused (`exact_median=False`): BigQuery's exact
+`PERCENTILE_CONT` is window-only, and `OVER ()` sends the whole table to one worker. Schema
+drift compares each column's full type (STRUCT fields, length, precision and scale), with a
+type's legacy and GoogleSQL names normalised to one. An unqualified target on a connection with
+no default dataset is refused by a new `NoDefaultSchemaError`, which the shared schema resolver
+turns into the usual 422.
+
+Every SQL-batch expectation type, custom SQL, the monitors, the profiler, schema drift,
+comparison reads, inventory, browsing and an end-to-end persisted run were **executed** against
+`goccy/bigquery-emulator`, with the service-account JWT flow running against a local token
+endpoint. Real BigQuery is unverified: no test project exists. The emulator enforces neither IAM
+nor `maximum_bytes_billed`, and it refuses numeric query parameters sent as JSON numbers, which
+BigQuery accepts; the lane sends them as the strings the API documents.
 
 
 ---

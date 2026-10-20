@@ -1064,6 +1064,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#google-bigquery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Google BigQuery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1197,10 +1208,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-bigquery-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift / BigQuery — ADR 0019)
       
     </span>
   </a>
@@ -3011,6 +3022,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#google-bigquery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Google BigQuery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3144,10 +3166,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-bigquery-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift / BigQuery — ADR 0019)
       
     </span>
   </a>
@@ -3411,6 +3433,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td><a href="#google-bigquery">Google BigQuery</a></td>
+<td>project + optional default dataset and location, service-account key file; a per-query byte cap (+ optional emulator endpoint)</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -3515,7 +3543,7 @@ itself can be checked.</p>
 <code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL / Redshift <code>host</code> / <code>port</code>, Trino
 <code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, SQL Server <code>host</code> / <code>port</code> / <code>auth_type</code> /
 <code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> / <code>driver</code>, Athena <code>host</code> / <code>region</code> / <code>work_group</code> /
-<code>s3_staging_dir</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> / <code>endpoint_url</code> / <code>account_url</code> /
+<code>s3_staging_dir</code>, BigQuery <code>endpoint_url</code> / <code>auth_type</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> / <code>endpoint_url</code> / <code>account_url</code> /
 <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -3848,6 +3876,56 @@ speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in 
   types, which have no equality.
 - <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".</p>
+<h3 id="google-bigquery">Google BigQuery<a class="headerlink" href="#google-bigquery" title="Permanent link">¶</a></h3>
+<p>Google's serverless warehouse, on the generic SQL base through the <code>sqlalchemy-bigquery</code>
+dialect over the <code>google-cloud-bigquery</code> client.</p>
+<ul>
+<li><strong>Fields:</strong> the <strong>project ID</strong> (where every query job runs and is billed), an optional
+  <strong>default dataset</strong> (where an unqualified run target resolves), an optional <strong>location</strong>
+  (<code>US</code>, <code>EU</code> or a region such as <code>us-central1</code>; blank lets BigQuery infer it from the data),
+  the <strong>maximum bytes billed</strong> per query, and the service account's <strong>JSON key file</strong>, pasted
+  whole, as the stored secret. A dataset is the schema, so a target is <code>dataset.table</code> and its
+  asset is <code>project.dataset.table</code>. An optional <strong>endpoint URL</strong> points the connection at an
+  emulator. Workload identity and other keyless auth are not supported yet.</li>
+<li><strong>Every check is a billed query, and every query is capped.</strong> BigQuery bills on-demand
+  queries by bytes processed. Each query DataQ runs (checks, monitors, custom SQL, profiling,
+  the anomaly baselines, the connection test) carries the connection's
+  <code>maximum_bytes_billed</code>, which defaults to <strong>10 GiB</strong>. A query that would bill more is refused
+  before it runs and is not charged; the run reports the cap rather than a permission error.
+  Raise it on the connection, or point the check at a partitioned or smaller table. BigQuery
+  bills at least 10 MiB per table a query reads, so the cap cannot be set lower than that. On
+  capacity (reservation) pricing you pay for slots rather than bytes, so the cap does not bound
+  that cost. Browsing, the inventory sync, the column list and schema drift use BigQuery's
+  free metadata API rather than <code>INFORMATION_SCHEMA</code> queries.</li>
+<li><strong>Not read-only at the session — the IAM roles are the guarantee.</strong> BigQuery has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give the service account only:</li>
+<li><code>roles/bigquery.dataViewer</code> on the datasets DataQ checks (or the project), and</li>
+<li><code>roles/bigquery.jobUser</code> on the project, which lets it run query jobs.</li>
+</ul>
+<p>Neither role can create, change or delete a table.
+- <strong>Names are case-sensitive.</strong> Dataset and table names are resolved exactly as typed, so
+  <code>Sales.Orders</code> and <code>sales.orders</code> are different tables. A name containing <code>$</code> is refused when
+  you save, because <code>orders$20260101</code> addresses a partition, not a table. Names must be plain
+  identifiers (letters, digits and underscores, not starting with a digit).
+- <strong>The profiler</strong> reports min/max, distinct count and top values as unavailable for
+  <code>STRUCT</code>/<code>RECORD</code>, <code>ARRAY</code> (repeated), <code>GEOGRAPHY</code>, <code>JSON</code> and <code>RANGE</code> columns.
+- <strong>No median</strong> in the aggregate monitor: BigQuery's exact <code>PERCENTILE_CONT</code> is a window
+  function that sends the whole table to one worker, which fails (still billed) on a large
+  table. Use the mean, or a custom-SQL check with <code>APPROX_QUANTILES</code>.
+- <strong>Freshness over a <code>DATETIME</code> column</strong> reads the value as UTC, since a <code>DATETIME</code> carries no
+  time zone. If the producer writes local wall-clock time, the reported age is off by the UTC
+  offset; prefer a <code>TIMESTAMP</code> column.
+- <strong>Schema drift</strong> compares each column's full type: the fields inside a <code>STRUCT</code>, an <code>ARRAY</code>,
+  and a type's length, precision and scale (<code>STRING(20)</code>, <code>NUMERIC(10, 2)</code>). A legacy and a
+  GoogleSQL name for one type (<code>INTEGER</code> and <code>INT64</code>) read the same. A column switching
+  between <code>NULLABLE</code> and <code>REQUIRED</code> is not reported.
+- <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".
+- <strong>Verification.</strong> This connection has been exercised end to end against the
+  <code>goccy/bigquery-emulator</code>, not against Google's service: no BigQuery test project exists
+  yet. The emulator does not enforce <code>maximum_bytes_billed</code> or IAM, so those two guarantees are
+  untested against a real project.</p>
 <h3 id="sql-server-azure-sql-fabric-t-sql">SQL Server / Azure SQL / Fabric (T-SQL)<a class="headerlink" href="#sql-server-azure-sql-fabric-t-sql" title="Permanent link">¶</a></h3>
 <p>One connection type (<code>mssql</code>) for <strong>anything that speaks SQL Server's TDS protocol</strong> — SQL
 Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
@@ -4052,7 +4130,7 @@ notes on the same table should never see two different verdicts.</p>
 set") rather than filed under a dimension — otherwise "Not covered" would be wrong.</p>
 <h3 id="automatic-coverage-watch-every-table-without-writing-checks">Automatic coverage: watch every table without writing checks<a class="headerlink" href="#automatic-coverage-watch-every-table-without-writing-checks" title="Permanent link">¶</a></h3>
 <p>Switch on <strong>Automatic coverage</strong> on a Snowflake, Unity Catalog or SQL-database connection
-(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift) and every table its inventory
+(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift, BigQuery) and every table its inventory
 lists gets watched, with no check written by hand. Only a workspace admin can switch it on, like
 any connection change.</p>
 <p>For each table, DataQ creates one suite marked <strong>Automatic</strong>, named <code>Auto: &lt;table&gt;</code>, holding
@@ -4167,7 +4245,7 @@ checks and a daily schedule. After its first run it adds <em>Data is fresh</em> 
 <li><strong>Cost.</strong> Each covered table runs its checks once a day, at a time spread across the day by
   table. The row-count and freshness checks are cheap aggregates, but the <strong>column-profile check
   reads the whole table</strong>: it counts nulls and distinct values for up to 100 columns. On an engine
-  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  that bills by data scanned, Amazon Athena and BigQuery especially, that is a full scan of every covered table
   every day, so estimate it before switching coverage on, and exclude large tables you don't need
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (<code>AUTO_COVERAGE_MAX_ASSETS</code>); past
@@ -4392,7 +4470,7 @@ timestamp stored as text against a Python <code>strftime</code> format, and <em>
 JSON</em> parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but <strong>not on
 Snowflake or the generic SQL engines</strong> (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
-Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+Redshift, BigQuery), where the editor hides them and the API rejects them — use a custom-SQL check
 (or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.</p>
 <h3 id="which-expectation-types-are-available">Which expectation types are available<a class="headerlink" href="#which-expectation-types-are-available" title="Permanent link">¶</a></h3>
 <p>The complete, generated list — every type with its parameters, thresholds and the datasources
@@ -4410,7 +4488,7 @@ unexpected-%, so severity bands have nothing to band — the <em>Aggregate</em> 
 shape properly, with two-sided bands and a trend. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-bigquery-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift / BigQuery — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-bigquery-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -4575,7 +4653,7 @@ error too: the monitor needs a numeric column.</p>
 <p>Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
 read the one column into the worker, under the same scan caps as a check. <strong>Median</strong> is exact
 wherever it is offered and is <strong>not offered on MySQL/MariaDB, Trino or Athena</strong>, which have
-only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+only an approximate percentile, or on <strong>BigQuery</strong>, whose exact percentile does not scale — use the mean there, or a custom-SQL check with the engine's
 <code>approx_percentile</code>. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
 <strong>min or max</strong> result keeps its status but not its value: that value is one cell of the table.</p>
@@ -4583,7 +4661,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
-data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads <code>svv_columns</code>, which also lists late-binding views), the Parquet footer (or
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads <code>svv_columns</code>, which also lists late-binding views; BigQuery reads the table's schema from its metadata API), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
@@ -4941,6 +5019,11 @@ the type your warehouse/catalog shows you:</p>
 <td>Amazon Redshift</td>
 <td>SQL (bare type name)</td>
 <td><code>DECIMAL</code> (not <code>NUMERIC</code>), <code>VARCHAR</code>, <code>BIGINT</code>, <code>TIMESTAMP</code>, <code>TIMESTAMPTZ</code>, <code>DATE</code>, <code>BOOLEAN</code>, <code>SUPER</code>, <code>GEOMETRY</code>; a <code>VARBYTE</code> column reads as <code>VARCHAR</code></td>
+</tr>
+<tr>
+<td>Google BigQuery</td>
+<td>SQL (BigQuery type name)</td>
+<td><code>INTEGER</code> or <code>INT64</code>, <code>NUMERIC</code> (not <code>DECIMAL</code>), <code>STRING</code> (not <code>VARCHAR</code>), <code>TIMESTAMP</code>, <code>DATETIME</code>, <code>DATE</code>, <code>BOOLEAN</code> or <code>BOOL</code></td>
 </tr>
 <tr>
 <td>SQL Server</td>

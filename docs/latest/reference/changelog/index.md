@@ -85,6 +85,14 @@ section below.
   over a GCS bucket, authenticated with a service-account key file (read-only scope) or
   anonymously for a public bucket, with an optional endpoint for an emulator or a GCS-compatible
   store. Verified against `fake-gcs-server`; a real Google Cloud bucket has not yet been exercised.
+- **Google BigQuery is a datasource.** Checks, custom SQL, the freshness, volume, aggregate
+  (all but the median) and anomaly monitors, the profiler, schema drift, comparison reads,
+  browsing and the inventory sync run against a BigQuery project, authenticated with a
+  service-account key file. Every query DataQ runs carries the connection's maximum bytes billed
+  (10 GiB unless you set it), so a query that would bill more is refused before it runs and is not
+  charged; catalog reads use BigQuery's free metadata API. BigQuery has no read-only session: give
+  the service account only the BigQuery Data Viewer and Job User roles. Verified against the
+  `goccy/bigquery-emulator`; a real BigQuery project has not yet been exercised.
 - **A monitor that fires when a column starts carrying personal data nobody classified.** The
   new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
   suite's table on each run, keeps what looks like email addresses or encoded blobs as a
