@@ -60,6 +60,14 @@ section below.
   the deployment sets a workspace default for that destination, the suite alerts it as well
   afterwards, and the app says so. In the API,
   `POST /suites/{id}/notifications/promote`.
+- **Opt-in product-usage telemetry, off by default.** An operator can set `TELEMETRY_SINK`
+  (`file` for JSON lines on disk, or `otlp` for the existing OpenTelemetry exporters) and a
+  workspace admin can then opt in under Admin → Settings → Usage telemetry. DataQ records a
+  fixed list of events — such as a page viewed, a check created or a run completed — as an
+  OpenTelemetry counter and log events, with counts and fixed-vocabulary attributes only: never
+  a table or column name, SQL, suite name, email or credential. The full event list is shown on
+  the settings page, and the deployment-posture endpoint reports the setting whether it is on or
+  off. Nothing is ever sent to DataQ's authors.
 - **Backup, restore, upgrade and rollback runbook.** The docs site now has a
   [Backup, restore & rollback](../operate/backup-restore-upgrade.md) page: what to back up
   for each secret-store mode (the database, the OpenBao data and the CA for the prebuilt-image

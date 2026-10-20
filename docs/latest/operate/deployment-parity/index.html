@@ -2897,6 +2897,11 @@ differences:</p>
 <td><code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code> (loopback into the ADOT sidecar)</td>
 </tr>
 <tr>
+<td>Usage telemetry (<a href="../../adr/0050-usage-telemetry/">ADR 0050</a>)</td>
+<td><code>TELEMETRY_SINK=off</code> by default on both; set <code>otlp</code> to send the <code>dataq.usage.*</code> counter and events to App Insights / the OTLP endpoint above, or <code>file</code> with <code>TELEMETRY_FILE_PATH</code>. Nothing is recorded until an admin also opts in, and <code>GET /admin/deployment</code> lists it as <code>usage_telemetry</code> either way</td>
+<td>same</td>
+</tr>
+<tr>
 <td>Email</td>
 <td>Any SMTP relay + tfvars-sourced addresses</td>
 <td>SES SMTP host + an IAM-derived SMTP password secret + <code>alert_email</code> / <code>alert_email_to</code> variables</td>

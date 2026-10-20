@@ -2844,6 +2844,11 @@
 <td>Profiler-detected PII as a classification source — one <code>asset_column_classifications</code> table (<code>source = 'profiler'</code> now, the catalog pull next) holding <strong>additive-only</strong> <code>sensitive</code> verdicts from the two existing value detectors (email, encoded), overlaid on <code>effective_column_tags</code> as <code>detected</code>: a warehouse tag, inherited <code>sensitive</code> and the suite's <code>pii_columns</code> outrank it, the suite's <code>identifier_column</code> clears it, it never satisfies fail-closed clearance and never travels along lineage; cleared only by an audited Admin dismissal that survives re-detection; written on every profile of the suite's own target</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0050-usage-telemetry/">0050</a></td>
+<td>Opt-in product-usage telemetry — <strong>OpenTelemetry signals</strong> through the existing exporter seam: one <code>dataq.usage.events</code> counter (attribute <code>event</code>) and one <code>dataq.usage.&lt;event&gt;</code> log event per occurrence, on a <code>MeterProvider</code>/<code>LoggerProvider</code> of their own; <strong>default OFF behind two gates</strong>, the operator's <code>TELEMETRY_SINK</code> (<code>off</code> · <code>file</code> JSON lines · <code>otlp</code>) and the admin's audited opt-in (<code>telemetry_settings</code> singleton, Admin → Settings); a <strong>closed, code-enforced vocabulary</strong> of twelve events whose attributes are counts or fixed value sets (never a table/column name, SQL, suite name, email or free text — a value outside its set is dropped); the browser posts only <code>page_viewed</code>/<code>check_editor_abandoned</code> to the server, which is the only emitter; disclosed in <code>GET /admin/deployment</code> in both states; no third-party analytics dependency</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 

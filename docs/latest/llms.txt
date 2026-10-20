@@ -131,6 +131,7 @@ lists which).
 - [ADR 0047 — Automated coverage: system-owned suites over the asset inventory](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0047-automated-coverage-loop/index.md): DataQ runs what a human authors. A table nobody wrote a check for is not monitored, and a
 - [ADR 0048 — Per-period metrics, yearly seasonality and seasonal periods on the anomaly monitor](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0048-per-period-metrics-yearly-seasonality/index.md): The anomaly monitor is the one place in DataQ with a learned baseline: every other monitor
 - [ADR 0049 — Profiler-detected PII as a classification source](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0049-profiler-pii-classification-source/index.md): Failing-row samples are masked by a ladder of authorities: a column's own warehouse tag
+- [ADR 0050 — Opt-in product-usage telemetry over OpenTelemetry](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0050-usage-telemetry/index.md): ADR [0031](0031-oss-byol-distribution-licensing.md) (licensing, rule 40),
 
 ## Optional
 

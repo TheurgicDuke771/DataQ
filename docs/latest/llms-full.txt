@@ -5026,6 +5026,14 @@ section below.
   the deployment sets a workspace default for that destination, the suite alerts it as well
   afterwards, and the app says so. In the API,
   `POST /suites/{id}/notifications/promote`.
+- **Opt-in product-usage telemetry, off by default.** An operator can set `TELEMETRY_SINK`
+  (`file` for JSON lines on disk, or `otlp` for the existing OpenTelemetry exporters) and a
+  workspace admin can then opt in under Admin → Settings → Usage telemetry. DataQ records a
+  fixed list of events — such as a page viewed, a check created or a run completed — as an
+  OpenTelemetry counter and log events, with counts and fixed-vocabulary attributes only: never
+  a table or column name, SQL, suite name, email or credential. The full event list is shown on
+  the settings page, and the deployment-posture endpoint reports the setting whether it is on or
+  off. Nothing is ever sent to DataQ's authors.
 - **Backup, restore, upgrade and rollback runbook.** The docs site now has a
   [Backup, restore & rollback](../operate/backup-restore-upgrade.md) page: what to back up
   for each secret-store mode (the database, the OpenBao data and the CA for the prebuilt-image
@@ -11095,9 +11103,11 @@ mechanism and points you at the live endpoint for the values.
 
 ### What can move data out
 
-**DataQ sends nothing to its authors.** There is no usage telemetry, no licence check and
-no update check: a deployment makes network calls only to the services its operator
-configures — its datasources, identity provider, orchestrators and the destinations below.
+**DataQ sends nothing to its authors.** There is no licence check and no update check, and
+product-usage telemetry is off unless both the operator and a workspace admin turn it on
+(see below) — and even then it goes only to the operator's own file or collector. A
+deployment makes network calls only to the services its operator configures — its
+datasources, identity provider, orchestrators and the destinations below.
 The list below is the ones that can carry data out.
 
 Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
@@ -11109,6 +11119,13 @@ considered:
   operator-configured and its location is outside DataQ's knowledge.
 - **Telemetry** — traces and logs to an operator-chosen sink; PII is redacted at
   the logger, so this is operational metadata rather than warehouse values.
+- **Usage telemetry** — **off by default.** It records anything only when the operator
+  sets `TELEMETRY_SINK` (`file` or `otlp`) **and** a workspace admin opts in under Admin →
+  Settings; it is listed as `usage_telemetry` in either state. It carries event names,
+  counts and fixed-vocabulary attributes only (check kind, datasource type, page route
+  name, outcome), validated in code against a published list — never a table or column
+  name, SQL, suite or check name, email or credential. See
+  [ADR 0050](../adr/0050-usage-telemetry.md) for the event list.
 - **MCP AI clients** — **live today.** `/mcp` serves run results, redacted failing
   samples and check configuration to whatever AI client holds a valid PAT. The
   model provider behind that client, and its jurisdiction, are chosen by the token
@@ -12211,6 +12228,7 @@ differences:
 | Token validation | Azure-native validator: `AZURE_TENANT_ID`, `AZURE_API_CLIENT_ID`, `AZURE_SPA_CLIENT_ID`, `AZURE_API_SCOPE`, `AZURE_ALLOW_GUEST_USERS` | Generic `OidcBearerScheme`: just `OIDC_ISSUER` + `OIDC_AUDIENCE`. The user profile resolves via the **userinfo endpoint**, because Cognito access tokens carry neither `email` nor `aud` |
 | Secret injection | Container Apps secret refs | ECS `valueFrom` Secrets Manager ARNs — start-time snapshots, so a rotated infra secret needs a service bounce |
 | Telemetry | `APPLICATIONINSIGHTS_CONNECTION_STRING` | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (loopback into the ADOT sidecar) |
+| Usage telemetry ([ADR 0050](../adr/0050-usage-telemetry.md)) | `TELEMETRY_SINK=off` by default on both; set `otlp` to send the `dataq.usage.*` counter and events to App Insights / the OTLP endpoint above, or `file` with `TELEMETRY_FILE_PATH`. Nothing is recorded until an admin also opts in, and `GET /admin/deployment` lists it as `usage_telemetry` either way | same |
 | Email | Any SMTP relay + tfvars-sourced addresses | SES SMTP host + an IAM-derived SMTP password secret + `alert_email` / `alert_email_to` variables |
 
 ### Frontend (runtime `DATAQ_*` contract — one nginx image, envsubst at startup)
@@ -12895,6 +12913,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0047](0047-automated-coverage-loop.md) | Automated coverage — **per-connection switch** (`auto_coverage`, enumerable warehouse types only, per-asset exclusion) turns every inventory table into a **system-owned suite** (`suites.origin = 'auto'`, one per asset) of ordinary checks, so runs, results, incidents, alerts, UI and MCP need nothing new; **universal baselines start without approval** (row-count and freshness anomaly, schema drift, and a new one-query `column_profile` anomaly metric over every column's null % and distinct count), while **rules that assert something** (not-null, unique, accepted values, ranges, from profiling or the LLM suggester) wait in a `check_suggestions` review queue; **full severity** (warn 3σ, fail 4σ, critical 6σ; schema change fails); the reconciler adds missing checks only and never overrides a person's edit or resurrects a deleted check; daily staggered schedules and `AUTO_COVERAGE_MAX_ASSETS` bound the warehouse cost; incident `resolution` makes the **false-positive rate** a tracked figure beside coverage; **amended 2026-10-13:** sensitivity (per baseline) and baseline shape are settings resolved **asset override → workspace setting → built-in default**, and automatic anomaly checks **inherit them at run time** until a person edits one | Accepted |
 | [0048](0048-per-period-metrics-yearly-seasonality.md) | Per-period metrics and yearly seasonality on the anomaly monitor — two **per-period metrics** (`period_row_count`, `period_sum`, bucketed by a date column, complete UTC periods only, observations keyed by period); history **seeded once from the table** (marked `backfilled`) and then **accumulated from runs** (`observed`); **yearly seasonality as a seasonal index** over the rolling baseline, on every single-number anomaly metric (and, as a default-off switch, on the automatic row-count and freshness baselines), with every input in the result and an index of 1 when no earlier year exists; **seasonal periods** declared in a workspace calendar that a check attaches to, and detected from history for display only; the per-period metrics are authored checks, not automatic coverage | Accepted |
 | [0049](0049-profiler-pii-classification-source.md) | Profiler-detected PII as a classification source — one `asset_column_classifications` table (`source = 'profiler'` now, the catalog pull next) holding **additive-only** `sensitive` verdicts from the two existing value detectors (email, encoded), overlaid on `effective_column_tags` as `detected`: a warehouse tag, inherited `sensitive` and the suite's `pii_columns` outrank it, the suite's `identifier_column` clears it, it never satisfies fail-closed clearance and never travels along lineage; cleared only by an audited Admin dismissal that survives re-detection; written on every profile of the suite's own target | Accepted |
+| [0050](0050-usage-telemetry.md) | Opt-in product-usage telemetry — **OpenTelemetry signals** through the existing exporter seam: one `dataq.usage.events` counter (attribute `event`) and one `dataq.usage.<event>` log event per occurrence, on a `MeterProvider`/`LoggerProvider` of their own; **default OFF behind two gates**, the operator's `TELEMETRY_SINK` (`off` · `file` JSON lines · `otlp`) and the admin's audited opt-in (`telemetry_settings` singleton, Admin → Settings); a **closed, code-enforced vocabulary** of twelve events whose attributes are counts or fixed value sets (never a table/column name, SQL, suite name, email or free text — a value outside its set is dropped); the browser posts only `page_viewed`/`check_editor_abandoned` to the server, which is the only emitter; disclosed in `GET /admin/deployment` in both states; no third-party analytics dependency | Accepted |
 
 
 ---
@@ -19030,3 +19049,138 @@ DataQ can hold.
   reached by changing six call sites and every future one, instead of one function.
 - **Adding new detectors in this change:** each is new detection with its own false-positive
   surface, in a cycle scoped to no net-new features.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0050-usage-telemetry/ -->
+
+# ADR 0050 — Opt-in product-usage telemetry over OpenTelemetry
+
+- **Status:** Accepted (2026-10-20)
+- **Date:** 2026-10-20
+- **Deciders:** @TheurgicDuke771
+- **Related:** ADR [0010](0010-provider-agnostic-infrastructure-seams.md) (vendor-neutral seams),
+  ADR [0031](0031-oss-byol-distribution-licensing.md) (licensing, rule 40),
+  ADR [0041](0041-history-audit-strategy.md) (audit events).
+
+## Context
+
+There is no signal on how DataQ is actually used: which pages people visit, which check types
+they author, where authoring is abandoned. That signal is wanted before the first outside user
+arrives, and it has to be gathered in a way a security reviewer would accept on sight. These
+constraints are non-negotiable:
+
+- **Default OFF**, with an explicit admin opt-in surfaced in Admin → Settings.
+- **Event names and counts only** — never a table name, column name, SQL string, or credential.
+- **A self-hostable sink or a plain log file first** — no third-party analytics dependency
+  (licensing rule 40 and the no-egress posture).
+- **The event list is documented and auditable.**
+- **The deployment-posture page discloses the setting either way.**
+
+## Decision
+
+1. **The signals are OpenTelemetry.** Every occurrence is recorded twice through the existing
+   exporter seam (`core/otel.py`):
+    - one increment of the counter **`dataq.usage.events`** (unit `{event}`), whose attribute
+      `event` names the event, plus that event's other attributes; and
+    - one OTel **log event** named **`dataq.usage.<event>`**, carrying the same attributes.
+
+    DataQ had traces and logs and no metrics signal; this adds a `MeterProvider` of its own
+    (and a `LoggerProvider` of its own, so usage events never mix into the application log).
+    Resource attribute `service.name` is `dataq-api` or `dataq-worker`. No analytics SDK is
+    added: the OTLP metrics exporter ships in the `opentelemetry-exporter-otlp-proto-http`
+    package DataQ already pins, and the Azure Monitor metric exporter in the
+    `azure-monitor-opentelemetry-exporter` package it already pins.
+
+2. **Two gates, both required.**
+    - The operator's **`TELEMETRY_SINK`** (`off` · `file` · `otlp`, default `off`). `off`
+      builds no providers at all, so an operator can hard-disable telemetry whatever the admin
+      chooses.
+    - The workspace admin's **opt-in**, one row in `telemetry_settings` (`CHECK (id = 1)`),
+      default off, changed under Admin → Settings → *Usage telemetry* and audited as
+      `telemetry_setting.update`. The emitter reads it per event through a 30-second
+      per-process cache, so a change lands without a restart; a read that fails counts as off.
+
+3. **Sinks.**
+    - **`file`** — JSON lines appended to `TELEMETRY_FILE_PATH`: one `{"type": "event", …}`
+      line per log event and one `{"type": "metric", …}` line per counter point (delta
+      temporality, flushed every `TELEMETRY_EXPORT_INTERVAL_S`). It works with no collector
+      and is what an air-gapped deployment uses.
+    - **`otlp`** — the counter to `<OTEL_EXPORTER_OTLP_ENDPOINT>/v1/metrics` and the log events
+      to `/v1/logs`, and/or to App Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is
+      set: the same destinations traces and logs already use. Settings refuse to boot `file`
+      without a path or `otlp` without a destination.
+
+    A sink that cannot be built (an unwritable path, SDK drift) logs a warning and leaves
+    telemetry off. Emitting never raises into the request, run or tool call it rides on.
+
+4. **The vocabulary is closed and enforced in code.** `core/usage_telemetry.EVENTS` declares
+   every event and, per event, every attribute with either a fixed set of allowed strings or
+   "non-negative integer". An event outside the registry, an attribute not declared for its
+   event, or a value outside its set is **dropped, not exported**, and the rejection logs the
+   attribute *key* only. String vocabularies are derived from the model's own enums where one
+   exists (check kinds, engines, connection types), and the MCP tool vocabulary is the set of
+   registered tool names. A test asserts that a table name, a SQL string, an email address and
+   free text are refused on every string attribute of every event.
+
+5. **The browser never talks to a collector.** The SPA posts `page_viewed` and
+   `check_editor_abandoned` to `POST /api/v1/telemetry/events` (signed-in users only, at most 20
+   events per post, its own rate-limit class `telemetry`, 60/minute per principal and sharing the
+   default per-IP ceiling), where they
+   are validated against the same registry; the server is the only emitter. The SPA reports a
+   route *name* (`suite_detail`), never a URL, so no id or query string can leave.
+
+6. **Disclosure.** `GET /api/v1/admin/deployment` always lists a `usage_telemetry` transfer,
+   off or on; when on, its detail names the sink (the file path, or the OTel exporters); when
+   off it says why — no opt-in, no sink, or a sink that is configured but failed to start. The
+   Admin settings page shows the effective state, the sink, and the full event list inline.
+
+## The events
+
+| Event | Emitted when | Attributes |
+|---|---|---|
+| `app_started` | the api or a worker starts | `service`: `api` · `worker` |
+| `user_signed_in` | a user's first `GET /me` in an 8-hour window, per api process (a session, not a page load) | `auth_mode`: `pat` · `session` · `oidc` · `bypass` |
+| `page_viewed` | the SPA navigates (browser-reported) | `route`: a route name such as `dashboard`, `suite_detail`, `check_new`, `admin_settings`, `other` |
+| `check_created` | a check is saved, including each check of an imported suite | `kind`, `engine`, `datasource_type`, `origin` (`user` · `auto` · `suggestion` · `import`) |
+| `check_editor_abandoned` | the new-check editor is left without saving (browser-reported) | `step`: `expectation` · `config` |
+| `suite_run_triggered` | a run is dispatched | `trigger`: `manual` · `schedule` · `mcp` · `probe` · `adf` · `airflow` · `dbt` · `other` |
+| `run_completed` | the worker finishes a run | `outcome`, `datasource_type`, `checks` (count), `duration_ms` (omitted when the run has no start or end time) |
+| `connection_created` | a connection is saved | `type` |
+| `mcp_tool_called` | an MCP tool is called (a call naming no registered tool is not counted) | `tool` (a registered tool name), `outcome`: `ok` · `error` · `cancelled` |
+| `llm_feature_used` | an LLM feature is invoked | `feature`: `sql_generation` · `check_suggestion` · `rca_narrative` |
+| `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` |
+| `coverage_auto_check_created` | automatic coverage adds a check | `kind` |
+
+The authoritative list, with every allowed value, is the one the Admin settings page shows
+(`GET /api/v1/admin/telemetry`), which is read from the same registry the emitter enforces.
+
+## Pointing it at a collector
+
+```bash
+TELEMETRY_SINK=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+```
+
+then opt in under Admin → Settings → *Usage telemetry*. Any OTLP/HTTP receiver works: query
+`dataq.usage.events` grouped by `event` for counts, or the `dataq.usage.*` log events for the
+per-occurrence stream. With no collector, `TELEMETRY_SINK=file` and
+`TELEMETRY_FILE_PATH=/var/lib/dataq/usage-events.jsonl` give the same data as a file.
+
+## Consequences
+
+- DataQ's authors still receive nothing: every destination is the operator's own.
+- Adding an event is a code change to the registry, so it shows up in review and in the
+  published list; there is no way to emit an unlisted value at runtime.
+- The opt-in cache means a switch-off can take up to 30 seconds to stop emission in a
+  worker process that has no request session to read through.
+
+## Alternatives rejected
+
+- **A third-party product-analytics SDK** (PostHog, Segment, Mixpanel): a new data processor,
+  egress by default, and licences outside rule 40 in several cases.
+- **Reusing the application log** for usage events: it would mix opt-in data into a stream that
+  is always on, and the PII redactor is a backstop, not a vocabulary.
+- **Browser-side OTel export**: it would put a collector endpoint and a second validation path
+  in the SPA; the server already has both.
