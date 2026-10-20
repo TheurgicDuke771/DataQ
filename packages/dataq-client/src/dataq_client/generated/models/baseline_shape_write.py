@@ -6,22 +6,29 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="BaselineShapeWrite")
 
 
 @_attrs_define
 class BaselineShapeWrite:
-    """How much history a baseline compares against. All three are set together.
+    """How much history a baseline compares against. `window`, `min_points` and
+    `seasonality` are set together; `yearly` (compare with the same time in earlier years,
+    on the row-count and freshness baselines only) is off when left out, so a level that sets
+    this group without it switches it off for its tables.
 
-    Attributes:
-        min_points (int):
-        seasonality (bool):
-        window (int):
+        Attributes:
+            min_points (int):
+            seasonality (bool):
+            window (int):
+            yearly (bool | Unset):  Default: False.
     """
 
     min_points: int
     seasonality: bool
     window: int
+    yearly: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         min_points = self.min_points
@@ -29,6 +36,8 @@ class BaselineShapeWrite:
         seasonality = self.seasonality
 
         window = self.window
+
+        yearly = self.yearly
 
         field_dict: dict[str, Any] = {}
 
@@ -39,6 +48,8 @@ class BaselineShapeWrite:
                 "window": window,
             }
         )
+        if yearly is not UNSET:
+            field_dict["yearly"] = yearly
 
         return field_dict
 
@@ -51,10 +62,13 @@ class BaselineShapeWrite:
 
         window = d.pop("window")
 
+        yearly = d.pop("yearly", UNSET)
+
         baseline_shape_write = cls(
             min_points=min_points,
             seasonality=seasonality,
             window=window,
+            yearly=yearly,
         )
 
         return baseline_shape_write
