@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -192,6 +193,11 @@ def test_a_linked_channel_counts_as_an_alert_transfer(client: TestClient, db_ses
 # ───────────────── the two vectors #2397 found missing ─────────────────
 
 
+def _names(detail: str, text: str) -> bool:
+    """The detail names `text` as a whole token (not a URL-sanitising substring test)."""
+    return re.search(rf"(?<![\w/.:-]){re.escape(text)}(?![\w/:-]|\.\w)", detail) is not None
+
+
 def _transfer(client: TestClient, name: str) -> dict[str, Any]:
     transfers = client.get("/api/v1/admin/deployment").json()["external_transfers"]
     return next(t for t in transfers if t["name"] == name)
@@ -216,7 +222,7 @@ def test_a_webhook_tamper_anchor_names_its_destination(
     get_settings.cache_clear()
     row = _transfer(client, "tamper_anchor")
     assert row["enabled"] is True
-    assert "https://sink.example/ingest" in row["detail"]
+    assert _names(row["detail"], "https://sink.example/ingest")
     assert "never an audit event" in row["detail"]
     assert "hmac-signing-secret-value" not in row["detail"]
 
@@ -240,7 +246,7 @@ def test_an_object_lock_tamper_anchor_names_bucket_endpoint_and_retention(
         "GOVERNANCE",
         "730 days",
     ):
-        assert fragment in row["detail"], fragment
+        assert _names(row["detail"], fragment), fragment
 
 
 def test_an_azure_object_lock_anchor_names_the_container(
@@ -256,7 +262,7 @@ def test_an_azure_object_lock_anchor_names_the_container(
     get_settings.cache_clear()
     row = _transfer(client, "tamper_anchor")
     assert row["enabled"] is True
-    assert "https://acct.blob.core.windows.net" in row["detail"]
+    assert _names(row["detail"], "https://acct.blob.core.windows.net")
     assert "immutability policy" in row["detail"]
 
 
@@ -295,6 +301,6 @@ def test_the_webhook_destination_is_shown_without_userinfo_or_query(
     monkeypatch.setenv("TAMPER_ANCHOR_WEBHOOK_SECRET", "s")
     get_settings.cache_clear()
     detail = _transfer(client, "tamper_anchor")["detail"]
-    assert "https://sink.example:8443/in" in detail
+    assert _names(detail, "https://sink.example:8443/in")
     for leaked in ("tok3n", "ingest-user", "sig=", "abc123"):
         assert leaked not in detail, leaked
