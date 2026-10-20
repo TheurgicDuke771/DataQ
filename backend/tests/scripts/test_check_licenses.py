@@ -241,3 +241,12 @@ def test_main_fails_on_a_forbidden_requirement(
     monkeypatch.setattr(cl, "backend_closure", original)
     assert cl.main(["x", "backend", "--requirements", str(req), "--notices", str(notices)]) == 0
     assert notices.read_text(encoding="utf-8").startswith("# Third-party notices — DataQ backend")
+
+
+def test_table_cells_escape_backslash_before_pipe_and_collapse_whitespace() -> None:
+    assert cl._cell("a|b\\c\nd") == "a\\|b\\\\c d"
+    pkg = cl.Package(name="x", version="1", licence="MIT", homepage="https://h|p", author="A\\B")
+    table_line = next(
+        line for line in cl.render_notices("t", [pkg]).splitlines() if line.startswith("| x ")
+    )
+    assert table_line == "| x | 1 | MIT | https://h\\|p |"

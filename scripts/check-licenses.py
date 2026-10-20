@@ -358,6 +358,10 @@ def violations(packages: list[Package]) -> list[Package]:
     return [p for p in packages if not allowed(p.licence)]
 
 
+def _cell(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("\\", "\\\\").replace("|", "\\|"))
+
+
 def render_notices(title: str, packages: list[Package]) -> str:
     lines = [
         f"# Third-party notices — {title}",
@@ -374,7 +378,7 @@ def render_notices(title: str, packages: list[Package]) -> str:
     for p in packages:
         note = " (reviewed override: see below)" if p.override else ""
         cells = (p.name, p.version, f"{p.licence}{note}", p.homepage)
-        lines.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
+        lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
     lines += ["", "## Licence texts", ""]
     for p in packages:
         lines += [f"### {p.name} {p.version} — {p.licence}", ""]

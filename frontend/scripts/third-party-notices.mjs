@@ -37,7 +37,11 @@ function copies(p) {
   }
   return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
-const cell = (v) => String(v ?? '').replace(/\|/g, '\\|');
+const cell = (v) =>
+  String(v ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\s+/g, ' ');
 
 const unknown = packages.filter((p) => !p.license || /unknown/i.test(p.license));
 if (unknown.length) {
