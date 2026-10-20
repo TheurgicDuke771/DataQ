@@ -373,7 +373,7 @@ def test_the_persisted_run_hands_the_profiler_the_asset_as_a_full_profile(
     assert captured["table"] == "orders" and captured["schema"] == "public"
 
 
-def test_a_profile_failure_is_a_per_check_error_with_a_classified_message(
+def test_an_unclassified_driver_exception_is_a_per_check_error_with_a_classified_message(
     graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _boom(*a: Any, **k: Any) -> list[str]:
@@ -385,6 +385,46 @@ def test_a_profile_failure_is_a_per_check_error_with_a_classified_message(
     assert out.error_message.startswith("could not profile the target: ")
     assert "10.0.0.1" not in out.error_message
     assert get_baseline(graph["session"], graph["check"].id) is None
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        profile_service.ProfileFailedError("column profile could not execute"),
+        profile_service.ProfileIdentifierInvalidError(
+            "no schema given and the connection has none"
+        ),
+    ],
+    ids=["outage", "refusal"],
+)
+def test_the_profilers_own_errors_are_per_check_errors_not_run_failures(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    """What the real profiler raises is a DataQError (an outage is `ProfileFailedError`), which
+    `profile_target` passes through for the dry-run's sake; the executor must still turn it into
+    THIS check's error, or it escapes to `execute_run` and discards the sibling checks' results."""
+
+    def _raise(*a: Any, **k: Any) -> list[str]:
+        raise exc
+
+    monkeypatch.setattr(profile_service, "list_columns", _raise)
+    out = _executor(graph)(graph["check"])
+    assert out.errored is True and out.error_message == str(exc)
+    assert get_baseline(graph["session"], graph["check"].id) is None
+
+
+def test_the_verdict_does_not_rest_on_the_classification_store_alone(
+    graph: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The store's write and read are fail-soft by design; a swallowed error there must not turn
+    this run's detection into an empty baseline (and the next run into a false FAIL)."""
+    _Fake(monkeypatch, _profile(contact=_EMAILS))
+    monkeypatch.setattr(column_detections, "record_profile_detections_safely", lambda *a, **k: None)
+    out = _executor(graph)(graph["check"])
+    assert out.observed_value is not None
+    assert out.observed_value["detected_columns"] == ["contact"]
+    row = get_baseline(graph["session"], graph["check"].id)
+    assert row is not None and row.baseline == {"columns": ["contact"]}
 
 
 def test_a_suite_with_no_asset_is_an_error_not_a_pass(

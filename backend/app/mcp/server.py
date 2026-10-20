@@ -4254,9 +4254,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
     anomaly, `new_columns`/`columns_detected`/`columns_unclassified`/
     `baseline_captured` for pii_drift (column names only, never a value;
-    `columns_detected` is what the detectors flagged in that profile,
-    `columns_unclassified` the remainder after every classification is
-    subtracted — the number the check judges), `aggregate`/`column`/`breached_bound` for
+    `columns_detected` is what the detectors flagged in that run's profile,
+    `columns_unclassified` the number the check judges — every column still in
+    the table that carries a detection, that run's or a retained earlier one,
+    and that nothing classified — so it can exceed `columns_detected`),
+    `aggregate`/`column`/`breached_bound` for
     aggregate — its measured value is `failing_result.metric_value`, which is NOT
     column-masked the way
     `observed_value` is, so on a min/max over a policy-sensitive column it is one

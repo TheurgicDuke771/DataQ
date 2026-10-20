@@ -166,6 +166,19 @@ def active_detected_columns(session: Session, asset: Asset) -> list[str]:
     return sorted({fold_key(name) for name in rows})
 
 
+def dismissed_detected_columns(session: Session, asset: Asset) -> set[str]:
+    """Folded names of the columns whose detection a steward dismissed. A dismissal stands even
+    when a later profile detects the column again (ADR 0049 §4), so a caller overlaying a fresh
+    profile's detections must leave these out."""
+    rows = session.scalars(
+        select(AssetColumnClassification.column_name).where(
+            AssetColumnClassification.asset_id == asset.id,
+            AssetColumnClassification.dismissed_at.is_not(None),
+        )
+    )
+    return {fold_key(name) for name in rows}
+
+
 def list_classifications(session: Session, asset_id: uuid.UUID) -> list[AssetColumnClassification]:
     """Every persisted classification of the asset, dismissed ones included, by column."""
     return list(

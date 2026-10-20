@@ -31,7 +31,7 @@ from backend.app.db.models import Asset, Check, Connection, Run, Suite
 from backend.app.services import profile_service
 from backend.app.services.check_service import FILE_TYPES
 from backend.app.services.classification_vocab import DETECTED, fold_key
-from backend.app.services.column_detections import detect
+from backend.app.services.column_detections import detect, dismissed_detected_columns
 from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
@@ -156,7 +156,10 @@ def build_pii_drift_executor(
     """
     from backend.app.services.run_service import resolve_asset  # the heavier module, lazily
 
-    profiled: dict[str, profile_service.ProfileResult] = {}
+    # Per-run cache: the profile, this profile's own detections and the asset's effective tag
+    # map are computed once however many pii_drift checks the suite holds; only the per-check
+    # policy/ignore subtraction and the baseline diff run per check.
+    profiled: dict[str, Any] = {}
 
     def errored(message: str) -> CheckOutcome:
         return CheckOutcome(
@@ -174,8 +177,7 @@ def build_pii_drift_executor(
                 "pii_drift needs the suite's asset to hold its classifications and none is "
                 "resolved — set a run target on the suite"
             )
-        result = profiled.get("result")
-        if result is None:
+        if "result" not in profiled:
             try:
                 result = profile_target(
                     connection,
@@ -186,9 +188,24 @@ def build_pii_drift_executor(
                     secret_store=secret_store,
                     asset=asset if persist else None,
                 )
-            except PiiDriftProfileError as exc:
+            except (PiiDriftProfileError, DataQError) as exc:
+                # A per-check error, never a run failure: a profiler outage (`ProfileFailedError`
+                # is a DataQError too) must not discard the sibling checks' results. Both carry
+                # a classified, author-facing message.
                 return errored(str(exc))
             profiled["result"] = result
+            # This profile's own detections are overlaid on the stored map, so the verdict does
+            # not rest on the classification store alone: its write and read are fail-soft
+            # (ADR 0049 §4), and a swallowed error there must not turn a detection into a pass
+            # or an empty baseline. Stronger rungs (warehouse tag, inherited) still win, and a
+            # steward's dismissal stands even when this profile detects the column again.
+            profiled["detected_now"] = {fold_key(d.column) for d in detect(result.columns)}
+            tags = dict(effective_column_tags(session, asset) or {})
+            dismissed = dismissed_detected_columns(session, asset)
+            for column in profiled["detected_now"] - dismissed:
+                tags.setdefault(column, DETECTED)
+            profiled["tags"] = tags
+        result = profiled["result"]
         config = dict(check.config)
         # Only columns the table holds NOW count: a persisted detection for a column since
         # dropped or renamed is deliberately kept by the classification source (ADR 0049 §4)
@@ -198,7 +215,7 @@ def build_pii_drift_executor(
         current = [
             c
             for c in unclassified_detected_columns(
-                effective_column_tags(session, asset),
+                profiled["tags"],
                 policy=suite.column_policy,
                 ignore_columns=config.get("ignore_columns"),
             )
@@ -207,9 +224,10 @@ def build_pii_drift_executor(
         baseline_row = get_baseline(session, check.id)
         payload: dict[str, Any] = {
             "columns_profiled": len(result.columns),
-            # What the detectors flagged in THIS profile, before any classification is
-            # subtracted — distinct from the unclassified remainder the check judges.
-            "columns_detected": len(detect(result.columns)),
+            # What the detectors flagged in THIS profile. `columns_unclassified` is a different
+            # population — every present column carrying a detection (this run's or a retained
+            # earlier one) that nothing classified — so it can exceed this figure.
+            "columns_detected": len(profiled["detected_now"]),
             "columns_unclassified": len(current),
         }
         if baseline_row is None:
