@@ -2611,14 +2611,34 @@ accepted on the per-period metrics only.</p>
      about the business. A check names the calendar entries that apply to it, and none do by
      default, so adding an entry changes no check until someone attaches it.</p>
 </li>
-<li><strong>What a declared period does.</strong> A day inside it is matched to the same offset within
+<li>
+<p><strong>What a declared period does.</strong> A day inside it is matched to the same offset within
      that period's previous occurrence, which is what makes a moving sale or a fixed date
      line up. Periods inside it are left out of the level, so the weeks after a sale are not
      judged against the sale. And when the period has no earlier occurrence in the history,
      the check is told a rise is expected and cannot say how large: a value <strong>above</strong> what
      the rolling baseline expects is reported as within the declared period and not banded,
      while a value <strong>below</strong> it is judged as usual. A load that fails during a first-year
-     sale still alerts.</li>
+     sale still alerts.</p>
+<blockquote>
+<p><strong>Amended 2026-10-19 (phase 4).</strong> Three decisions the build had to make. (1) <em>A dated
+entry's previous occurrence.</em> A dated entry is one-off by itself; the schema makes
+"occurrences of one period" explicit with a <code>series</code> on dated entries, matched
+case-insensitively, and a check attaches each year's entry it wants compared. A dated
+entry with no earlier entry of its series among the check's attachments is a first
+year. (2) <em>29 February.</em> A recurring bound may be 29 February; in a year without one it
+is 28 February. The same offset into a previous occurrence that was shorter (a leap-year
+sale that ran a day longer) has no match in that occurrence and the next earlier one is
+tried. (3) <em>Attachments live in the check's config</em> (<code>seasonal_periods</code>, a list of ids)
+rather than a join table, because every surface that carries a check's definition —
+<code>check_versions</code>, export/import, apply, the audit snapshot and a dry run that has no
+check row — is config-shaped. Deleting an entry a check still names is refused by the
+service, naming the checks, under a row lock the attaching save shares. A calendar
+entry applies only with <code>yearly</code> on, since lining a day up with an earlier occurrence
+is the yearly comparison; attaching one without it is refused rather than ignored.
+Each result on an attached check reports what it would have scored with no calendar.</p>
+</blockquote>
+</li>
 <li>
 <p><strong>Detected.</strong> Read from a check's own history when someone asks: a run of periods at or
      above 1.5 times the level. Seen at the same time in two or more years it is <em>recurring</em>;

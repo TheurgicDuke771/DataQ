@@ -4627,6 +4627,44 @@ yearly rhythm: a sale every November, a quiet week at the end of December.</p>
 October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the sale, it
 expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
 2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.</p>
+<p><strong>Declared seasonal periods</strong> line up the peaks the weekday matching cannot: a sale that
+moves by more than a few days, or a fixed date such as 25 December. They live in one
+workspace calendar (<strong>Admin → Seasonal periods</strong>, <code>GET /api/v1/admin/seasonal-periods</code>;
+anyone signed in can read it, workspace admins change it, every change is audited). An entry
+is either <strong>recurring</strong>, a month-and-day range every year that may wrap the year end (20
+December to 5 January; a 29 February bound is taken as 28 February in a year without one),
+or <strong>dated</strong>, an explicit start and end. Dated entries that share a <strong>series</strong> (compared
+case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
+"Spring sale 2026" with series "Spring sale".</p>
+<p>An entry changes no check until it is attached: a per-period anomaly check with <code>yearly</code> on
+lists the entries that apply to its table in <code>seasonal_periods</code> (their ids; an unknown id is
+refused when the check is saved, and an entry that any check still names cannot be deleted —
+the refusal names the checks). While attached:</p>
+<ul>
+<li>A day inside the period is compared with the same offset into the period's <strong>previous
+  occurrence</strong> (recurring: the same range the year before, then two and three years back;
+  dated: the earlier entries of its series), instead of the nearest weekday. The result's
+  <code>declared.inside</code> names the entry and the occurrence, and <code>declared.inside.matched</code> the
+  earlier days it was compared with. A weekly check works in weeks that start on Monday: a
+  week is inside a period when its Monday is, and it is matched only to a week that lies
+  inside the earlier occurrence on both sides, so a period that began mid-week last year
+  may have one week fewer to match.</li>
+<li>Days inside any attached period are left out of the level, so the weeks after a sale are
+  not judged against it (<code>declared.excluded_from_level</code> counts them), and an ordinary day is
+  not matched to an earlier year's sale day.</li>
+<li><strong>First year.</strong> With no earlier occurrence in the history, the check knows a rise is
+  expected but not how large. A value <strong>above</strong> the level is reported as within the declared
+  period and not banded (the run reads <code>skipped</code>, with <code>reason: within_declared_period</code>); a
+  value <strong>below</strong> it is judged against the ordinary level as usual, so a load that fails
+  during a first-year sale still alerts. <code>declared.inside.first_year</code> says when this applied.</li>
+<li>Every result on an attached check also carries <code>declared.z_score_without</code>,
+  <code>declared.verdict_without</code> and <code>declared.verdict_changed</code>: what the run would have scored
+  with no calendar, so it is always possible to tell whether the calendar changed the
+  verdict. An attached id with no entry behind it (which the delete refusal prevents) is
+  listed in <code>declared.missing</code>; the check keeps running.</li>
+</ul>
+<p>A suite export carries the ids; importing it into a workspace whose calendar does not hold
+them is refused with the ids named.</p>
 <h3 id="comparison-check-all-datasources-adr-0015">Comparison check (all datasources — ADR 0015)<a class="headerlink" href="#comparison-check-all-datasources-adr-0015" title="Permanent link">¶</a></h3>
 <p><em>Does this dataset reconcile against that one?</em> A comparison check diffs the suite's
 dataset (the <strong>target under test</strong>) against a <strong>baseline</strong> on any other datasource

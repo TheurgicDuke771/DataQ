@@ -4228,7 +4228,7 @@ change it on any check.</p>
 <td><code>monitor:anomaly</code></td>
 <td>Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues.</td>
 <td>— (set it yourself)</td>
-<td><code>target_metric</code>, <code>date_column</code>, <code>value_column</code>, <code>period</code> <em>(optional)</em>, <code>timezone</code> <em>(optional)</em>, <code>settle_hours</code> <em>(optional)</em>, <code>backfill</code> <em>(optional)</em>, <code>column</code>, <code>window</code> <em>(optional)</em>, <code>min_points</code> <em>(optional)</em>, <code>seasonality</code> <em>(optional)</em>, <code>yearly</code> <em>(optional)</em></td>
+<td><code>target_metric</code>, <code>date_column</code>, <code>value_column</code>, <code>period</code> <em>(optional)</em>, <code>timezone</code> <em>(optional)</em>, <code>settle_hours</code> <em>(optional)</em>, <code>backfill</code> <em>(optional)</em>, <code>column</code>, <code>window</code> <em>(optional)</em>, <code>min_points</code> <em>(optional)</em>, <code>seasonality</code> <em>(optional)</em>, <code>yearly</code> <em>(optional)</em>, <code>seasonal_periods</code> <em>(optional)</em></td>
 <td>warn / fail / critical (fail or critical required)</td>
 <td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift</td>
 </tr>
