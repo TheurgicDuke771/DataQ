@@ -1,4 +1,4 @@
-import { App, Form, Modal } from 'antd';
+import { App, Form } from 'antd';
 import { useState } from 'react';
 
 import { type Connection, reauthConnection, SAVE_TEST_FAILED_CODE } from '../../api/connections';
@@ -8,6 +8,7 @@ import { SaveTestFailedAlert } from './SaveTestFailedAlert';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError } from '../../utils/fieldErrors';
+import { Modal } from '../shared/Modal';
 
 /** Rotate a connection's stored credential — tested first, rotated only if it works (#1927). */
 export function ReauthModal({

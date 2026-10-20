@@ -1,4 +1,4 @@
-import { App, Alert, Flex, Input, Modal, Typography } from 'antd';
+import { App, Alert, Flex, Input, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 
 import { type AdminSuite, deleteAdminSuite } from '../../api/admin';
@@ -8,6 +8,7 @@ import {
   describeDeletionImpact,
 } from '../../components/suites/deletionImpact';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { Modal } from '../../components/shared/Modal';
 
 /** Admin delete of any suite (#1698) — states the blast radius and requires the
  *  suite's name to be typed, because this one is run on a suite the admin does

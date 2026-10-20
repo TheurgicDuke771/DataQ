@@ -1,10 +1,11 @@
-import { App, Alert, Checkbox, Flex, Modal, Typography } from 'antd';
+import { App, Alert, Checkbox, Flex, Typography } from 'antd';
 import { useState } from 'react';
 
 import { type AdminSuite, transferAdminSuite } from '../../api/admin';
 import type { UserSummary } from '../../api/shares';
 import { UserSearchSelect } from '../../components/shared/UserSearchSelect';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { Modal } from '../../components/shared/Modal';
 
 /** Hand a suite to another user (#1698) — the offboarding primitive. Mount it
  *  keyed on the suite so the picker state never survives a different one being opened. */

@@ -17,7 +17,7 @@
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
 python-multipart==0.0.32          # required for FastAPI form data; CVE-2026-24486/40347/42561 (was 0.0.20)
-anthropic==1.8.0                  # MIT (rule 40); the LLMProvider seam's Anthropic impl (ADR 0042). Uses httpx2 internally — coexists with our httpx pin
+anthropic==1.15.0                  # MIT (rule 40); the LLMProvider seam's Anthropic impl (ADR 0042). Uses httpx2 internally — coexists with our httpx pin
 httpx==0.28.1                     # the backend's outbound HTTP client — Teams/Slack alerting, ADF + Airflow polling, Marquez lineage, the OpenBao secret store (ADR 0039). Was dev-only and reached prod transitively via openlineage, i.e. unpinned from our side (#1055)
 
 # ── Task queue ──
@@ -47,7 +47,7 @@ opentelemetry-exporter-otlp-proto-http==1.45.1   # generic OTLP/HTTP backend for
 
 # ── Auth / secrets ──
 fastapi-azure-auth==5.3.0
-pyjwt[crypto]==2.15.0             # generic OIDC bearer validation (core/auth.py OidcBearerScheme) — already a fastapi-azure-auth transitive, promoted to a direct pin since this module now imports it directly
+pyjwt[crypto]==2.15.1             # generic OIDC bearer validation (core/auth.py OidcBearerScheme) — already a fastapi-azure-auth transitive, promoted to a direct pin since this module now imports it directly
 msal==1.39.0                      # ≥1.34 lifts the cryptography<47 cap → unblocks cryptography≥48 (#274)
 azure-keyvault-secrets==4.11.2
 azure-identity==1.26.0
@@ -55,7 +55,7 @@ azure-identity==1.26.0
 # ── Datasource connectors ──
 snowflake-sqlalchemy==1.11.1       # ≥1.8 lifts the connector<4.0 cap (#129)
 snowflake-connector-python==4.8.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps → unblocks cryptography≥46.0.7 + pyOpenSSL≥26 CVE fixes (#129)
-cryptography==50.0.1               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past PYSEC-2026-3552 (49.0.0). Needs pyOpenSSL≥26.4.0, which lifts its cryptography<50 cap to <51
+cryptography==50.0.2               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past PYSEC-2026-3552 (49.0.0). Needs pyOpenSSL≥26.4.0, which lifts its cryptography<50 cap to <51
 azure-storage-blob==12.31.0       # ADLS Gen2
 boto3==1.43.103                    # S3, AWS Secrets Manager (SecretStore)
 databricks-sql-connector==4.6.0   # Unity Catalog
@@ -67,7 +67,7 @@ pyiceberg[pyarrow]==0.12.0        # native Iceberg read (ADR 0030, #716) — v2 
 PyMySQL==1.2.3                    # MySQL / MariaDB datasource (#1684). MIT (License-Expression, verified from the package metadata). NEVER mysqlclient or mysql-connector-python — both GPL (rule 40). caching_sha2_password over non-TLS needs `cryptography` (pinned above)
 openpyxl==3.1.5                  # XLSX comparison-report download (ADR 0015 §4, #795) — derived on demand, never stored. MIT (rule 40); lazy-imported on the download path only
 trino==0.340.0                    # Trino datasource (#1685) — the client + its SQLAlchemy `trino` dialect (sqlalchemy is pinned above). Apache-2.0 (verified from the package metadata); pulls orjson (Apache-2.0 OR MIT, with MPL-2.0 vendored parts — weak copyleft, OK per rule 40), lz4/zstandard (BSD), tzlocal (MIT)
-pyathena[SQLAlchemy]==3.36.0      # Amazon Athena datasource (#2131) — the client + its `awsathena+rest` SQLAlchemy dialect. MIT (classifier, verified from the package metadata); pulls fsspec (BSD-3-Clause), tenacity (Apache-2.0), python-dateutil, boto3/botocore (pinned above)
+pyathena[SQLAlchemy]==4.1.0      # Amazon Athena datasource (#2131) — the client + its `awsathena+rest` SQLAlchemy dialect. MIT (License-Expression, verified from the package metadata); pulls fsspec (BSD-3-Clause), tenacity (Apache-2.0), tzdata (Apache-2.0), boto3/botocore and sqlalchemy (pinned above); v4 dropped python-dateutil (#2448)
 sqlalchemy-redshift==1.0.0         # Amazon Redshift datasource (#1682) — the `redshift+psycopg2` SQLAlchemy dialect GX's Redshift datasource requires, plus the Amazon CA bundle the adapter verifies against. MIT (License field + classifier, verified from the package metadata); pulls only packaging + SQLAlchemy (pinned above); the driver is psycopg2 (pinned above)
 adlfs==2026.8.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 # SQL Server / T-SQL (#1679, ADR 0044). Both pure Python + MIT (License field verified from the installed metadata); both single-maintainer — exact pins, quarterly audit (rule 39). NEVER pyodbc/msodbcsql18 or mssql-python here: the ODBC driver is proprietary-EULA (the ODBC lane is user-installed only)
@@ -82,4 +82,4 @@ jsonschema==4.26.0                # MIT; validates LLM structured output against
 openlineage-python==1.52.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
 
 # ── MCP (Week 7) ──
-fastmcp==4.0.10                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
+fastmcp==4.1.0                    # CVE-2025-62800/62801/64340/69196, GHSA-rcfx-77hg-w2wv, CVE-2026-27124 (was 2.8.1)
