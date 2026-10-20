@@ -577,7 +577,7 @@ Does a column statistic — mean, median, sum, standard deviation, min or max �
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Aggregate statistic** | `monitor:aggregate` | A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0. | — (set it yourself) | `aggregate`, `column`, `min_value` *(optional)*, `max_value` *(optional)*, `warn_min` *(optional)*, `warn_max` *(optional)*, `critical_min` *(optional)*, `critical_max` *(optional)* | Two-sided warn / fail / critical bounds, set as parameters | All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena (no exact median; refused at author time) |
+| **Aggregate statistic** | `monitor:aggregate` | A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0. | — (set it yourself) | `aggregate`, `column`, `min_value` *(optional)*, `max_value` *(optional)*, `warn_min` *(optional)*, `warn_max` *(optional)*, `critical_min` *(optional)*, `critical_max` *(optional)* | Two-sided warn / fail / critical bounds, set as parameters | All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena, Google BigQuery (no exact median; refused at author time) |
 
 ### Examples
 

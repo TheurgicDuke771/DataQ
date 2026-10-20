@@ -104,7 +104,10 @@ def test_the_safe_defaults() -> None:
         {"port": 443},
         {"sslmode": "disable"},
         {"location": "the moon"},
-        {"location": "us"},
+        {"location": "US-CENTRAL1"},
+        {"location": 7},
+        {"endpoint_url": 123},
+        {"endpoint_url": "http://"},
         {"maximum_bytes_billed": 1024},
         {"maximum_bytes_billed": 0},
         {"schema": "sales$20260101"},
@@ -118,9 +121,19 @@ def test_an_unusable_config_is_refused(overrides: dict[str, Any]) -> None:
         _config(**overrides)
 
 
-@pytest.mark.parametrize("location", ["US", "EU", "us-central1", "northamerica-northeast1"])
-def test_a_bigquery_location_is_accepted(location: str) -> None:
-    assert _config(location=location).location == location
+@pytest.mark.parametrize(
+    ("location", "stored"),
+    [
+        ("US", "US"),
+        ("eu", "EU"),
+        ("us-central1", "us-central1"),
+        ("northamerica-northeast1", "northamerica-northeast1"),
+        ("aws-us-east-1", "aws-us-east-1"),
+        ("azure-eastus2", "azure-eastus2"),
+    ],
+)
+def test_a_bigquery_location_is_accepted(location: str, stored: str) -> None:
+    assert _config(location=location).location == stored
 
 
 @pytest.mark.parametrize("blank", ["", "  ", None])
@@ -299,7 +312,6 @@ def test_the_byte_cap_refusing_a_query_is_explained_not_called_a_permission_prob
     [
         ("mean", "AVG(CAST(`orders`.`amount` AS FLOAT64))"),
         ("stdev", "STDDEV_SAMP(CAST(`orders`.`amount` AS FLOAT64))"),
-        ("median", "PERCENTILE_CONT(CAST(`orders`.`amount` AS FLOAT64), 0.5) OVER ()"),
     ],
 )
 def test_aggregates_compile_to_googlesql(aggregate: str, expected: str) -> None:
@@ -314,11 +326,59 @@ def test_aggregates_compile_to_googlesql(aggregate: str, expected: str) -> None:
     )
     assert expected in sql
     assert "FROM `Sales`.`orders`" in sql
-    assert ("LIMIT" in sql) == (aggregate == "median")
 
 
-def test_the_median_is_offered_because_it_is_exact() -> None:
-    assert BIGQUERY.exact_median
+def test_the_median_is_refused_because_the_exact_one_runs_on_one_worker() -> None:
+    import sqlalchemy as sa
+    from sqlalchemy.exc import CompileError
+    from sqlalchemy_bigquery import BigQueryDialect
+
+    from backend.app.datasources.aggregate_sql import aggregate_statement
+    from backend.app.services.check_service import (
+        CheckConfigInvalidError,
+        _validate_aggregate_check,
+    )
+
+    assert not BIGQUERY.exact_median
+    target = sa.table("orders", sa.column("amount"))
+    with pytest.raises(CompileError):
+        aggregate_statement(target, "median", target.c.amount).compile(dialect=BigQueryDialect())
+    with pytest.raises(CheckConfigInvalidError, match="Google BigQuery"):
+        _validate_aggregate_check(
+            {"aggregate": "median", "column": "amount", "min_value": 0},
+            connection_type="bigquery",
+            thresholds=(None, None, None),
+        )
+
+
+def test_without_a_default_dataset_the_shared_resolvers_ask_for_a_schema() -> None:
+    """Profile, columns, drift, anomaly and comparison reads resolve the schema here: a
+    connection with no default dataset gets the usual 422, not an unhandled error."""
+    from backend.app.db.models import Connection
+    from backend.app.services.profile_service import (
+        ProfileIdentifierInvalidError,
+        resolve_effective_schema,
+    )
+
+    connection = Connection(type="bigquery", config={"project_id": _PROJECT})
+    with pytest.raises(ProfileIdentifierInvalidError):
+        resolve_effective_schema(connection, None)
+    assert resolve_effective_schema(connection, "Sales") == "Sales"
+
+
+def test_a_run_on_an_unqualified_target_without_a_default_dataset_says_so(key: str) -> None:
+    from backend.app.datasources.base import CheckSpec
+    from backend.app.datasources.generic_sql import GenericSqlCheckRunner
+
+    runner = GenericSqlCheckRunner(BIGQUERY, _config(schema=None), key)
+    with pytest.raises(BigQueryDatasetRequiredError):
+        runner.run_checks(
+            table="orders",
+            schema=None,
+            checks=[CheckSpec("expect_table_row_count_to_be_between", {"min_value": 0})],
+        )
+    with pytest.raises(BigQueryDatasetRequiredError):
+        runner.run_monitors(table="orders", schema=None, monitors=[])
 
 
 # ───────────────────────────── catalog (client API) ─────────────────────────────
@@ -436,7 +496,7 @@ def test_columns_come_from_the_table_schema_and_a_missing_table_has_none() -> No
     assert BIGQUERY.catalog.api.columns(_conn(client), schema="retail", table="orders") == [
         ("id", "INT64"),
         ("tags", "ARRAY<STRING>"),
-        ("address", "STRUCT"),
+        ("address", "STRUCT<city STRING>"),
         ("where", "GEOGRAPHY"),
         ("doc", "JSON"),
         ("placed_at", "TIMESTAMP"),
@@ -478,7 +538,7 @@ def test_a_type_reads_the_same_whichever_name_the_api_reports_it_by() -> None:
         "INT64",
         "FLOAT64",
         "BOOL",
-        "STRUCT",
+        "STRUCT<x STRING>",
         "NUMERIC",
         "BIGNUMERIC",
     ]
@@ -503,3 +563,79 @@ def test_the_profiler_matches_a_column_however_the_caller_cased_it() -> None:
     )
     assert set(caps) == {"ADDRESS", "Id"}
     assert not caps["ADDRESS"].orderable and caps["Id"].orderable
+
+
+def test_drift_sees_a_change_inside_a_struct_and_a_type_parameter() -> None:
+    from google.cloud import bigquery
+
+    def columns(*fields: Any) -> list[tuple[str, str]]:
+        client = _FakeClient()
+        client.schema = list(fields)
+        assert BIGQUERY.catalog.api is not None
+        return BIGQUERY.catalog.api.columns(_conn(client), schema="retail", table="orders")
+
+    before = columns(
+        bigquery.SchemaField("address", "RECORD", fields=[bigquery.SchemaField("city", "STRING")]),
+        bigquery.SchemaField("code", "STRING", max_length=20),
+        bigquery.SchemaField("amount", "NUMERIC", precision=10, scale=2),
+        bigquery.SchemaField(
+            "lines", "RECORD", mode="REPEATED", fields=[bigquery.SchemaField("sku", "INTEGER")]
+        ),
+    )
+    assert before == [
+        ("address", "STRUCT<city STRING>"),
+        ("code", "STRING(20)"),
+        ("amount", "NUMERIC(10, 2)"),
+        ("lines", "ARRAY<STRUCT<sku INT64>>"),
+    ]
+    after = columns(
+        bigquery.SchemaField("address", "STRUCT", fields=[bigquery.SchemaField("city", "INT64")]),
+        bigquery.SchemaField("code", "STRING", max_length=40),
+        bigquery.SchemaField("amount", "NUMERIC", precision=12, scale=2),
+        bigquery.SchemaField(
+            "lines", "RECORD", mode="REPEATED", fields=[bigquery.SchemaField("sku", "INT64")]
+        ),
+    )
+    changed = {name for (name, kind), (_, was) in zip(after, before, strict=True) if kind != was}
+    assert changed == {"address", "code", "amount"}
+
+
+def test_listing_every_dataset_skips_empty_ones_without_losing_rows() -> None:
+    from google.cloud.bigquery.dataset import DatasetListItem
+
+    client = _FakeClient()
+    client.datasets = [
+        DatasetListItem({"datasetReference": {"projectId": _PROJECT, "datasetId": name}})
+        for name in ("aa_empty", "ab_empty", "retail", "Sales")
+    ]
+    client.tables["aa_empty"] = []
+    client.tables["ab_empty"] = []
+    rows = typed_table_rows(BIGQUERY, _conn(client), limit=3)
+    assert rows == [
+        ("Sales", "Daily", "table"),
+        ("retail", "big_orders", "view"),
+        ("retail", "daily_mv", "materialized_view"),
+    ]
+
+
+def test_catalog_reads_are_bounded_like_queries(key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from google.cloud import bigquery
+
+    seen: dict[str, dict[str, Any]] = {}
+    for name in ("list_datasets", "list_tables", "get_table"):
+
+        def capture(self: Any, *args: Any, _name: str = name, **kwargs: Any) -> list[Any]:
+            seen[_name] = kwargs
+            return []
+
+        monkeypatch.setattr(bigquery.Client, name, capture)
+    client = BIGQUERY.session_connect_args(_config(), key, None)["client"]
+    try:
+        client.list_datasets(_PROJECT)
+        client.list_tables(f"{_PROJECT}.sales")
+        client.get_table(f"{_PROJECT}.sales.orders")
+    finally:
+        client.close()
+    for kwargs in seen.values():
+        assert kwargs["timeout"] == 60.0 and kwargs["retry"].timeout == RETRY_DEADLINE
+    assert set(seen) == {"list_datasets", "list_tables", "get_table"}

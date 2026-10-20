@@ -15,7 +15,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
 | Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ |
 | Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
 | Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -39,7 +39,8 @@ runners, which stateful kinds never reach.
 ᵍ **Aggregate monitor.** One statistic over one numeric column, recorded as the
 result's metric, with nested two-sided warn / fail / critical bounds in its config. Median is
 exact wherever it is offered; MySQL/MariaDB, Trino and Athena have only an approximate
-percentile, so it is refused there at author time. Verified by executed runs, author → worker
+percentile, and BigQuery's exact one is a window that runs the whole table on one worker, so it
+is refused there at author time. Verified by executed runs, author → worker
 → `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
 Trino, the BigQuery emulator, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.

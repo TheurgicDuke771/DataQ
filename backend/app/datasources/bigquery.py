@@ -23,6 +23,7 @@ BigQuery is a service, not a server DataQ opens a session on, which shapes this 
 from __future__ import annotations
 
 import re
+from functools import cache
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 
@@ -37,7 +38,7 @@ from backend.app.datasources.gcs import (
 from backend.app.datasources.generic_sql import (
     ColumnCaps,
     GenericSqlConfig,
-    KnownDatasourceLimitationError,
+    NoDefaultSchemaError,
     SqlCatalog,
     SqlEngineSpec,
 )
@@ -55,13 +56,14 @@ RETRY_DEADLINE = 120.0
 SCOPE = "https://www.googleapis.com/auth/bigquery"
 
 _GOOGLE_HOST = "bigquery.googleapis.com"
-# A multi-region (US, EU) or a region (us-central1, europe-west4, northamerica-northeast1).
-_LOCATION = re.compile(r"US|EU|[a-z]+-[a-z]+\d+")
+# A multi-region (US, EU), a region (us-central1, northamerica-northeast1) or a BigQuery Omni
+# location (aws-us-east-1, azure-eastus2).
+_LOCATION = re.compile(r"US|EU|[a-z][a-z0-9]*(-[a-z0-9]+){1,4}")
 # Every name a BigQuery dataset can have; anything else listed is not a dataset to offer.
 _DATASET_NAME = re.compile(r"[A-Za-z0-9_]{1,1024}")
 
 
-class BigQueryDatasetRequiredError(KnownDatasourceLimitationError, ValueError):
+class BigQueryDatasetRequiredError(NoDefaultSchemaError):
     """A target names no dataset and the connection sets no default one."""
 
 
@@ -89,8 +91,13 @@ class BigQueryConfig(GenericSqlConfig):
         # client actually sends the bearer.
         if not isinstance(data, dict):
             return data
-        endpoint = normalize_endpoint_url(data.get("endpoint_url"))
-        host = _GOOGLE_HOST if endpoint is None else urlsplit(endpoint).hostname or ""
+        raw = data.get("endpoint_url")
+        if raw is not None and not isinstance(raw, str):
+            raise ValueError("endpoint_url must be a URL string")
+        endpoint = normalize_endpoint_url(raw)
+        host = _GOOGLE_HOST if endpoint is None else urlsplit(endpoint).hostname
+        if not host:
+            raise ValueError("endpoint_url must name a host, e.g. http://bigquery-emulator:9050")
         configured = data.get("host")
         if configured is not None and configured != host:
             raise ValueError("a BigQuery connection's host comes from its endpoint_url")
@@ -112,9 +119,14 @@ class BigQueryConfig(GenericSqlConfig):
     def _location(cls, value: Any) -> Any:
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
-        if not isinstance(value, str) or not _LOCATION.fullmatch(value.strip()):
-            raise ValueError("location must be a BigQuery location such as US, EU or us-central1")
-        return value.strip()
+        location = value.strip() if isinstance(value, str) else ""
+        if location.lower() in ("us", "eu"):
+            location = location.upper()
+        if len(location) > 64 or not _LOCATION.fullmatch(location):
+            raise ValueError(
+                "location must be a BigQuery location such as US, EU, us-central1 or aws-us-east-1"
+            )
+        return location
 
     @field_validator("maximum_bytes_billed", mode="before")
     @classmethod
@@ -199,20 +211,38 @@ def bigquery_client(config: BigQueryConfig, secret: str | None) -> Any:
     )
 
 
+@cache
 def _bounded_client_class() -> Any:
-    """A ``bigquery.Client`` whose query retries give up in minutes, not the library's default
-    10 (HTTP) and 40 (job) minutes — an unreachable endpoint would otherwise hold a connection
-    test, or every check of a run, that long. The DBAPI calls ``query_and_wait`` with no retry
-    of its own, so this is the one place to bound it."""
+    """A ``bigquery.Client`` whose retries give up in minutes, not the library's default 10
+    (HTTP) and 40 (job) minutes, which an unreachable endpoint would hold a connection test,
+    a browse or every check of a run for. Neither the DBAPI nor the dialect's reflection passes
+    a retry or timeout of its own, so the client applies them to every call DataQ makes."""
     from google.cloud import bigquery
     from google.cloud.bigquery.retry import DEFAULT_JOB_RETRY, DEFAULT_RETRY
+
+    retry = DEFAULT_RETRY.with_timeout(RETRY_DEADLINE)
 
     class _BoundedClient(bigquery.Client):  # type: ignore[misc]
         def query_and_wait(self, query: str, **kwargs: Any) -> Any:
             kwargs.setdefault("api_timeout", API_TIMEOUT)
-            kwargs.setdefault("retry", DEFAULT_RETRY.with_timeout(RETRY_DEADLINE))
+            kwargs.setdefault("retry", retry)
             kwargs.setdefault("job_retry", DEFAULT_JOB_RETRY.with_timeout(RETRY_DEADLINE))
             return super().query_and_wait(query, **kwargs)
+
+        def list_datasets(self, *args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("timeout", API_TIMEOUT)
+            kwargs.setdefault("retry", retry)
+            return super().list_datasets(*args, **kwargs)
+
+        def list_tables(self, *args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("timeout", API_TIMEOUT)
+            kwargs.setdefault("retry", retry)
+            return super().list_tables(*args, **kwargs)
+
+        def get_table(self, *args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("timeout", API_TIMEOUT)
+            kwargs.setdefault("retry", retry)
+            return super().get_table(*args, **kwargs)
 
     return _BoundedClient
 
@@ -289,42 +319,62 @@ def _standard_type(field: Any) -> str:
 
 
 def _field_type(field: Any) -> str:
+    """The column's full type: a STRUCT's own fields and a parameterized type's length,
+    precision and scale included, so drift sees a change inside either."""
     kind = _standard_type(field)
+    if kind == "STRUCT":
+        kind = "STRUCT<" + ", ".join(f"{f.name} {_field_type(f)}" for f in field.fields) + ">"
+    elif field.max_length is not None:
+        kind = f"{kind}({field.max_length})"
+    elif field.precision is not None:
+        scale = "" if field.scale is None else f", {field.scale}"
+        kind = f"{kind}({field.precision}{scale})"
     return f"ARRAY<{kind}>" if field.mode == "REPEATED" else kind
+
+
+def _table_fields(conn: Any, schema: str, table: str) -> list[Any] | None:
+    """The table's top-level fields, or ``None`` when it does not exist."""
+    from google.api_core.exceptions import NotFound
+
+    try:
+        return list(_client(conn).get_table(f"{_project(conn)}.{schema}.{table}").schema)
+    except NotFound:
+        return None
 
 
 class _BigQueryCatalog:
     """Datasets, tables and columns from the client API — free, and identical on an emulator."""
 
     def schema_names(self, conn: Any, *, limit: int) -> list[str]:
+        return self._datasets(conn)[:limit]
+
+    def _datasets(self, conn: Any) -> list[str]:
         listed = _client(conn).list_datasets(_project(conn))
-        return sorted(d.dataset_id for d in listed if _DATASET_NAME.fullmatch(d.dataset_id))[:limit]
+        return sorted(d.dataset_id for d in listed if _DATASET_NAME.fullmatch(d.dataset_id))
 
     def table_rows(
         self, conn: Any, *, schema: str | None, limit: int
     ) -> list[tuple[str, str, str]]:
-        client = _client(conn)
-        datasets = [schema] if schema is not None else self.schema_names(conn, limit=limit)
-        rows: list[tuple[str, str, str]] = []
         from google.api_core.exceptions import NotFound
 
-        for dataset in datasets:
+        client = _client(conn)
+        rows: list[tuple[str, str, str]] = []
+        # Datasets in name order, so once `limit` rows are in hand no later dataset can sort
+        # ahead of them; an empty dataset costs one call and no rows.
+        for dataset in [schema] if schema is not None else self._datasets(conn):
             try:
                 tables = list(client.list_tables(f"{_project(conn)}.{dataset}"))
             except NotFound:
                 # A missing dataset lists nothing, as a missing schema does on the SQL engines.
                 continue
-            rows.extend((dataset, t.table_id, str(t.table_type)) for t in tables)
-        return sorted(rows)[:limit]
+            rows.extend(sorted((dataset, t.table_id, str(t.table_type)) for t in tables))
+            if len(rows) >= limit:
+                break
+        return rows[:limit]
 
     def columns(self, conn: Any, *, schema: str, table: str) -> list[tuple[str, str]]:
         """``[]`` for a table that does not exist."""
-        from google.api_core.exceptions import NotFound
-
-        try:
-            fields = _client(conn).get_table(f"{_project(conn)}.{schema}.{table}").schema
-        except NotFound:
-            return []
+        fields = _table_fields(conn, schema, table) or []
         return [(str(field.name), _field_type(field)) for field in fields]
 
 
@@ -336,7 +386,7 @@ _UNAGGREGATABLE_TYPES = frozenset({"STRUCT", "GEOGRAPHY", "JSON", "RANGE"})
 
 def _column_caps(conn: Any, schema: str, table: str) -> dict[str, ColumnCaps]:
     caps: dict[str, ColumnCaps] = {}
-    for field in _client(conn).get_table(f"{_project(conn)}.{schema}.{table}").schema:
+    for field in _table_fields(conn, schema, table) or []:
         plain = field.mode != "REPEATED" and _standard_type(field) not in _UNAGGREGATABLE_TYPES
         caps[str(field.name)] = ColumnCaps(orderable=plain, groupable=plain)
     return caps
@@ -360,5 +410,8 @@ BIGQUERY = SqlEngineSpec(
     column_caps=_column_caps,
     column_names_case_insensitive=True,
     explain_failure=_explain_failure,
+    # PERCENTILE_CONT is window-only: OVER () sends the whole table to one worker, which fails
+    # (still billed) on a large one. APPROX_QUANTILES is not exact.
+    exact_median=False,
     llm_dialect="BigQuery GoogleSQL (backtick-quoted identifiers)",
 )

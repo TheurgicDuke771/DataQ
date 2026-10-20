@@ -259,8 +259,9 @@ const AGGREGATE_OPTIONS = [
 ];
 
 /** Mirrors the backend engine specs' `exact_median = False`: only an approximate percentile
- *  (Trino, Athena) or none (MySQL). */
-const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena'];
+ *  (Trino, Athena), an exact one that runs the whole table on one worker (BigQuery), or none
+ *  (MySQL). */
+const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena', 'bigquery'];
 
 /** Every DQX check: read the whole table, or only the rows appended since the last run. */
 const DQX_MODE: ConfigField = {
@@ -768,7 +769,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         label: 'Statistic',
         type: 'select',
         options: AGGREGATE_OPTIONS,
-        help: 'Standard deviation is the sample one (n − 1). Median is exact, so it is not offered on MySQL, Trino or Athena, which have only an approximate percentile.',
+        help: 'Standard deviation is the sample one (n − 1). Median is exact, so it is not offered on MySQL, Trino or Athena, which have only an approximate percentile, or on BigQuery, whose exact percentile does not scale to a large table.',
       },
       { ...COLUMN, help: 'A numeric column. NULLs are skipped, as SQL aggregates do.' },
       {

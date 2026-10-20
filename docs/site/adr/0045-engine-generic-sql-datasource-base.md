@@ -233,7 +233,12 @@ not installed: results page over REST. Four hooks were added:
 §4 does not hold, as on Athena: BigQuery has no read-only session, so the guarantee is a service
 account holding only `roles/bigquery.dataViewer` and `roles/bigquery.jobUser`. Dataset and table
 names are case-sensitive and resolved exactly as spelled, and `$` is refused in a name because it
-addresses a partition. The median is exact (a windowed `PERCENTILE_CONT`).
+addresses a partition. The median is refused (`exact_median=False`): BigQuery's exact
+`PERCENTILE_CONT` is window-only, and `OVER ()` sends the whole table to one worker. Schema
+drift compares each column's full type (STRUCT fields, length, precision and scale), with a
+type's legacy and GoogleSQL names normalised to one. An unqualified target on a connection with
+no default dataset is refused by a new `NoDefaultSchemaError`, which the shared schema resolver
+turns into the usual 422.
 
 Every SQL-batch expectation type, custom SQL, the monitors, the profiler, schema drift,
 comparison reads, inventory, browsing and an end-to-end persisted run were **executed** against

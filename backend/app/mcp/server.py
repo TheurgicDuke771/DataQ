@@ -2369,8 +2369,8 @@ def create_check(
     warn/fail/critical threshold arguments — passing one is refused, because those
     band a metric that only gets worse upward. An empty table or all-NULL column
     reports ``error``, not a pass on 0; a text/date column is also an ``error``.
-    ``median`` is refused on MySQL/MariaDB, Trino and Athena (no exact median
-    there). The dimension is left unset unless you pass one.
+    ``median`` is refused on MySQL/MariaDB, Trino, Athena and BigQuery (no exact
+    median that scales there). The dimension is left unset unless you pass one.
 
     For a cross-dataset reconciliation check use ``kind="comparison"`` with
     ``expectation_type="comparison:records"``, ``source_connection_id`` (the

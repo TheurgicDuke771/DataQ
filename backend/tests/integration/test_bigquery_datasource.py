@@ -661,9 +661,7 @@ def bq_amounts(bq: BigQueryTarget) -> Iterator[None]:
         admin.close()
 
 
-def test_every_aggregate_including_the_median_is_exact(
-    bq: BigQueryTarget, bq_amounts: None
-) -> None:
+def test_every_aggregate_but_the_median_is_exact(bq: BigQueryTarget, bq_amounts: None) -> None:
     from backend.tests.support.aggregate_lane import assert_aggregates
 
     runner = _runner(bq)
@@ -675,6 +673,7 @@ def test_every_aggregate_including_the_median_is_exact(
             column="amount",
             null_column="blank",
             empty_table="amounts_empty",
+            exact_median=False,
         )
     finally:
         runner.close()

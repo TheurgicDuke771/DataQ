@@ -477,6 +477,11 @@ class KnownDatasourceLimitationError(SafeMonitorError, RuntimeError):
     """
 
 
+class NoDefaultSchemaError(KnownDatasourceLimitationError, ValueError):
+    """An unqualified target on a connection whose engine has no default schema (a BigQuery
+    connection that names no default dataset)."""
+
+
 def explained(spec: SqlEngineSpec, config: GenericSqlConfig, exc: Exception) -> Exception:
     """``exc``, or the engine's explanation of it when it has one."""
     if spec.explain_failure is None or isinstance(exc, (SafeMonitorError, DataQError)):
@@ -596,6 +601,10 @@ class GenericSqlCheckRunner:
         index_columns: list[str] | None,
         value_signal_gate: ValueSignalGate | None,
     ) -> SuiteOutcome:
+        if schema is None:
+            # An engine with no default schema refuses an unqualified target here, with its own
+            # message, rather than in a driver error once the session is open.
+            _ = self._config.default_schema
         temp_types = self._spec.temp_table_types
         writable = [i for i, spec in enumerate(checks) if spec.expectation_type in temp_types]
         if not writable:

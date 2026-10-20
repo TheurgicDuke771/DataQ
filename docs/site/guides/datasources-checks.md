@@ -499,13 +499,16 @@ dialect over the `google-cloud-bigquery` client.
   identifiers (letters, digits and underscores, not starting with a digit).
 - **The profiler** reports min/max, distinct count and top values as unavailable for
   `STRUCT`/`RECORD`, `ARRAY` (repeated), `GEOGRAPHY`, `JSON` and `RANGE` columns.
-- **Median** is exact (BigQuery's `PERCENTILE_CONT`), so the aggregate monitor offers it.
+- **No median** in the aggregate monitor: BigQuery's exact `PERCENTILE_CONT` is a window
+  function that sends the whole table to one worker, which fails (still billed) on a large
+  table. Use the mean, or a custom-SQL check with `APPROX_QUANTILES`.
 - **Freshness over a `DATETIME` column** reads the value as UTC, since a `DATETIME` carries no
   time zone. If the producer writes local wall-clock time, the reported age is off by the UTC
   offset; prefer a `TIMESTAMP` column.
-- **Schema drift** compares each top-level column's name and type (and whether it is
-  repeated). A change to a field *inside* a `STRUCT`, or a column switching between `NULLABLE`
-  and `REQUIRED`, is not reported.
+- **Schema drift** compares each column's full type: the fields inside a `STRUCT`, an `ARRAY`,
+  and a type's length, precision and scale (`STRING(20)`, `NUMERIC(10, 2)`). A legacy and a
+  GoogleSQL name for one type (`INTEGER` and `INT64`) read the same. A column switching
+  between `NULLABLE` and `REQUIRED` is not reported.
 - **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".
 - **Verification.** This connection has been exercised end to end against the
@@ -1263,7 +1266,7 @@ error too: the monitor needs a numeric column.
 Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
 read the one column into the worker, under the same scan caps as a check. **Median** is exact
 wherever it is offered and is **not offered on MySQL/MariaDB, Trino or Athena**, which have
-only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+only an approximate percentile, or on **BigQuery**, whose exact percentile does not scale — use the mean there, or a custom-SQL check with the engine's
 `approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
 **min or max** result keeps its status but not its value: that value is one cell of the table.
