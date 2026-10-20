@@ -46,6 +46,17 @@ section below.
   the deployment sets a workspace default for that destination, the suite alerts it as well
   afterwards, and the app says so. In the API,
   `POST /suites/{id}/notifications/promote`.
+- **Backup, restore, upgrade and rollback runbook.** The docs site now has a
+  [Backup, restore & rollback](../operate/backup-restore-upgrade.md) page: what to back up
+  for each secret-store mode (the database, the OpenBao data and the CA for the prebuilt-image
+  stack, only the secret names for a managed vault), a `pg_dump` / `pg_restore` procedure with
+  a verification step, what a restore loses, and the rollback doctrine — a release whose
+  schema is compatible with the previous release's images rolls back with
+  `alembic downgrade <previous head>` and the previous images, with no restore. Every release
+  now carries a **Rollback** line saying whether that holds, and CI proves it on every change:
+  a database at the previous release's schema, seeded with that release's demo data, is
+  upgraded to the current head, downgraded back and upgraded again
+  (`python -m backend.scripts.upgrade_path`).
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**

@@ -13,7 +13,7 @@
         <link rel="prev" href="../deployment-parity/">
       
       
-        <link rel="next" href="../observability/">
+        <link rel="next" href="../backup-restore-upgrade/">
       
       
         
@@ -2095,6 +2095,8 @@
       
         
       
+        
+      
     
     
     
@@ -2367,6 +2369,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../backup-restore-upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup, restore &amp; rollback
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../observability/" class="md-nav__link">
         
   
@@ -2618,9 +2648,10 @@
 <ol>
 <li><strong>Read the changelog</strong> from your version to the target version. Note any one-time step an
    entry asks for.</li>
-<li><strong>Back up the database.</strong> For the prebuilt-image stack, stop the stack and copy the data
-   directory (<code>./dataq-data</code>, or the path in <code>DATAQ_DATA_DIR</code>). For a managed Postgres, take a
-   snapshot or a <code>pg_dump</code>.</li>
+<li><strong>Back up the database</strong> — see <a href="../backup-restore-upgrade/">Backup, restore &amp; rollback</a>
+   for what to include beside it (the vault data on the prebuilt-image stack) and the exact
+   <code>pg_dump</code> command. For the prebuilt-image stack, stopping the stack and copying the data
+   directory (<code>./dataq-data</code>, or the path in <code>DATAQ_DATA_DIR</code>) also works.</li>
 <li><strong>Pin the target version.</strong> Do not upgrade onto the moving <code>latest</code> tag.</li>
 </ol>
 <h2 id="the-prebuilt-image-stack">The prebuilt-image stack<a class="headerlink" href="#the-prebuilt-image-stack" title="Permanent link">¶</a></h2>
@@ -2650,18 +2681,21 @@ the worker, the scheduler (beat) and the frontend. If the migration fails, nothi
   load, but an open tab keeps the bundle it already loaded.</li>
 </ul>
 <h2 id="rolling-back">Rolling back<a class="headerlink" href="#rolling-back" title="Permanent link">¶</a></h2>
-<p>Roll back by <strong>restoring the backup you took</strong> and starting the previous release on it:</p>
-<ol>
-<li>Stop the stack (or scale the API and the worker to zero).</li>
-<li>Restore the data directory, or the database snapshot, from before the upgrade.</li>
-<li>Re-pin the previous image tag, with the compose file from that release, and start.</li>
-</ol>
-<p>Re-pinning the previous tag <strong>without</strong> restoring does not work once the upgrade has applied a
-migration: the older release's migration step does not know the newer schema revision and
-stops, so the API and the worker never start. Anything written after the upgrade is lost by a
-restore, so decide quickly.</p>
-<p>If the changelog shows the release you upgraded to added no database migration, re-pinning
-the previous tag alone is enough.</p>
+<p>Read the release's <strong>Rollback</strong> line first; the full procedure for both cases is in
+<a href="../backup-restore-upgrade/#rolling-back">Backup, restore &amp; rollback</a>. In short:</p>
+<ul>
+<li><strong>Normal case</strong> (<em>previous images on this schema — yes · DB restore needed — no</em>): with the
+  new release's tree, <code>alembic downgrade &lt;previous head&gt;</code> (the revision the line names), then
+  re-pin the previous tag with its compose file and start. Nothing written since the upgrade
+  is lost.</li>
+<li><strong>Restore case</strong> (<em>DB restore needed — yes</em>): stop the stack, restore the backup from before
+  the upgrade, re-pin the previous tag and start. Everything written since the upgrade is
+  lost, so decide quickly.</li>
+</ul>
+<p>Re-pinning the previous tag <strong>without</strong> either step does not work once a migration has
+applied: the older release's migration step does not know the newer schema revision and
+stops, so the API and the worker never start. If the release added no migration, re-pinning
+alone is enough.</p>
 <h2 id="skipping-versions">Skipping versions<a class="headerlink" href="#skipping-versions" title="Permanent link">¶</a></h2>
 <p>You can upgrade straight to the latest release: the migration step applies every migration
 between your schema and the new one, in order. Read the changelog for every release you
@@ -2721,13 +2755,13 @@ skip.</p>
         
         
           
-          <a href="../observability/" class="md-footer__link md-footer__link--next" aria-label="Next: Observability">
+          <a href="../backup-restore-upgrade/" class="md-footer__link md-footer__link--next" aria-label="Next: Backup, restore &amp; rollback">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Observability
+                Backup, restore &amp; rollback
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -17,9 +17,10 @@ How to move a running DataQ to a newer release without losing data.
 
 1. **Read the changelog** from your version to the target version. Note any one-time step an
    entry asks for.
-2. **Back up the database.** For the prebuilt-image stack, stop the stack and copy the data
-   directory (`./dataq-data`, or the path in `DATAQ_DATA_DIR`). For a managed Postgres, take a
-   snapshot or a `pg_dump`.
+2. **Back up the database** — see [Backup, restore & rollback](backup-restore-upgrade.md)
+   for what to include beside it (the vault data on the prebuilt-image stack) and the exact
+   `pg_dump` command. For the prebuilt-image stack, stopping the stack and copying the data
+   directory (`./dataq-data`, or the path in `DATAQ_DATA_DIR`) also works.
 3. **Pin the target version.** Do not upgrade onto the moving `latest` tag.
 
 ## The prebuilt-image stack
@@ -58,19 +59,21 @@ Infrastructure changes are separate: if the changelog says the OpenTofu stack ch
 
 ## Rolling back
 
-Roll back by **restoring the backup you took** and starting the previous release on it:
+Read the release's **Rollback** line first; the full procedure for both cases is in
+[Backup, restore & rollback](backup-restore-upgrade.md#rolling-back). In short:
 
-1. Stop the stack (or scale the API and the worker to zero).
-2. Restore the data directory, or the database snapshot, from before the upgrade.
-3. Re-pin the previous image tag, with the compose file from that release, and start.
+- **Normal case** (*previous images on this schema — yes · DB restore needed — no*): with the
+  new release's tree, `alembic downgrade <previous head>` (the revision the line names), then
+  re-pin the previous tag with its compose file and start. Nothing written since the upgrade
+  is lost.
+- **Restore case** (*DB restore needed — yes*): stop the stack, restore the backup from before
+  the upgrade, re-pin the previous tag and start. Everything written since the upgrade is
+  lost, so decide quickly.
 
-Re-pinning the previous tag **without** restoring does not work once the upgrade has applied a
-migration: the older release's migration step does not know the newer schema revision and
-stops, so the API and the worker never start. Anything written after the upgrade is lost by a
-restore, so decide quickly.
-
-If the changelog shows the release you upgraded to added no database migration, re-pinning
-the previous tag alone is enough.
+Re-pinning the previous tag **without** either step does not work once a migration has
+applied: the older release's migration step does not know the newer schema revision and
+stops, so the API and the worker never start. If the release added no migration, re-pinning
+alone is enough.
 
 ## Skipping versions
 

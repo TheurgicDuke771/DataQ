@@ -2289,6 +2289,8 @@
       
         
       
+        
+      
     
     
     
@@ -2414,6 +2416,34 @@
     
   
     Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/backup-restore-upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup, restore &amp; rollback
   
 
     
@@ -2780,6 +2810,17 @@ section below.</p>
   the deployment sets a workspace default for that destination, the suite alerts it as well
   afterwards, and the app says so. In the API,
   <code>POST /suites/{id}/notifications/promote</code>.</li>
+<li><strong>Backup, restore, upgrade and rollback runbook.</strong> The docs site now has a
+  <a href="../../operate/backup-restore-upgrade/">Backup, restore &amp; rollback</a> page: what to back up
+  for each secret-store mode (the database, the OpenBao data and the CA for the prebuilt-image
+  stack, only the secret names for a managed vault), a <code>pg_dump</code> / <code>pg_restore</code> procedure with
+  a verification step, what a restore loses, and the rollback doctrine — a release whose
+  schema is compatible with the previous release's images rolls back with
+  <code>alembic downgrade &lt;previous head&gt;</code> and the previous images, with no restore. Every release
+  now carries a <strong>Rollback</strong> line saying whether that holds, and CI proves it on every change:
+  a database at the previous release's schema, seeded with that release's demo data, is
+  upgraded to the current head, downgraded back and upgraded again
+  (<code>python -m backend.scripts.upgrade_path</code>).</li>
 <li><strong>Tune automatic coverage in one place.</strong> The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in <strong>Admin → Settings → Automatic coverage</strong>
