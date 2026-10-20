@@ -1,10 +1,11 @@
-import { Alert, Button, Flex, Input, Modal, Typography } from 'antd';
+import { Alert, Button, Flex, Input, Typography } from 'antd';
 import { useState } from 'react';
 
 import { authMode } from '../../auth/config';
 import { useMe } from '../../auth/useMe';
 import { useSaveDisplayName } from '../../auth/useSaveDisplayName';
 import { errorMessage } from '../../utils/errors';
+import { Modal } from '../shared/Modal';
 
 const SKIP_STORAGE_KEY = 'dataq:profileCompletionPrompt:skipped';
 

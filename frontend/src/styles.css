@@ -322,3 +322,14 @@ a:focus-visible,
 :root[data-theme='dark'] .ant-tag.ant-tag-geekblue {
   color: #85a5ff;
 }
+
+/* #2466: dialogs fade in instead of zooming (components/shared/Modal.tsx). antd guards its
+   zoom only: no clicks on a closing dialog (so a fast double-click can't fire OK twice) and
+   no text selection while it opens. Give the fade the same two guards. */
+.ant-modal.ant-fade-leave .ant-modal-container {
+  pointer-events: none;
+}
+.ant-modal.ant-fade-enter,
+.ant-modal.ant-fade-appear {
+  user-select: none;
+}

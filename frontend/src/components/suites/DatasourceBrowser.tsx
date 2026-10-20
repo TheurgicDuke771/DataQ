@@ -5,7 +5,7 @@ import {
   FolderOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { Alert, Breadcrumb, Button, Empty, Flex, Modal, Spin, Tag, Typography } from 'antd';
+import { Alert, Breadcrumb, Button, Empty, Flex, Spin, Tag, Typography } from 'antd';
 import axios from 'axios';
 import { type ReactNode, useEffect, useState } from 'react';
 
@@ -17,6 +17,7 @@ import {
 } from '../../api/connections';
 import { errorMessage } from '../../utils/errors';
 import { SimpleList } from '../SimpleList';
+import { Modal } from '../shared/Modal';
 
 type Load<T> =
   { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; message: string };

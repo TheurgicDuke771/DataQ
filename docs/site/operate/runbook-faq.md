@@ -3,6 +3,13 @@
 ## Release checklist
 
 - All CI gates green on `main`; no open release-blocking issues on the current milestone.
+- **Assemble the changelog fragments.** On a branch off `main`, run
+  `python scripts/changelog.py assemble --version X.Y.Z --date YYYY-MM-DD`: it moves every
+  file in `changelog.d/` into a new `vX.Y.Z` section at the top of the docs changelog
+  (Breaking, Security, Added, Changed, Fixed) and deletes the fragments. Read the section
+  once as a whole, then open the PR (it needs no fragment of its own — label it
+  `no-changelog`) and merge it **before** the tag, so the tag's docs build publishes the
+  release section and an empty Unreleased.
 - **CHANGELOG updated at tag time** (minor/major releases; patch only if user-visible or
   security-relevant — see the policy in
   [CHANGELOG.md](https://github.com/TheurgicDuke771/DataQ/blob/main/CHANGELOG.md)):
