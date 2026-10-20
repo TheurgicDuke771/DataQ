@@ -4095,16 +4095,34 @@ class _GcsBlobStub:
 
 
 class _GcsListing:
-    """`list_blobs`'s page iterator: items, then `.prefixes` populated by the read."""
+    """`list_blobs`'s page iterator: items, then `.prefixes` populated by the read; ``.pages``
+    yields one page per request of ``page_size`` entries, with ``next_page_token`` set while
+    more remain (the real client counts prefixes toward a page, the emulator does not)."""
 
-    def __init__(self, blobs: list[_GcsBlobStub], prefixes: set[str]) -> None:
+    def __init__(
+        self, blobs: list[_GcsBlobStub], prefixes: set[str], page_size: int | None = None
+    ) -> None:
         self._blobs = blobs
         self._prefixes = prefixes
+        self._page_size = page_size
         self.prefixes: set[str] = set()
+        self.next_page_token: str | None = None
+        self.pages_read = 0
 
     def __iter__(self) -> Any:
         yield from self._blobs
         self.prefixes = set(self._prefixes)
+
+    @property
+    def pages(self) -> Any:
+        entries: list[Any] = [*self._blobs, *sorted(self._prefixes)]
+        size = self._page_size or len(entries) or 1
+        for start in range(0, max(len(entries), 1), size):
+            chunk = entries[start : start + size]
+            self.pages_read += 1
+            self.prefixes |= {e for e in chunk if isinstance(e, str)}
+            self.next_page_token = "tok" if start + size < len(entries) else None
+            yield [e for e in chunk if not isinstance(e, str)]
 
 
 class _GcsClientStub:
@@ -4112,6 +4130,8 @@ class _GcsClientStub:
         self._blobs = {b.name: b for b in blobs}
         self._prefixes = set(prefixes)
         self.list_calls: list[dict[str, Any]] = []
+        self.listings: list[_GcsListing] = []
+        self.missing_bucket = False
         self.closed = False
 
     def bucket(self, name: str) -> Any:
@@ -4127,9 +4147,19 @@ class _GcsClientStub:
     def list_blobs(self, bucket: str, **kwargs: Any) -> _GcsListing:
         assert bucket == "raw"
         self.list_calls.append(kwargs)
+        if self.missing_bucket:
+            from google.api_core.exceptions import NotFound
+
+            raise NotFound("404 GET …/b/raw/o: Not Found")
         prefix = kwargs.get("prefix") or ""
         matched = [b for b in self._blobs.values() if b.name.startswith(prefix)]
-        return _GcsListing(matched, self._prefixes if kwargs.get("delimiter") else set())
+        listing = _GcsListing(
+            matched,
+            self._prefixes if kwargs.get("delimiter") else set(),
+            kwargs.get("page_size"),
+        )
+        self.listings.append(listing)
+        return listing
 
     def close(self) -> None:
         self.closed = True
@@ -4166,6 +4196,53 @@ def test_file_stat_gcs_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -
     _gcs(monkeypatch, _GcsClientStub([_Denied("orders/a.csv")]))
     with pytest.raises(Forbidden):
         _last_modified(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
+
+
+def test_file_stat_gcs_missing_bucket_is_an_error_not_a_missing_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GCS answers a missing bucket with the object's own 404; read as "no file", freshness
+    would report a missing reading instead of the broken connection it is."""
+    from google.api_core.exceptions import NotFound
+
+    stub = _gcs(monkeypatch, _GcsClientStub([]))
+    stub.missing_bucket = True
+    with pytest.raises(NotFound):
+        flatfile.file_stat(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
+
+
+def test_read_range_gcs_past_the_end_is_empty_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from google.api_core.exceptions import RequestRangeNotSatisfiable
+
+    class _Empty(_GcsBlobStub):
+        def download_as_bytes(self, **kwargs: Any) -> bytes:
+            raise RequestRangeNotSatisfiable("416 GET …/o/empty.csv")
+
+    _gcs(monkeypatch, _GcsClientStub([_Empty("empty.csv", data=b"")]))
+    got = flatfile.read_range(
+        conn_type="gcs", config=_GCS_CONFIG, path="empty.csv", secret="k", start=0, length=10
+    )
+    assert got == b""
+
+
+def test_list_directory_gcs_reads_exactly_one_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A level with more entries than the limit must cost one request, not a walk of every
+    page the iterator would follow — and say it is truncated."""
+    stub = _gcs(
+        monkeypatch,
+        _GcsClientStub(
+            [_GcsBlobStub(f"orders/{i}.csv") for i in range(2)],
+            prefixes={f"orders/sub{i}/" for i in range(20)},
+        ),
+    )
+    listing = flatfile.list_directory(
+        conn_type="gcs", config=_GCS_CONFIG, prefix="orders/", secret="k", limit=3
+    )
+    assert stub.listings[0].pages_read == 1
+    assert listing.truncated
+    assert len(listing.folders) + len(listing.files) == 3
 
 
 def test_download_bytes_gcs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4246,7 +4323,7 @@ def test_list_directory_gcs_reads_folders_off_the_consumed_iterator(
         ("orders/a.csv", 7, _LANDED)
     ]
     assert not listing.truncated
-    assert stub.list_calls[0]["delimiter"] == "/" and stub.list_calls[0]["max_results"] == 11
+    assert stub.list_calls[0]["delimiter"] == "/" and stub.list_calls[0]["page_size"] == 11
     assert stub.closed
 
 

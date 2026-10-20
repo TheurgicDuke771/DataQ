@@ -370,10 +370,16 @@ def read_range(
             )["Body"].read()
             return body
         if conn_type == "gcs":
-            # `end` is inclusive, like the HTTP Range header it becomes.
-            fetched: bytes = ses.gcs_blob(path).download_as_bytes(
-                start=start, end=start + length - 1, timeout=_GCS_TIMEOUT
-            )
+            from google.api_core.exceptions import RequestRangeNotSatisfiable
+
+            try:
+                # `end` is inclusive, like the HTTP Range header it becomes.
+                fetched: bytes = ses.gcs_blob(path).download_as_bytes(
+                    start=start, end=start + length - 1, timeout=_GCS_TIMEOUT
+                )
+            except RequestRangeNotSatisfiable:
+                # GCS answers 416 for a start at or past the end (an empty object included).
+                return b""
             return fetched
         downloaded: bytes = ses.blob(path).download_blob(offset=start, length=length).readall()
         return downloaded
@@ -1217,9 +1223,12 @@ def file_stat(
             try:
                 return _head_stat(ses, path)
             except Exception as exc:
-                if is_not_found(exc):
-                    return FileStat()
-                raise
+                if not is_not_found(exc):
+                    raise
+            # GCS answers a missing bucket with the same 404 as a missing object; a one-object
+            # listing (the permission a reader already holds) raises for the bucket, not the file.
+            next(iter(ses.gcs.list_blobs(ses.gcs_config.bucket, max_results=1)), None)
+            return FileStat()
 
         from azure.core.exceptions import ResourceNotFoundError
 
@@ -1690,22 +1699,24 @@ def list_directory(
         gcfg = GcsConfig.model_validate(config)
         client_gs = _gcs_client(gcfg, secret)
         try:
-            # `max_results` bounds objects AND prefixes together, so one page of limit+1 entries
-            # is the whole request; the API reports prefixes only once a page has been read.
             listing = client_gs.list_blobs(
                 gcfg.bucket,
                 prefix=prefix,
                 delimiter="/",
-                max_results=limit + 1,
+                page_size=limit + 1,
                 timeout=_GCS_TIMEOUT,
             )
+            # Exactly one page: iterating the listing would follow page tokens through the whole
+            # level. Its prefixes are populated as the page is read.
+            page = next(iter(listing.pages), None)
             files = [
                 BrowseFile(path=blob.name, size=blob.size, last_modified=blob.updated)
-                for blob in listing
+                for blob in (page or ())
                 if blob.name != prefix  # the prefix's own folder marker
             ]
             folders = sorted(listing.prefixes)
-            return _cap(folders, files, limit=limit, more=len(files) + len(folders) > limit)
+            more = listing.next_page_token is not None or len(files) + len(folders) > limit
+            return _cap(folders, files, limit=limit, more=more)
         finally:
             client_gs.close()
 

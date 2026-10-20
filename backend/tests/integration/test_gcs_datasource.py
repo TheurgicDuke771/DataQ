@@ -111,6 +111,7 @@ def bucket() -> Iterator[str]:
     pd.DataFrame({"id": [1, 2, 3, 4], "amount": [1.5, 2.5, None, 4.5]}).to_parquet(buf)
     b.blob("orders/orders_2026-01-03.parquet").upload_from_string(buf.getvalue())
     b.blob("orders/archive/old.csv").upload_from_string(b"a\n1\n")
+    b.blob("empty.csv").upload_from_string(b"")
     for label, body in ADVERSARIAL_CSV_BODIES:
         b.blob(f"adversarial/{label}.csv").upload_from_string(body)
     admin.close()
@@ -158,6 +159,30 @@ def test_file_stat_reads_size_and_arrival_time_and_maps_the_404(bucket: str, key
         conn_type="gcs", config=_config(bucket), path="orders/nope.csv", secret=key_file
     )
     assert missing == flatfile.FileStat()
+
+
+def test_a_missing_bucket_is_an_error_not_a_missing_file(key_file: str) -> None:
+    from google.api_core.exceptions import NotFound
+
+    with pytest.raises(NotFound):
+        flatfile.file_stat(
+            conn_type="gcs",
+            config=_config("no-such-bucket-" + uuid.uuid4().hex[:6]),
+            path="orders/a.csv",
+            secret=key_file,
+        )
+
+
+def test_a_range_past_the_end_of_an_empty_object_is_empty(bucket: str, key_file: str) -> None:
+    got = flatfile.read_range(
+        conn_type="gcs",
+        config=_config(bucket),
+        path="empty.csv",
+        secret=key_file,
+        start=0,
+        length=16,
+    )
+    assert got == b""
 
 
 def test_range_reads_download_and_listing(bucket: str, key_file: str) -> None:
