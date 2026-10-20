@@ -18,6 +18,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
 | Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
@@ -42,6 +43,19 @@ percentile, so it is refused there at author time. Verified by executed runs, au
 → `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena, live
 Amazon Redshift Serverless and live Azure SQL (SQL Server), PostgreSQL, MySQL 8, MariaDB 11,
 Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
+
+ⁱ **PII drift.** Every run profiles every column of the target through the column profiler
+(one login: the column listing plus the batched top-values query), keeps what looks like email
+addresses or encoded blobs as a classification of the asset, and counts the columns that are new
+against the baseline and that nobody has classified: no own warehouse tag, nothing inherited
+through lineage, not in the suite's `pii_columns`, not dismissed (the `identifier_column` is not
+exempt — it is shown unmasked). The first run learns the current set as the baseline and reports
+`skip`; the baseline never moves on its own, so the check keeps failing until the column is
+classified, dismissed or ignored, or the check is re-baselined. It runs wherever the profiler runs, which is every datasource in this
+table, and it is bounded by the profiler's own limits: on a SQL datasource the evidence is the
+top values per column, on files and Iceberg the sampled rows. Only the two shapes are detected; a
+column it does not name is not thereby clean. The ticks are earned by the executed engine tests
+over a faked profile, not by a live run — no cloud test instance exists.
 
 ᵇ **Schema drift** (ADR 0012)
 diffs a live column-name/type snapshot against a stored baseline and flags

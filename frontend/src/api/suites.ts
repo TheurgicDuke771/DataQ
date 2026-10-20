@@ -324,7 +324,7 @@ export async function bulkSetThresholds(
   return data;
 }
 
-/** Drop a schema_drift check's stored baseline — the NEXT run recaptures it from
+/** Drop a schema_drift or pii_drift check's stored baseline — the NEXT run recaptures it from
  *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
 export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {
   await api.post(`/suites/${suiteId}/checks/${checkId}/rebaseline`);

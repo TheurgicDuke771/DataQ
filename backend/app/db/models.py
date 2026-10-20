@@ -77,6 +77,7 @@ CHECK_KINDS = (
     "anomaly",
     "comparison",
     "aggregate",
+    "pii_drift",
 )
 COMPARISON_KIND = "comparison"
 # Persisted column classifications below the warehouse-tag floor (ADR 0049). `profiler` is the
