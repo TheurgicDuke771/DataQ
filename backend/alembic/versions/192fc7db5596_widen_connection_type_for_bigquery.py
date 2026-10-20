@@ -9,6 +9,8 @@ exists (the re-added CHECK would fail validation against one). Delete those rows
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -28,7 +30,6 @@ _AFTER = (
 
 
 def _set_type_check(values: str) -> None:
-    # IF EXISTS on the drop so a partial-retry after an aborted run re-applies cleanly.
     op.execute("ALTER TABLE connections DROP CONSTRAINT IF EXISTS ck_connections_type_valid")
     op.execute(
         "ALTER TABLE connections ADD CONSTRAINT ck_connections_type_valid "
@@ -41,4 +42,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    rows = (
+        op.get_bind()
+        .execute(sa.text("SELECT count(*) FROM connections WHERE type = 'bigquery'"))
+        .scalar_one()
+    )
+    if rows:
+        raise RuntimeError(
+            f"{rows} bigquery connection(s) exist; delete them before downgrading past "
+            "192fc7db5596 (the narrower type CHECK would reject them)"
+        )
     _set_type_check(_BEFORE)
