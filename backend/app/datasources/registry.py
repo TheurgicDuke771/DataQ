@@ -88,6 +88,20 @@ def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
     return {slot: tuple(fields) for slot, fields in slots.items()}
 
 
+def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
+    """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
+    none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
+
+    Answered by the adapter: it declares ``secret_optional`` and its config says, per auth mode,
+    whether it ``requires_secret()``.
+    """
+    adapter = _ADAPTERS.get(conn_type)
+    if adapter is None or not getattr(adapter, "secret_optional", False):
+        return False
+    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
+    return callable(requires) and not requires()
+
+
 def credential_expiry(
     conn_type: str, config: dict[str, Any], secret: str, **extra_secrets: Any
 ) -> datetime | None:

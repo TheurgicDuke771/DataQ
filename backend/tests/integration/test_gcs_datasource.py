@@ -155,6 +155,12 @@ def test_file_stat_reads_size_and_arrival_time_and_maps_the_404(bucket: str, key
     assert stat.size == len(_CSV)
     assert isinstance(stat.last_modified, datetime) and stat.last_modified.tzinfo is not None
     assert datetime.now(UTC) - stat.last_modified < timedelta(minutes=10)
+    client = gcs_client(GcsConfig.model_validate(_config(bucket)), key_file)
+    try:
+        blob = client.bucket(bucket).get_blob("orders/orders_2026-01-01.csv")
+        assert blob is not None and stat.last_modified == blob.time_created
+    finally:
+        client.close()
     missing = flatfile.file_stat(
         conn_type="gcs", config=_config(bucket), path="orders/nope.csv", secret=key_file
     )

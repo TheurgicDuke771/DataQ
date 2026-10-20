@@ -4063,12 +4063,16 @@ class _GcsBlobStub:
         data: bytes = b"col\n1\n",
         size: int | None = 4096,
         updated: datetime | None = _LANDED,
+        time_created: datetime | None = None,
         missing: bool = False,
     ) -> None:
         self.name = name
         self._data = data
         self.size = size
         self.updated = updated
+        # The real client always reports both; a stub that sets only `updated` stands for an
+        # object never edited since upload, whose two times are the same instant.
+        self.time_created = time_created if time_created is not None else updated
         self._missing = missing
         self.calls: list[Any] = []
 
@@ -4131,21 +4135,27 @@ class _GcsClientStub:
         self._prefixes = set(prefixes)
         self.list_calls: list[dict[str, Any]] = []
         self.listings: list[_GcsListing] = []
+        self.user_projects: list[str | None] = []
         self.missing_bucket = False
         self.closed = False
 
-    def bucket(self, name: str) -> Any:
+    def bucket(self, name: str, user_project: str | None = None) -> Any:
         assert name == "raw"
         blobs = self._blobs
+        self.user_projects.append(user_project)
 
         class _Bucket:
+            def __init__(self) -> None:
+                self.name = name
+                self.user_project = user_project
+
             def blob(self, path: str) -> _GcsBlobStub:
                 return blobs.get(path) or _GcsBlobStub(path, missing=True)
 
         return _Bucket()
 
     def list_blobs(self, bucket: str, **kwargs: Any) -> _GcsListing:
-        assert bucket == "raw"
+        assert getattr(bucket, "name", bucket) == "raw"
         self.list_calls.append(kwargs)
         if self.missing_bucket:
             from google.api_core.exceptions import NotFound
@@ -4176,6 +4186,33 @@ def test_file_stat_gcs_reloads_the_exact_blob(monkeypatch: pytest.MonkeyPatch) -
     stat = flatfile.file_stat(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
     assert stat == flatfile.FileStat(last_modified=_LANDED, size=128)
     assert blob.calls == [("reload", {"timeout": flatfile._GCS_TIMEOUT})]
+
+
+def test_file_stat_gcs_arrival_is_the_upload_not_a_metadata_edit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A metadata-only edit moves `updated`, not the content; arrival-time freshness reading it
+    would call a stale file fresh."""
+    blob = _GcsBlobStub(
+        "orders/a.csv", updated=datetime(2026, 7, 9, tzinfo=UTC), time_created=_LANDED
+    )
+    _gcs(monkeypatch, _GcsClientStub([blob]))
+    assert (
+        _last_modified(conn_type="gcs", config=_GCS_CONFIG, path="orders/a.csv", secret="k")
+        == _LANDED
+    )
+    refs = flatfile.list_files(conn_type="gcs", config=_GCS_CONFIG, prefix="orders/", secret="k")
+    assert refs[0].last_modified == _LANDED
+
+
+def test_a_gcs_billing_project_reaches_every_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`project_id` is the Requester Pays billing project — sent on reads, listings and browse."""
+    stub = _gcs(monkeypatch, _GcsClientStub([_GcsBlobStub("orders/a.csv")]))
+    config = {**_GCS_CONFIG, "project_id": "billing-proj"}
+    flatfile.download_bytes(conn_type="gcs", config=config, path="orders/a.csv", secret="k")
+    flatfile.list_files(conn_type="gcs", config=config, prefix="orders/", secret="k")
+    flatfile.list_directory(conn_type="gcs", config=config, prefix="orders/", secret="k", limit=5)
+    assert stub.user_projects and set(stub.user_projects) == {"billing-proj"}
 
 
 def test_file_stat_gcs_missing_object_is_an_empty_stat(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -120,20 +120,6 @@ def _require_credential(connection: Connection) -> str:
     return connection.secret_ref
 
 
-def _flatfile_secret(connection: Connection, secret_store: SecretStore) -> str | None:
-    """The credential a flat-file listing presents — ``None`` only for an anonymous store."""
-    if not connection.secret_ref and not flatfile.authenticates_without_secret(
-        connection.type, dict(connection.config)
-    ):
-        _require_credential(connection)
-    return flatfile.resolve_flatfile_secret(
-        conn_type=connection.type,
-        config=dict(connection.config),
-        secret_ref=connection.secret_ref,
-        secret_store=secret_store,
-    )
-
-
 def _identifier(value: str | None, label: str) -> str | None:
     if value is None:
         return None
@@ -344,6 +330,8 @@ def browse_files(
         )
     prefix = validate_prefix(prefix)
     config = dict(connection.config)
+    if flatfile.missing_credential(connection.type, config, connection.secret_ref):
+        _require_credential(connection)
     root_key = "container" if connection.type == "adls_gen2" else "bucket"
     root = str(config.get(root_key) or "")
 
@@ -353,7 +341,12 @@ def browse_files(
                 conn_type=connection.type,
                 config=config,
                 prefix=prefix,
-                secret=_flatfile_secret(connection, secret_store),
+                secret=flatfile.resolve_flatfile_secret(
+                    conn_type=connection.type,
+                    config=config,
+                    secret_ref=connection.secret_ref,
+                    secret_store=secret_store,
+                ),
                 limit=limit,
             )
         except Exception as exc:

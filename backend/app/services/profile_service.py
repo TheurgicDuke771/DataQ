@@ -1244,12 +1244,15 @@ def list_file_columns(
     file_format: str | None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3)."""
-    # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
-    # as in `profile_file`; a direct call without it surfaces as a read failure.
+    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3 / GCS)."""
     fmt = infer_file_format(path, file_format)
     try:
-        secret = secret_store.get(connection.secret_ref or "")
+        secret = resolve_flatfile_secret(
+            conn_type=connection.type,
+            config=dict(connection.config),
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
         reader_args: dict[str, Any] = {
             "conn_type": connection.type,
             "config": connection.config,

@@ -80,6 +80,11 @@ def test_anonymous_auth_needs_no_secret() -> None:
         "nul\x00byte",
         "bucket/with/path",
         "gs://bucket",
+        "a" * 64,  # dotless names stop at 63
+        "ok." + "b" * 64,  # every dotted part stops at 63 too
+        "goog-data",
+        "my-google-bucket",
+        "192.168.5.4",
     ],
 )
 def test_validate_config_rejects_a_name_that_is_not_a_bucket(bucket: str) -> None:
@@ -88,7 +93,7 @@ def test_validate_config_rejects_a_name_that_is_not_a_bucket(bucket: str) -> Non
 
 
 def test_validate_config_strips_and_accepts_every_legal_bucket_shape() -> None:
-    for name in ("abc", "my_bucket.example.com", "a-1_2.3", " padded "):
+    for name in ("abc", "my_bucket.example.com", "a-1_2.3", " padded ", "a" * 63, "x." * 50 + "y"):
         assert GcsConfig.model_validate({"bucket": name}).bucket == name.strip()
 
 
@@ -177,8 +182,15 @@ class _FakeClient:
         self.error: Exception | None = None
         _FakeClient.instances.append(self)
 
-    def list_blobs(self, bucket: str, **kwargs: Any) -> _FakeIterator:
-        self.list_calls.append({"bucket": bucket, **kwargs})
+    def bucket(self, name: str, user_project: str | None = None) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(name=name, user_project=user_project)
+
+    def list_blobs(self, bucket: Any, **kwargs: Any) -> _FakeIterator:
+        self.list_calls.append(
+            {"bucket": bucket.name, "user_project": bucket.user_project, **kwargs}
+        )
         return _FakeIterator([object()], self.error)
 
     def close(self) -> None:
@@ -201,7 +213,13 @@ def test_test_lists_one_object_with_a_read_only_key(fake_client: type[_FakeClien
     assert creds.service_account_email == _KEY["client_email"]
     assert set(creds.scopes) == {READ_ONLY_SCOPE}
     assert client.list_calls == [
-        {"bucket": "dataq-landing", "max_results": 1, "timeout": (10, 10), "retry": None}
+        {
+            "bucket": "dataq-landing",
+            "user_project": None,
+            "max_results": 1,
+            "timeout": (10, 10),
+            "retry": None,
+        }
     ]
     assert client.closed
 
@@ -215,6 +233,7 @@ def test_test_targets_an_emulator_endpoint_and_the_configured_project(
     (client,) = fake_client.instances
     assert client.kwargs["client_options"] == {"api_endpoint": "http://fake-gcs:4443"}
     assert client.kwargs["project"] == "billing-proj"
+    assert client.list_calls[0]["user_project"] == "billing-proj"
 
 
 def test_test_anonymous_presents_no_credential(fake_client: type[_FakeClient]) -> None:

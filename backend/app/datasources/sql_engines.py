@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.datasources.athena import ATHENA
-from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.generic_sql import GenericSqlConfig, SqlEngineSpec
 from backend.app.datasources.mssql import MSSQL
 from backend.app.datasources.mysql import MYSQL
@@ -49,13 +48,9 @@ def default_schema(conn_type: str, config: dict[str, Any]) -> str | None:
 
 
 def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
-    """Whether a generic SQL connection of this config needs no stored secret at all (Trino
-    ``auth_type: none``) — so a missing ``secret_ref`` is its normal state, not a broken one.
+    """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
+    none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
     """
-    spec = SQL_ENGINES.get(conn_type)
-    if spec is None:
-        # The flat-file stores answer the same question for themselves (GCS `anonymous`).
-        from backend.app.datasources.flatfile import authenticates_without_secret as flatfile
+    from backend.app.datasources.registry import authenticates_without_secret as answer
 
-        return conn_type in FLAT_FILE_TYPES and flatfile(conn_type, config)
-    return not spec.validate_config(config).requires_secret()
+    return answer(conn_type, config)

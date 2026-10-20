@@ -13,7 +13,11 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import file_stat, resolve_flatfile_secret
+from backend.app.datasources.flatfile import (
+    MissingCredentialError,
+    file_stat,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     ROW_DELETES_PRESENT,
@@ -77,15 +81,6 @@ def _too_large(count: int, max_rows: int, *, side_hint: str) -> DatasetTooLargeE
         "diff would be silently wrong, so DataQ refuses instead)",
         detail={"rows": count, "max_rows": max_rows},
     )
-
-
-def _require_secret(connection: Connection, secret_store: SecretStore) -> str:
-    if not connection.secret_ref:
-        raise DatasetReadUnsupportedError(
-            "connection has no stored credential",
-            detail={"connection_id": str(connection.id)},
-        )
-    return secret_store.get(connection.secret_ref)
 
 
 # ───────────────────────── SQL (snowflake / unity_catalog) ──────────
@@ -217,7 +212,7 @@ def _flatfile_read(
             secret_ref=connection.secret_ref,
             secret_store=secret_store,
         )
-    except ValueError as exc:
+    except MissingCredentialError as exc:
         raise DatasetReadUnsupportedError(
             "connection has no stored credential", detail={"connection_id": str(connection.id)}
         ) from exc

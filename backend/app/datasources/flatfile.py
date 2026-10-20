@@ -29,7 +29,7 @@ from backend.app.datasources.base import (
     SampleSpec,
     SuiteOutcome,
 )
-from backend.app.datasources.gcs import GcsConfig, gcs_client, is_not_found
+from backend.app.datasources.gcs import GcsConfig, gcs_bucket, gcs_client, is_not_found
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     AGGREGATE,
@@ -199,6 +199,13 @@ def _gcs_client(gcfg: GcsConfig, secret: str | None) -> Any:
 _GCS_TIMEOUT = (_CONNECT_TIMEOUT, _READ_TIMEOUT)
 
 
+def _gcs_arrival(blob: Any) -> datetime | None:
+    """When this content arrived: the generation's creation time, which a new upload resets and
+    a metadata-only edit (which moves ``updated``) does not — S3's ``LastModified`` equivalent."""
+    created: datetime | None = blob.time_created
+    return created if created is not None else blob.updated
+
+
 def _require_secret(secret: str | None, conn_type: str) -> str:
     if secret is None:
         raise ValueError(f"{conn_type} connection requires a credential")
@@ -273,7 +280,7 @@ class StoreSession:
 
     def gcs_blob(self, path: str) -> Any:
         """A blob handle for ``path`` in this session's bucket (no request until used)."""
-        return self.gcs.bucket(self.gcs_config.bucket).blob(path)
+        return gcs_bucket(self.gcs, self.gcs_config).blob(path)
 
     def blob(self, path: str) -> Any:
         """A blob client for ``path`` on this session's service client."""
@@ -1192,7 +1199,7 @@ def _head_stat(ses: StoreSession, path: str) -> FileStat:
     if ses.conn_type == "gcs":
         blob = ses.gcs_blob(path)
         blob.reload(timeout=_GCS_TIMEOUT)
-        return FileStat(last_modified=blob.updated, size=blob.size)
+        return FileStat(last_modified=_gcs_arrival(blob), size=blob.size)
     properties = ses.blob(path).get_blob_properties()
     return FileStat(last_modified=properties.last_modified, size=properties.size)
 
@@ -1227,7 +1234,10 @@ def file_stat(
                     raise
             # GCS answers a missing bucket with the same 404 as a missing object; a one-object
             # listing (the permission a reader already holds) raises for the bucket, not the file.
-            next(iter(ses.gcs.list_blobs(ses.gcs_config.bucket, max_results=1)), None)
+            listing = ses.gcs.list_blobs(
+                gcs_bucket(ses.gcs, ses.gcs_config), max_results=1, timeout=_GCS_TIMEOUT
+            )
+            next(iter(listing), None)
             return FileStat()
 
         from azure.core.exceptions import ResourceNotFoundError
@@ -1489,11 +1499,21 @@ def build_flatfile_runner(
     return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
 
 
+class MissingCredentialError(ValueError):
+    """The connection stores no credential and its auth mode needs one."""
+
+
 def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
-    """Whether a flat-file connection of this config needs no stored secret at all (a GCS
-    ``auth_type: anonymous`` public bucket) — so a missing ``secret_ref`` is its normal state.
-    """
-    return conn_type == "gcs" and not GcsConfig.model_validate(config).requires_secret()
+    """Whether a flat-file connection of this config needs no stored secret (GCS anonymous)."""
+    from backend.app.datasources.registry import authenticates_without_secret as answer
+
+    return answer(conn_type, config)
+
+
+def missing_credential(conn_type: str, config: dict[str, Any], secret_ref: str | None) -> bool:
+    """The connection stores no credential and its auth mode needs one — the one rule every
+    flat-file caller checks before it reaches the store."""
+    return not secret_ref and not authenticates_without_secret(conn_type, config)
 
 
 def resolve_flatfile_secret(
@@ -1504,11 +1524,9 @@ def resolve_flatfile_secret(
     secret_store: SecretStore,
 ) -> str | None:
     """The credential every flat-file read presents, or ``None`` for an anonymous connection."""
-    if secret_ref:
-        return secret_store.get(secret_ref)
-    if authenticates_without_secret(conn_type, config):
-        return None
-    raise ValueError("flat-file connection requires secret_ref for the credential")
+    if missing_credential(conn_type, config, secret_ref):
+        raise MissingCredentialError("flat-file connection requires secret_ref for the credential")
+    return secret_store.get(secret_ref) if secret_ref else None
 
 
 # ───────────────────────── batch resolution ────────────────────────
@@ -1611,8 +1629,9 @@ def iter_files(
         client_gs = _gcs_client(gcfg, secret)
         try:
             # A lazy page iterator: the listing streams, it is never held whole (#943).
-            for blob in client_gs.list_blobs(gcfg.bucket, prefix=prefix, timeout=_GCS_TIMEOUT):
-                yield FileRef(path=blob.name, last_modified=blob.updated)
+            bucket = gcs_bucket(client_gs, gcfg)
+            for blob in client_gs.list_blobs(bucket, prefix=prefix, timeout=_GCS_TIMEOUT):
+                yield FileRef(path=blob.name, last_modified=_gcs_arrival(blob))
         finally:
             client_gs.close()
         return
@@ -1700,7 +1719,7 @@ def list_directory(
         client_gs = _gcs_client(gcfg, secret)
         try:
             listing = client_gs.list_blobs(
-                gcfg.bucket,
+                gcs_bucket(client_gs, gcfg),
                 prefix=prefix,
                 delimiter="/",
                 page_size=limit + 1,
@@ -1710,7 +1729,7 @@ def list_directory(
             # level. Its prefixes are populated as the page is read.
             page = next(iter(listing.pages), None)
             files = [
-                BrowseFile(path=blob.name, size=blob.size, last_modified=blob.updated)
+                BrowseFile(path=blob.name, size=blob.size, last_modified=_gcs_arrival(blob))
                 for blob in (page or ())
                 if blob.name != prefix  # the prefix's own folder marker
             ]

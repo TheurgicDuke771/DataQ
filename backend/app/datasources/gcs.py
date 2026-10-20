@@ -24,8 +24,22 @@ READ_ONLY_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
 
 GcsAuthType = Literal["service_account_key", "anonymous"]
 
-# GCS bucket naming: lower-case letters, digits, dashes, underscores and dots, 3-222 chars.
+# GCS bucket naming: lower-case letters, digits, dashes, underscores and dots, 3-63 chars, or up
+# to 222 when dotted with every dot-separated part at most 63; never `goog`-prefixed or an IP.
 _BUCKET = re.compile(r"^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$")
+_IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+
+
+def _bucket_problem(value: str) -> bool:
+    if not _BUCKET.fullmatch(value) or ".." in value:
+        return True
+    if "." not in value and len(value) > 63:
+        return True
+    if any(len(part) > 63 for part in value.split(".")):
+        return True
+    return value.startswith("goog") or "google" in value or bool(_IPV4.fullmatch(value))
+
+
 _PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 
 _KEY_FIELDS = ("client_email", "private_key", "token_uri")
@@ -78,7 +92,8 @@ class GcsConfig(BaseModel):
 
     bucket: str
     auth_type: GcsAuthType = "service_account_key"
-    # Billing / quota project for the requests; blank uses the key file's own project.
+    # Billing project for the reads (sent as `userProject`, so a Requester Pays bucket works);
+    # blank bills the bucket's owner and uses the key file's own project for the client.
     project_id: str | None = None
     # An emulator or GCS-compatible endpoint. Unset = Google Cloud Storage.
     endpoint_url: str | None = None
@@ -87,10 +102,11 @@ class GcsConfig(BaseModel):
     @classmethod
     def _bucket(cls, value: str) -> str:
         value = value.strip()
-        if not _BUCKET.fullmatch(value) or ".." in value:
+        if _bucket_problem(value):
             raise ValueError(
-                "bucket must be a GCS bucket name: 3-222 lower-case letters, digits, dashes, "
-                "underscores or dots, starting and ending with a letter or digit"
+                "bucket must be a GCS bucket name: 3-63 lower-case letters, digits, dashes or "
+                "underscores (up to 222 with dots, each dotted part at most 63), starting and "
+                "ending with a letter or digit, not starting with 'goog' and not an IP address"
             )
         return value
 
@@ -156,6 +172,11 @@ def gcs_client(config: GcsConfig, secret: str | None, *, timeout: Any = None) ->
     )
 
 
+def gcs_bucket(client: Any, config: GcsConfig) -> Any:
+    """The configured bucket, billing ``project_id`` for every request made through it."""
+    return client.bucket(config.bucket, user_project=config.project_id)
+
+
 def is_not_found(exc: BaseException) -> bool:
     """Whether ``exc`` is the client's 404 — a missing object or bucket."""
     from google.api_core.exceptions import NotFound
@@ -191,7 +212,7 @@ class GcsConnectionAdapter:
         client = gcs_client(config, secret)
         try:
             page = client.list_blobs(
-                config.bucket, max_results=1, timeout=_TEST_TIMEOUT, retry=None
+                gcs_bucket(client, config), max_results=1, timeout=_TEST_TIMEOUT, retry=None
             )
             next(iter(page), None)
         finally:
