@@ -85,7 +85,7 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 | ⬜ | [#1683](https://github.com/TheurgicDuke771/DataQ/issues/1683) feat(datasource): Google Cloud Storage flat-file adapter — completes the object-store trio |
 | ⬜ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) Post-v1: AWS + GCP deploy IaC (behind the provider-agnostic seams) |
 | ⬜ | [#2309](https://github.com/TheurgicDuke771/DataQ/issues/2309) feat(datasources): keyless auth — managed identity / IAM role / workload identity |
-| ⬜ | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) |
+| 🟡 | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) — PR open: `TAMPER_ANCHOR=object_lock` + read-back `anchors` section on verify, live-verified on MinIO with lock; real AWS/Azure unverifiable (#2224). Also closes #2397 (both posture vectors). Filed #2473, #2474 |
 | ⬜ | [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Revisit Iceberg v3 support (deletion vectors, row lineage) behind a capability gate — ADR 0030 |
 
 ### v1.3 Week 4 — product surfaces (due 2026-11-01)

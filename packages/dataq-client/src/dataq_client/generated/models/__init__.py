@@ -9,6 +9,10 @@ from .admin_overview_read import AdminOverviewRead
 from .admin_suite_read import AdminSuiteRead
 from .admin_user_read import AdminUserRead
 from .admin_webhook_read import AdminWebhookRead
+from .anchor_finding import AnchorFinding
+from .anchor_finding_match import AnchorFindingMatch
+from .anchor_verification_read import AnchorVerificationRead
+from .anchor_verification_read_status import AnchorVerificationReadStatus
 from .api_key_create import ApiKeyCreate
 from .api_key_created import ApiKeyCreated
 from .api_key_read import ApiKeyRead
@@ -315,6 +319,10 @@ __all__ = (
     "AdminSuiteRead",
     "AdminUserRead",
     "AdminWebhookRead",
+    "AnchorFinding",
+    "AnchorFindingMatch",
+    "AnchorVerificationRead",
+    "AnchorVerificationReadStatus",
     "ApiKeyCreate",
     "ApiKeyCreated",
     "ApiKeyRead",

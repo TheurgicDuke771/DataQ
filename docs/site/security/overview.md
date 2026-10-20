@@ -736,6 +736,13 @@ considered:
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /
   OpenBao. Not customer data, but a remote store is a location, and the
   credentials it holds unlock the systems the customer data lives in.
+- **OpenLineage emission** — when configured, a START and a terminal RunEvent per
+  suite run to an operator-chosen catalog: dataset and job names, check names,
+  statuses and aggregate counts. Never a failing-row sample or an observed value.
+- **Tamper anchor** — when configured, the audit hash-chain head leaves the
+  database daily and before every retention purge: a SHA-256 hash, a label, the
+  hashed-event count and a timestamp, to an operator-chosen webhook or immutable
+  object store. Never an audit event's actor, action or payload.
 
 Deploying into another jurisdiction is a variable change, not a fork: the same
 images and the same IaC take a different region. What DataQ does **not** do is
@@ -807,10 +814,32 @@ they create before deleting, so a documented purge reads as clean rather than as
 **The chain alone is not the tamper-evidence claim — an external anchor is.** An actor with
 write access to the *whole* table could recompute the chain forward from wherever they
 edited, proving nothing to that specific adversary. An optional `TamperAnchor` publishes the
-chain head, HMAC-signed, to an operator-controlled endpoint outside the database (a webhook
-to a separate log sink or append-only object store) — DataQ never reads it back, which is
-the whole point. It is **off by default**; an operator whose regime requires a provably
-unaltered log must configure it.
+chain head outside the database, daily and before every retention purge. It is **off by
+default**; an operator whose regime requires a provably unaltered log must configure one of
+the two classes:
+
+- **`TAMPER_ANCHOR=webhook`** — the head, HMAC-signed, POSTed to an operator-controlled
+  endpoint (a separate log sink, an append-only store's ingest). DataQ never reads it back,
+  which is the whole point: the anchor's value is that DataQ does not control it.
+- **`TAMPER_ANCHOR=object_lock`** — the head written as its own write-once object:
+  **S3 Object Lock** (AWS, or any S3-compatible store that implements it, such as MinIO)
+  in `COMPLIANCE` or `GOVERNANCE` mode, or an **Azure immutable blob** (a `Locked` or
+  `Unlocked` version-level immutability policy, optionally with a legal hold), each
+  retained `TAMPER_ANCHOR_OBJECT_LOCK_RETENTION_DAYS`. The bucket or container must have
+  object lock / version-level immutability enabled; the credential (S3 secret access key,
+  Azure SAS or service-principal secret) lives in the secret store under
+  `TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME`, never in the environment, and an incomplete
+  configuration refuses to boot. Unlike the webhook, DataQ *can* read this anchor back:
+  `GET /admin/audit-events/verify` lists the published heads (every object version, so a
+  delete marker cannot hide one) and reports each as **present** in the chain, **purged**
+  (older than the last retention sweep — expected), or **missing** — the signature of a
+  database restored to before that head was published, or of a rewritten chain. A store
+  outage is reported as **unavailable**, never as "nothing published". The daily verification task runs the same check and logs a mismatch or an unreadable store at ERROR. The S3 path is
+  verified against MinIO with object lock; real AWS Object Lock and Azure immutability
+  are exercised only through the SDKs' documented call shapes, not a live account.
+
+A failed publish, in either class, is logged at ERROR and recorded on the purge
+checkpoint as not anchored — it never blocks the retention sweep.
 
 ### Organizational artifacts
 

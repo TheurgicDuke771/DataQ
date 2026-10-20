@@ -100,6 +100,114 @@ describe('AuditChainCard', () => {
     expect(screen.queryByText('Events in chain')).not.toBeInTheDocument();
   });
 
+  it('an object-lock anchor is reported as anchored, with the read-back verdict', async () => {
+    mockVerify.mockResolvedValue({
+      ...CHAIN_OK,
+      anchor_mode: 'object_lock',
+      anchors: {
+        status: 'mismatch',
+        checked_count: 3,
+        present_count: 1,
+        purged_count: 1,
+        missing_count: 1,
+        malformed_count: 0,
+        findings: [
+          {
+            key: 'audit-anchors/20261020T000000000000Z-abc.json',
+            label: 'audit_chain_daily',
+            head_hash: 'abc',
+            as_of: '2026-10-20T00:00:00Z',
+            match: 'missing',
+          },
+        ],
+        truncated: false,
+        error: null,
+      },
+    });
+    renderSubPage(<AuditChainCard />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
+
+    expect(
+      await screen.findByText('Anchored off-box (immutable object store)'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Not configured')).not.toBeInTheDocument();
+    expect(screen.getByText('A published head is missing from the chain')).toBeInTheDocument();
+    expect(screen.getByText(/1 present, 1 explained by retention, 1 missing/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/missing: audit-anchors\/20261020T000000000000Z-abc.json/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/restored to before that anchor was published/)).toBeInTheDocument();
+  });
+
+  it('a mismatch made only of foreign objects is not described as a restore', async () => {
+    mockVerify.mockResolvedValue({
+      ...CHAIN_OK,
+      anchor_mode: 'object_lock',
+      anchors: {
+        status: 'mismatch',
+        checked_count: 2,
+        present_count: 1,
+        purged_count: 0,
+        missing_count: 0,
+        malformed_count: 1,
+        findings: [
+          {
+            key: 'audit-anchors/x.json',
+            label: null,
+            head_hash: null,
+            as_of: null,
+            match: 'malformed',
+          },
+          {
+            key: 'audit-anchors/x.json',
+            label: null,
+            head_hash: null,
+            as_of: null,
+            match: 'malformed',
+          },
+        ],
+        truncated: false,
+        error: null,
+      },
+    });
+    renderSubPage(<AuditChainCard />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
+
+    expect(
+      await screen.findByText('An object under the anchor prefix is not an anchor'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('A published head is missing from the chain'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/restored to before that anchor/)).not.toBeInTheDocument();
+    // Two versions of one key are both listed, not collapsed by a duplicate React key.
+    expect(screen.getAllByText('malformed: audit-anchors/x.json')).toHaveLength(2);
+  });
+
+  it('an unreachable anchor store is reported as unchecked, never as empty', async () => {
+    mockVerify.mockResolvedValue({
+      ...CHAIN_OK,
+      anchor_mode: 'object_lock',
+      anchors: {
+        status: 'unavailable',
+        checked_count: 0,
+        present_count: 0,
+        purged_count: 0,
+        missing_count: 0,
+        malformed_count: 0,
+        findings: [],
+        truncated: false,
+        error: 'EndpointConnectionError: Could not connect',
+      },
+    });
+    renderSubPage(<AuditChainCard />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
+
+    expect(await screen.findByText('Anchor store unreachable — not checked')).toBeInTheDocument();
+    expect(screen.getByText(/EndpointConnectionError: Could not connect/)).toBeInTheDocument();
+    expect(screen.queryByText('Nothing published yet')).not.toBeInTheDocument();
+  });
+
   it('re-verifying replaces the previous result', async () => {
     renderSubPage(<AuditChainCard />);
     fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
