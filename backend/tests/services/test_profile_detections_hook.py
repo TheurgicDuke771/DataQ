@@ -80,7 +80,8 @@ def test_a_profile_of_the_assets_own_target_persists_its_detections(
     assert [c.column for c in result.columns] == ["contact"]
     (row,) = _rows(db_session)
     assert (row.asset_id, row.column_name, row.detector) == (asset.id, "contact", "email")
-    assert asset.detected_classifications_refreshed_at is not None
+    # A one-column probe: it records what it saw and does NOT stamp the asset as looked-at.
+    assert asset.detected_classifications_refreshed_at is None
 
 
 def test_a_profile_with_no_asset_persists_nothing(db_session: Any, monkeypatch: Any) -> None:
@@ -121,6 +122,19 @@ def test_suggest_policy_for_target_threads_the_asset_through(
     )
     assert policy["pii_columns"] == ["contact"]
     assert [r.column_name for r in _rows(db_session)] == ["contact"]
+    # Every column was profiled, so this one stamps the asset.
+    db_session.refresh(asset)
+    assert asset.detected_classifications_refreshed_at is not None
+
+
+def test_a_probe_of_another_table_keeps_a_detection_like_any_masking_verdict() -> None:
+    """`applicable_tags` narrows the floor for a probe of some other table: clearances belong to
+    the asset they were given on, masking verdicts travel — a detection is a masking verdict."""
+    tags = {"email": "detected", "id": "public", "ssn": "sensitive"}
+    assert live_probe.applicable_tags(tags, probed_other_target=True) == {
+        "email": "detected",
+        "ssn": "sensitive",
+    }
 
 
 # ── which explicit probe locations count as the suite's own target ──────────────────────────

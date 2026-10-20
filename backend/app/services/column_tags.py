@@ -47,6 +47,12 @@ REFRESH_TTL: Final[timedelta] = timedelta(minutes=15)
 TAGGABLE_TYPES: Final[frozenset[str]] = frozenset({"snowflake", "unity_catalog"})
 
 
+def fold_key(column: str) -> str:
+    """The redaction map's key for a column name: stripped and lower-cased, the one folding every
+    rung (warehouse tags, inheritance, detections, the policy lookups) agrees on."""
+    return column.strip().lower()
+
+
 def normalize_tag(tag_name: str | None, tag_value: str | None) -> str | None:
     """Map one warehouse tag to the redactor's vocabulary, or `None` to ignore it."""
     if not tag_name or tag_value is None:
@@ -70,7 +76,7 @@ def _merge(tags: dict[str, str], column: str, verdict: str | None) -> None:
     """Record `verdict` for `column`, with **sensitive winning any conflict**."""
     if verdict is None:
         return
-    key = column.strip().lower()
+    key = fold_key(column)
     if tags.get(key) == SENSITIVE:
         return
     tags[key] = verdict

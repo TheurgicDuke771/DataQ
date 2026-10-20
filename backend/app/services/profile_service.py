@@ -1104,6 +1104,7 @@ def profile_connection(
     file_format: str | None = None,
     secret_store: SecretStore,
     asset: Asset | None = None,
+    full_profile: bool = False,
 ) -> ProfileResult:
     """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type.
 
@@ -1111,7 +1112,9 @@ def profile_connection(
     (never on an explicit table/path override, whose columns may collide by name) — and the
     profile then feeds the profiler classification source (ADR 0049): the email / encoded
     value detectors' verdicts are persisted against it, fail-soft, so a column that starts
-    carrying PII-shaped values is masked everywhere from the next profile on.
+    carrying PII-shaped values is masked everywhere from the next profile on. ``full_profile``
+    says ``columns`` is the table's whole column list, which is what lets the profile stamp the
+    asset as looked-at; a probe of some columns records what it saw and claims nothing more.
     """
     result = _profile_connection(
         connection,
@@ -1130,7 +1133,7 @@ def profile_connection(
         # Imported here: `column_detections` is a read-path module and must not pull this one in.
         from backend.app.services.column_detections import record_profile_detections_safely
 
-        record_profile_detections_safely(session, asset, result.columns)
+        record_profile_detections_safely(session, asset, result.columns, full_profile=full_profile)
     return result
 
 
@@ -1315,7 +1318,8 @@ def suggest_policy_for_target(
     asset: Asset | None = None,
 ) -> dict[str, Any]:
     """List → profile → classify a target's columns into a redaction-policy suggestion,
-    under one warehouse login (#1645). ``asset``: see `profile_connection`.
+    under one warehouse login (#1645). ``asset``: see `profile_connection` — every column is
+    profiled here, so this is a full profile for the classification source.
     """
     with shared_connection():
         columns = list_columns(
@@ -1342,5 +1346,6 @@ def suggest_policy_for_target(
             file_format=file_format,
             secret_store=secret_store,
             asset=asset,
+            full_profile=True,
         )
     return derive_column_policy(result.columns)

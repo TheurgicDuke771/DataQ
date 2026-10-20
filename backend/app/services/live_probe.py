@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.app.services import audit_service
+from backend.app.services.column_tags import DETECTED, fold_key
 
 # The redaction ladder lives in `run_service` and is imported wholesale rather than partially re-
 # implemented here.
@@ -59,15 +60,19 @@ def applicable_tags(
         return tags
     if not probed_other_target:
         return tags
+    # Only the MASKING verdicts survive: a clearance belongs to the asset it was given on, while
+    # masking a same-named column on another table is the conservative direction — for a
+    # warehouse `sensitive`, an inherited one and a profiler detection (ADR 0049) alike.
     return {
         column: value
         for column, value in tags.items()
         if str(value).strip().lower() in _SENSITIVE_TAG_VALUES
+        or str(value).strip().lower() == DETECTED
     }
 
 
 def _norm(value: Any) -> str | None:
-    return None if value is None else str(value).strip().lower()
+    return None if value is None else fold_key(str(value))
 
 
 def probe_is_own_target(

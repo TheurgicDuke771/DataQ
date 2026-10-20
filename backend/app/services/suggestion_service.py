@@ -208,8 +208,10 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
         schema=target.get("schema"),
         catalog=target.get("catalog"),
         secret_store=secret_store,
-        # The suite's own target — the profile feeds the classification source (ADR 0049).
+        # The suite's own target, every column — a full profile for the classification source
+        # (ADR 0049).
         asset=_resolve_asset(session, suite),
+        full_profile=True,
     )
     created = sum(
         propose(session, suite, source="profile", **rule)

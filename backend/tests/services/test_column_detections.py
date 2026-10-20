@@ -87,7 +87,11 @@ def test_evidence_holds_counts_and_never_a_value() -> None:
 def test_record_persists_new_detections_as_sensitive_and_stamps_the_asset(db_session: Any) -> None:
     asset = _asset(db_session)
     created = cd.record_profile_detections(
-        db_session, asset, [_col("Contact", _EMAILS), _col("status", ["a", "b"])], now=_T0
+        db_session,
+        asset,
+        [_col("Contact", _EMAILS), _col("status", ["a", "b"])],
+        full_profile=True,
+        now=_T0,
     )
     (row,) = _rows(db_session, asset)
     assert created == 1
@@ -102,12 +106,24 @@ def test_record_persists_new_detections_as_sensitive_and_stamps_the_asset(db_ses
     assert asset.detected_classifications_refreshed_at == _T0
 
 
-def test_a_profile_that_finds_nothing_still_stamps_looked(db_session: Any) -> None:
+def test_a_full_profile_that_finds_nothing_still_stamps_looked(db_session: Any) -> None:
     """ "Looked and found none" must differ from "never looked"."""
     asset = _asset(db_session)
-    assert cd.record_profile_detections(db_session, asset, [_col("status", ["a"])], now=_T0) == 0
+    created = cd.record_profile_detections(
+        db_session, asset, [_col("status", ["a"])], full_profile=True, now=_T0
+    )
+    assert created == 0
     assert _rows(db_session, asset) == []
     assert asset.detected_classifications_refreshed_at == _T0
+
+
+def test_a_partial_profile_records_what_it_saw_and_claims_nothing_more(db_session: Any) -> None:
+    """The UI profiler sends ONE column; stamping the asset off that would turn "looked at
+    `amount`" into "looked and found none" for a table whose `email` was never examined."""
+    asset = _asset(db_session)
+    cd.record_profile_detections(db_session, asset, [_col("contact", _EMAILS)], now=_T0)
+    assert [r.column_name for r in _rows(db_session, asset)] == ["contact"]
+    assert asset.detected_classifications_refreshed_at is None
 
 
 def test_re_detection_keeps_first_seen_and_moves_last_seen(db_session: Any) -> None:
@@ -120,6 +136,41 @@ def test_re_detection_keeps_first_seen_and_moves_last_seen(db_session: Any) -> N
     (row,) = _rows(db_session, asset)
     assert created == 0
     assert (row.first_detected_at, row.last_detected_at) == (_T0, later)
+
+
+def test_two_columns_differing_only_by_case_share_one_cell(db_session: Any) -> None:
+    """A quoted identifier allows `Email` and `EMAIL` side by side; the cell is case-folded, so
+    the batch must not fight itself (the second would have violated the unique index and sunk
+    the whole batch)."""
+    asset = _asset(db_session)
+    created = cd.record_profile_detections(
+        db_session, asset, [_col("Email", _EMAILS), _col("EMAIL", _EMAILS)], now=_T0
+    )
+    assert created == 1
+    assert [r.column_name for r in _rows(db_session, asset)] == ["Email"]
+
+
+def test_a_row_another_writer_inserted_first_is_updated_not_duplicated(db_session: Any) -> None:
+    """Two profiles of one asset racing: the second must land on the first's row."""
+    asset = _asset(db_session)
+    db_session.add(
+        AssetColumnClassification(
+            asset_id=asset.id,
+            column_name="CONTACT",
+            source="profiler",
+            verdict="sensitive",
+            detector="email",
+            evidence={"n": 1},
+            first_detected_at=_T0,
+            last_detected_at=_T0,
+        )
+    )
+    db_session.commit()
+    later = _T0 + timedelta(hours=1)
+    created = cd.record_profile_detections(db_session, asset, [_col("contact", _EMAILS)], now=later)
+    (row,) = _rows(db_session, asset)
+    assert created == 0
+    assert (row.column_name, row.first_detected_at, row.last_detected_at) == ("CONTACT", _T0, later)
 
 
 def test_a_column_not_seen_by_a_later_profile_is_left_alone(db_session: Any) -> None:
@@ -148,7 +199,7 @@ def test_a_dismissal_survives_re_detection(db_session: Any) -> None:
 
 def test_the_safe_wrapper_swallows_a_persistence_failure(db_session: Any, monkeypatch: Any) -> None:
     asset = _asset(db_session)
-    db_session.commit()  # the wrapper rolls back; the asset must already be durable
+    db_session.commit()
 
     def _boom(*a: Any, **k: Any) -> int:
         raise RuntimeError("db down")
@@ -156,6 +207,25 @@ def test_the_safe_wrapper_swallows_a_persistence_failure(db_session: Any, monkey
     monkeypatch.setattr(cd, "record_profile_detections", _boom)
     cd.record_profile_detections_safely(db_session, asset, [_col("contact", _EMAILS)])  # no raise
     assert db_session.get(Asset, asset.id) is not None  # the session is still usable
+
+
+def test_a_failed_write_leaves_the_callers_pending_work_untouched(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The write runs in its own SAVEPOINT: a CHECK violation on the detection row must not
+    roll back whatever the profile path had pending."""
+    asset = _asset(db_session)
+    db_session.commit()
+    pending = User(aad_object_id=uuid.uuid4().hex, email="pending@acme.io")
+    db_session.add(pending)
+    db_session.flush()
+    monkeypatch.setattr(cd, "value_detector", lambda counts: "phone")  # not in the vocabulary
+
+    cd.record_profile_detections_safely(db_session, asset, [_col("contact", _EMAILS)])
+
+    assert _rows(db_session, asset) == []
+    assert db_session.get(User, pending.id) is pending, "the caller's flushed row survived"
+    db_session.commit()  # …and the session is still committable
 
 
 # ── the overlay: where the rung sits in the map ──────────────────────────────────────────────

@@ -58,7 +58,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
-from backend.app.services.column_tags import DETECTED
+from backend.app.services.column_tags import DETECTED, fold_key
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
@@ -852,12 +852,19 @@ def _redact_sample_value(value: Any) -> Any:
 _SENSITIVE_TAG_VALUES = frozenset({"sensitive", "pii", "confidential", "restricted", "secret"})
 
 
+def _tag_value(column: str, tags: Mapping[str, str] | None) -> str:
+    """The governance map's verdict for a column, lower-cased, or `""` — the ONE lookup the
+    three tag rungs below share, so how a column name is matched can never diverge between them.
+    """
+    if not tags:
+        return ""
+    tag = tags.get(column) or tags.get(fold_key(column)) or ""
+    return str(tag).strip().lower()
+
+
 def _tag_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
     """Level 1 — a datasource governance tag marks the column sensitive (hard floor)."""
-    if not tags:
-        return False
-    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
-    return str(tag).strip().lower() in _SENSITIVE_TAG_VALUES
+    return _tag_value(column, tags) in _SENSITIVE_TAG_VALUES
 
 
 def _policy_requires_classification(policy: Mapping[str, Any] | None) -> bool:
@@ -872,10 +879,7 @@ _NON_SENSITIVE_TAG_VALUES = frozenset({"public", "non_sensitive", "nonsensitive"
 
 def _tag_non_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
     """Level 1, the allow side — a governance tag explicitly clears the column."""
-    if not tags:
-        return False
-    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
-    return str(tag).strip().lower() in _NON_SENSITIVE_TAG_VALUES
+    return _tag_value(column, tags) in _NON_SENSITIVE_TAG_VALUES
 
 
 def _detected_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
@@ -884,10 +888,7 @@ def _detected_sensitive(column: str, tags: Mapping[str, str] | None) -> bool:
     masks it regardless, `identifier_column` clears it, and it never satisfies fail-closed
     clearance — the value is deliberately in neither tag set above.
     """
-    if not tags:
-        return False
-    tag = tags.get(column) or tags.get(column.strip().lower()) or ""
-    return str(tag).strip().lower() == DETECTED
+    return _tag_value(column, tags) == DETECTED
 
 
 def _policy_pii(column: str, policy: Mapping[str, Any] | None) -> bool:
