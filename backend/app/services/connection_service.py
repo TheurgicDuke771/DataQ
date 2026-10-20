@@ -14,6 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError, SafeMonitorError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
@@ -493,6 +494,9 @@ def create_connection(
 
     session.refresh(conn)
     log.info("connection_created", connection_id=str(conn.id), type=conn_type, env=env)
+    usage_telemetry.emit(
+        usage_telemetry.UsageEvent.CONNECTION_CREATED, session=session, type=conn_type
+    )
     return conn
 
 
