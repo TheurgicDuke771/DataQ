@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
+from backend.app.datasources import monitors
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
     Asset,
@@ -42,11 +43,10 @@ _SAME_ASSET_SIBLING_LIMIT = 20
 # values (vs. the scalar `unexpected_count`/`unexpected_percent` aggregates).
 _SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list"})
 
-#: The `check.kind` values `_kind_detail_layer` dispatches on — the single source of truth other
-#: modules (e.g. `llm_rca`) import rather than re-spelling this set independently (#1633 review).
-MONITOR_KINDS = frozenset(
-    {"freshness", "volume", "schema_drift", "anomaly", "aggregate", "pii_drift"}
-)
+#: The `check.kind` values `_kind_detail_layer` dispatches on — derived from the monitor
+#: registry so a kind cannot be registered and silently missing here; other modules (e.g.
+#: `llm_rca`) import this name rather than re-spelling the set (#1633 review).
+MONITOR_KINDS = frozenset(monitors.MONITOR_KINDS)
 
 
 @dataclass(frozen=True)
