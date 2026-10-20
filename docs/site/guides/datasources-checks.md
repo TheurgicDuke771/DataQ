@@ -202,7 +202,8 @@ The same two fields exist on a **dbt** orchestration connection whose `artifacts
 
 The third object store beside ADLS Gen2 and S3: the same flat-file runner, batch resolution,
 browsing, profiler and monitors — including [arrival-time freshness](#freshness-monitor-all-datasources--adr-00120030)
-— over a GCS bucket.
+— over a GCS bucket. Arrival time is the object's creation time (when its current
+content was uploaded), so a metadata-only edit does not make a stale file look fresh.
 
 - **Bucket** — the bucket name. A suite's run target is a path inside it (`raw/orders.csv`) or a
   batch pattern, exactly as on S3.
@@ -214,8 +215,8 @@ browsing, profiler and monitors — including [arrival-time freshness](#freshnes
   connection test is a one-object listing precisely so it passes under that least-privilege role
   (a bucket-level GET would need `storage.buckets.get`, which the role lacks). Keyless /
   workload-identity auth is not yet supported.
-- **Project ID** (optional) — the billing / quota project for requests; blank uses the key
-  file's own project.
+- **Project ID** (optional) — the project billed for reads, needed for a **Requester Pays**
+  bucket (sent as the request's billing project); blank bills the bucket's owner.
 - **Endpoint URL** (optional) — an emulator such as `fake-gcs-server` (`http://fake-gcs:4443`)
   or a GCS-compatible endpoint; blank addresses Google Cloud Storage. The endpoint must **not**
   embed a credential (`https://user:token@host`) — connection `config` is stored and returned

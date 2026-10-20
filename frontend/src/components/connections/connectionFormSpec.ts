@@ -196,7 +196,8 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         name: 'project_id',
         label: 'Project ID',
         optional: true,
-        extra: 'Billing / quota project for requests — leave blank to use the key file’s own',
+        extra:
+          'Project billed for reads — needed for a Requester Pays bucket; blank bills the bucket owner',
       },
       {
         name: 'endpoint_url',
