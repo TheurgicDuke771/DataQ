@@ -27,6 +27,7 @@ VOLUME = "volume"
 SCHEMA_DRIFT = "schema_drift"
 ANOMALY = "anomaly"
 AGGREGATE = "aggregate"
+PII_DRIFT = "pii_drift"
 
 _EXPECTATION_PREFIX = "monitor:"
 
@@ -302,6 +303,43 @@ def _schema_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) ->
         metric_value=float(drifted),
         observed_value=dict(scalar),
         expected_value={"monitor": SCHEMA_DRIFT, "drifted_columns": 0},
+    )
+
+
+# ───────────────────────── pii_drift (ADR 0049 phase 2) ─────────────────────────
+# Stateful like schema_drift: `services/pii_drift.py` profiles the target, feeds the profiler
+# classification source and hands the diff payload here. ``metric_value`` = the number of
+# columns that newly look like personal data and that nobody has classified.
+
+
+def _validate_pii_drift(config: dict[str, Any]) -> None:
+    """No required config; optional ``ignore_columns`` must be plain identifiers."""
+    _validate_schema_drift(config)
+
+
+def _pii_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    """Band a PII-drift payload; ``scalar`` is the payload from `services/pii_drift.py`."""
+    if not isinstance(scalar, dict):
+        raise MonitorConfigError(f"pii_drift expects a diff payload dict: {scalar!r}")
+    expectation_type = monitor_expectation_type(PII_DRIFT)
+    expected: dict[str, Any] = {"monitor": PII_DRIFT, "new_unclassified_columns": 0}
+    if scalar.get("baseline_captured"):
+        # The first run learns what already looks like personal data; it judges nothing, and a
+        # `skip` says so where a pass would read as "nothing drifted".
+        return CheckOutcome(
+            expectation_type=expectation_type,
+            success=True,  # not a verdict — `skipped` is what the status reads
+            skipped=True,
+            observed_value=dict(scalar),
+            expected_value=expected,
+        )
+    new_columns = list(scalar.get("new_columns", ()))
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=not new_columns,  # binary fallback; thresholds band the count
+        metric_value=float(len(new_columns)),
+        observed_value=dict(scalar),
+        expected_value=expected,
     )
 
 
@@ -1023,6 +1061,8 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
     AGGREGATE: MonitorKindStrategy(
         AGGREGATE, _validate_aggregate, _aggregate_outcome, _aggregate_statement
     ),
+    # Stateful (ADR 0049 phase 2): services/pii_drift.py profiles, diffs, hands payload here.
+    PII_DRIFT: MonitorKindStrategy(PII_DRIFT, _validate_pii_drift, _pii_drift_outcome, None),
 }
 
 # Derived, never hand-maintained.

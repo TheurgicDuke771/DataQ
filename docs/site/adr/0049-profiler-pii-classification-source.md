@@ -88,9 +88,21 @@ DataQ can hold.
 ## Phases
 
 1. This ADR, the table and migration, the write path, the rung, the asset page and API, docs.
-2. `pii_drift`: a monitor kind whose `metric_value` is the count of detections first
-   seen since the last run on columns with no warehouse tag and no policy entry. Needs the
-   `kind_valid` constraints widened first, in their own migration.
+2. `pii_drift` (shipped 2026-10-20): a stateful monitor kind beside `schema_drift`. Each run
+   profiles every column of the suite's own target (one login), feeds this source as a full
+   profile, and reads back the columns whose only classification is a detection — no own
+   warehouse tag, nothing inherited, not in the suite's `pii_columns`, not dismissed, not in
+   the check's `ignore_columns`. The `identifier_column` is deliberately not exempt: it is a
+   display decision the redaction ladder honours over a detection, so an identifier that starts
+   carrying personal data is the one column that leaks unmasked. The first run stores the set in
+   `monitor_baselines` and reports `skip`; each later run reports the columns new against that
+   baseline as `metric_value` (the editor defaults warn and fail to 1). The baseline is fixed,
+   as schema_drift's is: an unclassified column is a standing condition, so the check keeps
+   failing until someone classifies, dismisses or ignores the column — then the next run passes
+   and the incident resolves — or re-baselines the check. Rolling the baseline forward was
+   considered and rejected because the next run would pass and auto-resolve the incident with
+   the column still unclassified. The dimension is deliberately undecidable (NULL). The
+   `kind_valid` constraints were widened in their own migration first.
 3. The governance-catalog source as `source = 'catalog'` rows.
 
 ## Consequences

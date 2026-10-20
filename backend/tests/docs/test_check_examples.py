@@ -70,7 +70,7 @@ def test_every_check_type_has_an_example() -> None:
         *COMPARISON_EXPECTATION_TYPES,
         *(
             f"monitor:{kind}"
-            for kind in ("freshness", "volume", "schema_drift", "anomaly", "aggregate")
+            for kind in ("freshness", "volume", "schema_drift", "anomaly", "aggregate", "pii_drift")
         ),
     }
     assert set(examples.EXAMPLES) == known - ALLOWLIST_ONLY_TYPES | {CUSTOM_SQL_EXPECTATION_TYPE}

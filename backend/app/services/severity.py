@@ -50,6 +50,10 @@ _KIND_METRIC_MEANINGS = {
     "schema_drift": "number of columns that changed",
     "anomaly": "z-score against the check's own baseline (how many standard deviations off)",
     "aggregate": "the aggregate's computed value",
+    "pii_drift": (
+        "number of columns that newly look like personal data and that nobody classified "
+        "(0 = none since the baseline)"
+    ),
     "comparison": "percent of compared rows that don't match",
 }
 

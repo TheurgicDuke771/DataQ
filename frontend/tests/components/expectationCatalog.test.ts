@@ -147,6 +147,19 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
     );
   });
 
+  it('models PII drift as a stateful kind under Privacy with no derived dimension and 1/1 defaults', () => {
+    const spec = EXPECTATION_BY_TYPE['monitor:pii_drift'];
+    expect(spec.kind).toBe('pii_drift');
+    expect(spec.category).toBe('Privacy');
+    // A privacy signal is none of the seven DQ dimensions (ADR 0038 / ADR 0049).
+    expect(spec.dimension).toBeUndefined();
+    expect(spec.fields.map((f) => f.name)).toEqual(['ignore_columns']);
+    expect(spec.fields[0].optional).toBe(true);
+    // One newly PII-looking unclassified column fails by default; the bands stay editable.
+    expect(spec.thresholds?.defaults).toEqual({ warn: 1, fail: 1 });
+    expect(spec.thresholds?.requireFailOrCritical).toBeUndefined();
+  });
+
   it('models anomaly as kind=anomaly requiring a threshold, with NO derived dimension', () => {
     const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
     expect(spec.kind).toBe('anomaly');

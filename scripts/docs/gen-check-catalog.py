@@ -49,6 +49,7 @@ CATEGORY_ORDER = [
     "Aggregate",
     "Schema",
     "Anomaly",
+    "Privacy",
     "Comparison",
     "Custom SQL",
     "Snowflake DMF",
@@ -69,6 +70,8 @@ CATEGORY_INTRO = {
     "Schema": "Did the table's columns change against a captured baseline?",
     "Anomaly": "Is today's value unusual against a rolling baseline of this check's own history? "
     + "Skips until enough history exists.",
+    "Privacy": "Did a column start carrying personal data that nobody classified? Profiles the "
+    + "table every run; the first run learns the current set and reports skip.",
     "Comparison": "Reconcile the suite's target against a second dataset, "
     + "possibly on another connection.",
     "Custom SQL": "Any predicate you can write in SQL, validated before it runs.",

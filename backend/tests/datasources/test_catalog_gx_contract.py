@@ -64,8 +64,9 @@ def _expectation_params() -> list[Any]:
 def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
-    # freshness, volume, schema_drift (#592), anomaly (#593), aggregate (#1602)
-    assert len(_monitors()) == 5
+    # freshness, volume, schema_drift (#592), anomaly (#593), aggregate (#1602),
+    # pii_drift (#1675, ADR 0049 phase 2)
+    assert len(_monitors()) == 6
     assert len(_comparisons()) == 2  # records + columns grains (#799)
     assert len(_dmf_entries()) == len(DMF_EXPECTATION_TYPES)  # ADR 0036 §6
 

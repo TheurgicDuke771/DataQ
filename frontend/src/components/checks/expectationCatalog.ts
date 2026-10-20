@@ -19,7 +19,14 @@ export const CUSTOM_DMF_EXPECTATION_TYPE = 'dmf:custom';
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
 export type CheckKind =
-  'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'anomaly' | 'aggregate' | 'comparison';
+  | 'expectation'
+  | 'freshness'
+  | 'volume'
+  | 'schema_drift'
+  | 'anomaly'
+  | 'aggregate'
+  | 'pii_drift'
+  | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor groups by. v1 ships
@@ -33,6 +40,7 @@ export type ExpectationCategory =
   | 'Aggregate'
   | 'Schema'
   | 'Anomaly'
+  | 'Privacy'
   | 'Custom SQL'
   | 'Comparison'
   | 'Snowflake DMF'
@@ -51,6 +59,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Snowflake DMF',
   'Databricks DQX',
   'Anomaly',
+  'Privacy',
   'Custom SQL',
   'Comparison',
 ];
@@ -61,9 +70,15 @@ export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
 
 /**
  * Monitor categories (ADR 0012) — gated by `supportsMonitors` (below), which is BROADER than SQL-
- * queryable: Iceberg and flat files (adls_gen2/s3) also offer them.
+ * queryable: Iceberg and flat files (adls_gen2/s3) also offer them. 'Privacy' (pii_drift) rides
+ * the same gate: it profiles the target, and the profiler reaches exactly the monitor-capable set.
  */
-export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume', 'Aggregate'];
+export const MONITOR_CATEGORIES: ExpectationCategory[] = [
+  'Freshness',
+  'Volume',
+  'Aggregate',
+  'Privacy',
+];
 
 /** The seven canonical DQ dimensions (ADR 0038) — the *semantic quality aspect* a check measures. */
 export const DQ_DIMENSIONS = [
@@ -164,6 +179,10 @@ export interface MonitorThresholdSpec {
   /** Require a fail or critical threshold (freshness has no in-config bound, so
    *  without one it can never fail — the #426 silent-green guard). */
   requireFailOrCritical?: boolean;
+  /** Values the NEW-check form starts with (the editor keeps whatever is stored on edit). A kind
+   *  whose binary fallback already fails on the first unit (pii_drift) still states them, so the
+   *  author sees the bands rather than inferring them. */
+  defaults?: { warn?: number; fail?: number; critical?: number };
 }
 
 export interface ExpectationSpec {
@@ -817,6 +836,28 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     ],
     thresholds: {
       help: 'Band the drifted-column count (added + removed + type-changed; higher = worse). Leave blank for a binary no-drift pass/fail.',
+    },
+  },
+  {
+    type: 'monitor:pii_drift',
+    // No `dimension`: a privacy signal is none of the seven DQ dimensions (ADR 0038 / ADR 0049).
+    kind: 'pii_drift',
+    label: 'PII drift',
+    description:
+      'Did a column start carrying personal data that nobody classified? Every run profiles every column, keeps what looks like email addresses or encoded blobs as a classification of the asset, and counts the columns that are new against the baseline and carry no warehouse tag, no inherited classification and no entry in this suite\u2019s pii_columns (the identifier column is not exempt). The first run only learns the current set and reports skip; the baseline never moves on its own, so the check keeps failing until the column is classified, dismissed or ignored, or the check is re-baselined.',
+    category: 'Privacy',
+    fields: [
+      {
+        name: 'ignore_columns',
+        label: 'Ignored columns',
+        type: 'list',
+        optional: true,
+        help: 'Columns never counted (ids and tokens that trip the encoded-blob detector by design). Matched case-insensitively.',
+      },
+    ],
+    thresholds: {
+      help: 'Band the NUMBER of newly PII-looking unclassified columns (higher = worse). Defaults to warn and fail at 1, so one such column fails the check.',
+      defaults: { warn: 1, fail: 1 },
     },
   },
   {

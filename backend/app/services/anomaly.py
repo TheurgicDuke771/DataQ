@@ -40,7 +40,7 @@ from backend.app.datasources.monitors import (
     qualified_table,
     row_count_from_scalar,
 )
-from backend.app.db.models import Check, Connection, MonitorBaseline
+from backend.app.db.models import Check, Connection, MonitorBaseline, Run
 from backend.app.services import seasonal, seasonal_period_service
 from backend.app.services.coverage_settings_service import CheckSettings, SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
@@ -669,6 +669,7 @@ def build_anomaly_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,
+    run: Run | None = None,  # the shared builder signature; unused here
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Callable[[Check], CheckOutcome]:
     """A per-run executor for `anomaly` checks (the #592/#794 stateful pattern).

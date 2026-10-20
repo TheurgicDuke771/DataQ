@@ -261,8 +261,17 @@ export function DimensionField({
 }
 
 /** The optional warn / fail / critical severity-threshold inputs (ADR 0016). */
-export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThresholdSpec }) {
+export function SeverityThresholdFields({
+  monitor,
+  applyDefaults = false,
+}: {
+  monitor?: MonitorThresholdSpec;
+  /** Pre-fill the catalog's `defaults` — only the new-check page, so an edit never overwrites
+   *  a stored blank with a default. */
+  applyDefaults?: boolean;
+}) {
   const required = monitor?.requireFailOrCritical ?? false;
+  const defaults = applyDefaults ? monitor?.defaults : undefined;
   const heading = required
     ? 'Severity thresholds (fail or critical required)'
     : 'Severity thresholds (optional)';
@@ -314,7 +323,12 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
         {help}
       </Typography.Paragraph>
       <Flex gap={12}>
-        <Form.Item name="warn_threshold" label="Warn ≥" style={{ flex: 1 }}>
+        <Form.Item
+          name="warn_threshold"
+          label="Warn ≥"
+          style={{ flex: 1 }}
+          initialValue={defaults?.warn}
+        >
           <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item
@@ -323,6 +337,7 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
           style={{ flex: 1 }}
           dependencies={['warn_threshold', 'critical_threshold']}
           rules={required ? [failOrCriticalRule, failOrderRule] : [failOrderRule]}
+          initialValue={defaults?.fail}
         >
           <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
@@ -332,6 +347,7 @@ export function SeverityThresholdFields({ monitor }: { monitor?: MonitorThreshol
           style={{ flex: 1 }}
           dependencies={['warn_threshold', 'fail_threshold']}
           rules={[criticalOrderRule]}
+          initialValue={defaults?.critical}
         >
           <InputNumber min={0} max={monitor?.max} style={{ width: '100%' }} />
         </Form.Item>
