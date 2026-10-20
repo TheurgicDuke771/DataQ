@@ -179,7 +179,7 @@ def attached_counts(session: Session) -> dict[uuid.UUID, int]:
     return counts
 
 
-def _declared(row: SeasonalPeriod) -> seasonal.DeclaredPeriod:
+def declared(row: SeasonalPeriod) -> seasonal.DeclaredPeriod:
     return seasonal.DeclaredPeriod(
         id=row.id,
         name=row.name,
@@ -215,7 +215,7 @@ def calendar_for(session: Session, ids: tuple[uuid.UUID, ...]) -> seasonal.Calen
     rows, missing = load_entries(session, ids)
     if missing:
         log.warning("seasonal_periods_missing", missing=[str(i) for i in missing])
-    return seasonal.Calendar(entries=tuple(_declared(r) for r in rows), missing=tuple(missing))
+    return seasonal.Calendar(entries=tuple(declared(r) for r in rows), missing=tuple(missing))
 
 
 def unknown_ids(
@@ -306,7 +306,7 @@ def update_period(
     drops the old kind's fields, so the new kind's are the ones the edit must send."""
     row = get_period(session, period_id)
     before = audit_service.snapshot("seasonal_period", row)
-    current = _fields_of(row)
+    current = fields_of(row)
     if fields.get("kind") not in (None, row.kind):
         current = {k: v for k, v in current.items() if k in ("name", "kind", "note")}
     values = normalise({**current, **fields})
@@ -335,7 +335,7 @@ def update_period(
     return row
 
 
-def _fields_of(row: SeasonalPeriod) -> dict[str, Any]:
+def fields_of(row: SeasonalPeriod) -> dict[str, Any]:
     return {
         "name": row.name,
         "kind": row.kind,

@@ -84,16 +84,7 @@ class SeasonalPeriodRead(ApiModel):
     def from_model(cls, row: SeasonalPeriod, attached: int) -> SeasonalPeriodRead:
         return cls(
             id=row.id,
-            name=row.name,
-            kind=row.kind,
-            start_month=row.start_month,
-            start_day=row.start_day,
-            end_month=row.end_month,
-            end_day=row.end_day,
-            start_date=row.start_date,
-            end_date=row.end_date,
-            series=row.series,
-            note=row.note,
+            **svc.fields_of(row),
             attached_checks=attached,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -135,8 +126,9 @@ def create_seasonal_period(
 class SeasonalPeriodPromote(ApiRequestModel):
     """Promote a period detected in a check's history
     (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
-    `start` is the detected period's `start` (its most recent occurrence); the server reads
-    the history again and refuses a start it no longer shows. A recurring period becomes a
+    `start` is the detected period's `start` (its most recent season); the server reads the
+    history again and refuses a start it no longer shows (404), or a season an entry on the
+    calendar already covers (409, naming the entry to attach instead). A recurring period becomes a
     month/day range, a period seen once a dated entry (`series` applies only to that).
     `attach` also attaches the new entry to the check, which needs `yearly` on it."""
 

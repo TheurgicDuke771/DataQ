@@ -690,7 +690,7 @@ class DeclaredRefRead(ApiModel):
 class DetectedPeriodRead(ApiModel):
     #: `recurring` (the same time in two or more years) or `seen_once`.
     kind: Literal["recurring", "seen_once"]
-    #: The most recent occurrence.
+    #: The most recent season (every run in it: a sale split by an ordinary day is one).
     start: date
     end: date
     peak_ratio: float
@@ -707,6 +707,8 @@ class DetectionThresholdsRead(ApiModel):
     ratio: float
     min_consecutive: int
     same_time_days: int
+    #: How the level is taken, as scoring takes it: `median` with `yearly`, `mean` without.
+    level: Literal["median", "mean"] | None
 
 
 class DetectionHistoryRead(ApiModel):
@@ -722,8 +724,9 @@ class DetectionHistoryRead(ApiModel):
 
 class DetectedSeasonalPeriodsRead(ApiModel):
     """Periods the check's own history shows running at or above `thresholds.ratio` times
-    the level its scoring uses. Computed on request and stored nowhere: a detected period
-    changes no verdict until an admin promotes it to the calendar and it is attached.
+    the level of the periods its scoring uses (`thresholds.level`). Computed on request and
+    stored nowhere: a detected period changes no verdict until an admin promotes it to the
+    calendar and it is attached.
     `reason` is set when there was nothing to look at (`not_a_per_period_metric`,
     `invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no
     reason means the history was read and nothing qualified."""

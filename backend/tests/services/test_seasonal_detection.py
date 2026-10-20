@@ -133,6 +133,8 @@ def test_a_sale_split_by_an_ordinary_day_counts_as_one_year_not_two() -> None:
     assert [(p.kind, p.years_seen, len(p.occurrences)) for p in found.periods] == [
         ("seen_once", 1, 2)
     ]
+    # The season is both runs, which is what promoting it declares.
+    assert (found.periods[0].start, found.periods[0].end) == (sales[0][0], sales[1][1])
 
 
 def test_one_season_split_across_new_year_is_still_one_year() -> None:
@@ -212,3 +214,38 @@ def test_the_level_is_the_scoring_level_so_an_attached_period_is_detected_whole(
     assert sale[0] == bare.periods[0].start and bare_end < sale[1]
     assert [(p.start, p.end) for p in declared.periods] == [sale]
     assert [e.name for e in declared.periods[0].declared] == ["November"]
+
+
+def test_walk_gives_every_day_the_priors_scoring_uses() -> None:
+    """Detection reads priors in one pass; scoring asks day by day. They must agree, with
+    weekday seasonality and a calendar both shaping the priors."""
+    points = _noisy(date(2024, 1, 1), date(2025, 3, 1), peaks=_SALES)
+    entry = DeclaredPeriod(
+        id=uuid.uuid4(),
+        name="Nov",
+        kind="recurring",
+        start_month=11,
+        start_day=20,
+        end_month=12,
+        end_day=6,
+    )
+    history = seasonal.History(
+        points, _params(seasonality=True, window=5, min_points=3), Calendar(entries=(entry,))
+    )
+
+    assert all(priors == history.priors(day) for day, priors in history.walk())
+
+
+def test_without_yearly_the_level_is_the_mean_scoring_uses() -> None:
+    """Scoring without ``yearly`` centres on the mean of the window, which one big spike
+    pulls up; with ``yearly`` it is the median, which the spike does not move."""
+    points = {date(2025, 1, 1) + timedelta(days=n): 100.0 for n in range(40)}
+    points[date(2025, 1, 25)] = 1000.0
+    points[date(2025, 1, 30)] = points[date(2025, 1, 31)] = 160.0
+
+    by_median = seasonal.detect(points, _params())
+    by_mean = seasonal.detect(points, _params(yearly=False))
+
+    assert [(p.start, p.end) for p in by_median.periods] == [(date(2025, 1, 30), date(2025, 1, 31))]
+    assert by_mean.periods == ()
+    assert (by_median.level, by_mean.level) == ("median", "mean")

@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
@@ -1266,16 +1266,10 @@ def list_seasonal_periods() -> list[dict[str, Any]]:
         return [
             {
                 "id": str(row.id),
-                "name": row.name,
-                "kind": row.kind,
-                "start_month": row.start_month,
-                "start_day": row.start_day,
-                "end_month": row.end_month,
-                "end_day": row.end_day,
-                "start_date": row.start_date.isoformat() if row.start_date else None,
-                "end_date": row.end_date.isoformat() if row.end_date else None,
-                "series": row.series,
-                "note": row.note,
+                **{
+                    key: value.isoformat() if isinstance(value, date) else value
+                    for key, value in seasonal_period_service.fields_of(row).items()
+                },
                 "attached_checks": counts.get(row.id, 0),
             }
             for row in seasonal_period_service.list_periods(session)
@@ -1286,7 +1280,9 @@ def list_seasonal_periods() -> list[dict[str, Any]]:
 def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any]:
     """Detect the sale seasons and one-off peaks in an anomaly check's own stored
     history (read-only; changes no verdict): runs of days or weeks at or above
-    ``thresholds.ratio`` (1.5) times the level the check is scored against.
+    ``thresholds.ratio`` (1.5) times the level of the periods the check is scored
+    against (their median with ``yearly`` on, their mean without:
+    ``thresholds.level``).
 
     Use this for 'does the orders table have a sale season?', 'why was the November
     spike not flagged?', or before suggesting a calendar entry to an admin. It works
@@ -1296,10 +1292,12 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
     Returns ``periods``, oldest first. Each has ``kind`` (``recurring``: seen at the
     same time of year, within ``thresholds.same_time_days``, in two or more years;
     ``seen_once``: in one year only), ``start`` / ``end`` (its most recent
-    occurrence, inclusive), ``peak_ratio`` (the highest value against its level),
+    season, inclusive), ``peak_ratio`` (the highest value against its level),
     ``years_seen``, ``range`` (the month/day span a recurring period covers; null
     for ``seen_once`` and for a recurring period too wide to be a month/day range,
-    which cannot be promoted), ``occurrences`` (one per year seen, each with
+    which cannot be promoted), ``occurrences`` (each run of qualifying periods,
+    oldest first, with its ``year``: a season split by an ordinary day has two runs
+    in one year, and ``start`` / ``end`` span both; each with
     ``backfilled_periods``: points seeded from the table's own past rather than
     seen by a run, which a later restatement of the table may have changed), and
     ``declared`` (calendar entries attached to this check that overlap it).
@@ -1314,9 +1312,10 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
     yearly comparison and the calendar entries attached to the check, never this
     list. To make one count, a workspace admin promotes it to the calendar
     (``POST /api/v1/admin/seasonal-periods/promote``, not available over MCP) and
-    the check attaches it. ``seen_once`` cannot tell a yearly event from a one-off;
-    with under a year of ``history.years`` nothing can be ``recurring``. Say how
-    many years stand behind a period.
+    the check attaches it. ``seen_once`` cannot tell a yearly event from a one-off,
+    and a ``recurring`` period with ``years_seen: 2`` rests on two occurrences only,
+    which can be as little as a year apart near the year end. Say how many years
+    stand behind a period.
 
     An empty ``periods`` does **not** prove the table has no seasons. A non-null
     ``reason`` means nothing was examined: ``not_a_per_period_metric`` (any other

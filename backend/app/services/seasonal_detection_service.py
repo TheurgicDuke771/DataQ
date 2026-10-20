@@ -24,6 +24,11 @@ class DetectedPeriodNotFoundError(DataQError):
     code = "detected_period_not_found"
 
 
+class DetectedPeriodDeclaredError(DataQError):
+    status_code = 409
+    code = "detected_period_already_declared"
+
+
 def detected_periods(session: Session, check: Check) -> seasonal.Detection:
     """What the check's per-period history shows now, with the level its scoring uses."""
     if check.kind != ANOMALY:
@@ -76,11 +81,11 @@ def promote(
     attach: bool,
     actor_id: uuid.UUID,
 ) -> SeasonalPeriod:
-    """A calendar entry from the detected period of ``check_id`` whose most recent occurrence
-    starts on ``start``: recurring becomes a month/day range, seen once a dated entry.
-    ``fields`` carries the name, note and (dated only) series. With ``attach`` the check
-    names the new entry too, in the same transaction, so a refused attachment (the check has
-    no ``yearly``) leaves no entry behind."""
+    """A calendar entry from the detected period of ``check_id`` whose most recent season
+    starts on ``start``, refused when an entry already covers that season. Recurring
+    becomes a month/day range, seen once a dated entry; ``fields`` carries the name, note
+    and (dated only) series. With ``attach`` the check names the new entry too, in the
+    same transaction, so a refused attachment (no ``yearly``) leaves no entry behind."""
     check = check_service.get_check(session, suite_id, check_id)
     found = next((p for p in detected_periods(session, check).periods if p.start == start), None)
     if found is None:
@@ -88,6 +93,16 @@ def promote(
             f"no detected period of this check starts on {start.isoformat()}; "
             "read the detected periods again",
             detail={"check_id": str(check_id), "start": start.isoformat()},
+        )
+    entries = tuple(
+        seasonal_period_service.declared(r) for r in seasonal_period_service.list_periods(session)
+    )
+    covering = seasonal.overlapping(entries, found.start, found.end)
+    if covering:
+        # One season, one entry: attach the existing entry instead of declaring it twice.
+        raise DetectedPeriodDeclaredError(
+            "the calendar already has an entry over this period; attach that entry instead",
+            detail={"entries": [{"id": str(e.id), "name": e.name} for e in covering]},
         )
     try:
         row = seasonal_period_service.create_period(

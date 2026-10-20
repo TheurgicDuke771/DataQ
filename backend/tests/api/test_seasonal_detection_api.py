@@ -157,7 +157,12 @@ def test_a_viewer_with_a_share_reads_the_detected_periods(
     }
     assert [o["backfilled_periods"] for o in recurring["occurrences"]] == [7, 7, 0]
     assert body["history"]["points"] == len(_history())
-    assert body["thresholds"] == {"ratio": 1.5, "min_consecutive": 2, "same_time_days": 7}
+    assert body["thresholds"] == {
+        "ratio": 1.5,
+        "min_consecutive": 2,
+        "same_time_days": 7,
+        "level": "median",
+    }
 
 
 def test_a_member_with_no_share_gets_a_404_not_the_periods(
@@ -319,15 +324,51 @@ def test_a_refused_attachment_leaves_no_entry_behind(client: TestClient, db_sess
     assert "seasonal_periods" not in db_session.get(Check, uuid.UUID(check_id)).config
 
 
-def test_a_taken_name_is_a_409(client: TestClient, db_session: Any) -> None:
+def test_a_season_the_calendar_already_covers_is_not_declared_twice(
+    client: TestClient, db_session: Any
+) -> None:
     suite_id, check_id = _seeded_check(client, db_session)
     body = {"suite_id": suite_id, "check_id": check_id, "start": "2025-11-28", "name": "BF"}
 
     first = client.post(_PROMOTE, json=body)
-    second = client.post(_PROMOTE, json={**body, "name": "bf"})
+    second = client.post(_PROMOTE, json={**body, "name": "BF again"})
 
     assert first.status_code == 201
     assert second.status_code == 409
+    assert second.json()["error"]["code"] == "detected_period_already_declared"
+    assert [e["name"] for e in second.json()["error"]["detail"]["entries"]] == ["BF"]
+    assert len(db_session.scalars(select(SeasonalPeriod)).all()) == 1
+
+
+def test_a_season_split_by_an_ordinary_day_is_promoted_whole(
+    client: TestClient, db_session: Any
+) -> None:
+    suite_id, check_id = _seeded_check(client, db_session)
+    baseline = db_session.scalar(
+        select(MonitorBaseline).where(MonitorBaseline.check_id == uuid.UUID(check_id))
+    )
+    # The spring sale starts two days earlier, with an ordinary day after those two: two
+    # runs, 8-9 and 11-13 April, in one season.
+    changed = {"2025-04-08": 2500.0, "2025-04-09": 2500.0, "2025-04-10": 1000.0}
+    observations = [
+        {**o, "value": changed[o["ts"][:10]]} if o["ts"][:10] in changed else o
+        for o in baseline.baseline["observations"]
+    ]
+    baseline.baseline = {**baseline.baseline, "observations": observations}
+    db_session.commit()
+
+    second_run = client.post(
+        _PROMOTE,
+        json={"suite_id": suite_id, "check_id": check_id, "start": "2025-04-11", "name": "x"},
+    )
+    whole = client.post(
+        _PROMOTE,
+        json={"suite_id": suite_id, "check_id": check_id, "start": "2025-04-08", "name": "x"},
+    )
+
+    assert second_run.status_code == 404
+    assert whole.status_code == 201, whole.text
+    assert (whole.json()["start_date"], whole.json()["end_date"]) == ("2025-04-08", "2025-04-13")
 
 
 # ── MCP ───────────────────────────────────────────────────────────────────────
