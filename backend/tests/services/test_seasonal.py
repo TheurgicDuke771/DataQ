@@ -61,17 +61,9 @@ def test_yearly_is_off_by_default_and_must_be_a_boolean() -> None:
         monitors.anomaly_params({**_DAILY, "yearly": "yes"})
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        {"target_metric": "row_count", "yearly": True},
-        {"target_metric": "freshness_age_hours", "column": "loaded_at", "yearly": True},
-        {"target_metric": "column_profile", "yearly": True},
-    ],
-)
-def test_yearly_is_offered_on_the_per_period_metrics_only(config: dict[str, Any]) -> None:
-    """A whole-table metric is measured several times a day and has no period to match
-    across years."""
+def test_yearly_is_refused_on_the_column_profile() -> None:
+    """Hundreds of series a check: three years of each is not a baseline."""
+    config = {"target_metric": "column_profile", "yearly": True}
     with pytest.raises(MonitorConfigError, match="yearly is available only for"):
         monitors.anomaly_params(config)
     # Switched off, the key is harmless on any metric.

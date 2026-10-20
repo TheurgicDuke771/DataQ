@@ -358,6 +358,10 @@ COLUMN_PROFILE_METRIC = "column_profile"
 PERIOD_ROW_COUNT_METRIC = "period_row_count"
 PERIOD_SUM_METRIC = "period_sum"
 PERIOD_METRICS = (PERIOD_ROW_COUNT_METRIC, PERIOD_SUM_METRIC)
+#: The metrics ``yearly`` is offered on: one number per run (ADR 0048 decision 4). The
+#: whole-table ones keep a one-a-day series beside their run-by-run points for it.
+WHOLE_TABLE_YEARLY_METRICS = (ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC)
+YEARLY_METRICS = (*WHOLE_TABLE_YEARLY_METRICS, *PERIOD_METRICS)
 ANOMALY_TARGET_METRICS = (
     ROW_COUNT_METRIC,
     FRESHNESS_AGE_METRIC,
@@ -374,6 +378,9 @@ _PERIOD_KEYS = (
     "backfill",
     "seasonal_periods",
 )
+#: The per-period keys a whole-table metric takes too, with ``yearly`` on: the zone its days
+#: are kept in, and the calendar entries that apply.
+_DAILY_KEYS = ("timezone", "seasonal_periods")
 #: Declared calendar entries one check may attach (ADR 0048 decision 5).
 SEASONAL_PERIODS_MAX = 20
 #: How much history a per-period check keeps, and how far back its seeding reads (ADR 0048).
@@ -448,8 +455,11 @@ class AnomalyParams:
     seasonality: bool
     #: Set exactly for the per-period metrics.
     period: PeriodSpec | None = None
-    #: Compare with the same time in earlier years as well (ADR 0048). Per-period metrics.
+    #: Compare with the same time in earlier years as well (ADR 0048). ``YEARLY_METRICS``.
     yearly: bool = False
+    #: The zone a calendar day is taken in: the period's for a per-period metric; for a
+    #: whole-table one, the zone its one-a-day series is kept in.
+    timezone: str = "UTC"
     #: Declared calendar entries attached to the check (ADR 0048 decision 5); needs ``yearly``.
     seasonal_periods: tuple[uuid.UUID, ...] = ()
 
@@ -523,14 +533,19 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
     yearly = False if config.get("yearly") is None else config["yearly"]
     if not isinstance(yearly, bool):
         raise MonitorConfigError(f"anomaly yearly must be true or false: {_echo(yearly)}")
-    if yearly and target_metric not in PERIOD_METRICS:
-        # A whole-table metric is measured several times a day and has no period to match
-        # across years; the column profile is hundreds of series a check.
+    if yearly and target_metric not in YEARLY_METRICS:
+        # The column profile is hundreds of series a check: three years of each is a warehouse.
         raise MonitorConfigError(
             f"anomaly yearly is available only for target_metric "
-            f"{' or '.join(repr(m) for m in PERIOD_METRICS)}, not {target_metric!r}"
+            f"{', '.join(repr(m) for m in YEARLY_METRICS)}, not {target_metric!r}"
         )
-    period = _period_spec(config, str(target_metric), authoring=authoring)
+    period = _period_spec(config, str(target_metric), authoring=authoring, yearly=yearly)
+    if period is not None:
+        timezone = period.timezone
+    elif target_metric in WHOLE_TABLE_YEARLY_METRICS and yearly:
+        timezone = _timezone(config)
+    else:
+        timezone = "UTC"
     return AnomalyParams(
         target_metric=str(target_metric),
         column=column,
@@ -539,7 +554,15 @@ def anomaly_params(config: dict[str, Any], *, authoring: bool = False) -> Anomal
         seasonality=seasonality,
         period=period,
         yearly=yearly,
-        seasonal_periods=_seasonal_period_ids(config, yearly=yearly) if period else (),
+        timezone=timezone,
+        # A whole-table check that inherits its shape can have ``yearly`` switched off under
+        # it (ADR 0047): its attachments then lie idle rather than error every run.
+        seasonal_periods=(
+            _seasonal_period_ids(config, yearly=yearly)
+            if period is not None
+            or (target_metric in WHOLE_TABLE_YEARLY_METRICS and (yearly or authoring))
+            else ()
+        ),
     )
 
 
@@ -573,14 +596,25 @@ def _seasonal_period_ids(config: dict[str, Any], *, yearly: bool) -> tuple[uuid.
 
 
 def _period_spec(
-    config: dict[str, Any], target_metric: str, *, authoring: bool
+    config: dict[str, Any], target_metric: str, *, authoring: bool, yearly: bool = False
 ) -> PeriodSpec | None:
     """The bucketing of a per-period metric. At author time its keys are refused on any other
-    metric, where silently ignoring one would mislead the author about what is watched. A key
-    set to null is the same as a key left out, on every metric."""
+    metric, where silently ignoring one would mislead the author about what is watched (a
+    whole-table metric with ``yearly`` on takes ``_DAILY_KEYS``). A key set to null is the same
+    as a key left out, on every metric."""
     if target_metric not in PERIOD_METRICS:
-        stray = [key for key in _PERIOD_KEYS if config.get(key) is not None]
+        daily = target_metric in WHOLE_TABLE_YEARLY_METRICS
+        stray = [
+            key
+            for key in _PERIOD_KEYS
+            if config.get(key) is not None and not (daily and yearly and key in _DAILY_KEYS)
+        ]
         if stray and authoring:
+            if daily and stray[0] in _DAILY_KEYS:
+                raise MonitorConfigError(
+                    f"anomaly {stray[0]} applies to target_metric {target_metric!r} only with "
+                    "yearly: true"
+                )
             raise MonitorConfigError(
                 f"anomaly {stray[0]} applies only to target_metric "
                 f"{' or '.join(repr(m) for m in PERIOD_METRICS)}; {target_metric!r} takes none"
@@ -600,12 +634,7 @@ def _period_spec(
             f"anomaly value_column applies only to target_metric={PERIOD_SUM_METRIC!r}; "
             f"{target_metric!r} counts rows"
         )
-    timezone = "UTC" if config.get("timezone") is None else config["timezone"]
-    if not isinstance(timezone, str) or not _is_timezone(timezone):
-        raise MonitorConfigError(
-            f"anomaly timezone must be an IANA time zone, spelled exactly, such as UTC or "
-            f"Europe/London: {_echo(timezone)}"
-        )
+    timezone = _timezone(config)
     settle_hours = _anomaly_int(
         {} if config.get("settle_hours") is None else config,
         "settle_hours",
@@ -624,6 +653,16 @@ def _period_spec(
         settle_hours=settle_hours,
         backfill=backfill,
     )
+
+
+def _timezone(config: dict[str, Any]) -> str:
+    timezone = "UTC" if config.get("timezone") is None else config["timezone"]
+    if not isinstance(timezone, str) or not _is_timezone(timezone):
+        raise MonitorConfigError(
+            f"anomaly timezone must be an IANA time zone, spelled exactly, such as UTC or "
+            f"Europe/London: {_echo(timezone)}"
+        )
+    return timezone
 
 
 def _is_timezone(name: str) -> bool:
@@ -768,6 +807,8 @@ def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Chec
         expected["column"] = params.column
     if params.yearly:
         expected["yearly"] = True
+        if params.period is None:
+            expected["timezone"] = params.timezone
     if params.seasonal_periods:
         expected["seasonal_periods"] = [str(i) for i in params.seasonal_periods]
     if params.period is not None:
