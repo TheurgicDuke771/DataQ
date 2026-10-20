@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # labeled/unlabeled: the `no-changelog` label is read by the changelog check, so adding
+    # it must re-run CI rather than wait for a push.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -290,6 +293,24 @@ jobs:
 
       - name: Frontend UI text doesn't cite ADR/issue/PR numbers
         run: python scripts/check-frontend-no-ticket-refs.py
+
+      - name: Changelog fragments are well-formed
+        run: python scripts/changelog.py lint
+
+      # A PR that touches user-facing paths adds a changelog.d/ fragment, unless it carries the
+      # `no-changelog` label or comes from Dependabot. Lives in this required job on purpose:
+      # a new job name would need the `main protection` ruleset edited.
+      # HEAD is the PR's merge ref, so HEAD^1 is the exact base it was merged onto —
+      # `pull_request.base.sha` is a snapshot that goes stale as main moves (and a
+      # labeled/unlabeled run would blame the PR for main's newer commits).
+      - name: User-facing change carries a changelog fragment
+        if: github.event_name == 'pull_request'
+        env:
+          EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: |
+          extra=""
+          [ "$EXEMPT" = "true" ] && extra="--allow-none"
+          python scripts/changelog.py check --base HEAD^1 $extra
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-lint:
@@ -634,11 +655,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: github/codeql-action/init@v4.38.3
+      - uses: github/codeql-action/init@v4.39.0
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
-      - uses: github/codeql-action/autobuild@v4.38.3
+      - uses: github/codeql-action/autobuild@v4.39.0
 
-      - uses: github/codeql-action/analyze@v4.38.3
+      - uses: github/codeql-action/analyze@v4.39.0

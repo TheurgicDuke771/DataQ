@@ -1,16 +1,4 @@
-import {
-  Alert,
-  Button,
-  App,
-  Descriptions,
-  Flex,
-  Input,
-  List,
-  Modal,
-  Spin,
-  Tag,
-  Typography,
-} from 'antd';
+import { Alert, Button, App, Descriptions, Flex, Input, List, Spin, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 
 import {
@@ -24,6 +12,7 @@ import { type UserSummary } from '../../api/shares';
 import { UserSearchSelect } from '../../components/shared/UserSearchSelect';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
+import { Modal } from '../../components/shared/Modal';
 
 /** Offboard a departing user in one pass: hand over their suites, revoke their
  *  PATs and browser sessions, withdraw their membership. Mount it keyed on the

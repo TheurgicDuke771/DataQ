@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, Modal, Switch, Tag, Typography } from 'antd';
+import { App, Button, Card, Flex, Switch, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -21,6 +21,8 @@ import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 import { mapAsync } from './asyncHelpers';
 import { DataTable } from './parts';
+import { Modal } from '../../components/shared/Modal';
+import { useAppModal } from '../../hooks/useAppModal';
 
 const POLL_STATUS: Record<PollHealth['status'], { color: string; label: string }> = {
   on_cadence: { color: 'green', label: 'On cadence' },
@@ -37,7 +39,7 @@ const SYNC_STATUS: Record<InventorySyncRow['status'], { color: string; label: st
 
 /** Regenerate button + the one-time reveal of the new value. */
 export function RegenerateSecretButton({ webhook }: { webhook: AdminWebhook }) {
-  const { modal } = App.useApp();
+  const modal = useAppModal();
   const [result, setResult] = useState<WebhookRegeneration | null>(null);
   const { run, loading } = useAsyncAction('Could not regenerate the webhook secret');
   const noun = webhook.provider === 'adf' ? 'secret' : 'signing key';

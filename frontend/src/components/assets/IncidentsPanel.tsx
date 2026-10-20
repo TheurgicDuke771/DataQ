@@ -15,6 +15,7 @@ import { errorMessage } from '../../utils/errors';
 import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { IncidentEvidenceDrawer } from './IncidentEvidenceDrawer';
+import { MODAL_TRANSITION } from '../shared/Modal';
 import { ResultStatusTag } from '../shared/StatusTag';
 
 /**
@@ -34,6 +35,9 @@ function ResolveButton({
     <Popconfirm
       title="Resolve this incident?"
       okText="Resolve"
+      // Fade, not antd's scaling zoom: the Select below sizes its dropdown from its on-screen
+      // width, which is still scaled down while the popover opens (#2466).
+      motion={{ motionName: MODAL_TRANSITION }}
       description={
         <Flex vertical gap={4} style={{ width: 300 }}>
           <Typography.Text type="secondary" id="incident-resolution-label">

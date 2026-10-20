@@ -47,6 +47,7 @@ Fixes #
 - [ ] **Tests added/updated** (the ≥80% coverage gate is CI-enforced)
 - [ ] **`/code-review` agent review run on this PR** (CONTRIBUTING rule 1c — findings fixed in-PR or filed, never dropped)
 - [ ] **Docs / ADRs updated** if user-facing or architectural change
+- [ ] **Changelog fragment added** — `changelog.d/<issue>.<section>.md` (CONTRIBUTING rule 43), or the PR carries the `no-changelog` label
 - [ ] **`docs/progress.md` updated** — flip the implemented roadmap task(s) from ⬜ to ✅ / 🟡, append PR link, update week + snapshot subtotals. Tick the N/A box below if this PR doesn't map to a roadmap task (pure tooling / docs).
 - [ ] **`docs/progress.md` — N/A** for this PR
 - [ ] **Security implications considered** (auth, input validation, secret handling, PII in logs)

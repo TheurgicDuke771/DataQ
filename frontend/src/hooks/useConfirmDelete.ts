@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { App } from 'antd';
 
 import { errorMessage } from '../utils/errors';
+import { useAppModal } from './useAppModal';
 
 export type ConfirmDeleteOptions = {
   /** Entity name — used in the default title and success message. */
@@ -25,7 +26,8 @@ export type ConfirmDeleteOptions = {
  * `modal.confirm({ okType: 'danger', … })` → success toast + `onDone`.
  */
 export function useConfirmDelete() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const modal = useAppModal();
 
   return (opts: ConfirmDeleteOptions) => {
     const { label, content, okText = 'Delete', onDelete, onDone } = opts;
