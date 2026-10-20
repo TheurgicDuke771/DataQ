@@ -70,6 +70,11 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Google Cloud Storage is a datasource.** The third object store beside ADLS Gen2 and S3: the
+  same flat-file checks, batch patterns, browsing, profiler, sampling and arrival-time freshness
+  over a GCS bucket, authenticated with a service-account key file (read-only scope) or
+  anonymously for a public bucket, with an optional endpoint for an emulator or a GCS-compatible
+  store. Verified against `fake-gcs-server`; a real Google Cloud bucket has not yet been exercised.
 - **A monitor that fires when a column starts carrying personal data nobody classified.** The
   new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
   suite's table on each run, keeps what looks like email addresses or encoded blobs as a

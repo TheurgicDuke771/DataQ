@@ -7,6 +7,7 @@
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
 | ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
+| [Google Cloud Storage](#google-cloud-storage) (flat files) | bucket, service-account key file **or** anonymous (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
@@ -110,7 +111,7 @@ itself can be checked.
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, GCS `endpoint_url` / `auth_type`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
 `tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
@@ -196,6 +197,40 @@ incidents (decided in
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.
+
+### Google Cloud Storage
+
+The third object store beside ADLS Gen2 and S3: the same flat-file runner, batch resolution,
+browsing, profiler and monitors — including [arrival-time freshness](#freshness-monitor-all-datasources--adr-00120030)
+— over a GCS bucket. Arrival time is the object's creation time (when its current
+content was uploaded), so a metadata-only edit does not make a stale file look fresh.
+
+- **Bucket** — the bucket name. A suite's run target is a path inside it (`raw/orders.csv`) or a
+  batch pattern, exactly as on S3.
+- **Authentication** — a **service account key** (the downloaded JSON key file, pasted whole as
+  the credential; it is stored in the secret store and never returned) or **anonymous** for a
+  public bucket. DataQ requests the key with the read-only Cloud Storage scope, so the credential
+  can never write through DataQ. Give the service account `roles/storage.objectViewer` on the
+  bucket — that role is enough for everything DataQ does (`storage.objects.list` + `get`), and the
+  connection test is a one-object listing precisely so it passes under that least-privilege role
+  (a bucket-level GET would need `storage.buckets.get`, which the role lacks). Keyless /
+  workload-identity auth is not yet supported.
+- **Project ID** (optional) — the project billed for reads, needed for a **Requester Pays**
+  bucket (sent as the request's billing project); blank bills the bucket's owner.
+- **Endpoint URL** (optional) — an emulator such as `fake-gcs-server` (`http://fake-gcs:4443`)
+  or a GCS-compatible endpoint; blank addresses Google Cloud Storage. The endpoint must **not**
+  embed a credential (`https://user:token@host`) — connection `config` is stored and returned
+  in plaintext, so it is rejected at save time.
+
+**Asset identity.** With no **Endpoint URL** the namespace is `gs://{bucket}` (the OpenLineage
+naming convention); with one it is `gs://{host[:port]}/{bucket}`, so two stores sharing a bucket
+name stay distinct — the same rule as [S3](#s3-compatible-object-stores).
+
+**Verification.** The adapter is exercised end to end against `fake-gcs-server` in the opt-in
+integration lane (`tests/integration/test_gcs_datasource.py`, `GCS_EMULATOR_URL`), including
+the service-account token flow against a locally minted key. Real Google Cloud Storage has
+not been exercised — no cloud test account exists — so a first production connection is the
+first real-GCS run; the connection test and a dry-run tell you in seconds.
 
 ### PostgreSQL
 
@@ -760,7 +795,7 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 
 ### Flat files: formats and CSV delimiters
 
-Flat-file connections (ADLS Gen2 / S3) read `.csv`, `.parquet`/`.pq`, and JSON as
+Flat-file connections (ADLS Gen2 / S3 / GCS) read `.csv`, `.parquet`/`.pq`, and JSON as
 `.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
 format from the file's **extension**; a target's *File format* choice is used by the
 profiler and column listing. **The CSV
@@ -893,7 +928,7 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake, Unity Catalog or any of the SQL engines), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
+   file/path or batch pattern (ADLS/S3/GCS), or an Iceberg `namespace.table`. On every datasource
    you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
@@ -921,7 +956,7 @@ target still works everywhere.
 - **Iceberg — Browse schemas…** lists the catalog's top-level namespaces, then a namespace's
   tables, and fills **Namespace** and **Table**. It reads catalog metadata only, never a data
   file. Nested namespaces are not listed — type a nested one in.
-- **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
+- **ADLS Gen2 / S3 / GCS — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
 
@@ -1133,7 +1168,7 @@ per rule, and stops once it has caught up.
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 
-**On a flat file (ADLS Gen2 / S3) the timestamp column is optional.** Leave it blank
+**On a flat file (ADLS Gen2 / S3 / GCS) the timestamp column is optional.** Leave it blank
 and the check measures **when the file last landed** (the object's modified time)
 instead of the newest timestamp inside it. These catch different failures, and a
 landing zone usually wants both:
@@ -1189,7 +1224,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
 data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
-a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
@@ -1418,7 +1453,7 @@ the type your warehouse/catalog shows you:
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Trino** compares the same way, in its own type names: `DECIMAL(12, 2)`, `VARCHAR`,
   `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT`.
-- **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
+- **Unity Catalog, ADLS Gen2 / S3 / GCS, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
   `object`/`object_`/`O` does it fall back to a **row-wise Python value-type compare**.
@@ -1447,9 +1482,9 @@ the type your warehouse/catalog shows you:
 | Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
-| ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
-| ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
-| ADLS Gen2 / S3 (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
+| ADLS Gen2 / S3 / GCS (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
+| ADLS Gen2 / S3 / GCS (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
+| ADLS Gen2 / S3 / GCS (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
 out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/JSON/Iceberg), a failing

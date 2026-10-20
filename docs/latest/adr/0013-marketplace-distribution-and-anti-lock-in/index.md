@@ -48,7 +48,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 | **Secrets** | New backends (AWS Secrets Manager, GCP Secret Manager, Vault) are additive `SecretStore` classes; no call site changes. (ADR 0010 §1) | already abstracted |
 | **Observability** | App Insights stays behind the `core/logging.py` handler; second backend arrives via **OpenTelemetry/OTLP**, not a parallel hardcoded path. (ADR 0010 §3) | seam reserved |
 | **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart** (build deferred). | images portable; chart deferred |
-| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1). | seam exists |
+| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, keyless auth still additive). | seam exists; three object stores behind it |
 | **Config** | No hardcoded Azure resource names/endpoints in business logic — everything via Pydantic Settings (12-factor). | in place |
 
 **4. Phasing (post-v1).** Sequenced so the portability spend happens once and unlocks both non-Azure clouds together:

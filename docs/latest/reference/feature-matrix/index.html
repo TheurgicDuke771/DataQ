@@ -2706,6 +2706,7 @@
 <th style="text-align: center;">Redshiftʳ</th>
 <th style="text-align: center;">ADLS Gen2 (files)</th>
 <th style="text-align: center;">S3 (files)ˢ</th>
+<th style="text-align: center;">GCS (files)ᵏ</th>
 <th style="text-align: center;">Iceberg</th>
 </tr>
 </thead>
@@ -2723,10 +2724,12 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Snowflake DMF (native metric functions)ᵈ</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2751,6 +2754,7 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
@@ -2765,9 +2769,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Freshness monitor (hours since latest timestamp)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2792,10 +2798,12 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Volume monitor (row count in range)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2821,6 +2829,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Anomaly monitor (z-score vs a learned baseline)ᵃ</td>
@@ -2835,9 +2844,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2863,9 +2874,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Comparison / reconciliation (diff vs a baseline connection)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2891,6 +2904,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Browse for the run target (catalog → schema → table / folders → file)</td>
@@ -2902,6 +2916,7 @@
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (database → table)</td>
 <td style="text-align: center;">✅ (schema → table)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅ (namespace → table)</td>
@@ -2919,9 +2934,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Dry-run preview</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2970,7 +2987,7 @@ diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a <code>CheckRunner</code>/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
 <code>information_schema</code> for Snowflake/Unity Catalog, the Parquet footer, a bounded
-CSV header sample or a JSON file's first 1 MiB for ADLS/S3 flat files, and the loaded
+CSV header sample or a JSON file's first 1 MiB for ADLS/S3/GCS flat files, and the loaded
 table's own metadata for Iceberg (no data scan on any of them except the CSV and JSON
 samples). Re-baseline explicitly
 once a drift is expected and reviewed.</p>
@@ -3060,6 +3077,11 @@ an opt-in live lane (<code>tests/integration/test_mssql_live.py</code>), not CI 
 CI without a commercial licence. The four regex expectations are refused on SQL Server (no T-SQL
 translation in GX), and Fabric SQL endpoints need the user-installed ODBC lane — see
 <a href="../../guides/datasources-checks/#sql-server-azure-sql-fabric-t-sql">Datasources &amp; checks</a>.</p>
+<p>ᵏ <strong>Google Cloud Storage</strong> — the same flat-file runner as ADLS Gen2 and S3 (CSV, Parquet, JSON;
+batch patterns, browsing, sampling, arrival-time freshness). Service-account key file or
+anonymous (public bucket); an optional endpoint URL points it at an emulator or a GCS-compatible
+store. Verified against <code>fake-gcs-server</code> (an opt-in integration lane), not against Google Cloud
+itself. See <a href="../../guides/datasources-checks/#google-cloud-storage">Datasources &amp; checks</a>.</p>
 <p>ˢ <strong>S3 means AWS S3 <em>and</em> any S3-compatible store</strong> — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
@@ -3077,7 +3099,7 @@ CSV/XLSX report download (derived, never stored). Either SQL side may use a read
 query projection.</p>
 <p>The freshness/volume monitors run on <strong>every datasource</strong> — the SQL datasources, Apache
 Iceberg (computed natively via <code>pyiceberg</code> scans, not SQL; ADR 0012/0030), and ADLS Gen2 /
-S3 flat files (over the resolved batch). On a flat file, a freshness monitor with <strong>no
+S3 / GCS flat files (over the resolved batch). On a flat file, a freshness monitor with <strong>no
 timestamp column</strong> measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 <code>orders_*.csv</code>) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
@@ -3164,6 +3186,15 @@ five mechanisms:</p>
 <tr>
 <td>S3 (files)</td>
 <td><code>s3://{bucket}</code> / base prefix</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>GCS (files)</td>
+<td><code>gs://{bucket}</code> (an emulator / compatible endpoint: <code>gs://{host[:port]}/{bucket}</code>) / base prefix</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>

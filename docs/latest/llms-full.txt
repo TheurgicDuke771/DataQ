@@ -445,7 +445,7 @@ like this:
 
     *Adding a Snowflake connection, start to finish (12 s)*
 
-2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Apache Iceberg,
+2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Google Cloud Storage, Apache Iceberg,
    PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.
 
     ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
@@ -1962,6 +1962,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
 | ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
+| [Google Cloud Storage](#google-cloud-storage) (flat files) | bucket, service-account key file **or** anonymous (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
@@ -2065,7 +2066,7 @@ itself can be checked.
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, GCS `endpoint_url` / `auth_type`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
 `tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
@@ -2151,6 +2152,40 @@ incidents (decided in
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.
+
+### Google Cloud Storage
+
+The third object store beside ADLS Gen2 and S3: the same flat-file runner, batch resolution,
+browsing, profiler and monitors — including [arrival-time freshness](#freshness-monitor-all-datasources--adr-00120030)
+— over a GCS bucket. Arrival time is the object's creation time (when its current
+content was uploaded), so a metadata-only edit does not make a stale file look fresh.
+
+- **Bucket** — the bucket name. A suite's run target is a path inside it (`raw/orders.csv`) or a
+  batch pattern, exactly as on S3.
+- **Authentication** — a **service account key** (the downloaded JSON key file, pasted whole as
+  the credential; it is stored in the secret store and never returned) or **anonymous** for a
+  public bucket. DataQ requests the key with the read-only Cloud Storage scope, so the credential
+  can never write through DataQ. Give the service account `roles/storage.objectViewer` on the
+  bucket — that role is enough for everything DataQ does (`storage.objects.list` + `get`), and the
+  connection test is a one-object listing precisely so it passes under that least-privilege role
+  (a bucket-level GET would need `storage.buckets.get`, which the role lacks). Keyless /
+  workload-identity auth is not yet supported.
+- **Project ID** (optional) — the project billed for reads, needed for a **Requester Pays**
+  bucket (sent as the request's billing project); blank bills the bucket's owner.
+- **Endpoint URL** (optional) — an emulator such as `fake-gcs-server` (`http://fake-gcs:4443`)
+  or a GCS-compatible endpoint; blank addresses Google Cloud Storage. The endpoint must **not**
+  embed a credential (`https://user:token@host`) — connection `config` is stored and returned
+  in plaintext, so it is rejected at save time.
+
+**Asset identity.** With no **Endpoint URL** the namespace is `gs://{bucket}` (the OpenLineage
+naming convention); with one it is `gs://{host[:port]}/{bucket}`, so two stores sharing a bucket
+name stay distinct — the same rule as [S3](#s3-compatible-object-stores).
+
+**Verification.** The adapter is exercised end to end against `fake-gcs-server` in the opt-in
+integration lane (`tests/integration/test_gcs_datasource.py`, `GCS_EMULATOR_URL`), including
+the service-account token flow against a locally minted key. Real Google Cloud Storage has
+not been exercised — no cloud test account exists — so a first production connection is the
+first real-GCS run; the connection test and a dry-run tell you in seconds.
 
 ### PostgreSQL
 
@@ -2715,7 +2750,7 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 
 ### Flat files: formats and CSV delimiters
 
-Flat-file connections (ADLS Gen2 / S3) read `.csv`, `.parquet`/`.pq`, and JSON as
+Flat-file connections (ADLS Gen2 / S3 / GCS) read `.csv`, `.parquet`/`.pq`, and JSON as
 `.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
 format from the file's **extension**; a target's *File format* choice is used by the
 profiler and column listing. **The CSV
@@ -2848,7 +2883,7 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake, Unity Catalog or any of the SQL engines), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
+   file/path or batch pattern (ADLS/S3/GCS), or an Iceberg `namespace.table`. On every datasource
    you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
@@ -2876,7 +2911,7 @@ target still works everywhere.
 - **Iceberg — Browse schemas…** lists the catalog's top-level namespaces, then a namespace's
   tables, and fills **Namespace** and **Table**. It reads catalog metadata only, never a data
   file. Nested namespaces are not listed — type a nested one in.
-- **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
+- **ADLS Gen2 / S3 / GCS — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
 
@@ -3088,7 +3123,7 @@ per rule, and stops once it has caught up.
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 
-**On a flat file (ADLS Gen2 / S3) the timestamp column is optional.** Leave it blank
+**On a flat file (ADLS Gen2 / S3 / GCS) the timestamp column is optional.** Leave it blank
 and the check measures **when the file last landed** (the object's modified time)
 instead of the newest timestamp inside it. These catch different failures, and a
 landing zone usually wants both:
@@ -3144,7 +3179,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
 data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
-a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
@@ -3373,7 +3408,7 @@ the type your warehouse/catalog shows you:
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Trino** compares the same way, in its own type names: `DECIMAL(12, 2)`, `VARCHAR`,
   `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT`.
-- **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
+- **Unity Catalog, ADLS Gen2 / S3 / GCS, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
   `object`/`object_`/`O` does it fall back to a **row-wise Python value-type compare**.
@@ -3402,9 +3437,9 @@ the type your warehouse/catalog shows you:
 | Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
-| ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
-| ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
-| ADLS Gen2 / S3 (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
+| ADLS Gen2 / S3 / GCS (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
+| ADLS Gen2 / S3 / GCS (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
+| ADLS Gen2 / S3 / GCS (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
 out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/JSON/Iceberg), a failing
@@ -4965,6 +5000,11 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Google Cloud Storage is a datasource.** The third object store beside ADLS Gen2 and S3: the
+  same flat-file checks, batch patterns, browsing, profiler, sampling and arrival-time freshness
+  over a GCS bucket, authenticated with a service-account key file (read-only scope) or
+  anonymously for a public bucket, with an optional endpoint for an emulator or a GCS-compatible
+  store. Verified against `fake-gcs-server`; a real Google Cloud bucket has not yet been exercised.
 - **A monitor that fires when a column starts carrying personal data nobody classified.** The
   new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
   suite's table on each run, keeps what looks like email addresses or encoded blobs as a
@@ -5467,11 +5507,11 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values not in set** | `expect_column_values_to_not_be_in_set` | No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”. | Validity | `column`, `value_set`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths in range** | `expect_column_value_lengths_to_be_between` | String lengths fall within [min, max]. | Validity | `column`, `min_value` *(optional)*, `max_value` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths equal** | `expect_column_value_lengths_to_equal` | Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number). | Validity | `column`, `value`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -5481,7 +5521,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Google Cloud Storage, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
 
 ### Examples
 
@@ -6529,24 +6569,24 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — |
-| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ (namespace → table) |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | GCS (files)ᵏ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aggregate monitor (mean / median / sum / stdev / min / max in two-sided bands)ᵍ | ✅ | ✅ | ✅ | ✅ (no median) | ✅ (no median) | ✅ | ✅ (no median) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PII-drift monitor (a column newly looks like personal data and nobody classified it)ⁱ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ | ✅ (namespace → table) |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -6585,7 +6625,7 @@ diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a `CheckRunner`/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
 `information_schema` for Snowflake/Unity Catalog, the Parquet footer, a bounded
-CSV header sample or a JSON file's first 1 MiB for ADLS/S3 flat files, and the loaded
+CSV header sample or a JSON file's first 1 MiB for ADLS/S3/GCS flat files, and the loaded
 table's own metadata for Iceberg (no data scan on any of them except the CSV and JSON
 samples). Re-baseline explicitly
 once a drift is expected and reviewed.
@@ -6685,6 +6725,12 @@ CI without a commercial licence. The four regex expectations are refused on SQL 
 translation in GX), and Fabric SQL endpoints need the user-installed ODBC lane — see
 [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
 
+ᵏ **Google Cloud Storage** — the same flat-file runner as ADLS Gen2 and S3 (CSV, Parquet, JSON;
+batch patterns, browsing, sampling, arrival-time freshness). Service-account key file or
+anonymous (public bucket); an optional endpoint URL points it at an emulator or a GCS-compatible
+store. Verified against `fake-gcs-server` (an opt-in integration lane), not against Google Cloud
+itself. See [Datasources & checks](../guides/datasources-checks.md#google-cloud-storage).
+
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
@@ -6704,7 +6750,7 @@ query projection.
 
 The freshness/volume monitors run on **every datasource** — the SQL datasources, Apache
 Iceberg (computed natively via `pyiceberg` scans, not SQL; ADR 0012/0030), and ADLS Gen2 /
-S3 flat files (over the resolved batch). On a flat file, a freshness monitor with **no
+S3 / GCS flat files (over the resolved batch). On a flat file, a freshness monitor with **no
 timestamp column** measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
@@ -6756,6 +6802,7 @@ five mechanisms:
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` (a sovereign cloud or another ADLS-compatible endpoint keeps its own DFS host: `abfss://{container}@{account}.dfs.core.chinacloudapi.cn`, `abfss://{workspace}@onelake.dfs.fabric.microsoft.com`; a path-style emulator endpoint such as Azurite's is named after its own host and the account in its path: `abfss://{container}@{host}:{port}/{account}`) / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
+| GCS (files) | `gs://{bucket}` (an emulator / compatible endpoint: `gs://{host[:port]}/{bucket}`) / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
 | MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ (dbt-mysql naming) | ✅ | ✅ | —⁴ |
 | Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |
@@ -7927,7 +7974,7 @@ flowchart LR
     end
     subgraph ds["📊 Datasources — GX checks execute here"]
         SF["Snowflake · DEV/QA/UAT"]
-        Files["ADLS Gen2 · S3 · flat files"]
+        Files["ADLS Gen2 · S3 · GCS · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
         PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server · Athena · Redshift<br/>generic SQL base, pushdown"]
@@ -8563,7 +8610,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift"]
+        DS["Datasources — Snowflake · ADLS · S3 · GCS · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server · Athena · Redshift"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
@@ -10541,7 +10588,7 @@ are the reason this mode is opt-in rather than the default:
   else's secret and have the server resolve it on their behalf.
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
-  S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
+  S3/dbt `endpoint_url`, GCS `endpoint_url`/`auth_type`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
   `properties`/`secret_property`, the SQL engines' `host`/`port` (plus Trino's `sslmode`/`ca_bundle`/`auth_type`,
   SQL Server's `auth_type`/`tenant_id`/`client_id`/`ca_bundle`/`driver`, Athena's `region`/`work_group`/
   `s3_staging_dir`), Airflow `base_url`, dbt `artifacts_uri`/`endpoint_url`/`account_url` — requires re-supplying that
@@ -14110,7 +14157,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 | **Secrets** | New backends (AWS Secrets Manager, GCP Secret Manager, Vault) are additive `SecretStore` classes; no call site changes. (ADR 0010 §1) | already abstracted |
 | **Observability** | App Insights stays behind the `core/logging.py` handler; second backend arrives via **OpenTelemetry/OTLP**, not a parallel hardcoded path. (ADR 0010 §3) | seam reserved |
 | **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart** (build deferred). | images portable; chart deferred |
-| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1). | seam exists |
+| **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, keyless auth still additive). | seam exists; three object stores behind it |
 | **Config** | No hardcoded Azure resource names/endpoints in business logic — everything via Pydantic Settings (12-factor). | in place |
 
 **4. Phasing (post-v1).** Sequenced so the portability spend happens once and unlocks both non-Azure clouds together:
