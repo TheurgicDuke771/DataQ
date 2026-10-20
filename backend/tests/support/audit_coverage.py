@@ -116,6 +116,11 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("DELETE", "/api/v1/admin/coverage"): "coverage_setting.update",
     ("PUT", "/api/v1/admin/scoring"): "scoring_setting.update",
     ("DELETE", "/api/v1/admin/scoring"): "scoring_setting.update",
+    # ── The declared seasonal calendar (ADR 0048 decision 5). An entry changes
+    # which runs a check lines up with earlier years, so each change is audited.
+    ("POST", "/api/v1/admin/seasonal-periods"): "seasonal_period.create",
+    ("PATCH", "/api/v1/admin/seasonal-periods/{period_id}"): "seasonal_period.update",
+    ("DELETE", "/api/v1/admin/seasonal-periods/{period_id}"): "seasonal_period.delete",
     # ── The orphan-secret sweep "run now" (#1886) — an admin-triggered ops action
     # over the secret store, worth a trail even though it enqueues rather than
     # configures anything.

@@ -188,6 +188,7 @@ def _validate_check(
             warn_threshold=c["warn_threshold"],
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
+            session=session,
         )
     elif c["kind"] == COMPARISON_KIND:
         validate_comparison_check(
