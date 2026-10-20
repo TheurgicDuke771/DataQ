@@ -88,6 +88,8 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
+    seasonal_detection_service,
+    seasonal_period_service,
     suggestion_service,
     suite_io_service,
     suite_service,
@@ -1236,6 +1238,106 @@ def list_check_versions(
 
 
 @mcp.tool
+def list_seasonal_periods() -> list[dict[str, Any]]:
+    """List the workspace's declared seasonal calendar: the named sale periods and fixed
+    dates an anomaly check can attach.
+
+    Use this to find the id an anomaly check's ``seasonal_periods`` takes
+    (``create_check`` / ``update_check``), or for 'which sale periods has the business
+    declared?'. Returns every entry, by name: ``id``, ``name``, ``kind``
+    (``recurring``: a month/day range every year, which may cross the year end;
+    ``dated``: one explicit ``start_date`` / ``end_date``), the range fields for its
+    kind (the other kind's are null), ``series`` (dated entries sharing one are the
+    same moving period across years), ``note``, and ``attached_checks``: how many
+    anomaly checks name the entry.
+
+    An entry changes no verdict by itself: only a check that attaches it (with
+    ``yearly`` on) is scored with it, so ``attached_checks: 0`` means it affects
+    nothing today. That count is workspace-wide, including checks in suites you
+    cannot see, and the checks are not named here. The calendar holds only what
+    people declared: a period DataQ merely **detected** in a check's history is not
+    listed; use ``get_detected_seasonal_periods`` for those. An empty list means no
+    one has declared any entry. Adding, editing, deleting or promoting an entry is a
+    workspace-admin action outside MCP (the REST API under
+    ``/api/v1/admin/seasonal-periods``). Any signed-in user may read the calendar.
+    """
+    with _ctx() as (session, _user), _service_errors():
+        counts = seasonal_period_service.attached_counts(session)
+        return [
+            {
+                "id": str(row.id),
+                "name": row.name,
+                "kind": row.kind,
+                "start_month": row.start_month,
+                "start_day": row.start_day,
+                "end_month": row.end_month,
+                "end_day": row.end_day,
+                "start_date": row.start_date.isoformat() if row.start_date else None,
+                "end_date": row.end_date.isoformat() if row.end_date else None,
+                "series": row.series,
+                "note": row.note,
+                "attached_checks": counts.get(row.id, 0),
+            }
+            for row in seasonal_period_service.list_periods(session)
+        ]
+
+
+@mcp.tool
+def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any]:
+    """Get the seasonal periods an anomaly check's own history shows: runs of days or
+    weeks at or above 1.5 times the level the check is scored against.
+
+    Use this for 'does the orders table have a sale season?', 'why was the November
+    spike not flagged?', or before suggesting a calendar entry to an admin. It works
+    on an anomaly check with a per-period metric (``period_row_count`` /
+    ``period_sum``) and is computed now from the stored history; nothing is saved.
+
+    Returns ``periods``, oldest first. Each has ``kind`` (``recurring``: seen at the
+    same time of year, within ``thresholds.same_time_days``, in two or more years;
+    ``seen_once``: in one year only), ``start`` / ``end`` (its most recent
+    occurrence, inclusive), ``peak_ratio`` (the highest value against its level),
+    ``years_seen``, ``range`` (the month/day span a recurring period covers, null
+    otherwise), ``occurrences`` (one per year seen, each with
+    ``backfilled_periods``: points seeded from the table's own past rather than
+    seen by a run, which a later restatement of the table may have changed), and
+    ``declared`` (calendar entries attached to this check that overlap it).
+    ``history`` says what stood behind the answer: ``points``, ``first`` /
+    ``last``, ``years`` and ``evaluated`` (periods with enough history before them
+    to have a level).
+
+    **A detected period changes no verdict.** It is a description: scoring uses the
+    yearly comparison and the calendar entries attached to the check, never this
+    list. To make one count, a workspace admin promotes it to the calendar
+    (``POST /api/v1/admin/seasonal-periods/promote``, not available over MCP) and
+    the check attaches it. ``seen_once`` cannot tell a yearly event from a one-off;
+    with under a year of ``history.years`` nothing can be ``recurring``. Say how
+    many years stand behind a period.
+
+    An empty ``periods`` does **not** prove the table has no seasons. A non-null
+    ``reason`` means nothing was examined: ``not_a_per_period_metric`` (any other
+    kind or metric), ``invalid_config``, ``no_history`` (the check has not run or
+    its baseline was dropped) or ``insufficient_history`` (no period had
+    ``min_points`` periods before it). With ``reason`` null the history was read
+    and nothing qualified; a rise under 1.5 times, a single-day spike (days need
+    ``thresholds.min_consecutive`` in a row) and anything older than the roughly
+    three years kept are not reported. A peak lasting more than about half the
+    check's ``window`` raises the level with it, so its occurrence is reported
+    shorter than it ran (an attached calendar entry covering it avoids that).
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    cid = _parse_uuid(check_id, field="check_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        check = check_service.get_check(session, sid, cid)
+        return {
+            "suite_id": suite_id,
+            "check_id": check_id,
+            **seasonal_detection_service.detected_periods(session, check).as_dict(),
+        }
+
+
+@mcp.tool
 def list_runs(
     suite_id: str | None = None,
     status: str | None = None,
@@ -2295,9 +2397,10 @@ def create_check(
       the level. A recurring entry's previous occurrence is the same range the
       year before; a **dated** entry has one only if an earlier entry sharing
       its ``series`` is attached to this check too, otherwise it is a first
-      year. The ids are not readable over MCP yet (the calendar's read tools
-      are a later phase), so take them from the user or the REST calendar
-      (``GET /api/v1/admin/seasonal-periods``); an unknown id is refused here.
+      year. Take the ids from ``list_seasonal_periods``; an unknown id is
+      refused here. Periods only detected in the check's history
+      (``get_detected_seasonal_periods``) have no id until an admin promotes
+      them to the calendar.
       A check's config read back carries the ids only, not the names.
       ``observed_value.declared`` is present on every result of a check with
       attachments. **Read ``observed_value.yearly.applied`` first**: when it is

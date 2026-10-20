@@ -475,6 +475,7 @@ _RANGE_KEYS = ("start_month", "start_day", "end_month", "end_day")
 # Why a detection had nothing to look at (``Detection.reason``).
 NOT_PER_PERIOD = "not_a_per_period_metric"
 NO_HISTORY = "no_history"
+INVALID_CONFIG = "invalid_config"
 
 
 @dataclass(frozen=True)

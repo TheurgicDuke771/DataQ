@@ -263,8 +263,14 @@ def _taken(name: str) -> SeasonalPeriodNameTakenError:
 
 
 def create_period(
-    session: Session, fields: dict[str, Any], *, actor_id: uuid.UUID
+    session: Session,
+    fields: dict[str, Any],
+    *,
+    actor_id: uuid.UUID,
+    annotations: dict[str, Any] | None = None,
+    commit: bool = True,
 ) -> SeasonalPeriod:
+    """``commit=False`` leaves the row flushed for a caller that commits it with more."""
     values = normalise(fields)
     if _name_taken(session, values["name"], except_id=None):
         raise _taken(values["name"])
@@ -283,10 +289,12 @@ def create_period(
         entity_type="seasonal_period",
         entity=row,
         actor=actor_id,
+        annotations=annotations,
     )
-    session.commit()
-    session.refresh(row)
-    log.info("seasonal_period_created", period_id=str(row.id), kind=row.kind)
+    if commit:
+        session.commit()
+        session.refresh(row)
+        log.info("seasonal_period_created", period_id=str(row.id), kind=row.kind)
     return row
 
 

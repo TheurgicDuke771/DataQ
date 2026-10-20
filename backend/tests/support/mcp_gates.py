@@ -16,6 +16,7 @@ GATES: dict[str, str] = {
     "list_assets": "read",
     "list_connections": "read",
     "list_notification_channels": "read",
+    "list_seasonal_periods": "read",  # the workspace calendar, read by anyone (ADR 0048)
     "list_suites": "read",
     "trace_column_lineage": "read",  # lineage topology is workspace-visible (ADR 0037)
     # ── accessible-suite scoped, and view-gated when a suite is named ────────
@@ -29,6 +30,7 @@ GATES: dict[str, str] = {
     "get_check": "suite:view",
     "get_check_history": "suite:view",
     "get_column_policy": "suite:view",
+    "get_detected_seasonal_periods": "suite:view",
     "get_notification_config": "suite:view",
     "get_run_results": "suite:view",
     "get_run_status": "suite:view",
