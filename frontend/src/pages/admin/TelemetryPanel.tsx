@@ -66,10 +66,10 @@ export function TelemetryPanel() {
             <Tag>{SINK_LABEL[current.sink]}</Tag>
           </Flex>
           <Typography.Text type="secondary">
-            Off by default. When on, DataQ records the events below as OpenTelemetry metrics and
-            log events, to a file or collector your operator chose. Only event names, counts and
-            the listed values are recorded: never a table or column name, SQL, a suite or check
-            name, an email address or a credential. Nothing is sent to DataQ&apos;s authors.
+            Off by default. When on, DataQ records the events below as OpenTelemetry metrics and log
+            events, to a file or collector your operator chose. Only event names, counts and the
+            listed values are recorded: never a table or column name, SQL, a suite or check name, an
+            email address or a credential. Nothing is sent to DataQ&apos;s authors.
           </Typography.Text>
           {current.stored && current.sink === 'off' && (
             <Alert

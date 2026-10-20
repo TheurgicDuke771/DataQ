@@ -56,7 +56,9 @@ export function CheckNew() {
   const saved = useRef(false);
   const pendingLeave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const step = useRef<'expectation' | 'config'>('expectation');
-  step.current = expectationType ? 'config' : 'expectation';
+  useEffect(() => {
+    step.current = expectationType ? 'config' : 'expectation';
+  }, [expectationType]);
   useEffect(() => {
     // Deferred a tick and cancelled on remount: StrictMode's mount→unmount→mount in development
     // is not a departure.

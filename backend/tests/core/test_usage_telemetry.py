@@ -233,7 +233,7 @@ def test_emit_never_raises(db_session: Any, admin: User, monkeypatch: pytest.Mon
 
 
 def _settings(**overrides: Any) -> Settings:
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+    return Settings(_env_file=None, **overrides)
 
 
 def test_file_sink_round_trip(tmp_path: Path, db_session: Any, admin: User) -> None:
