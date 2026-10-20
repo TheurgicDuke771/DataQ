@@ -24,7 +24,7 @@ spec:
           command: ["celery", "-A", "backend.app.worker.celery_app", "worker", "-Q", "celery,llm", "--loglevel=INFO"]
           envFrom:
             - configMapRef:
-                name: {{ include "dataq.fullname" . }}-env
+                name: {{ include "dataq.fullname" . }}-config
             {{- include "dataq.backendEnvFrom" . | nindent 12 }}
           {{- with .Values.worker.livenessProbe }}
           livenessProbe:

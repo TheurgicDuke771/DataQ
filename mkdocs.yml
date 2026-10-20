@@ -190,6 +190,7 @@ nav:
       - operate/index.md
       - Deployment: operate/deployment.md
       - Deployment parity (Azure · AWS · Local): operate/deployment-parity.md
+      - Install on Kubernetes (Helm): operate/kubernetes.md
       - Upgrading: operate/upgrading.md
       - Backup, restore & rollback: operate/backup-restore-upgrade.md
       - Observability: operate/observability.md

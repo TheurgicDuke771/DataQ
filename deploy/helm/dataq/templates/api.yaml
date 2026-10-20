@@ -38,7 +38,7 @@ spec:
               containerPort: 8000
           envFrom:
             - configMapRef:
-                name: {{ include "dataq.fullname" . }}-env
+                name: {{ include "dataq.fullname" . }}-config
             {{- include "dataq.backendEnvFrom" . | nindent 12 }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:
