@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel, updated_by_email
@@ -44,6 +45,9 @@ class TelemetrySettingsRead(ApiModel):
 
 
 class TelemetrySettingsWrite(ApiRequestModel):
+    # Strict: "yes" or 1 must not opt a workspace in to sending anything.
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     enabled: bool
 
 

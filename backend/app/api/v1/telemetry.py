@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
@@ -38,6 +38,8 @@ class TelemetryStatusRead(ApiModel):
 
 
 class ClientEvent(ApiRequestModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     name: str = Field(max_length=64)
     attributes: dict[str, str | int] = Field(default_factory=dict)
 

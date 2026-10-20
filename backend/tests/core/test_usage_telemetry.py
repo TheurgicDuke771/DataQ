@@ -281,7 +281,7 @@ def test_otlp_sink_wires_the_metric_exporter_to_the_metrics_path() -> None:
     assert usage_telemetry.configure("dataq-api", settings)
     state = usage_telemetry._state
     assert state is not None
-    readers = state.meter_provider._all_metric_readers
+    readers = state.metric_readers
     assert [type(r._exporter).__name__ for r in readers] == ["OTLPMetricExporter"]
 
 

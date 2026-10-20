@@ -307,6 +307,7 @@ class _State:
     meter_provider: Any
     logger: Any
     counter: Any
+    metric_readers: list[Any]
 
 
 _state: _State | None = None
@@ -381,6 +382,7 @@ def configure(
             meter_provider=meter_provider,
             logger=logger_provider.get_logger(METER_NAME),
             counter=counter,
+            metric_readers=readers,
         )
         log.info("usage_telemetry_configured", service_name=service_name, sink=sink)
         return True
