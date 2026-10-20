@@ -1367,8 +1367,10 @@ A detected period is a description. It is not stored and **changes no verdict**:
 entry on the calendar, attached to the check, does. An empty list says less than it seems:
 `reason` is set when nothing could be looked at (`not_a_per_period_metric`, `no_history`,
 `insufficient_history`, `invalid_config`); with no reason, the history was read and nothing
-reached 1.5 times for long enough. A peak that lasts more than about half the check's
-window lifts the level with it, so its occurrence is reported shorter than it ran; attaching
+reached 1.5 times for long enough (or the stored history was discarded because the
+check's metric, date column or day/week setting was edited). A peak that lasts more than
+about half the check's window of prior periods (same-weekday periods when seasonality is
+on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
 a calendar entry over it fixes that, for detection as for scoring.
 
 A workspace admin turns a detected period into a calendar entry with

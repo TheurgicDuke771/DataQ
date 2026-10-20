@@ -25,7 +25,7 @@ connection mutation, and a credential must never transit an LLM.
 | `get_check_history` | `view` on the suite | Get one check's recent result history — how it has behaved run over run. |
 | `get_column_policy` | `view` on the suite | Get the suite's failing-sample redaction policy — which columns are masked. |
 | `get_coverage` | any signed-in user | Get how much of the asset inventory is watched, and how often automatic checks cry wolf. |
-| `get_detected_seasonal_periods` | `view` on the suite | Get the seasonal periods an anomaly check's own history shows: runs of days or weeks at or above 1.5 times the level the check is scored against. |
+| `get_detected_seasonal_periods` | `view` on the suite | Detect the sale seasons and one-off peaks in an anomaly check's own stored history (read-only; changes no verdict): runs of days or weeks at or above ``thresholds.ratio`` (1.5) times the level the check is scored against. |
 | `get_doc` | any signed-in user | Read a published DataQ user-facing doc page, verbatim. |
 | `get_health_score` | any signed-in user | Get the workspace data-quality health score and its trend. |
 | `get_incident` | `view` on the incident's suite | Get one incident with its evidence card — why it opened and what else broke. |
@@ -44,7 +44,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
 | `list_schedules` | any signed-in user; suite-scoped when a suite is named | List the cron schedules that run suites automatically. |
-| `list_seasonal_periods` | any signed-in user | List the workspace's declared seasonal calendar: the named sale periods and fixed dates an anomaly check can attach. |
+| `list_seasonal_periods` | any signed-in user | List the workspace's declared (admin-maintained) seasonal calendar: the named sale periods and fixed dates an anomaly check can attach. |
 | `list_suggested_rules` | `view` on the suite | List the rules waiting for review on a suite — proposals, not checks. |
 | `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |

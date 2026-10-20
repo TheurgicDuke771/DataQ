@@ -160,8 +160,8 @@ this time of year usually looks like.
    > **Amended 2026-10-20 (phase 5).** The thresholds and the promote flow, as built. (1) *The
    > level* is the one scoring uses: the median of the `window` periods before, by weekday
    > with `seasonality`, attached declared periods left out; a period is looked at only once
-   > `min_points` periods precede it. A peak longer than about half the window lifts that
-   > median with it, so its tail is not detected; an attached entry covering it is what fixes
+   > `min_points` periods precede it. A peak outlasting about half the window's prior
+   > periods (same-weekday ones with `seasonality`) lifts that median with it, so its tail is not detected; an attached entry covering it is what fixes
    > that, as it does for scoring. (2) *A run* is consecutive qualifying periods: at least
    > two days, since one day is a spike rather than a period, or one week. A day with no
    > point ends a run; no gap is bridged. (3) *The same time* in two years means the runs,

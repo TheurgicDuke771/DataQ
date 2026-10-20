@@ -1239,8 +1239,8 @@ def list_check_versions(
 
 @mcp.tool
 def list_seasonal_periods() -> list[dict[str, Any]]:
-    """List the workspace's declared seasonal calendar: the named sale periods and fixed
-    dates an anomaly check can attach.
+    """List the workspace's declared (admin-maintained) seasonal calendar: the named
+    sale periods and fixed dates an anomaly check can attach.
 
     Use this to find the id an anomaly check's ``seasonal_periods`` takes
     (``create_check`` / ``update_check``), or for 'which sale periods has the business
@@ -1284,8 +1284,9 @@ def list_seasonal_periods() -> list[dict[str, Any]]:
 
 @mcp.tool
 def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any]:
-    """Get the seasonal periods an anomaly check's own history shows: runs of days or
-    weeks at or above 1.5 times the level the check is scored against.
+    """Detect the sale seasons and one-off peaks in an anomaly check's own stored
+    history (read-only; changes no verdict): runs of days or weeks at or above
+    ``thresholds.ratio`` (1.5) times the level the check is scored against.
 
     Use this for 'does the orders table have a sale season?', 'why was the November
     spike not flagged?', or before suggesting a calendar entry to an admin. It works
@@ -1296,14 +1297,18 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
     same time of year, within ``thresholds.same_time_days``, in two or more years;
     ``seen_once``: in one year only), ``start`` / ``end`` (its most recent
     occurrence, inclusive), ``peak_ratio`` (the highest value against its level),
-    ``years_seen``, ``range`` (the month/day span a recurring period covers, null
-    otherwise), ``occurrences`` (one per year seen, each with
+    ``years_seen``, ``range`` (the month/day span a recurring period covers; null
+    for ``seen_once`` and for a recurring period too wide to be a month/day range,
+    which cannot be promoted), ``occurrences`` (one per year seen, each with
     ``backfilled_periods``: points seeded from the table's own past rather than
     seen by a run, which a later restatement of the table may have changed), and
     ``declared`` (calendar entries attached to this check that overlap it).
-    ``history`` says what stood behind the answer: ``points``, ``first`` /
-    ``last``, ``years`` and ``evaluated`` (periods with enough history before them
-    to have a level).
+    ``history`` says what stood behind the answer: ``unit`` (``day`` or
+    ``week``: what one period is), ``points``, ``backfilled``, ``first`` / ``last``
+    (``last`` is how current the answer is: the history grows only when the check
+    runs), ``years`` (the span from first to last, not a count of years with a
+    peak) and ``evaluated`` (periods with enough history before them to have a
+    level).
 
     **A detected period changes no verdict.** It is a description: scoring uses the
     yearly comparison and the calendar entries attached to the check, never this
@@ -1315,14 +1320,18 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
 
     An empty ``periods`` does **not** prove the table has no seasons. A non-null
     ``reason`` means nothing was examined: ``not_a_per_period_metric`` (any other
-    kind or metric), ``invalid_config``, ``no_history`` (the check has not run or
-    its baseline was dropped) or ``insufficient_history`` (no period had
-    ``min_points`` periods before it). With ``reason`` null the history was read
-    and nothing qualified; a rise under 1.5 times, a single-day spike (days need
+    kind or metric), ``invalid_config``, ``no_history`` (the check has not run, its
+    baseline was dropped, or its history was stored under a different metric, date
+    column or day/week setting, which an edit to the check discards) or
+    ``insufficient_history`` (no period had ``min_points`` periods before it).
+    With ``reason`` null the history was read and nothing qualified; a rise under
+    ``thresholds.ratio``, a single-day spike (days need
     ``thresholds.min_consecutive`` in a row) and anything older than the roughly
-    three years kept are not reported. A peak lasting more than about half the
-    check's ``window`` raises the level with it, so its occurrence is reported
-    shorter than it ran (an attached calendar entry covering it avoids that).
+    three years kept are not reported. A peak that outlasts about half of the
+    check's ``window`` prior periods (counted among the same weekday when
+    ``seasonality`` is on, so a daily peak must then run far longer) raises the
+    level with it, so its occurrence is reported shorter than it ran (an attached
+    calendar entry covering it avoids that).
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -2121,7 +2130,7 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     ``list_trigger_bindings`` and ``get_notification_config``. Declared seasonal
     calendar entries are not exported either: an anomaly check keeps their ids
     in ``seasonal_periods``, which resolve only in the same workspace (an import
-    elsewhere is refused naming them).
+    elsewhere is refused naming them); ``list_seasonal_periods`` names them.
 
     **An automatic baseline that inherits its thresholds** (``inherited_from`` on
     ``get_check``) is written with the values in effect at the moment of export and
