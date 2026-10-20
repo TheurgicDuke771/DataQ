@@ -729,8 +729,8 @@ def test_registry_returns_snowflake_adapter() -> None:
 
 
 def test_registry_unknown_type_raises() -> None:
-    # Every CONNECTION_TYPES member has an adapter, so probe a type that isn't a valid
-    # connection type at all (`mssql` was the probe until it shipped, #1679).
+    # Probe a type that isn't a valid connection type at all (`mssql` was the probe until it
+    # shipped, #1679).
     with pytest.raises(UnsupportedConnectionTypeError, match="oracle"):
         get_connection_adapter("oracle")
 
