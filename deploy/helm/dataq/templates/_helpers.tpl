@@ -104,7 +104,7 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- end -}}
 {{- range $name, $_ := .Values.config.extraEnv -}}
 {{- $upper := upper $name -}}
-{{- if and (regexMatch "PASSWORD|TOKEN|SECRET|_KEY$|_KEY_|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$" $upper) (not (hasSuffix "_NAME" $upper)) -}}
+{{- if and (regexMatch "PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|_KEY_|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$" $upper) (not (hasSuffix "_NAME" $upper)) -}}
 {{- fail (printf "config.extraEnv.%s looks like a credential; put it in the existingSecret instead" $name) -}}
 {{- end -}}
 {{- end -}}

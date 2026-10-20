@@ -1,0 +1,292 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DataQ chart values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["existingSecret", "image", "auth", "secretStore", "config"],
+  "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "not": {"const": "latest"}},
+        "digest": {"type": "string", "pattern": "^(sha256:[a-f0-9]{64})?$"}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {"type": "object"},
+        "limits": {"type": "object"}
+      }
+    },
+    "probe": {"type": "object"},
+    "replicas": {"type": "integer", "minimum": 0},
+    "emailList": {"type": "string"},
+    "role": {"enum": ["member", "viewer"]},
+    "securityContexts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pod", "container"],
+      "properties": {
+        "pod": {
+          "type": "object",
+          "required": ["runAsNonRoot"],
+          "properties": {"runAsNonRoot": {"const": true}, "runAsUser": {"type": "integer", "minimum": 1}}
+        },
+        "container": {
+          "type": "object",
+          "required": ["allowPrivilegeEscalation"],
+          "properties": {"allowPrivilegeEscalation": {"const": false}, "privileged": {"const": false}}
+        }
+      }
+    }
+  },
+  "properties": {
+    "existingSecret": {
+      "type": "string",
+      "description": "Name of a Secret you create holding DATABASE_URL, REDIS_URL and the secret-store credential."
+    },
+    "extraEnvFromSecrets": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "backend", "frontend"],
+      "properties": {
+        "registry": {"type": "string", "minLength": 1},
+        "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]},
+        "backend": {"$ref": "#/definitions/image"},
+        "frontend": {"$ref": "#/definitions/image"}
+      }
+    },
+    "imagePullSecrets": {"type": "array"},
+    "nameOverride": {"type": "string"},
+    "fullnameOverride": {"type": "string"},
+    "clusterDomain": {"type": "string", "minLength": 1},
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["otp", "oidc", "bypass"]},
+        "allowDevBypass": {"type": "boolean"},
+        "workspaceAdminEmails": {"$ref": "#/definitions/emailList"},
+        "otp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "smtpHost": {"type": "string"},
+            "smtpPort": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "tlsMode": {"enum": ["starttls", "implicit", "none"]},
+            "username": {"type": "string"},
+            "from": {"type": "string"},
+            "passwordSecretName": {"type": "string"},
+            "caBundle": {"type": "string"},
+            "allowedEmails": {"$ref": "#/definitions/emailList"},
+            "allowedDomains": {"type": "string"},
+            "defaultRole": {"$ref": "#/definitions/role"}
+          }
+        },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuer": {"type": "string", "pattern": "^(https?://.+)?$"},
+            "audience": {"type": "string"},
+            "allowedEmails": {"$ref": "#/definitions/emailList"},
+            "allowedDomains": {"type": "string"},
+            "defaultRole": {"$ref": "#/definitions/role"},
+            "authority": {"type": "string", "pattern": "^(https?://.+)?$"},
+            "clientId": {"type": "string"},
+            "apiScope": {"type": "string"},
+            "scope": {"type": "string"},
+            "logoutStyle": {"enum": ["", "cognito"]}
+          }
+        }
+      }
+    },
+    "secretStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend"],
+      "properties": {
+        "backend": {"enum": ["openbao", "azure_key_vault", "aws_secrets_manager", "env"]},
+        "openbao": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addr": {"type": "string", "pattern": "^(https?://.+)?$"},
+            "mount": {"type": "string", "minLength": 1},
+            "caBundle": {"type": "string"}
+          }
+        },
+        "azureKeyVault": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {"type": "string", "pattern": "^(https://.+)?$"},
+            "clientId": {"type": "string"}
+          }
+        },
+        "awsSecretsManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"prefix": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {"enum": ["prod", "staging", "dev"]},
+        "logLevel": {"enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]},
+        "publicBaseUrl": {"type": "string", "pattern": "^(https?://.+)?$"},
+        "deploymentRegion": {"type": "string"},
+        "rateLimitEnabled": {"type": "boolean"},
+        "rateLimitXffTrustedHops": {"type": "integer", "minimum": 0},
+        "warehouseLineageEnabled": {"type": "boolean"},
+        "otlpEndpoint": {"type": "string"},
+        "extraEnv": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        }
+      }
+    },
+    "trustedCA": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"existingConfigMap": {"type": "string"}}
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"type": "object"}
+      }
+    },
+    "podAnnotations": {"type": "object"},
+    "podLabels": {"type": "object"},
+    "nodeSelector": {"type": "object"},
+    "tolerations": {"type": "array"},
+    "affinity": {"type": "object"},
+    "backendSecurityContext": {"$ref": "#/definitions/securityContexts"},
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": {"$ref": "#/definitions/replicas"},
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"existingSecret": {"type": "string"}}
+        },
+        "resources": {"$ref": "#/definitions/resources"},
+        "livenessProbe": {"$ref": "#/definitions/probe"},
+        "readinessProbe": {"$ref": "#/definitions/probe"},
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}}
+        }
+      }
+    },
+    "worker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": {"$ref": "#/definitions/replicas"},
+        "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+        "resources": {"$ref": "#/definitions/resources"},
+        "livenessProbe": {"$ref": "#/definitions/probe"}
+      }
+    },
+    "beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resources": {"$ref": "#/definitions/resources"},
+        "livenessProbe": {"$ref": "#/definitions/probe"}
+      }
+    },
+    "frontend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": {"$ref": "#/definitions/replicas"},
+        "cspConnectSrc": {"type": "string"},
+        "hsts": {"type": "string"},
+        "resources": {"$ref": "#/definitions/resources"},
+        "livenessProbe": {"$ref": "#/definitions/probe"},
+        "readinessProbe": {"$ref": "#/definitions/probe"},
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+          }
+        },
+        "securityContext": {"$ref": "#/definitions/securityContexts"}
+      }
+    },
+    "migrate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 60},
+        "serviceAccountName": {"type": "string"},
+        "resources": {"$ref": "#/definitions/resources"}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "className": {"type": "string"},
+        "annotations": {"type": "object"},
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host"],
+            "properties": {"host": {"type": "string", "minLength": 1}}
+          }
+        },
+        "tls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secretName"],
+            "properties": {
+              "secretName": {"type": "string", "minLength": 1},
+              "hosts": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"enabled": {"type": "boolean"}}
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "frontendIngressFrom": {"type": "array"}
+      }
+    }
+  }
+}
