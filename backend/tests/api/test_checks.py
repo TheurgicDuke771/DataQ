@@ -1581,7 +1581,8 @@ def test_history_has_no_seasonal_point_off_a_per_period_result(
     _run_with_result(db_session, sid, cid, status="pass", metric_value=1.0, age_days=1)
     _result_observed(db_session, cid, {"observed_value": 3, "mean": 2.0})
 
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"] is None
+    history = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()
+    assert history[0]["seasonal"] is None
 
 
 def test_history_reads_no_payload_off_a_per_period_check(
@@ -1594,7 +1595,8 @@ def test_history_reads_no_payload_off_a_per_period_check(
         db_session, cid, {"period": {"start": "2026-10-01"}, "mean": 2.0}, per_period=False
     )
 
-    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()[0]["seasonal"] is None
+    history = client.get(f"/api/v1/suites/{sid}/checks/{cid}/history").json()
+    assert history[0]["seasonal"] is None
 
 
 def test_versions_unknown_check_returns_404(client: TestClient, db_session: Any) -> None:
