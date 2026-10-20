@@ -1,6 +1,7 @@
 import {
   BuildOutlined,
   CloudOutlined,
+  CloudServerOutlined,
   DatabaseOutlined,
   DeploymentUnitOutlined,
   FolderOpenOutlined,
@@ -21,6 +22,7 @@ const TYPE_VISUAL: Record<ConnectionType, { icon: ReactNode; color: string }> = 
   snowflake: { icon: <CloudOutlined />, color: '#29b5e8' },
   adls_gen2: { icon: <FolderOpenOutlined />, color: '#0078d4' },
   s3: { icon: <InboxOutlined />, color: '#ff9900' },
+  gcs: { icon: <CloudServerOutlined />, color: '#4285f4' },
   unity_catalog: { icon: <TableOutlined />, color: '#ff3621' },
   iceberg: { icon: <DatabaseOutlined />, color: '#2596be' },
   postgres: { icon: <DatabaseOutlined />, color: '#336791' },

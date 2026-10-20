@@ -266,12 +266,12 @@ an outbound model request.
 | GET | `/admin/offboarding/{user_id}/preview` | What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing. |
 | POST | `/admin/offboarding/{user_id}` | Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; `confirm_email` must match. A step that cannot run is reported in `skipped` with its reason. Authored history is kept (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
-| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. |
+| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. With an `object_lock` anchor, `anchors` reads the published heads back and reports each as present / purged / missing / malformed (`unavailable` when the store cannot be read). |
 | POST | `/admin/data-subject-requests/export` · `…/erase` | Export or erase every captured sample cell naming `column` = `value` (GDPR/CCPA subject requests; erase is audited). |
 | GET | `/admin/health` | Workspace health — poll staleness, beat heartbeat, queue depth, and per-connection credential health. |
 | GET / PUT | `/admin/llm` · POST `/admin/llm/test` | Outbound-LLM provider config; the test probes a draft without saving it. |
 | POST | `/admin/auth-email/test` | Send a test email to the caller over the configured `AUTH_EMAIL_*` transport (throttled per admin). |
-| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
+| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on; `external_transfers` enumerates every way data can leave, on or off, including OpenLineage emission and the tamper anchor. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
 | GET | `/admin/scoring` | Health-score penalty weights in force, whether they are the defaults, and the defaults themselves. |

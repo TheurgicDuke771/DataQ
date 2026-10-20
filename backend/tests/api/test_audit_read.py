@@ -356,3 +356,98 @@ def test_verify_reports_a_break_with_its_location(
     assert body["first_break"]["event_id"] == str(broken_id)
     assert body["first_break"]["expected_prev_hash"] == "expected"
     assert body["first_break"]["actual_prev_hash"] == "actual"
+
+
+# ───────────────────── anchor read-back (#2310) ─────────────────────
+
+
+def test_verify_reports_no_anchor_section_when_the_anchor_cannot_be_read_back(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`none`/`webhook`: null, not an empty section — nothing was checked."""
+    from backend.app.services import audit_chain
+
+    monkeypatch.setattr(audit_chain, "verify_chain", lambda _session: _chain_verification())
+
+    body = client.get("/api/v1/admin/audit-events/verify").json()
+
+    assert body["anchor_mode"] == "none"
+    assert body["anchors"] is None
+
+
+def test_verify_surfaces_the_anchor_read_back_beside_the_chain_verdict(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_anchor_service, audit_chain
+    from backend.app.services.audit_anchor_service import (
+        AnchorCheck,
+        AnchorVerification,
+    )
+
+    when = datetime.now(UTC)
+    monkeypatch.setattr(
+        audit_chain,
+        "verify_chain",
+        lambda _session: _chain_verification(verified_count=3, chain_head_hash="abc123"),
+    )
+    monkeypatch.setattr(
+        audit_anchor_service,
+        "verify_anchors",
+        lambda _session: AnchorVerification(
+            status="mismatch",
+            checked_count=2,
+            present_count=1,
+            missing_count=1,
+            findings=[
+                AnchorCheck("audit-anchors/x.json", "audit_chain_daily", "ff", when, "missing")
+            ],
+        ),
+    )
+
+    body = client.get("/api/v1/admin/audit-events/verify").json()
+
+    # The existing contract is untouched by the new section.
+    assert body["status"] == "ok"
+    assert body["chain_head_hash"] == "abc123"
+    anchors = body["anchors"]
+    assert anchors["status"] == "mismatch"
+    assert (
+        anchors["checked_count"],
+        anchors["present_count"],
+        anchors["missing_count"],
+    ) == (
+        2,
+        1,
+        1,
+    )
+    assert anchors["findings"] == [
+        {
+            "key": "audit-anchors/x.json",
+            "label": "audit_chain_daily",
+            "head_hash": "ff",
+            "as_of": when.isoformat().replace("+00:00", "Z"),
+            "match": "missing",
+        }
+    ]
+    assert anchors["truncated"] is False
+    assert anchors["error"] is None
+
+
+def test_verify_reports_an_anchor_store_outage_as_unavailable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_anchor_service, audit_chain
+    from backend.app.services.audit_anchor_service import AnchorVerification
+
+    monkeypatch.setattr(audit_chain, "verify_chain", lambda _session: _chain_verification())
+    monkeypatch.setattr(
+        audit_anchor_service,
+        "verify_anchors",
+        lambda _session: AnchorVerification(status="unavailable", error="ConnectError: refused"),
+    )
+
+    body = client.get("/api/v1/admin/audit-events/verify").json()
+
+    assert body["anchors"]["status"] == "unavailable"
+    assert body["anchors"]["error"] == "ConnectError: refused"
+    assert body["anchors"]["checked_count"] == 0

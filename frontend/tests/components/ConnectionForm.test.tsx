@@ -1002,6 +1002,62 @@ describe('ConnectionForm — Amazon Redshift', () => {
   });
 });
 
+describe('ConnectionForm — Google Cloud Storage', () => {
+  it('takes a bucket and a pasted service-account key file as the secret', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'gcs' });
+    render(
+      <AntApp>
+        <ConnectionForm type="gcs" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'landing');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Bucket'), 'dataq-landing');
+    await user.type(screen.getByLabelText(/Endpoint URL/), 'http://fake-gcs:4443');
+    const key = screen.getByLabelText('Service account key file (JSON)');
+    expect(key.tagName).toBe('TEXTAREA');
+    await user.click(key);
+    await user.paste('{"type": "service_account", "client_email": "dq@p.iam.gserviceaccount.com"}');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('gcs');
+    expect(payload.config).toEqual({
+      bucket: 'dataq-landing',
+      endpoint_url: 'http://fake-gcs:4443',
+      auth_type: 'service_account_key',
+    });
+    expect(payload.secret).toBe(
+      '{"type": "service_account", "client_email": "dq@p.iam.gserviceaccount.com"}',
+    );
+  });
+
+  it('asks for no credential at all on an anonymous public bucket', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'gcs' });
+    render(
+      <AntApp>
+        <ConnectionForm type="gcs" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'public');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Bucket'), 'public-datasets');
+    await selectOption(user, 'Anonymous (public bucket)', { index: 1 });
+    expect(screen.queryByLabelText('Service account key file (JSON)')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toEqual({ bucket: 'public-datasets', auth_type: 'anonymous' });
+    expect(payload.secret ?? null).toBeNull();
+  });
+});
+
 describe('ConnectionForm — dbt ADLS service principal', () => {
   it('reads OneLake artifacts as a service principal: tenant, client and a required secret', async () => {
     const user = userEvent.setup();

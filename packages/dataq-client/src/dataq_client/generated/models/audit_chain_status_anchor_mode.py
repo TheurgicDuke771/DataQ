@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class AuditChainStatusAnchorMode(StrEnum):
     NONE = "none"
+    OBJECT_LOCK = "object_lock"
     WEBHOOK = "webhook"
 
     def __str__(self) -> str:

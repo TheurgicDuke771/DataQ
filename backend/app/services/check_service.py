@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.databricks_dqx import (
     DQX_ENGINE,
     DQX_EXPECTATION_TYPES,
@@ -39,6 +40,7 @@ from backend.app.datasources.monitors import (
     PII_DRIFT,
     SCHEMA_DRIFT,
     MonitorConfigError,
+    anomaly_params,
     monitor_expectation_type,
     validate_monitor_config,
 )
@@ -99,7 +101,7 @@ COMPARISON_EXPECTATION_TYPE = "comparison:records"
 COMPARISON_EXPECTATION_TYPES = ("comparison:records", "comparison:columns")
 
 # The flat-file datasources.
-FILE_TYPES = frozenset({"adls_gen2", "s3"})
+FILE_TYPES = FLAT_FILE_TYPES
 
 # Datasources whose runner implements `run_monitors` (a `MonitorRunner`) — the author-time gate for
 # freshness/volume checks.
@@ -374,8 +376,11 @@ def validate_monitor_check(
     warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
+    session: Session | None = None,
 ) -> None:
-    """Validate a monitor check of any kind at author time (create/update)."""
+    """Validate a monitor check of any kind at author time (create/update). ``session`` lets
+    an anomaly check's attached seasonal periods be looked up; without it only their shape
+    is checked."""
     # Same #651 string-size cap as expectation/comparison checks (#1787).
     _reject_oversized_config(config)
     capable = _CAPABLE_TYPES_BY_KIND.get(kind, MONITOR_CAPABLE_TYPES)
@@ -421,11 +426,34 @@ def validate_monitor_check(
             "fail (no threshold) or always fails (zero)",
             detail={"kind": kind},
         )
+    if kind == ANOMALY and session is not None:
+        require_seasonal_periods(session, config)
     if kind == AGGREGATE:
         _validate_aggregate_check(
             config,
             connection_type=connection_type,
             thresholds=(warn_threshold, fail_threshold, critical_threshold),
+        )
+
+
+def require_seasonal_periods(
+    session: Session, config: dict[str, Any], *, lock: bool = True
+) -> None:
+    """Every calendar entry an anomaly config attaches must exist (ADR 0048 decision 5). On
+    a save the rows are share-locked for the caller's transaction, so a delete cannot land
+    between this check and the commit; a preview passes ``lock=False``. The ids are written
+    back in their canonical spelling, which is what the delete guard searches for."""
+    from backend.app.services import seasonal_period_service
+
+    ids = anomaly_params(config, authoring=True).seasonal_periods
+    if config.get(seasonal_period_service.CONFIG_KEY) is not None:
+        config[seasonal_period_service.CONFIG_KEY] = [str(i) for i in ids]
+    unknown = seasonal_period_service.unknown_ids(session, ids, lock=lock)
+    if unknown:
+        raise CheckConfigInvalidError(
+            "seasonal_periods names calendar entries that do not exist: "
+            + ", ".join(str(i) for i in unknown),
+            detail={"kind": ANOMALY, "unknown_seasonal_periods": [str(i) for i in unknown]},
         )
 
 
@@ -951,6 +979,7 @@ def create_check(
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
+            session=session,
         )
     elif kind == COMPARISON_KIND:
         validate_comparison_check(
@@ -1085,6 +1114,7 @@ def _validate_kind_specific_config(
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
+            session=session,
         )
     elif check.kind == COMPARISON_KIND:
         suite = get_suite(session, suite_id)

@@ -12,6 +12,7 @@ _OFFERED: dict[str, frozenset[str]] = {
     "snowflake": frozenset({GX_ENGINE, "dmf"}),
     "adls_gen2": frozenset({GX_ENGINE}),
     "s3": frozenset({GX_ENGINE}),
+    "gcs": frozenset({GX_ENGINE}),
     # 'dqx' rides UnityCatalogCheckRunner.run_native_checks: a serverless job in the workspace.
     "unity_catalog": frozenset({GX_ENGINE, "dqx"}),
     "iceberg": frozenset({GX_ENGINE}),

@@ -193,6 +193,8 @@ def _probe(**kw: Any) -> dict[str, Any]:
         ),
         ("s3", {"path": "landing/orders.csv"}, _probe(path="landing/orders.csv"), True),
         ("s3", {"path": "landing/orders.csv"}, _probe(path="landing/returns.csv"), False),
+        ("gcs", {"path": "landing/orders.csv"}, _probe(path="landing/orders.csv"), True),
+        ("adls_gen2", {"path": "landing/orders.csv"}, _probe(path="landing/orders.csv"), True),
         (
             "s3",
             {"batch": {"prefix": "landing/", "pattern": "orders_*.csv", "pick": "latest"}},

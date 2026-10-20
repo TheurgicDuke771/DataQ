@@ -974,6 +974,23 @@ def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_fram
 # this section too.
 
 
+def test_list_file_columns_on_an_anonymous_gcs_bucket_needs_no_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_object(monkeypatch, b"a,b\n1,2\n")
+    cols = list_file_columns(
+        _conn(
+            conn_type="gcs",
+            config={"bucket": "public-data", "auth_type": "anonymous"},
+            secret_ref=None,
+        ),
+        path="x.csv",
+        file_format="csv",
+        secret_store=FakeSecretStore(raise_on_write=True),
+    )
+    assert cols == ["a", "b"]
+
+
 def test_list_file_columns_csv_reads_header_only(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_object(monkeypatch, b"a,b,c\n1,2,3\n4,5,6\n")
     cols = list_file_columns(

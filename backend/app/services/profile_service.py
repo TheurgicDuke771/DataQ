@@ -29,6 +29,7 @@ from backend.app.datasources.flatfile import (
     read_csv_head,
     read_csv_projected_sample,
     read_json_head,
+    resolve_flatfile_secret,
 )
 from backend.app.datasources.generic_sql import ColumnCaps, SqlEngineSpec
 from backend.app.datasources.iceberg import (
@@ -373,6 +374,7 @@ _PROFILERS: dict[str, _Profiler] = {
     "unity_catalog": _SqlProfiler(_unity_catalog_engine_args, requires_catalog=True),
     "s3": _FileProfiler(),
     "adls_gen2": _FileProfiler(),
+    "gcs": _FileProfiler(),
     "iceberg": _IcebergProfiler(),
     **{t: _SqlProfiler(_generic_sql_engine_args(spec)) for t, spec in SQL_ENGINES.items()},
 }
@@ -842,9 +844,12 @@ def _read_dataframe(
     secret_store: SecretStore,
 ) -> Any:
     """Read `path` from the flat-file datasource into a sampled dataframe."""
-    if not connection.secret_ref:
-        raise ValueError("connection requires secret_ref for the credential")
-    secret = secret_store.get(connection.secret_ref)
+    secret = resolve_flatfile_secret(
+        conn_type=connection.type,
+        config=dict(connection.config),
+        secret_ref=connection.secret_ref,
+        secret_store=secret_store,
+    )
 
     if file_format == "parquet":
         return _read_parquet_sample(
@@ -879,7 +884,7 @@ def _read_dataframe(
 
 
 def _read_parquet_sample(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, columns: list[str]
+    *, conn_type: str, config: dict[str, Any], path: str, secret: str | None, columns: list[str]
 ) -> Any:
     """Sample a Parquet file's projected columns without downloading it (#1001)."""
     import pandas as pd
@@ -1239,12 +1244,15 @@ def list_file_columns(
     file_format: str | None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3)."""
-    # secret_ref presence is guaranteed by the dispatcher (`resolve_profiler`),
-    # as in `profile_file`; a direct call without it surfaces as a read failure.
+    """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3 / GCS)."""
     fmt = infer_file_format(path, file_format)
     try:
-        secret = secret_store.get(connection.secret_ref or "")
+        secret = resolve_flatfile_secret(
+            conn_type=connection.type,
+            config=dict(connection.config),
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
         reader_args: dict[str, Any] = {
             "conn_type": connection.type,
             "config": connection.config,

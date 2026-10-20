@@ -30,6 +30,7 @@ CONNECTION_TYPES = (
     "snowflake",
     "adls_gen2",
     "s3",
+    "gcs",
     "unity_catalog",
     "iceberg",
     "postgres",

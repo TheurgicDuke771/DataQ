@@ -58,6 +58,7 @@ snowflake-connector-python==4.8.0  # 3→4: drops cffi<2 / pyOpenSSL<26 caps →
 cryptography==50.0.2               # direct floor — transitive (snowflake/pyOpenSSL/azure/GX); pins past PYSEC-2026-3552 (49.0.0). Needs pyOpenSSL≥26.4.0, which lifts its cryptography<50 cap to <51
 azure-storage-blob==12.31.0       # ADLS Gen2
 boto3==1.43.103                    # S3, AWS Secrets Manager (SecretStore)
+google-cloud-storage==3.17.1      # Google Cloud Storage flat files (#1683) — the JSON-API client, used directly like boto3/azure-storage-blob (gcsfs was rejected: its 2026.10 default wraps every call in a gRPC storage-control probe that times out 60 s per bucket on any non-Google endpoint). Apache-2.0; pulls google-auth, google-api-core, google-cloud-core, google-resumable-media, google-crc32c, googleapis-common-protos, proto-plus (all Apache-2.0), protobuf (BSD-3-Clause), pyasn1/pyasn1-modules (BSD), cachetools (MIT)
 databricks-sql-connector==4.6.0   # Unity Catalog
 databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
 pyarrow==25.0.1                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)

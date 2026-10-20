@@ -489,6 +489,136 @@
         "title": "AdminWebhookRead",
         "type": "object"
       },
+      "AnchorFinding": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "head_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Hash"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "match": {
+            "enum": [
+              "present",
+              "purged",
+              "missing",
+              "malformed"
+            ],
+            "title": "Match",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "head_hash",
+          "as_of",
+          "match"
+        ],
+        "title": "AnchorFinding",
+        "type": "object"
+      },
+      "AnchorVerificationRead": {
+        "properties": {
+          "checked_count": {
+            "title": "Checked Count",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/AnchorFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "malformed_count": {
+            "title": "Malformed Count",
+            "type": "integer"
+          },
+          "missing_count": {
+            "title": "Missing Count",
+            "type": "integer"
+          },
+          "present_count": {
+            "title": "Present Count",
+            "type": "integer"
+          },
+          "purged_count": {
+            "title": "Purged Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "mismatch",
+              "empty",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "checked_count",
+          "present_count",
+          "purged_count",
+          "missing_count",
+          "malformed_count",
+          "findings",
+          "truncated",
+          "error"
+        ],
+        "title": "AnchorVerificationRead",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1025,10 +1155,21 @@
           "anchor_mode": {
             "enum": [
               "none",
-              "webhook"
+              "webhook",
+              "object_lock"
             ],
             "title": "Anchor Mode",
             "type": "string"
+          },
+          "anchors": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnchorVerificationRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "chain_head_hash": {
             "anyOf": [
@@ -4714,6 +4855,25 @@
         "title": "DataSubjectRequest",
         "type": "object"
       },
+      "DeclaredRefRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DeclaredRefRead",
+        "type": "object"
+      },
       "DeploymentPostureRead": {
         "description": "What an auditor needs to answer \"where does our data live, and what can\ntake it elsewhere?\" without shell access to the deployment.",
         "properties": {
@@ -4815,6 +4975,282 @@
           "dismissed_at"
         ],
         "title": "DetectedClassificationRead",
+        "type": "object"
+      },
+      "DetectedOccurrenceRead": {
+        "properties": {
+          "backfilled_periods": {
+            "title": "Backfilled Periods",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "peak_ratio": {
+            "title": "Peak Ratio",
+            "type": "number"
+          },
+          "periods": {
+            "title": "Periods",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "start",
+          "end",
+          "peak_ratio",
+          "periods",
+          "backfilled_periods"
+        ],
+        "title": "DetectedOccurrenceRead",
+        "type": "object"
+      },
+      "DetectedPeriodRead": {
+        "properties": {
+          "declared": {
+            "items": {
+              "$ref": "#/components/schemas/DeclaredRefRead"
+            },
+            "title": "Declared",
+            "type": "array"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "recurring",
+              "seen_once"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurrences": {
+            "items": {
+              "$ref": "#/components/schemas/DetectedOccurrenceRead"
+            },
+            "title": "Occurrences",
+            "type": "array"
+          },
+          "peak_ratio": {
+            "title": "Peak Ratio",
+            "type": "number"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectedRangeRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "years_seen": {
+            "title": "Years Seen",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "start",
+          "end",
+          "peak_ratio",
+          "years_seen",
+          "range",
+          "occurrences",
+          "declared"
+        ],
+        "title": "DetectedPeriodRead",
+        "type": "object"
+      },
+      "DetectedRangeRead": {
+        "properties": {
+          "end_day": {
+            "title": "End Day",
+            "type": "integer"
+          },
+          "end_month": {
+            "title": "End Month",
+            "type": "integer"
+          },
+          "start_day": {
+            "title": "Start Day",
+            "type": "integer"
+          },
+          "start_month": {
+            "title": "Start Month",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_month",
+          "start_day",
+          "end_month",
+          "end_day"
+        ],
+        "title": "DetectedRangeRead",
+        "type": "object"
+      },
+      "DetectedSeasonalPeriodsRead": {
+        "description": "Periods the check's own history shows running at or above `thresholds.ratio` times\nthe level of the periods its scoring uses (`thresholds.level`). Computed on request and\nstored nowhere: a detected period changes no verdict until an admin promotes it to the\ncalendar and it is attached.\n`reason` is set when there was nothing to look at (`not_a_per_period_metric`,\n`invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no\nreason means the history was read and nothing qualified.",
+        "properties": {
+          "history": {
+            "$ref": "#/components/schemas/DetectionHistoryRead"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/DetectedPeriodRead"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/DetectionThresholdsRead"
+          }
+        },
+        "required": [
+          "reason",
+          "periods",
+          "thresholds",
+          "history"
+        ],
+        "title": "DetectedSeasonalPeriodsRead",
+        "type": "object"
+      },
+      "DetectionHistoryRead": {
+        "properties": {
+          "backfilled": {
+            "title": "Backfilled",
+            "type": "integer"
+          },
+          "evaluated": {
+            "title": "Evaluated",
+            "type": "integer"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "years": {
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "unit",
+          "points",
+          "backfilled",
+          "evaluated",
+          "first",
+          "last",
+          "years"
+        ],
+        "title": "DetectionHistoryRead",
+        "type": "object"
+      },
+      "DetectionThresholdsRead": {
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "median",
+                  "mean"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "min_consecutive": {
+            "title": "Min Consecutive",
+            "type": "integer"
+          },
+          "ratio": {
+            "title": "Ratio",
+            "type": "number"
+          },
+          "same_time_days": {
+            "title": "Same Time Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ratio",
+          "min_consecutive",
+          "same_time_days",
+          "level"
+        ],
+        "title": "DetectionThresholdsRead",
         "type": "object"
       },
       "DimensionScoreRead": {
@@ -8767,6 +9203,456 @@
         "title": "ScoringWeightsWrite",
         "type": "object"
       },
+      "SeasonalPeriodPatch": {
+        "additionalProperties": false,
+        "description": "Any field left out keeps its value; the result is validated whole, so a kind change\nmust send the new kind's fields.",
+        "properties": {
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "end_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Day"
+          },
+          "end_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Month"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recurring",
+                  "dated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Day"
+          },
+          "start_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Month"
+          }
+        },
+        "title": "SeasonalPeriodPatch",
+        "type": "object"
+      },
+      "SeasonalPeriodPromote": {
+        "additionalProperties": false,
+        "description": "Promote a period detected in a check's history\n(`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.\n`start` is the detected period's `start` (its most recent season); the server reads the\nhistory again and refuses a start it no longer shows (404), or a season an entry on the\ncalendar already covers (409, naming the entry to attach instead). A recurring period becomes a\nmonth/day range, a period seen once a dated entry (`series` applies only to that).\n`attach` also attaches the new entry to the check, which needs `yearly` on it.",
+        "properties": {
+          "attach": {
+            "default": false,
+            "title": "Attach",
+            "type": "boolean"
+          },
+          "check_id": {
+            "format": "uuid",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "check_id",
+          "start",
+          "name"
+        ],
+        "title": "SeasonalPeriodPromote",
+        "type": "object"
+      },
+      "SeasonalPeriodRead": {
+        "properties": {
+          "attached_checks": {
+            "title": "Attached Checks",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "end_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Day"
+          },
+          "end_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Month"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "recurring",
+              "dated"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Day"
+          },
+          "start_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Month"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "start_month",
+          "start_day",
+          "end_month",
+          "end_day",
+          "start_date",
+          "end_date",
+          "series",
+          "note",
+          "attached_checks",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SeasonalPeriodRead",
+        "type": "object"
+      },
+      "SeasonalPeriodWrite": {
+        "additionalProperties": false,
+        "description": "A recurring entry sets the four month/day fields (the range may wrap the year end:\n20 December to 5 January; 29 February is taken as 28 February in other years). A dated\nentry sets `start_date` and `end_date`, and optionally a `series`: dated entries sharing\na series are occurrences of one period across years, which is how a moving sale finds\nits previous occurrence.",
+        "properties": {
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "end_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Day"
+          },
+          "end_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Month"
+          },
+          "kind": {
+            "enum": [
+              "recurring",
+              "dated"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Day"
+          },
+          "start_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Month"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "SeasonalPeriodWrite",
+        "type": "object"
+      },
       "SecretSweepReportRead": {
         "description": "The last orphan-secret sweep run, beat OR manual. `status=\"never_run\"` means\nthe sweep has never recorded a report \u2014 never read that as `orphan_count=0`;\n`status=\"skipped\"` means a run happened but never actually enumerated the store\n(grace disabled, or the store cannot list its own secrets) \u2014 also never `0`.\n`orphan_count` is `None` (never `0`) on either a skip or a store outage; `error`\nthen carries the classified, secret-free reason. `scanned`/`unknown_age_count`/\n`too_young_count` are the store-side total and the two other unowned buckets a\ncompleted run split secrets into \u2014 also `None` on a skip/outage, so N secrets the\nstore couldn't date (often an OpenBao token missing metadata `read`) doesn't read\nas a clean vault. `orphan_names` are secret NAMES only, capped at 200 \u2014 see\n`truncated`.",
         "properties": {
@@ -11852,6 +12738,239 @@
         ]
       }
     },
+    "/api/v1/admin/seasonal-periods": {
+      "get": {
+        "operationId": "list_seasonal_periods",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeasonalPeriodRead"
+                  },
+                  "title": "Response List Seasonal Periods",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the seasonal calendar",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "create_seasonal_period",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonalPeriodWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalPeriodRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a calendar entry (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/seasonal-periods/promote": {
+      "post": {
+        "operationId": "promote_detected_period",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonalPeriodPromote"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalPeriodRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a detected period to the calendar (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/seasonal-periods/{period_id}": {
+      "delete": {
+        "operationId": "delete_seasonal_period",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "period_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Period Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete an entry (admin; refused while any check names it)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "operationId": "get_seasonal_period",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "period_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Period Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalPeriodRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read one entry",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "operationId": "update_seasonal_period",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "period_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Period Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonalPeriodPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonalPeriodRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit an entry (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/secret-sweep": {
       "get": {
         "operationId": "get_secret_sweep_report",
@@ -13028,7 +14147,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List the folders and files under a prefix of an ADLS Gen2 / S3 connection",
+        "summary": "List the folders and files under a prefix of an ADLS Gen2 / S3 / GCS connection",
         "tags": [
           "connections"
         ]
@@ -16392,6 +17511,59 @@
           }
         },
         "summary": "Drop a stateful monitor check's baseline (recaptured on the next run)",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected": {
+      "get": {
+        "operationId": "get_detected_seasonal_periods",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectedSeasonalPeriodsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seasonal periods detected in an anomaly check's per-period history",
         "tags": [
           "checks"
         ]

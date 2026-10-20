@@ -133,6 +133,23 @@ this time of year usually looks like.
      the rolling baseline expects is reported as within the declared period and not banded,
      while a value **below** it is judged as usual. A load that fails during a first-year
      sale still alerts.
+   > **Amended 2026-10-19 (phase 4).** Three decisions the build had to make. (1) *A dated
+   > entry's previous occurrence.* A dated entry is one-off by itself; the schema makes
+   > "occurrences of one period" explicit with a `series` on dated entries, matched
+   > case-insensitively, and a check attaches each year's entry it wants compared. A dated
+   > entry with no earlier entry of its series among the check's attachments is a first
+   > year. (2) *29 February.* A recurring bound may be 29 February; in a year without one it
+   > is 28 February. The same offset into a previous occurrence that was shorter (a leap-year
+   > sale that ran a day longer) has no match in that occurrence and the next earlier one is
+   > tried. (3) *Attachments live in the check's config* (`seasonal_periods`, a list of ids)
+   > rather than a join table, because every surface that carries a check's definition —
+   > `check_versions`, export/import, apply, the audit snapshot and a dry run that has no
+   > check row — is config-shaped. Deleting an entry a check still names is refused by the
+   > service, naming the checks, under a row lock the attaching save shares. A calendar
+   > entry applies only with `yearly` on, since lining a day up with an earlier occurrence
+   > is the yearly comparison; attaching one without it is refused rather than ignored.
+   > Each result on an attached check reports what it would have scored with no calendar.
+
    - **Detected.** Read from a check's own history when someone asks: a run of periods at or
      above 1.5 times the level. Seen at the same time in two or more years it is *recurring*;
      in one year, *seen once*. Detected periods are shown on the check's trend so a person
@@ -140,6 +157,30 @@ this time of year usually looks like.
      Until then a detected period is a description: it is not stored and it changes no
      score. The seasonal index already carries a recurring peak into the expected value
      without it.
+   > **Amended 2026-10-20 (phase 5).** The thresholds and the promote flow, as built. (1) *The
+   > level* is taken as scoring takes it, over the same `window` periods before (by weekday
+   > with `seasonality`, attached declared periods left out): their median with `yearly`
+   > on, their mean without, since that is what a check without `yearly` is scored against; a period is looked at only once
+   > `min_points` periods precede it. A peak outlasting about half the window's prior
+   > periods (same-weekday ones with `seasonality`) lifts that median with it, so its tail is not detected; an attached entry covering it is what fixes
+   > that, as it does for scoring. (2) *A run* is consecutive qualifying periods: at least
+   > two days, since one day is a spike rather than a period, or one week. A day with no
+   > point ends a run; no gap is bridged. (3) *The same time* in two years means the runs,
+   > laid on one year, come within seven days of each other, so a sale that moves by up to a
+   > week still matches. Two runs in one season (a sale split by an ordinary day, or one that
+   > crosses the new year) are one year, not two. (4) *What is returned*: each period's
+   > occurrences per year with their peak ratio and how many of their points were backfilled,
+   > the month/day span a recurring one covers, the attached entries that overlap it, and how
+   > much history stood behind the answer; when there was nothing to look at, the reason (not
+   > a per-period metric, no history, too little history). It is computed on request from the
+   > stored points, a separate read from the trend's baseline read so the trend view asks for
+   > it only on a per-period check. (5) *Promoting* is an admin action that re-reads the
+   > history and names the period by the start of its most recent occurrence, so a period the
+   > history no longer shows is refused rather than invented, and one an existing entry
+   > already covers is refused naming that entry, so a season is declared once. A recurring period becomes a
+   > recurring entry over that span, one seen once a dated entry. Attaching it to the check is
+   > optional and done in the same transaction, so a check that cannot take it (no `yearly`)
+   > leaves no entry behind. The entry is audited as created, with what it was promoted from.
 
 6. **Retention.** A check with `yearly` on, or on a per-period metric, keeps three years of
    periods plus its window (about 1,100 daily points). Other anomaly checks keep what they

@@ -237,6 +237,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   unity_catalog: <ThunderboltOutlined />,
   adls_gen2: <CloudOutlined />,
   s3: <CloudOutlined />,
+  gcs: <CloudOutlined />,
   iceberg: <GoldOutlined />,
   postgres: <DatabaseOutlined />,
   mysql: <DatabaseOutlined />,

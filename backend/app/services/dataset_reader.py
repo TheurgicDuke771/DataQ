@@ -13,7 +13,11 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import file_stat
+from backend.app.datasources.flatfile import (
+    MissingCredentialError,
+    file_stat,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     ROW_DELETES_PRESENT,
@@ -77,15 +81,6 @@ def _too_large(count: int, max_rows: int, *, side_hint: str) -> DatasetTooLargeE
         "diff would be silently wrong, so DataQ refuses instead)",
         detail={"rows": count, "max_rows": max_rows},
     )
-
-
-def _require_secret(connection: Connection, secret_store: SecretStore) -> str:
-    if not connection.secret_ref:
-        raise DatasetReadUnsupportedError(
-            "connection has no stored credential",
-            detail={"connection_id": str(connection.id)},
-        )
-    return secret_store.get(connection.secret_ref)
 
 
 # ───────────────────────── SQL (snowflake / unity_catalog) ──────────
@@ -187,10 +182,10 @@ def _sql_read(
     return df
 
 
-# ───────────────────────── flat file (adls_gen2 / s3) ───────────────
+# ───────────────────────── flat file (adls_gen2 / s3 / gcs) ─────────
 
 
-def _enforce_object_size(connection: Connection, *, path: str, secret: str) -> None:
+def _enforce_object_size(connection: Connection, *, path: str, secret: str | None) -> None:
     """Refuse an over-cap object before it is downloaded (#595 J2)."""
     cap = get_settings().run_max_scan_bytes
     if cap <= 0:
@@ -210,7 +205,17 @@ def _flatfile_read(
         raise DatasetReadUnsupportedError(
             "flat-file comparison side needs a resolved path", detail={"spec": "path"}
         )
-    secret = _require_secret(connection, secret_store)
+    try:
+        secret = resolve_flatfile_secret(
+            conn_type=connection.type,
+            config=dict(connection.config),
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
+    except MissingCredentialError as exc:
+        raise DatasetReadUnsupportedError(
+            "connection has no stored credential", detail={"connection_id": str(connection.id)}
+        ) from exc
     # A cheap preflight DOES exist now (#595 J2): the store's metadata call reports the object's
     # byte length, so the same worker-memory guardrail the run path uses applies here too.
     _enforce_object_size(connection, path=path, secret=secret)
@@ -290,6 +295,7 @@ _READERS: dict[str, _Reader] = {
     "unity_catalog": _sql_read,
     "adls_gen2": _flatfile_read,
     "s3": _flatfile_read,
+    "gcs": _flatfile_read,
     "iceberg": _iceberg_read,
     **dict.fromkeys(GENERIC_SQL_TYPES, _sql_read),
 }

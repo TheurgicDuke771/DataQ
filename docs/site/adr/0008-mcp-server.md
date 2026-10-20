@@ -292,3 +292,15 @@ parameter's own JSON-schema `enum` carries the live catalog, so a client sees th
 on every turn with no companion `list_doc_pages()` tool needed. Workspace-agnostic — no per-suite
 or per-workspace gate, since these pages carry no tenant data. The split becomes **48 tools: 25
 read-only, 18 that change state, 5 live-probe**.
+
+## Amendment — the seasonal calendar reads, 54 → 56
+
+Two read-only tools for ADR 0048's seasonal periods. `list_seasonal_periods` lists the declared
+workspace calendar (any signed-in user, as over REST), so an assistant can take the id an anomaly
+check's `seasonal_periods` needs from MCP rather than from the user; `create_check` had said the
+ids were not readable over MCP, and now points here. `get_detected_seasonal_periods` gates on
+`view` of the check's suite and returns the periods the check's own history shows, with how much
+history stood behind them and, on every response, that a detected period changes no verdict.
+Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
+admin-only, and MCP exposes no admin-only tool. The split becomes **56 tools: 32 read-only, 18
+that change state, 6 live-probe**.

@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.services import audit_service
 from backend.app.services.classification_vocab import DETECTED, fold_key
 
@@ -105,7 +106,7 @@ def probe_is_own_target(
         return False
     if resolved.batch is not None:
         return False
-    if connection.type in ("adls_gen2", "s3"):
+    if connection.type in FLAT_FILE_TYPES:
         return table is None and _norm(path) == _norm(resolved.table)
     if connection.type == "iceberg":
         # The resolver folds the namespace into `table`; compare against the raw target instead.

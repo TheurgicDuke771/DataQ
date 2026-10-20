@@ -7,6 +7,7 @@
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
 | ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
+| [Google Cloud Storage](#google-cloud-storage) (flat files) | bucket, service-account key file **or** anonymous (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
@@ -110,7 +111,7 @@ itself can be checked.
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, GCS `endpoint_url` / `auth_type`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
 `tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
@@ -196,6 +197,40 @@ incidents (decided in
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.
+
+### Google Cloud Storage
+
+The third object store beside ADLS Gen2 and S3: the same flat-file runner, batch resolution,
+browsing, profiler and monitors — including [arrival-time freshness](#freshness-monitor-all-datasources--adr-00120030)
+— over a GCS bucket. Arrival time is the object's creation time (when its current
+content was uploaded), so a metadata-only edit does not make a stale file look fresh.
+
+- **Bucket** — the bucket name. A suite's run target is a path inside it (`raw/orders.csv`) or a
+  batch pattern, exactly as on S3.
+- **Authentication** — a **service account key** (the downloaded JSON key file, pasted whole as
+  the credential; it is stored in the secret store and never returned) or **anonymous** for a
+  public bucket. DataQ requests the key with the read-only Cloud Storage scope, so the credential
+  can never write through DataQ. Give the service account `roles/storage.objectViewer` on the
+  bucket — that role is enough for everything DataQ does (`storage.objects.list` + `get`), and the
+  connection test is a one-object listing precisely so it passes under that least-privilege role
+  (a bucket-level GET would need `storage.buckets.get`, which the role lacks). Keyless /
+  workload-identity auth is not yet supported.
+- **Project ID** (optional) — the project billed for reads, needed for a **Requester Pays**
+  bucket (sent as the request's billing project); blank bills the bucket's owner.
+- **Endpoint URL** (optional) — an emulator such as `fake-gcs-server` (`http://fake-gcs:4443`)
+  or a GCS-compatible endpoint; blank addresses Google Cloud Storage. The endpoint must **not**
+  embed a credential (`https://user:token@host`) — connection `config` is stored and returned
+  in plaintext, so it is rejected at save time.
+
+**Asset identity.** With no **Endpoint URL** the namespace is `gs://{bucket}` (the OpenLineage
+naming convention); with one it is `gs://{host[:port]}/{bucket}`, so two stores sharing a bucket
+name stay distinct — the same rule as [S3](#s3-compatible-object-stores).
+
+**Verification.** The adapter is exercised end to end against `fake-gcs-server` in the opt-in
+integration lane (`tests/integration/test_gcs_datasource.py`, `GCS_EMULATOR_URL`), including
+the service-account token flow against a locally minted key. Real Google Cloud Storage has
+not been exercised — no cloud test account exists — so a first production connection is the
+first real-GCS run; the connection test and a dry-run tell you in seconds.
 
 ### PostgreSQL
 
@@ -760,7 +795,7 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 
 ### Flat files: formats and CSV delimiters
 
-Flat-file connections (ADLS Gen2 / S3) read `.csv`, `.parquet`/`.pq`, and JSON as
+Flat-file connections (ADLS Gen2 / S3 / GCS) read `.csv`, `.parquet`/`.pq`, and JSON as
 `.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
 format from the file's **extension**; a target's *File format* choice is used by the
 profiler and column listing. **The CSV
@@ -893,7 +928,7 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake, Unity Catalog or any of the SQL engines), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
+   file/path or batch pattern (ADLS/S3/GCS), or an Iceberg `namespace.table`. On every datasource
    you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
@@ -921,7 +956,7 @@ target still works everywhere.
 - **Iceberg — Browse schemas…** lists the catalog's top-level namespaces, then a namespace's
   tables, and fills **Namespace** and **Table**. It reads catalog metadata only, never a data
   file. Nested namespaces are not listed — type a nested one in.
-- **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
+- **ADLS Gen2 / S3 / GCS — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
 
@@ -1133,7 +1168,7 @@ per rule, and stops once it has caught up.
 measures hours since `MAX(column)` and bands that age with the thresholds. A **fail or
 critical threshold is required** — without one, a freshness check could never fail.
 
-**On a flat file (ADLS Gen2 / S3) the timestamp column is optional.** Leave it blank
+**On a flat file (ADLS Gen2 / S3 / GCS) the timestamp column is optional.** Leave it blank
 and the check measures **when the file last landed** (the object's modified time)
 instead of the newest timestamp inside it. These catch different failures, and a
 landing zone usually wants both:
@@ -1189,7 +1224,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
 data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
-a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3/GCS flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
@@ -1308,6 +1343,82 @@ October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the s
 expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
 2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.
 
+**Declared seasonal periods** line up the peaks the weekday matching cannot: a sale that
+moves by more than a few days, or a fixed date such as 25 December. They live in one
+workspace calendar, managed through the REST API under `/api/v1/admin/seasonal-periods`
+(there is no calendar screen in the app yet; anyone signed in can read it, workspace
+admins change it, every change is audited, and AI assistants read it with the
+`list_seasonal_periods` MCP tool). An entry
+is either **recurring**, a month-and-day range every year that may wrap the year end (20
+December to 5 January; a 29 February bound is taken as 28 February in a year without one),
+or **dated**, an explicit start and end. Dated entries that share a **series** (compared
+case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
+"Spring sale 2026" with series "Spring sale".
+
+An entry changes no check until it is attached: a per-period anomaly check with `yearly` on
+lists the entries that apply to its table in `seasonal_periods` (their ids; an unknown id is
+refused when the check is saved, and an entry that any check still names cannot be deleted —
+the refusal names the checks). While attached:
+
+- A day inside the period is compared with the same offset into the period's **previous
+  occurrence** (recurring: the same range the year before, then two and three years back;
+  dated: the earlier entries of its series), instead of the nearest weekday. The result's
+  `declared.inside` names the entry and the occurrence, and `declared.inside.matched` the
+  earlier days it was compared with. A weekly check works in weeks that start on Monday: a
+  week is inside a period when its Monday is, and it is matched only to a week that lies
+  inside the earlier occurrence on both sides, so a period that began mid-week last year
+  may have one week fewer to match.
+- Days inside any attached period are left out of the level, so the weeks after a sale are
+  not judged against it (`declared.excluded_from_level` counts them), and an ordinary day is
+  not matched to an earlier year's sale day.
+- **First year.** With no earlier occurrence in the history, the check knows a rise is
+  expected but not how large. A value **above** the level is reported as within the declared
+  period and not banded (the run reads `skipped`, with `reason: within_declared_period`); a
+  value **below** it is judged against the ordinary level as usual, so a load that fails
+  during a first-year sale still alerts. `declared.inside.first_year` says when this applied.
+- Every result on an attached check also carries `declared.z_score_without`,
+  `declared.verdict_without` and `declared.verdict_changed`: what the run would have scored
+  with no calendar, so it is always possible to tell whether the calendar changed the
+  verdict. An attached id with no entry behind it (which the delete refusal prevents) is
+  listed in `declared.missing`; the check keeps running.
+
+A suite export carries the ids; importing it into a workspace whose calendar does not hold
+them is refused with the ids named.
+
+**Detected seasonal periods** are what a per-period check's own history shows, read when
+someone asks: `GET /api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`
+(view access to the suite), or the `get_detected_seasonal_periods` MCP tool. A period is
+detected where the value ran at **1.5 times** its level or more (taken as scoring takes it: the
+median of the window before it with `yearly` on, attached declared periods left out, and the
+mean of the window without `yearly`) for at least **two days
+in a row**, or one week on a weekly check. A single day is a spike, not a period, and a day
+with no point ends a run. Seen at the same time of year in two or more years (within a week
+of each other, so a sale that moves a few days still matches) it is **recurring**; in one
+year, **seen once**. The response lists each period's occurrences by year, with their peak
+ratio and how many of their points were seeded from the table rather than seen by a run, the
+month-and-day span a recurring one covers, any attached entry that overlaps it, and how much
+history stood behind it (points, first and last day, years).
+
+A detected period is a description. It is not stored and **changes no verdict**: only an
+entry on the calendar, attached to the check, does. An empty list says less than it seems:
+`reason` is set when nothing could be looked at (`not_a_per_period_metric`, `no_history`,
+`insufficient_history`, `invalid_config`); with no reason, the history was read and nothing
+reached 1.5 times for long enough (or the stored history was discarded because the
+check's metric, date column or day/week setting was edited). A peak that lasts more than
+about half the check's window of prior periods (same-weekday periods when seasonality is
+on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
+a calendar entry over it fixes that, for detection as for scoring.
+
+A workspace admin turns a detected period into a calendar entry with
+`POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
+most recent occurrence, as the detection returned it) and a `name`. The history is read
+again, so a period it no longer shows is refused, and so is a season an entry on the
+calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring
+entry over the month-and-day span; one seen once becomes a dated entry, optionally in a
+`series`. With `attach: true` the check names the new entry too, in the same change, so a
+check that cannot take it (one without `yearly`) leaves no entry behind. The new entry is
+audited as created, with the period it came from.
+
 ### Comparison check (all datasources — ADR 0015)
 
 *Does this dataset reconcile against that one?* A comparison check diffs the suite's
@@ -1378,7 +1489,7 @@ the type your warehouse/catalog shows you:
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Trino** compares the same way, in its own type names: `DECIMAL(12, 2)`, `VARCHAR`,
   `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT`.
-- **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
+- **Unity Catalog, ADLS Gen2 / S3 / GCS, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
   `object`/`object_`/`O` does it fall back to a **row-wise Python value-type compare**.
@@ -1407,9 +1518,9 @@ the type your warehouse/catalog shows you:
 | Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
-| ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
-| ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
-| ADLS Gen2 / S3 (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
+| ADLS Gen2 / S3 / GCS (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
+| ADLS Gen2 / S3 / GCS (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
+| ADLS Gen2 / S3 / GCS (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
 out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/JSON/Iceberg), a failing

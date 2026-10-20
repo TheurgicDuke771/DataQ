@@ -13,6 +13,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.adls import AdlsConnectionAdapter
 from backend.app.datasources.base import (
+    FLAT_FILE_TYPES,
     BatchSpec,
     CheckRunner,
     ConnectionAdapter,
@@ -22,6 +23,7 @@ from backend.app.datasources.base import (
     TargetShapeError,
 )
 from backend.app.datasources.flatfile import build_flatfile_runner
+from backend.app.datasources.gcs import GcsConnectionAdapter
 from backend.app.datasources.generic_sql import (
     GenericSqlConnectionAdapter,
     SqlEngineSpec,
@@ -53,6 +55,7 @@ _ADAPTERS: dict[str, ConnectionAdapter] = {
     "snowflake": SnowflakeConnectionAdapter(),
     "adls_gen2": AdlsConnectionAdapter(),
     "s3": S3ConnectionAdapter(),
+    "gcs": GcsConnectionAdapter(),
     "unity_catalog": UnityCatalogConnectionAdapter(),
     "iceberg": IcebergConnectionAdapter(),
     "adf": ADFConnectionAdapter(),
@@ -83,6 +86,20 @@ def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
             "explicitly empty if it has none"
         )
     return {slot: tuple(fields) for slot, fields in slots.items()}
+
+
+def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
+    """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
+    none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
+
+    Answered by the adapter: it declares ``secret_optional`` and its config says, per auth mode,
+    whether it ``requires_secret()``.
+    """
+    adapter = _ADAPTERS.get(conn_type)
+    if adapter is None or not getattr(adapter, "secret_optional", False):
+        return False
+    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
+    return callable(requires) and not requires()
 
 
 def credential_expiry(
@@ -191,6 +208,7 @@ _RUNNER_BUILDERS: dict[str, _RunnerBuilder] = {
     "snowflake": _snowflake_runner,
     "adls_gen2": _flatfile_runner,
     "s3": _flatfile_runner,
+    "gcs": _flatfile_runner,
     "unity_catalog": _unity_catalog_runner,
     "iceberg": _iceberg_runner,
     **{conn_type: _generic_sql_runner(spec) for conn_type, spec in SQL_ENGINES.items()},
@@ -407,13 +425,14 @@ _TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = 
     "iceberg": _iceberg_target,
     "adls_gen2": _flatfile_target,
     "s3": _flatfile_target,
+    "gcs": _flatfile_target,
     **{conn_type: _generic_sql_target(spec) for conn_type, spec in SQL_ENGINES.items()},
 }
 
 
 #: Datasources whose runner materialises rows in the worker, and which therefore accept a
 #: ``sampling`` block on their run target (#595).
-SAMPLING_CAPABLE_TYPES: frozenset[str] = frozenset({"adls_gen2", "s3", "unity_catalog"})
+SAMPLING_CAPABLE_TYPES: frozenset[str] = frozenset({*FLAT_FILE_TYPES, "unity_catalog"})
 
 
 def _target_sampling(target: dict[str, Any], conn_type: str) -> SampleSpec | None:

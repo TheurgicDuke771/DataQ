@@ -103,10 +103,13 @@ edited, members added, audit events. Decide quickly whether to restore — the o
 backup relative to the failure, the more you re-create by hand.
 
 The **audit chain** deserves one note. The chain itself verifies clean after a restore. If
-you publish the chain head to an external anchor (`TAMPER_ANCHOR=webhook`), the anchor holds
-heads that the restored database never reaches: that is the restore, visible from outside,
-which is exactly what the anchor is for. Record the restore (when, from which backup) where
-you keep the anchor, so a later audit can tell a restore from tampering.
+you publish the chain head to an external anchor (`TAMPER_ANCHOR=webhook` or
+`object_lock`), the anchor holds heads that the restored database never reaches: that is
+the restore, visible from outside, which is exactly what the anchor is for. With the
+object-lock anchor, **Verify now** on the admin Compliance page (or
+`GET /api/v1/admin/audit-events/verify`) reads those heads back and reports each one the
+restored chain no longer contains as *missing*. Record the restore (when, from which
+backup) where you keep the anchor, so a later audit can tell a restore from tampering.
 
 ## Upgrading
 

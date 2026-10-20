@@ -87,6 +87,7 @@ def test_regex_work_is_bounded_on_hostile_input() -> None:
         ("Apache Airflow — QA", "airflow", "qa", "conn-airflow-qa"),  # env deduped, not doubled
         ("dbt — Retail Lineage (harness)", "dbt", "dev", "conn-dbt-retail-lineage-dev"),
         ("harness-iceberg", "iceberg", "dev", "conn-iceberg-harness-dev"),
+        ("Google Cloud Storage — landing", "gcs", "dev", "conn-gcs-landing-dev"),
     ],
 )
 def test_connection_ref_matches_the_curated_prod_convention(

@@ -9,6 +9,10 @@ from .admin_overview_read import AdminOverviewRead
 from .admin_suite_read import AdminSuiteRead
 from .admin_user_read import AdminUserRead
 from .admin_webhook_read import AdminWebhookRead
+from .anchor_finding import AnchorFinding
+from .anchor_finding_match import AnchorFindingMatch
+from .anchor_verification_read import AnchorVerificationRead
+from .anchor_verification_read_status import AnchorVerificationReadStatus
 from .api_key_create import ApiKeyCreate
 from .api_key_created import ApiKeyCreated
 from .api_key_read import ApiKeyRead
@@ -122,10 +126,19 @@ from .data_subject_match import DataSubjectMatch
 from .data_subject_match_observed_value_type_0 import DataSubjectMatchObservedValueType0
 from .data_subject_match_sample_failures_type_0 import DataSubjectMatchSampleFailuresType0
 from .data_subject_request import DataSubjectRequest
+from .declared_ref_read import DeclaredRefRead
 from .deployment_posture_read import DeploymentPostureRead
 from .deployment_posture_read_zero_sample_source import DeploymentPostureReadZeroSampleSource
 from .detected_classification_read import DetectedClassificationRead
 from .detected_classification_read_effect import DetectedClassificationReadEffect
+from .detected_occurrence_read import DetectedOccurrenceRead
+from .detected_period_read import DetectedPeriodRead
+from .detected_period_read_kind import DetectedPeriodReadKind
+from .detected_range_read import DetectedRangeRead
+from .detected_seasonal_periods_read import DetectedSeasonalPeriodsRead
+from .detection_history_read import DetectionHistoryRead
+from .detection_thresholds_read import DetectionThresholdsRead
+from .detection_thresholds_read_level_type_0 import DetectionThresholdsReadLevelType0
 from .dimension_score_read import DimensionScoreRead
 from .document_problem_read import DocumentProblemRead
 from .effective_coverage_read import EffectiveCoverageRead
@@ -242,6 +255,13 @@ from .scorecard_read import ScorecardRead
 from .scoring_weights_read import ScoringWeightsRead
 from .scoring_weights_read_defaults import ScoringWeightsReadDefaults
 from .scoring_weights_write import ScoringWeightsWrite
+from .seasonal_period_patch import SeasonalPeriodPatch
+from .seasonal_period_patch_kind_type_0 import SeasonalPeriodPatchKindType0
+from .seasonal_period_promote import SeasonalPeriodPromote
+from .seasonal_period_read import SeasonalPeriodRead
+from .seasonal_period_read_kind import SeasonalPeriodReadKind
+from .seasonal_period_write import SeasonalPeriodWrite
+from .seasonal_period_write_kind import SeasonalPeriodWriteKind
 from .secret_sweep_report_read import SecretSweepReportRead
 from .secret_sweep_report_read_mode_type_0 import SecretSweepReportReadModeType0
 from .secret_sweep_report_read_status import SecretSweepReportReadStatus
@@ -309,6 +329,10 @@ __all__ = (
     "AdminSuiteRead",
     "AdminUserRead",
     "AdminWebhookRead",
+    "AnchorFinding",
+    "AnchorFindingMatch",
+    "AnchorVerificationRead",
+    "AnchorVerificationReadStatus",
     "ApiKeyCreate",
     "ApiKeyCreated",
     "ApiKeyRead",
@@ -418,10 +442,19 @@ __all__ = (
     "DataSubjectMatchObservedValueType0",
     "DataSubjectMatchSampleFailuresType0",
     "DataSubjectRequest",
+    "DeclaredRefRead",
     "DeploymentPostureRead",
     "DeploymentPostureReadZeroSampleSource",
     "DetectedClassificationRead",
     "DetectedClassificationReadEffect",
+    "DetectedOccurrenceRead",
+    "DetectedPeriodRead",
+    "DetectedPeriodReadKind",
+    "DetectedRangeRead",
+    "DetectedSeasonalPeriodsRead",
+    "DetectionHistoryRead",
+    "DetectionThresholdsRead",
+    "DetectionThresholdsReadLevelType0",
     "DimensionScoreRead",
     "DocumentProblemRead",
     "EffectiveCoverageRead",
@@ -538,6 +571,13 @@ __all__ = (
     "ScoringWeightsRead",
     "ScoringWeightsReadDefaults",
     "ScoringWeightsWrite",
+    "SeasonalPeriodPatch",
+    "SeasonalPeriodPatchKindType0",
+    "SeasonalPeriodPromote",
+    "SeasonalPeriodRead",
+    "SeasonalPeriodReadKind",
+    "SeasonalPeriodWrite",
+    "SeasonalPeriodWriteKind",
     "SecretSweepReportRead",
     "SecretSweepReportReadModeType0",
     "SecretSweepReportReadStatus",
