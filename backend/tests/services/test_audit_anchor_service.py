@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from backend.app.core.config import get_settings
 from backend.app.core.tamper_anchor import (
     NoopTamperAnchor,
     ObjectLockAnchor,
@@ -30,8 +31,8 @@ class _Store:
             raise self.fail
         return [StoredObject(k) for k in self.objects if k.startswith(prefix)]
 
-    def get(self, obj: StoredObject) -> bytes:
-        return self.objects[obj.key]
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
+        return [self.objects[o.key] for o in objects]
 
 
 def _anchor(store: _Store) -> ObjectLockAnchor:
@@ -113,7 +114,7 @@ def test_a_published_head_the_chain_never_reaches_is_a_mismatch(db_session: Any)
 def test_a_head_older_than_the_last_purge_is_explained_not_missing(db_session: Any) -> None:
     store = _Store()
     _commit_event(db_session)
-    cutoff = datetime.now(UTC) - timedelta(days=10)
+    cutoff = datetime.now(UTC) - timedelta(days=400)  # a real sweep: older than retention
     db_session.add(AuditChainCheckpoint(cutoff=cutoff, deleted_count=5))
     db_session.commit()
     _write(store, "1" * 64, as_of=cutoff - timedelta(days=1))  # purged by that sweep
@@ -125,6 +126,45 @@ def test_a_head_older_than_the_last_purge_is_explained_not_missing(db_session: A
     assert result.status == "mismatch"
     assert (result.purged_count, result.missing_count) == (1, 1)
     assert [f.key for f in result.findings] == [newer]
+
+
+def test_a_forged_future_checkpoint_cannot_explain_missing_anchors(db_session: Any) -> None:
+    """One inserted checkpoint row with a far-future cutoff would otherwise turn every
+    missing anchor into "purged" — the exact cover a chain rewrite needs."""
+    store = _Store()
+    _commit_event(db_session)
+    db_session.add(AuditChainCheckpoint(cutoff=datetime(2999, 1, 1, tzinfo=UTC), deleted_count=0))
+    db_session.add(
+        AuditChainCheckpoint(cutoff=datetime.now(UTC) - timedelta(days=1), deleted_count=0)
+    )
+    db_session.commit()
+    key = _write(store, "4" * 64, as_of=datetime.now(UTC) - timedelta(days=30))
+
+    result = audit_anchor_service.verify_anchors(db_session, _anchor(store))
+
+    assert result is not None
+    assert result.status == "mismatch"
+    assert (result.purged_count, result.missing_count) == (0, 1)
+    assert [f.key for f in result.findings] == [key]
+
+
+def test_no_retention_means_nothing_is_explained_by_a_purge(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("AUDIT_RETENTION_DAYS", "0")
+    get_settings.cache_clear()
+    store = _Store()
+    db_session.add(
+        AuditChainCheckpoint(cutoff=datetime.now(UTC) - timedelta(days=400), deleted_count=1)
+    )
+    db_session.commit()
+    _write(store, "5" * 64, as_of=datetime.now(UTC) - timedelta(days=500))
+
+    result = audit_anchor_service.verify_anchors(db_session, _anchor(store))
+    get_settings.cache_clear()
+
+    assert result is not None
+    assert result.missing_count == 1
 
 
 def test_a_purge_anchors_last_deleted_hash_counts_as_present(db_session: Any) -> None:

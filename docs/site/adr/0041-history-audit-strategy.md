@@ -269,15 +269,22 @@ enforced by the store, not by DataQ — and *can* be listed. `verify_anchors`
 (surfaced as the `anchors` section of `GET /admin/audit-events/verify`, null for
 `none`/`webhook`) reads the newest anchors and matches each head against the live
 rows' `row_hash` plus the purge checkpoints' `last_deleted_row_hash`: **present**,
-**purged** (its `as_of` predates the latest checkpoint cutoff, so the row is gone
-by design), **missing** (a head the local chain never reaches — the restore the
+**purged** (its `as_of` predates the latest checkpoint cutoff a real sweep could
+have written — one no later than `now - AUDIT_RETENTION_DAYS`, so a forged
+far-future checkpoint row cannot launder missing anchors; with retention off,
+nothing is purged), **missing** (a head the local chain never reaches — the restore the
 backup/restore runbook relies on this to detect, or a rewritten chain) or
 **malformed** (an object under the prefix DataQ did not write). Two honesty rules
 carried over from ADR 0039: a store outage is its own state, `unavailable`, never
 folded into `empty`; and the S3 listing walks **every object version**, because a
 versionless `delete_object` on a locked bucket succeeds by writing a delete marker
 that hides the current version from a plain listing while the locked version
-underneath survives — verification must read the version, not the listing.
+underneath survives — verification must read the version, not the listing. The Azure
+store lists blob versions for the same reason. The daily `verify_audit_chain`
+task runs the same read-back and logs `audit_anchor_mismatch` (or
+`audit_anchor_unverified`) at ERROR, so a restore is caught unattended; the
+endpoint's top-level `status` stays the chain's own verdict and the anchor
+verdict sits beside it in `anchors.status`, keeping the existing contract.
 
 **Verification posture.** The S3 path was live-verified against MinIO with object
 lock (bucket created `ObjectLockEnabledForBucket=True`): the object carries the

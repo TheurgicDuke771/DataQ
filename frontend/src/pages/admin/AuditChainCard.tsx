@@ -143,17 +143,25 @@ function ChainResult({ result }: { result: AuditChainStatus }) {
   );
 }
 
-const ANCHOR_TAG: Record<AnchorVerification['status'], { color: string; label: string }> = {
+const ANCHOR_TAG: Record<
+  AnchorVerification['status'] | 'malformed',
+  { color: string; label: string }
+> = {
   ok: { color: 'green', label: 'Every published head is in the chain' },
   mismatch: { color: 'red', label: 'A published head is missing from the chain' },
+  malformed: { color: 'orange', label: 'An object under the anchor prefix is not an anchor' },
   empty: { color: 'default', label: 'Nothing published yet' },
   unavailable: { color: 'orange', label: 'Anchor store unreachable — not checked' },
 };
 
 function AnchorReadBack({ anchors }: { anchors: AnchorVerification }) {
+  const tag =
+    anchors.status === 'mismatch' && anchors.missing_count === 0
+      ? ANCHOR_TAG.malformed
+      : ANCHOR_TAG[anchors.status];
   return (
     <Flex vertical gap={4}>
-      <Tag color={ANCHOR_TAG[anchors.status].color}>{ANCHOR_TAG[anchors.status].label}</Tag>
+      <Tag color={tag.color}>{tag.label}</Tag>
       {anchors.status === 'unavailable' ? (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {anchors.error} — this says nothing about the anchors, only that they could not be read.
@@ -165,15 +173,15 @@ function AnchorReadBack({ anchors }: { anchors: AnchorVerification }) {
           {anchors.missing_count} missing, {anchors.malformed_count} not an anchor.
         </Typography.Text>
       )}
-      {anchors.status === 'mismatch' && (
+      {anchors.status === 'mismatch' && anchors.missing_count > 0 && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           A missing head means the database was restored to before that anchor was published, or the
           chain was rewritten. Heads older than the last retention purge are expected to be gone and
           are counted separately.
         </Typography.Text>
       )}
-      {anchors.findings.map((f) => (
-        <Typography.Text key={f.key} code style={{ fontSize: 12 }}>
+      {anchors.findings.map((f, i) => (
+        <Typography.Text key={`${i}-${f.key}`} code style={{ fontSize: 12 }}>
           {f.match}: {f.key}
         </Typography.Text>
       ))}

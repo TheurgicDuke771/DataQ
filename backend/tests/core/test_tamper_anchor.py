@@ -204,8 +204,8 @@ class _FakeStore:
             raise self.fail_list
         return [StoredObject(k) for k in self.objects if k.startswith(prefix)]
 
-    def get(self, obj: StoredObject) -> bytes:
-        return self.objects[obj.key]
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
+        return [self.objects[o.key] for o in objects]
 
 
 _NOW = datetime(2026, 10, 20, 12, 30, 45, 123456, tzinfo=UTC)
@@ -285,6 +285,25 @@ def test_object_lock_read_anchors_returns_newest_first_and_flags_foreign_objects
     assert result.records[1].retain_until == _NOW + timedelta(days=400)
     assert result.records[1].event_count == 5
     assert result.truncated is False
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"head_hash": "h", "as_of": "2026-01-01T00:00:00"}',
+        b'{"head_hash": "h", "as_of": "yesterday"}',
+        b'{"head_hash": "h"}',
+    ],
+)
+def test_an_anchor_without_an_aware_timestamp_is_malformed(body: bytes) -> None:
+    """A naive `as_of` cannot be ordered against the tz-aware purge cutoff; reading
+    it as valid would make verification raise instead of reporting."""
+    store = _FakeStore()
+    store.objects["audit-anchors/x.json"] = body
+
+    [record] = _object_lock_anchor(store).read_anchors().records
+
+    assert record.malformed is True
 
 
 def test_object_lock_read_anchors_honours_the_limit_and_reports_truncation() -> None:
@@ -412,8 +431,10 @@ def test_s3_store_lists_every_version_so_a_delete_marker_cannot_hide_an_anchor(
         StoredObject("audit-anchors/a.json", "v1"),
         StoredObject("audit-anchors/b.json", "null"),
     ]
-    assert store.get(objects[0]) == b'{"head_hash": "h"}'
-    assert store.get(objects[1]) == b'{"head_hash": "h"}'
+    clients.clear()
+    assert store.fetch(objects) == [b'{"head_hash": "h"}', b'{"head_hash": "h"}']
+    # One client (and one secret read) for the whole batch, not one per object.
+    assert len(clients) == 1
     gets = [kw for c in clients for name, kw in c.calls if name == "get_object"]
     # A real version id is passed through; the unversioned "null" sentinel is not.
     assert gets == [
@@ -449,10 +470,13 @@ class _CapturingContainer:
 
     def list_blobs(self, **kwargs: Any) -> list[Any]:
         self.calls.append(("list_blobs", kwargs))
-        return [SimpleNamespace(name="audit-anchors/a.json")]
+        return [
+            SimpleNamespace(name="audit-anchors/a.json", version_id="2026-10-20T00:00:00Z"),
+            SimpleNamespace(name="audit-anchors/b.json", version_id=None),
+        ]
 
-    def download_blob(self, name: str) -> Any:
-        self.calls.append(("download_blob", {"name": name}))
+    def download_blob(self, name: str, **kwargs: Any) -> Any:
+        self.calls.append(("download_blob", {"name": name, **kwargs}))
         return SimpleNamespace(readall=lambda: b'{"head_hash": "h"}')
 
 
@@ -517,9 +541,20 @@ def test_azure_store_lists_and_reads_blobs_under_the_prefix() -> None:
     store = AzureImmutableBlobStore(_azure_settings(), client_factory=lambda: service)
 
     objects = store.list_objects("audit-anchors/")
-    assert objects == [StoredObject("audit-anchors/a.json")]
-    assert store.get(objects[0]) == b'{"head_hash": "h"}'
-    assert container.calls[0] == ("list_blobs", {"name_starts_with": "audit-anchors/"})
+    assert objects == [
+        StoredObject("audit-anchors/a.json", "2026-10-20T00:00:00Z"),
+        StoredObject("audit-anchors/b.json"),
+    ]
+    assert store.fetch(objects) == [b'{"head_hash": "h"}', b'{"head_hash": "h"}']
+    # Every version, like S3: an overwrite or soft delete must not hide a locked anchor.
+    assert container.calls[0] == (
+        "list_blobs",
+        {"name_starts_with": "audit-anchors/", "include": ["versions"]},
+    )
+    assert container.calls[1:] == [
+        ("download_blob", {"name": "audit-anchors/a.json", "version_id": "2026-10-20T00:00:00Z"}),
+        ("download_blob", {"name": "audit-anchors/b.json"}),
+    ]
     assert service.closed == 2
 
 

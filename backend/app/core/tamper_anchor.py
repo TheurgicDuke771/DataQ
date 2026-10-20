@@ -151,7 +151,9 @@ class AnchorObjectStore(Protocol):
 
     def list_objects(self, prefix: str) -> list[StoredObject]: ...
 
-    def get(self, obj: StoredObject) -> bytes: ...
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
+        """Read each object's body, in order, over one client."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -174,12 +176,14 @@ class AnchorReadResult:
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
+    """An aware datetime, or None — a naive one cannot be ordered against the chain."""
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _parse_record(key: str, body: bytes) -> AnchorRecord:
@@ -188,7 +192,8 @@ def _parse_record(key: str, body: bytes) -> AnchorRecord:
     except ValueError:
         data = None
     head = data.get("head_hash") if isinstance(data, dict) else None
-    if not isinstance(data, dict) or not isinstance(head, str) or not head:
+    as_of = _parse_timestamp(data.get("as_of")) if isinstance(data, dict) else None
+    if not isinstance(data, dict) or not isinstance(head, str) or not head or as_of is None:
         return AnchorRecord(key, None, None, None, None, None, malformed=True)
     count = data.get("event_count")
     label = data.get("label")
@@ -197,7 +202,7 @@ def _parse_record(key: str, body: bytes) -> AnchorRecord:
         label=label if isinstance(label, str) else None,
         head_hash=head,
         event_count=count if isinstance(count, int) else None,
-        as_of=_parse_timestamp(data.get("as_of")),
+        as_of=as_of,
         retain_until=_parse_timestamp(data.get("retain_until")),
     )
 
@@ -260,7 +265,11 @@ class ObjectLockAnchor:
             # Keys start with the publish timestamp, so a key sort is a time sort.
             objects.sort(key=lambda o: o.key, reverse=True)
             truncated = len(objects) > limit
-            records = [_parse_record(obj.key, self._store.get(obj)) for obj in objects[:limit]]
+            page = objects[:limit]
+            records = [
+                _parse_record(obj.key, body)
+                for obj, body in zip(page, self._store.fetch(page), strict=True)
+            ]
         except Exception as exc:
             log.error(
                 "tamper_anchor_read_failed",
@@ -329,15 +338,19 @@ class S3ObjectLockStore:
             )
         return found
 
-    def get(self, obj: StoredObject) -> bytes:
-        kwargs: dict[str, Any] = {"Bucket": self._bucket, "Key": obj.key}
-        if obj.version_id and obj.version_id != "null":
-            kwargs["VersionId"] = obj.version_id
-        body = self._client().get_object(**kwargs)["Body"]
-        try:
-            return bytes(body.read())
-        finally:
-            body.close()
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
+        client = self._client()
+        bodies: list[bytes] = []
+        for obj in objects:
+            kwargs: dict[str, Any] = {"Bucket": self._bucket, "Key": obj.key}
+            if obj.version_id and obj.version_id != "null":
+                kwargs["VersionId"] = obj.version_id
+            body = client.get_object(**kwargs)["Body"]
+            try:
+                bodies.append(bytes(body.read()))
+            finally:
+                body.close()
+        return bodies
 
 
 _AZURE_POLICY_MODE = {"COMPLIANCE": "Locked", "GOVERNANCE": "Unlocked"}
@@ -400,15 +413,27 @@ class AzureImmutableBlobStore:
         service = self._service_client()
         try:
             container = service.get_container_client(self._container)
-            return [StoredObject(b.name) for b in container.list_blobs(name_starts_with=prefix)]
+            # Every version, like the S3 store: an overwrite or a soft delete leaves the
+            # immutable content in a prior version a current-only listing never returns.
+            return [
+                StoredObject(b.name, getattr(b, "version_id", None))
+                for b in container.list_blobs(name_starts_with=prefix, include=["versions"])
+            ]
         finally:
             service.close()
 
-    def get(self, obj: StoredObject) -> bytes:
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
         service = self._service_client()
         try:
             container = service.get_container_client(self._container)
-            return bytes(container.download_blob(obj.key).readall())
+            return [
+                bytes(
+                    container.download_blob(obj.key, version_id=obj.version_id).readall()
+                    if obj.version_id
+                    else container.download_blob(obj.key).readall()
+                )
+                for obj in objects
+            ]
         finally:
             service.close()
 

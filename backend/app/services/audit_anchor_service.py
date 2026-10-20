@@ -10,12 +10,13 @@ this check exists only for anchors that can.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.tamper_anchor import (
     AnchorRecord,
     ObjectLockAnchor,
@@ -67,6 +68,23 @@ def _match(record: AnchorRecord, known: set[str], purge_cutoff: datetime | None)
     return "missing"
 
 
+def _legitimate_purge_cutoff(session: Session) -> datetime | None:
+    """The latest checkpoint cutoff a real retention sweep could have written.
+
+    A sweep's cutoff is ``now - AUDIT_RETENTION_DAYS`` at the time it ran, so it can
+    never be later than that today. A checkpoint row claiming a later cutoff is not a
+    purge but a forgery, and trusting it would reclassify every missing anchor as
+    purged — hiding exactly what this check exists to find.
+    """
+    retention = get_settings().audit_retention_days
+    if retention <= 0:
+        return None
+    ceiling = datetime.now(UTC) - timedelta(days=retention)
+    return session.scalar(
+        select(func.max(AuditChainCheckpoint.cutoff)).where(AuditChainCheckpoint.cutoff <= ceiling)
+    )
+
+
 def verify_anchors(
     session: Session, anchor: TamperAnchor | None = None
 ) -> AnchorVerification | None:
@@ -81,22 +99,23 @@ def verify_anchors(
     if not read.records:
         return AnchorVerification(status="empty", truncated=read.truncated)
 
+    heads = {r.head_hash for r in read.records if r.head_hash is not None}
     known: set[str] = set()
     known.update(
         h
-        for h in session.scalars(select(AuditEvent.row_hash).where(AuditEvent.row_hash.isnot(None)))
+        for h in session.scalars(select(AuditEvent.row_hash).where(AuditEvent.row_hash.in_(heads)))
         if h is not None
     )
     known.update(
         h
         for h in session.scalars(
             select(AuditChainCheckpoint.last_deleted_row_hash).where(
-                AuditChainCheckpoint.last_deleted_row_hash.isnot(None)
+                AuditChainCheckpoint.last_deleted_row_hash.in_(heads)
             )
         )
         if h is not None
     )
-    purge_cutoff = session.scalar(select(func.max(AuditChainCheckpoint.cutoff)))
+    purge_cutoff = _legitimate_purge_cutoff(session)
 
     checks = [
         AnchorCheck(r.key, r.label, r.head_hash, r.as_of, _match(r, known, purge_cutoff))

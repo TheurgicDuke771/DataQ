@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -998,6 +999,16 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     )
 
 
+def _display_url(url: str) -> str:
+    """Scheme, host and path only: a signed ingest URL can carry a credential in its
+    userinfo or query, and this response is meant to be shown to auditors."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
 def _tamper_anchor_transfer(settings: Any) -> ExternalTransfer:
     """The audit-chain anchor (ADR 0041 §9) as a transfer vector (#2397): the
     head hash, a label, an event count and a timestamp leave the database — never
@@ -1007,12 +1018,13 @@ def _tamper_anchor_transfer(settings: Any) -> ExternalTransfer:
         "count and a timestamp — never an audit event's actor, action or payload."
     )
     if settings.tamper_anchor == "webhook":
+        destination = _display_url(settings.tamper_anchor_webhook_url)
         return ExternalTransfer(
             name="tamper_anchor",
             enabled=True,
             detail=(
                 f"The audit hash-chain head is HMAC-signed and POSTed daily, and before "
-                f"every retention purge, to {settings.tamper_anchor_webhook_url} — an "
+                f"every retention purge, to {destination} — an "
                 "operator-chosen endpoint DataQ never reads back. " + payload
             ),
         )

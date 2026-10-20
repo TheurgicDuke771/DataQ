@@ -834,7 +834,7 @@ the two classes:
   delete marker cannot hide one) and reports each as **present** in the chain, **purged**
   (older than the last retention sweep — expected), or **missing** — the signature of a
   database restored to before that head was published, or of a rewritten chain. A store
-  outage is reported as **unavailable**, never as "nothing published". The S3 path is
+  outage is reported as **unavailable**, never as "nothing published". The daily verification task runs the same check and logs a mismatch or an unreadable store at ERROR. The S3 path is
   verified against MinIO with object lock; real AWS Object Lock and Azure immutability
   are exercised only through the SDKs' documented call shapes, not a live account.
 

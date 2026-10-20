@@ -139,6 +139,51 @@ describe('AuditChainCard', () => {
     expect(screen.getByText(/restored to before that anchor was published/)).toBeInTheDocument();
   });
 
+  it('a mismatch made only of foreign objects is not described as a restore', async () => {
+    mockVerify.mockResolvedValue({
+      ...CHAIN_OK,
+      anchor_mode: 'object_lock',
+      anchors: {
+        status: 'mismatch',
+        checked_count: 2,
+        present_count: 1,
+        purged_count: 0,
+        missing_count: 0,
+        malformed_count: 1,
+        findings: [
+          {
+            key: 'audit-anchors/x.json',
+            label: null,
+            head_hash: null,
+            as_of: null,
+            match: 'malformed',
+          },
+          {
+            key: 'audit-anchors/x.json',
+            label: null,
+            head_hash: null,
+            as_of: null,
+            match: 'malformed',
+          },
+        ],
+        truncated: false,
+        error: null,
+      },
+    });
+    renderSubPage(<AuditChainCard />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
+
+    expect(
+      await screen.findByText('An object under the anchor prefix is not an anchor'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('A published head is missing from the chain'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/restored to before that anchor/)).not.toBeInTheDocument();
+    // Two versions of one key are both listed, not collapsed by a duplicate React key.
+    expect(screen.getAllByText('malformed: audit-anchors/x.json')).toHaveLength(2);
+  });
+
   it('an unreachable anchor store is reported as unchecked, never as empty', async () => {
     mockVerify.mockResolvedValue({
       ...CHAIN_OK,

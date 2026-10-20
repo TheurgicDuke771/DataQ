@@ -281,3 +281,20 @@ def test_openlineage_emission_is_listed_on_when_configured(
     assert row["enabled"] is True
     assert "RunEvent" in row["detail"]
     assert "Never a failing-row sample" in row["detail"]
+
+
+def test_the_webhook_destination_is_shown_without_userinfo_or_query(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    """A signed ingest URL carries a credential in its query or userinfo; this
+    response is meant for auditors."""
+    monkeypatch.setenv("TAMPER_ANCHOR", "webhook")
+    monkeypatch.setenv(
+        "TAMPER_ANCHOR_WEBHOOK_URL", "https://ingest-user:tok3n@sink.example:8443/in?sig=abc123"
+    )
+    monkeypatch.setenv("TAMPER_ANCHOR_WEBHOOK_SECRET", "s")
+    get_settings.cache_clear()
+    detail = _transfer(client, "tamper_anchor")["detail"]
+    assert "https://sink.example:8443/in" in detail
+    for leaked in ("tok3n", "ingest-user", "sig=", "abc123"):
+        assert leaked not in detail, leaked
