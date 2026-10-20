@@ -138,6 +138,7 @@ from .detected_range_read import DetectedRangeRead
 from .detected_seasonal_periods_read import DetectedSeasonalPeriodsRead
 from .detection_history_read import DetectionHistoryRead
 from .detection_thresholds_read import DetectionThresholdsRead
+from .detection_thresholds_read_level_type_0 import DetectionThresholdsReadLevelType0
 from .dimension_score_read import DimensionScoreRead
 from .document_problem_read import DocumentProblemRead
 from .effective_coverage_read import EffectiveCoverageRead
@@ -453,6 +454,7 @@ __all__ = (
     "DetectedSeasonalPeriodsRead",
     "DetectionHistoryRead",
     "DetectionThresholdsRead",
+    "DetectionThresholdsReadLevelType0",
     "DimensionScoreRead",
     "DocumentProblemRead",
     "EffectiveCoverageRead",

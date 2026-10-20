@@ -158,8 +158,9 @@ this time of year usually looks like.
      score. The seasonal index already carries a recurring peak into the expected value
      without it.
    > **Amended 2026-10-20 (phase 5).** The thresholds and the promote flow, as built. (1) *The
-   > level* is the one scoring uses: the median of the `window` periods before, by weekday
-   > with `seasonality`, attached declared periods left out; a period is looked at only once
+   > level* is taken as scoring takes it, over the same `window` periods before (by weekday
+   > with `seasonality`, attached declared periods left out): their median with `yearly`
+   > on, their mean without, since that is what a check without `yearly` is scored against; a period is looked at only once
    > `min_points` periods precede it. A peak outlasting about half the window's prior
    > periods (same-weekday ones with `seasonality`) lifts that median with it, so its tail is not detected; an attached entry covering it is what fixes
    > that, as it does for scoring. (2) *A run* is consecutive qualifying periods: at least
@@ -175,7 +176,8 @@ this time of year usually looks like.
    > stored points, a separate read from the trend's baseline read so the trend view asks for
    > it only on a per-period check. (5) *Promoting* is an admin action that re-reads the
    > history and names the period by the start of its most recent occurrence, so a period the
-   > history no longer shows is refused rather than invented. A recurring period becomes a
+   > history no longer shows is refused rather than invented, and one an existing entry
+   > already covers is refused naming that entry, so a season is declared once. A recurring period becomes a
    > recurring entry over that span, one seen once a dated entry. Attaching it to the check is
    > optional and done in the same transaction, so a check that cannot take it (no `yearly`)
    > leaves no entry behind. The entry is audited as created, with what it was promoted from.

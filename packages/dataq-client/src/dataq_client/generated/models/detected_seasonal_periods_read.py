@@ -19,8 +19,9 @@ T = TypeVar("T", bound="DetectedSeasonalPeriodsRead")
 @_attrs_define
 class DetectedSeasonalPeriodsRead:
     """Periods the check's own history shows running at or above `thresholds.ratio` times
-    the level its scoring uses. Computed on request and stored nowhere: a detected period
-    changes no verdict until an admin promotes it to the calendar and it is attached.
+    the level of the periods its scoring uses (`thresholds.level`). Computed on request and
+    stored nowhere: a detected period changes no verdict until an admin promotes it to the
+    calendar and it is attached.
     `reason` is set when there was nothing to look at (`not_a_per_period_metric`,
     `invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no
     reason means the history was read and nothing qualified.

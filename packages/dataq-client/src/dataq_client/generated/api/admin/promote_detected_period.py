@@ -70,8 +70,10 @@ def sync_detailed(
     Args:
         body (SeasonalPeriodPromote): Promote a period detected in a check's history
             (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
-            `start` is the detected period's `start` (its most recent occurrence); the server reads
-            the history again and refuses a start it no longer shows. A recurring period becomes a
+            `start` is the detected period's `start` (its most recent season); the server reads the
+            history again and refuses a start it no longer shows (404), or a season an entry on the
+            calendar already covers (409, naming the entry to attach instead). A recurring period
+            becomes a
             month/day range, a period seen once a dated entry (`series` applies only to that).
             `attach` also attaches the new entry to the check, which needs `yearly` on it.
 
@@ -104,8 +106,10 @@ def sync(
     Args:
         body (SeasonalPeriodPromote): Promote a period detected in a check's history
             (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
-            `start` is the detected period's `start` (its most recent occurrence); the server reads
-            the history again and refuses a start it no longer shows. A recurring period becomes a
+            `start` is the detected period's `start` (its most recent season); the server reads the
+            history again and refuses a start it no longer shows (404), or a season an entry on the
+            calendar already covers (409, naming the entry to attach instead). A recurring period
+            becomes a
             month/day range, a period seen once a dated entry (`series` applies only to that).
             `attach` also attaches the new entry to the check, which needs `yearly` on it.
 
@@ -133,8 +137,10 @@ async def asyncio_detailed(
     Args:
         body (SeasonalPeriodPromote): Promote a period detected in a check's history
             (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
-            `start` is the detected period's `start` (its most recent occurrence); the server reads
-            the history again and refuses a start it no longer shows. A recurring period becomes a
+            `start` is the detected period's `start` (its most recent season); the server reads the
+            history again and refuses a start it no longer shows (404), or a season an entry on the
+            calendar already covers (409, naming the entry to attach instead). A recurring period
+            becomes a
             month/day range, a period seen once a dated entry (`series` applies only to that).
             `attach` also attaches the new entry to the check, which needs `yearly` on it.
 
@@ -165,8 +171,10 @@ async def asyncio(
     Args:
         body (SeasonalPeriodPromote): Promote a period detected in a check's history
             (`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.
-            `start` is the detected period's `start` (its most recent occurrence); the server reads
-            the history again and refuses a start it no longer shows. A recurring period becomes a
+            `start` is the detected period's `start` (its most recent season); the server reads the
+            history again and refuses a start it no longer shows (404), or a season an entry on the
+            calendar already covers (409, naming the entry to attach instead). A recurring period
+            becomes a
             month/day range, a period seen once a dated entry (`series` applies only to that).
             `attach` also attaches the new entry to the check, which needs `yearly` on it.
 

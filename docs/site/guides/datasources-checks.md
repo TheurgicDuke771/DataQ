@@ -1353,8 +1353,9 @@ them is refused with the ids named.
 **Detected seasonal periods** are what a per-period check's own history shows, read when
 someone asks: `GET /api/v1/suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`
 (view access to the suite), or the `get_detected_seasonal_periods` MCP tool. A period is
-detected where the value ran at **1.5 times** its level or more (the level scoring uses: the
-median of the window before it, attached declared periods left out) for at least **two days
+detected where the value ran at **1.5 times** its level or more (taken as scoring takes it: the
+median of the window before it with `yearly` on, attached declared periods left out, and the
+mean of the window without `yearly`) for at least **two days
 in a row**, or one week on a weekly check. A single day is a spike, not a period, and a day
 with no point ends a run. Seen at the same time of year in two or more years (within a week
 of each other, so a sale that moves a few days still matches) it is **recurring**; in one
@@ -1376,7 +1377,8 @@ a calendar entry over it fixes that, for detection as for scoring.
 A workspace admin turns a detected period into a calendar entry with
 `POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
 most recent occurrence, as the detection returned it) and a `name`. The history is read
-again, so a period it no longer shows is refused. A recurring period becomes a recurring
+again, so a period it no longer shows is refused, and so is a season an entry on the
+calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring
 entry over the month-and-day span; one seen once becomes a dated entry, optionally in a
 `series`. With `attach: true` the check names the new entry too, in the same change, so a
 check that cannot take it (one without `yearly`) leaves no entry behind. The new entry is

@@ -5112,7 +5112,7 @@
         "type": "object"
       },
       "DetectedSeasonalPeriodsRead": {
-        "description": "Periods the check's own history shows running at or above `thresholds.ratio` times\nthe level its scoring uses. Computed on request and stored nowhere: a detected period\nchanges no verdict until an admin promotes it to the calendar and it is attached.\n`reason` is set when there was nothing to look at (`not_a_per_period_metric`,\n`invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no\nreason means the history was read and nothing qualified.",
+        "description": "Periods the check's own history shows running at or above `thresholds.ratio` times\nthe level of the periods its scoring uses (`thresholds.level`). Computed on request and\nstored nowhere: a detected period changes no verdict until an admin promotes it to the\ncalendar and it is attached.\n`reason` is set when there was nothing to look at (`not_a_per_period_metric`,\n`invalid_config`, `no_history`, `insufficient_history`); an empty `periods` with no\nreason means the history was read and nothing qualified.",
         "properties": {
           "history": {
             "$ref": "#/components/schemas/DetectionHistoryRead"
@@ -5216,6 +5216,21 @@
       },
       "DetectionThresholdsRead": {
         "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "median",
+                  "mean"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
           "min_consecutive": {
             "title": "Min Consecutive",
             "type": "integer"
@@ -5232,7 +5247,8 @@
         "required": [
           "ratio",
           "min_consecutive",
-          "same_time_days"
+          "same_time_days",
+          "level"
         ],
         "title": "DetectionThresholdsRead",
         "type": "object"
@@ -9316,7 +9332,7 @@
       },
       "SeasonalPeriodPromote": {
         "additionalProperties": false,
-        "description": "Promote a period detected in a check's history\n(`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.\n`start` is the detected period's `start` (its most recent occurrence); the server reads\nthe history again and refuses a start it no longer shows. A recurring period becomes a\nmonth/day range, a period seen once a dated entry (`series` applies only to that).\n`attach` also attaches the new entry to the check, which needs `yearly` on it.",
+        "description": "Promote a period detected in a check's history\n(`GET /suites/{suite_id}/checks/{check_id}/seasonal-periods/detected`) to the calendar.\n`start` is the detected period's `start` (its most recent season); the server reads the\nhistory again and refuses a start it no longer shows (404), or a season an entry on the\ncalendar already covers (409, naming the entry to attach instead). A recurring period becomes a\nmonth/day range, a period seen once a dated entry (`series` applies only to that).\n`attach` also attaches the new entry to the check, which needs `yearly` on it.",
         "properties": {
           "attach": {
             "default": false,
