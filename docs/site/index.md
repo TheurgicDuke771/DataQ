@@ -70,6 +70,7 @@ watches what you point it at, plus every table of a warehouse connection you swi
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
 | **Let assistants do the work** | Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Use it from the keyboard, in either theme** | Every page is checked for accessibility issues in light and dark themes on every change, colour contrast is held to WCAG ratios, status never relies on colour alone, and core navigation works from the keyboard. A full WCAG conformance review is planned, so this is a description of the checks, not a conformance claim. |
 
 ## Who it is for
 

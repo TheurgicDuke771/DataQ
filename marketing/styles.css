@@ -717,6 +717,7 @@ img { max-width: 100%; }
 .small-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 960px) { .small-grid-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .small-grid-6 { grid-template-columns: minmax(0, 1fr); } }
+.small-grid-6 > .small-card:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
 
 /* Demo-profile walkthrough. */
 .walk-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 24px; }
