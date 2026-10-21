@@ -1,0 +1,42 @@
+{{- include "dataq.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dataq.fullname" . }}-beat
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "beat") | nindent 4 }}
+spec:
+  # Exactly one, and not a value: a second beat fires every periodic task twice. Recreate, so a
+  # rollout never runs the old and the new pod side by side.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" . "component" "beat") | nindent 6 }}
+  template:
+    metadata:
+      {{- include "dataq.podMetadata" (dict "ctx" . "component" "beat") | nindent 6 }}
+    spec:
+      {{- include "dataq.backendPodSpec" (dict "ctx" . "component" "beat") | nindent 6 }}
+      containers:
+        - name: beat
+          image: {{ include "dataq.image" (dict "ctx" . "image" .Values.image.backend) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["celery", "-A", "backend.app.worker.celery_app", "beat", "--loglevel=INFO"]
+          envFrom:
+            {{- include "dataq.backendEnvFrom" . | nindent 12 }}
+            - configMapRef:
+                name: {{ include "dataq.fullname" . }}-config
+          {{- with .Values.beat.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.backendSecurityContext.container | nindent 12 }}
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "dataq.backendVolumeMounts" (dict "ctx" . "telemetry" true) | nindent 12 }}
+      volumes:
+        {{- include "dataq.backendVolumes" (dict "ctx" . "telemetry" true) | nindent 8 }}

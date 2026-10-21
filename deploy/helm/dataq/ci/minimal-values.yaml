@@ -1,0 +1,13 @@
+# The least an install needs: OTP sign-in, OpenBao, external Postgres/Redis named in the Secret.
+existingSecret: dataq-env
+auth:
+  workspaceAdminEmails: admin@example.com
+  otp:
+    smtpHost: smtp.example.com
+    username: dataq@example.com
+    from: dataq@example.com
+    passwordSecretName: dataq-smtp
+    allowedDomains: example.com
+secretStore:
+  openbao:
+    addr: https://openbao.vault.svc:8200

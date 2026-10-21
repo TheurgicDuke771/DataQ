@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+# The frontend only. /api, /mcp and /healthz reach the api through the frontend's proxy.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dataq.fullname" . }}
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dataq.fullname" $ }}-frontend
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

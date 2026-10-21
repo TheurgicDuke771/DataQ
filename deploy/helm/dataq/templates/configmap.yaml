@@ -1,0 +1,9 @@
+{{- include "dataq.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dataq.fullname" . }}-config
+  labels:
+    {{- include "dataq.labels" . | nindent 4 }}
+data:
+  {{- include "dataq.backendEnv" . | nindent 2 }}

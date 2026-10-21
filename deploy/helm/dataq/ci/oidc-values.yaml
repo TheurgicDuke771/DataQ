@@ -1,0 +1,40 @@
+# OIDC sign-in, a cloud secret store, an ingress, scaled-out stateless tiers and the optional
+# hardening: api TLS, NetworkPolicy, PodDisruptionBudgets, a digest-pinned image.
+existingSecret: dataq-env
+image:
+  backend:
+    tag: v1.2.0
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+auth:
+  mode: oidc
+  oidc:
+    issuer: https://idp.example.com/realms/dataq
+    audience: dataq-api
+    clientId: dataq-spa
+    allowedDomains: example.com
+secretStore:
+  backend: aws_secrets_manager
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/dataq-app
+trustedCA:
+  existingConfigMap: dataq-ca
+api:
+  replicas: 2
+  tls:
+    existingSecret: dataq-api-tls
+worker:
+  replicas: 2
+frontend:
+  replicas: 2
+  cspConnectSrc: https://idp.example.com
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: dataq.example.com
+  tls:
+    - secretName: dataq-example-tls
+      hosts: [dataq.example.com]
+networkPolicy:
+  enabled: true

@@ -6,6 +6,7 @@ Running DataQ for real: deploying it, watching it, and fixing it.
 |---|---|
 | [Deployment](deployment.md) | Azure Container Apps and AWS ECS reference deployments, the local Docker stack, every environment variable, and the Azure-free path. |
 | [Deployment parity](deployment-parity.md) | What is identical and what differs across Azure, AWS and local, service by service. |
+| [Install on Kubernetes (Helm)](kubernetes.md) | The Helm chart for your own cluster: what it installs, the Secret it reads, values, upgrade and rollback, and a kind test. |
 | [Upgrading](upgrading.md) | Moving to a newer release: the steps per deployment. |
 | [Backup, restore & rollback](backup-restore-upgrade.md) | What to back up and how, restoring with a verification step, what a restore loses, and the rollback doctrine behind each release's **Rollback** line. |
 | [Observability](observability.md) | Structured logs, request and task spans, and where to find them on each cloud. |
