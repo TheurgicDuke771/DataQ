@@ -206,7 +206,10 @@ function CheckEditForm({
               typeof values.critical_threshold === 'number' ? values.critical_threshold : null,
           }
         : (() => {
-            const u = buildCheckPayload(values);
+            const u = buildCheckPayload(
+              values,
+              values.expectation_type === check.expectation_type ? check.config : undefined,
+            );
             delete u.kind;
             return u;
           })();
@@ -304,6 +307,7 @@ function CheckEditForm({
                   connectionType={connectionType}
                   configValues={configValues}
                   dmfCapability={dmfCapability}
+                  columnSource={suiteId ? { suiteId, target } : undefined}
                 />
               ))}
             <DimensionField spec={spec} />
@@ -378,7 +382,19 @@ function CheckEditForm({
         onClose={() => setTrendOpen(false)}
         size={520}
       >
-        {trendOpen && <CheckTrend suiteId={suiteId} check={check} />}
+        {trendOpen && (
+          <CheckTrend
+            suiteId={suiteId}
+            check={check}
+            onAttached={(entryId) => {
+              const current = form.getFieldValue(['config', 'seasonal_periods']) as unknown;
+              const ids = Array.isArray(current) ? (current as string[]) : [];
+              if (!ids.includes(entryId)) {
+                form.setFieldValue(['config', 'seasonal_periods'], [...ids, entryId]);
+              }
+            }}
+          />
+        )}
       </Drawer>
     </>
   );

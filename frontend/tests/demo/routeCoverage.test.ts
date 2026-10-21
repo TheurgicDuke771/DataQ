@@ -55,7 +55,7 @@ describe('demo route coverage', () => {
     expect(routes).toContain('/assets/a1');
     expect(routes).toContain('/results/r1');
     expect(routes.some((r) => r.includes(':id'))).toBe(false);
-    // 14 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 1 run.
-    expect(routes).toHaveLength(24);
+    // 15 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 1 run.
+    expect(routes).toHaveLength(25);
   });
 });

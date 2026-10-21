@@ -1,4 +1,4 @@
-import { Alert, Empty, Segmented, Spin, Table, Typography } from 'antd';
+import { Alert, Empty, Flex, Segmented, Spin, Table, Typography } from 'antd';
 import { useState } from 'react';
 import {
   CartesianGrid,
@@ -16,7 +16,14 @@ import {
   type CheckResultPoint,
   getCheckBaseline,
   listCheckHistory,
+  type SeasonalPoint,
 } from '../../api/suites';
+import {
+  type DetectedSeasonalPeriods,
+  getDetectedSeasonalPeriods,
+  listSeasonalPeriods,
+  type SeasonalPeriod,
+} from '../../api/seasonalPeriods';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import {
   AXIS_TICK,
@@ -30,6 +37,14 @@ import { formatTimestamp } from '../results/resultsFormat';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
 import { ResultStatusTag } from '../shared/StatusTag';
+import { DetectedPeriodsList, PeriodBaselineChart, type PeriodRow } from './SeasonalTrend';
+import {
+  declaredAreasBetween,
+  isoDay,
+  resultsByPeriod,
+  yearlyReasonLabel,
+  yearlySummary,
+} from './seasonalTrendData';
 
 /**
  * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal chart): a check's
@@ -49,8 +64,21 @@ interface CheckTrendProps {
   suiteId: string;
   check: CheckTrendCheck;
   /** History window (backend caps at 180); 90 gives a debugger-useful span
-   *  without ever hitting the cap. */
+   *  without ever hitting the cap. A per-period check reads the cap, 180; its caption says when that leaves older periods without a band. */
   limit?: number;
+  /** Called with the new entry's id after a detected period was promoted and attached to this
+   *  check: an open editor must add it to its own copy of the config, or a save drops it. */
+  onAttached?: (entryId: string) => void;
+}
+
+/** A per-period anomaly check (`period_row_count` / `period_sum`) names its date column. */
+function isPerPeriod(check: CheckTrendCheck): boolean {
+  return check.kind === 'anomaly' && typeof check.config?.date_column === 'string';
+}
+
+function attachedIds(check: CheckTrendCheck): string[] {
+  const raw = check.config?.seasonal_periods;
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
 }
 
 /** ISO timestamp → short `Jun 13` label. */
@@ -216,18 +244,27 @@ function nextScoredAt(observations: Observation[], check: CheckTrendCheck): Date
   return next;
 }
 
-export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
+export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTrendProps) {
   const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [promoted, setPromoted] = useState<string[]>([]);
   const isAnomaly = check.kind === 'anomaly';
+  const perPeriod = isPerPeriod(check);
 
-  const { state } = useAsyncData(async () => {
-    const [history, baseline] = await Promise.all([
-      listCheckHistory(suiteId, check.id, limit),
+  const { state, reload } = useAsyncData(async () => {
+    const [history, baseline, detected, calendar] = await Promise.all([
+      listCheckHistory(suiteId, check.id, perPeriod ? 180 : limit),
       // Baseline is a debugging overlay, not the main story: a fetch failure (or simply no baseline
       // yet) degrades to "no overlay", never an error for the whole trend.
-      isAnomaly ? getCheckBaseline(suiteId, check.id).catch(() => null) : Promise.resolve(null),
+      isAnomaly
+        ? getCheckBaseline(suiteId, check.id).catch(() => 'failed' as const)
+        : Promise.resolve(null),
+      // Likewise the seasonal overlays: without them the chart still shows the points.
+      perPeriod
+        ? getDetectedSeasonalPeriods(suiteId, check.id).catch(() => null)
+        : Promise.resolve(null),
+      perPeriod ? listSeasonalPeriods().catch(() => null) : Promise.resolve(null),
     ]);
-    return { history, baseline };
+    return { history, baseline, detected, calendar };
   });
 
   if (state.status === 'loading') return <Spin size="small" />;
@@ -235,7 +272,11 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
     return <Alert type="error" showIcon title="Failed to load trend" description={state.error} />;
   }
 
-  const { history, baseline } = state.data;
+  const { history, detected, calendar } = state.data;
+  const baselineFailed = state.data.baseline === 'failed';
+  const baseline = baselineFailed ? null : (state.data.baseline as CheckBaseline | null);
+  const attached = [...attachedIds(check), ...promoted];
+  const declared = (calendar ?? []).filter((p) => attached.includes(p.id));
   const withMetric = history.filter((p) => p.metric_value !== null);
   const bands = thresholdBands(check);
   const observations = parseObservations(baseline);
@@ -282,12 +323,57 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
               {`Column profile baseline — a separate history per column (null % and distinct count), ${columnProfileRuns(baseline)} run(s) recorded. The chart above is each run's largest deviation; a run's detail names the columns that moved.`}
             </Typography.Text>
           )}
-          {isAnomaly && !isColumnProfile(baseline) && (
-            <AnomalyBaselinePanel observations={observations} meta={anomalyMeta} check={check} />
+          {isAnomaly && baselineFailed && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: 12 }}
+              title="The stored baseline could not be loaded"
+              description="The learned band and the stored periods are not shown; the results above are."
+            />
+          )}
+          {isAnomaly && !baselineFailed && !isColumnProfile(baseline) && (
+            <AnomalyBaselinePanel
+              observations={observations}
+              meta={anomalyMeta}
+              check={check}
+              seasonal={
+                perPeriod
+                  ? {
+                      history,
+                      declared,
+                      detected,
+                      calendarMissing: calendar === null && attached.length > 0,
+                      historyCapped: history.length >= 180,
+                    }
+                  : null
+              }
+            />
+          )}
+          {perPeriod && detected && (
+            <div style={{ marginTop: 8 }}>
+              <DetectedPeriodsList
+                detected={detected}
+                suiteId={suiteId}
+                checkId={check.id}
+                yearly={check.config?.yearly === true}
+                onPromoted={(entryId, didAttach) => {
+                  reload();
+                  if (didAttach) {
+                    setPromoted((ids) => [...ids, entryId]);
+                    onAttached?.(entryId);
+                  }
+                }}
+              />
+            </div>
           )}
         </>
       ) : (
-        <TrendTable points={history} observations={isAnomaly ? observations : null} />
+        <TrendTable
+          points={history}
+          observations={isAnomaly ? observations : null}
+          judged={perPeriod ? resultsByPeriod(history) : null}
+        />
       )}
     </div>
   );
@@ -354,14 +440,27 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
  */
 const DEFAULT_BAND_K = 2;
 
+interface SeasonalOverlay {
+  history: CheckResultPoint[];
+  declared: SeasonalPeriod[];
+  detected: DetectedSeasonalPeriods | null;
+  /** The calendar could not be read, though entries are attached. */
+  calendarMissing: boolean;
+  /** The history read hit its cap, so older judged periods have no band. */
+  historyCapped: boolean;
+}
+
 function AnomalyBaselinePanel({
   observations,
   meta,
   check,
+  seasonal,
 }: {
   observations: Observation[];
   meta: AnomalyBaselineMeta;
   check: CheckTrendCheck;
+  /** Set for a per-period check: the judged results and the calendar to draw beside the points. */
+  seasonal: SeasonalOverlay | null;
 }) {
   // The moment the next run would be scored at (`eligible_values` in anomaly.py). A per-period
   // check is scored at its period, not at the run: the next one is the period after the last
@@ -387,6 +486,17 @@ function AnomalyBaselinePanel({
     label: spansYears ? dayWithYear(o.ts) : shortDay(o.ts),
     value: o.value,
   }));
+  const yearly = check.config?.yearly === true;
+  const judgedByDay = seasonal ? resultsByPeriod(seasonal.history) : null;
+  const rows: PeriodRow[] = shown.map((o) => ({
+    day: isoDay(o.ts),
+    value: o.value,
+    backfilled: o.backfilled,
+    judged: judgedByDay?.get(isoDay(o.ts)) ?? null,
+  }));
+  const judged = rows.flatMap((r) => (r.judged ? [r.judged] : []));
+  const formatDay = (day: string) =>
+    spansYears ? dayWithYear(`${day}T00:00:00Z`) : shortDay(`${day}T00:00:00Z`);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -399,8 +509,6 @@ function AnomalyBaselinePanel({
               ` · ${seeded} of the ${observations.length} stored points were seeded from the table’s own rows, not measured by a run`}
             {observations.length > shown.length &&
               ` · the chart shows the most recent ${shown.length}`}
-            {check.config?.yearly === true &&
-              ' · yearly seasonality is on: this band is the recent window only. A run is scored against what this time of year is expected to be, which its result gives as the expected value'}
           </>
         ) : observations.length === 0 ? (
           // Matches the empty chart below it (#594 review): no observations at
@@ -412,55 +520,169 @@ function AnomalyBaselinePanel({
           `Anomaly baseline — collecting observations${weekdaySuffix} (${eligible.length} so far; need at least 2 for a learned band).`
         )}
       </Typography.Text>
-      <ResponsiveChart
-        height={140}
-        isEmpty={data.length === 0}
-        emptyText="No baseline observations recorded yet"
-      >
-        <LineChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-          <CartesianGrid {...GRID_PROPS} vertical={false} />
-          <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
-          <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} />
-          {stats && (
-            <ReferenceArea
-              y1={stats.mean - k * stats.stddev}
-              y2={stats.mean + k * stats.stddev}
-              fill={CHART_COLORS.primary}
-              fillOpacity={0.08}
-              ifOverflow="extendDomain"
+      {seasonal && (
+        <SeasonalCaption
+          yearly={yearly}
+          k={k}
+          judged={judged}
+          seeded={seeded > 0}
+          seasonal={seasonal}
+          shown={rows.length > 0 ? { first: rows[0].day, last: rows[rows.length - 1].day } : null}
+        />
+      )}
+      {seasonal ? (
+        <PeriodBaselineChart
+          rows={rows}
+          k={k}
+          declared={seasonal.declared}
+          detected={seasonal.detected?.periods ?? []}
+          formatDay={formatDay}
+        />
+      ) : (
+        <ResponsiveChart
+          height={140}
+          isEmpty={data.length === 0}
+          emptyText="No baseline observations recorded yet"
+        >
+          <LineChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+            <CartesianGrid {...GRID_PROPS} vertical={false} />
+            <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
+            <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} />
+            {stats && (
+              <ReferenceArea
+                y1={stats.mean - k * stats.stddev}
+                y2={stats.mean + k * stats.stddev}
+                fill={CHART_COLORS.primary}
+                fillOpacity={0.08}
+                ifOverflow="extendDomain"
+              />
+            )}
+            {stats && (
+              <ReferenceLine
+                y={stats.mean}
+                stroke={CHART_COLORS.axis}
+                strokeDasharray="3 3"
+                label={{ value: 'mean', position: 'insideTopRight', fontSize: 10 }}
+              />
+            )}
+            <Line
+              type="monotone"
+              dataKey="value"
+              name="Observation"
+              stroke={CHART_COLORS.primary}
+              strokeWidth={1.5}
+              dot={{ r: 2.5 }}
             />
-          )}
-          {stats && (
-            <ReferenceLine
-              y={stats.mean}
-              stroke={CHART_COLORS.axis}
-              strokeDasharray="3 3"
-              label={{ value: 'mean', position: 'insideTopRight', fontSize: 10 }}
-            />
-          )}
-          <Line
-            type="monotone"
-            dataKey="value"
-            name="Observation"
-            stroke={CHART_COLORS.primary}
-            strokeWidth={1.5}
-            dot={{ r: 2.5 }}
-          />
-        </LineChart>
-      </ResponsiveChart>
+          </LineChart>
+        </ResponsiveChart>
+      )}
     </div>
+  );
+}
+
+/** What a per-period check's chart draws, in words: the band, the expected line, and why the
+ *  yearly comparison did not apply where it did not. */
+function SeasonalCaption({
+  yearly,
+  k,
+  judged,
+  seeded,
+  seasonal,
+  shown,
+}: {
+  yearly: boolean;
+  k: number;
+  judged: SeasonalPoint[];
+  seeded: boolean;
+  seasonal: SeasonalOverlay;
+  /** The first and last plotted period. */
+  shown: { first: string; last: string } | null;
+}) {
+  const { applied, notApplied } = yearlySummary(judged);
+  const withheld = judged.filter((j) => !j.banded).length;
+  const lines: string[] = [];
+  if (judged.length === 0) {
+    lines.push(
+      'No shown period has a result yet, so no band is drawn on the chart: a band is what a run scored a period against.',
+    );
+  } else if (!yearly) {
+    lines.push(
+      `Shaded band: for each period a run judged (${judged.length} shown), the recent window it was scored against, mean ± ${k}σ.`,
+    );
+  } else {
+    lines.push(
+      `Shaded band: for each period a run judged (${judged.length} shown), the centre it was scored against ± ${k}× the spread. Where the yearly comparison applied (${applied} of ${judged.length}) the dashed line is the expected value, the level times what this time of year ran at in earlier years; the centre is that value shifted by how far earlier periods ran from what was expected of them, so the band need not sit on the line.`,
+    );
+    if (notApplied.length > 0) {
+      const why = notApplied.map((n) => `${n.reason} (${n.count})`).join('; ');
+      lines.push(
+        `Not applied on ${judged.length - applied}, so those bands are the recent window and there is no expected value: ${why}.`,
+      );
+    }
+  }
+  if (seasonal.historyCapped) {
+    lines.push(
+      'Bands and expected values come from the most recent 180 results, so older periods shown have none.',
+    );
+  }
+  if (withheld > 0) {
+    lines.push(
+      `${withheld} judged period${withheld === 1 ? ' fell' : 's fell'} inside a declared period with no earlier occurrence: a rise was expected and its size unknown, so no band is drawn there.`,
+    );
+  }
+  if (seasonal.declared.length > 0) {
+    const inView = new Set(
+      shown
+        ? declaredAreasBetween(seasonal.declared, shown.first, shown.last).map((a) => a.name)
+        : [],
+    );
+    const outOfView = seasonal.declared.filter((d) => !inView.has(d.name)).map((d) => d.name);
+    if (inView.size > 0) {
+      lines.push(`Highlighted: the attached calendar entries (${[...inView].join(', ')}).`);
+    }
+    if (outOfView.length > 0) {
+      lines.push(`Attached but with no occurrence in the periods shown: ${outOfView.join(', ')}.`);
+    }
+  } else if (seasonal.calendarMissing) {
+    lines.push('The calendar could not be loaded, so attached entries are not highlighted.');
+  }
+  if (seeded) lines.push('Hollow points were seeded from the table; filled ones a run measured.');
+  return (
+    <Flex vertical gap={2} style={{ marginTop: 4 }} data-testid="seasonal-caption">
+      {lines.map((line) => (
+        <Typography.Text key={line} type="secondary" style={{ fontSize: 12 }}>
+          {line}
+        </Typography.Text>
+      ))}
+    </Flex>
   );
 }
 
 // ───────────────────────── a11y data-table fallback ─────────────────
 
+function bandText(j: SeasonalPoint | undefined): string {
+  if (!j) return '—';
+  if (!j.banded) return 'no band (first occurrence of a declared period)';
+  if (j.mean === null || j.stddev === null) return '—';
+  return `${j.mean.toFixed(2)} ± ${j.stddev.toFixed(2)}`;
+}
+
+function expectedText(j: SeasonalPoint | undefined): string {
+  if (!j) return '—';
+  if (j.expected !== null) return j.expected.toFixed(2);
+  return j.yearly_applied === false ? `not applied: ${yearlyReasonLabel(j.yearly_reason)}` : '—';
+}
+
 function TrendTable({
   points,
   observations,
+  judged,
 }: {
   points: CheckResultPoint[];
   observations: Observation[] | null;
+  /** A per-period check's judged results by period, for the scored-against columns. */
+  judged: Map<string, SeasonalPoint> | null;
 }) {
   if (points.length === 0 && (!observations || observations.length === 0)) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No metric history yet" />;
@@ -510,6 +732,27 @@ function TrendTable({
             columns={[
               { title: 'Dated', dataIndex: 'ts', render: (v: string) => formatTimestamp(v) },
               { title: 'Value', dataIndex: 'value' },
+              ...(judged
+                ? [
+                    {
+                      title: 'Scored against (centre ± spread)',
+                      key: 'band',
+                      render: (_: unknown, o: Observation) => bandText(judged.get(isoDay(o.ts))),
+                    },
+                    {
+                      title: 'Expected',
+                      key: 'expected',
+                      render: (_: unknown, o: Observation) =>
+                        expectedText(judged.get(isoDay(o.ts))),
+                    },
+                    {
+                      title: 'Declared period',
+                      key: 'declared',
+                      render: (_: unknown, o: Observation) =>
+                        judged.get(isoDay(o.ts))?.declared_name ?? '—',
+                    },
+                  ]
+                : []),
               ...(observations.some((o) => o.backfilled)
                 ? [
                     {

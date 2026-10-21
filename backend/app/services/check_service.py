@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -1848,6 +1848,43 @@ class CheckResultPoint:
     status: str
     metric_value: float | None
     created_at: datetime
+    #: A per-period anomaly result's period and what it was scored against (ADR 0048).
+    seasonal: dict[str, Any] | None = None
+
+
+def _number(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
+def _mapping(value: Any) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
+
+
+def seasonal_point(observed: Any) -> dict[str, Any] | None:
+    """The trend's read of a per-period anomaly result: the period it judged, the centre and
+    spread it was scored against, the yearly expected value and the declared entry it fell
+    in. Every other result has none."""
+    if not isinstance(observed, dict) or not isinstance(observed.get("period"), dict):
+        return None
+    start = observed["period"].get("start")
+    yearly = _mapping(observed.get("yearly")) or {}
+    declared = _mapping(observed.get("declared"))
+    inside = _mapping(declared.get("inside")) if declared else None
+    applied = yearly.get("applied")
+    changed = declared.get("verdict_changed") if declared else None
+    reason = yearly.get("reason")
+    name = inside.get("name") if inside else None
+    return {
+        "period_start": start if isinstance(start, str) else None,
+        "mean": _number(observed.get("mean")),
+        "stddev": _number(observed.get("stddev")),
+        "yearly_applied": applied if isinstance(applied, bool) else None,
+        "yearly_reason": reason if applied is False and isinstance(reason, str) else None,
+        "expected": _number(yearly.get("expected")) if applied is True else None,
+        "declared_name": name if isinstance(name, str) else None,
+        "banded": inside.get("banded") is not False if inside else True,
+        "verdict_changed": changed if isinstance(changed, bool) else None,
+    }
 
 
 def list_check_result_history(
@@ -1856,9 +1893,18 @@ def list_check_result_history(
     """A check's recent results in chronological order (oldest→newest) for the
     per-check trend (ADR 0022). 404 if the check is missing or cross-suite.
     """
-    get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    # Only a per-period anomaly result carries a seasonal point; any other check's payload
+    # (a comparison's buckets, a column profile) is not read at all.
+    per_period = check.kind == "anomaly" and isinstance(check.config.get("date_column"), str)
     stmt = (
-        select(Result.run_id, Result.status, Result.metric_value, Run.created_at)
+        select(
+            Result.run_id,
+            Result.status,
+            Result.metric_value,
+            Run.created_at,
+            Result.observed_value if per_period else null(),
+        )
         .join(Run, Result.run_id == Run.id)
         .where(Result.check_id == check_id, Run.suite_id == suite_id)
         .order_by(Run.created_at.desc())
@@ -1870,8 +1916,9 @@ def list_check_result_history(
             status=status,
             metric_value=float(metric_value) if metric_value is not None else None,
             created_at=created_at,
+            seasonal=seasonal_point(observed),
         )
-        for run_id, status, metric_value, created_at in session.execute(stmt)
+        for run_id, status, metric_value, created_at, observed in session.execute(stmt)
     ]
     rows.reverse()  # chronological for the chart x-axis
     return rows

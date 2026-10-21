@@ -61,6 +61,62 @@ describe('buildCheckPayload — per-period anomaly metrics', () => {
   });
 });
 
+describe('buildCheckPayload — attached calendar entries', () => {
+  const base = { name: 'daily sales', expectation_type: 'monitor:anomaly', fail_threshold: 3 };
+  const period = { target_metric: 'period_row_count', date_column: 'ordered_at' };
+
+  it('sends the attached ids with yearly on', () => {
+    const config = { ...period, yearly: true, seasonal_periods: ['a', 'b'] };
+    expect(buildCheckPayload({ ...base, config }).config).toEqual(config);
+  });
+
+  it('drops them with yearly off, where the backend would refuse them', () => {
+    const config = buildCheckPayload({
+      ...base,
+      config: { ...period, yearly: false, seasonal_periods: ['a'] },
+    }).config;
+    expect(config).not.toHaveProperty('seasonal_periods');
+  });
+
+  it('sends no empty list for a check with nothing attached', () => {
+    const config = buildCheckPayload({
+      ...base,
+      config: { ...period, yearly: true, seasonal_periods: [] },
+    }).config;
+    expect(config).not.toHaveProperty('seasonal_periods');
+  });
+
+  it('sends them for a yearly row count, and never for the column profile', () => {
+    const rowCount = { target_metric: 'row_count', yearly: true, seasonal_periods: ['a'] };
+    expect(buildCheckPayload({ ...base, config: rowCount }).config).toEqual(rowCount);
+    const profile = buildCheckPayload({
+      ...base,
+      config: { target_metric: 'column_profile', yearly: true, seasonal_periods: ['a'] },
+    }).config;
+    expect(profile).toEqual({ target_metric: 'column_profile' });
+  });
+});
+
+describe('buildCheckPayload — booleans an existing check never set', () => {
+  const base = { name: 'daily', expectation_type: 'monitor:anomaly', fail_threshold: 3 };
+  const config = { target_metric: 'period_row_count', date_column: 'd', yearly: false };
+
+  it('leaves a default-valued switch out when the stored config never had it', () => {
+    const stored = { target_metric: 'period_row_count', date_column: 'd' };
+    expect(buildCheckPayload({ ...base, config }, stored).config).not.toHaveProperty('yearly');
+  });
+
+  it('keeps it when the stored config had it, when it differs from the default, and on create', () => {
+    expect(buildCheckPayload({ ...base, config }, { ...config }).config).toHaveProperty(
+      'yearly',
+      false,
+    );
+    const on = { ...config, yearly: true };
+    expect(buildCheckPayload({ ...base, config: on }, {}).config).toHaveProperty('yearly', true);
+    expect(buildCheckPayload({ ...base, config }).config).toHaveProperty('yearly', false);
+  });
+});
+
 describe('buildCheckPayload — anomaly conditional column field (#593)', () => {
   it('omits column from the submitted config when target_metric is row_count, even with a stale value present', () => {
     const payload = buildCheckPayload({
