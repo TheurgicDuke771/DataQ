@@ -79,11 +79,8 @@ def _sample_bytes(target: ResolvedTarget) -> int | None:
 
 
 def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> MemoryEstimate | None:
-    from backend.app.datasources.flatfile import (
-        file_stat,
-        missing_credential,
-        resolve_flatfile_secret,
-    )
+    from backend.app.datasources.flatfile import file_stat
+    from backend.app.datasources.registry import missing_credential, resolve_flatfile_secret
 
     if missing_credential(connection.type, dict(connection.config), connection.secret_ref):
         # Nothing to probe the store with. The run fails on the same missing credential

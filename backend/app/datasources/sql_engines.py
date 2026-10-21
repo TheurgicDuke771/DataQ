@@ -54,12 +54,3 @@ def default_schema(conn_type: str, config: dict[str, Any]) -> str | None:
         return validated.default_schema
     except NoDefaultSchemaError:
         return None
-
-
-def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
-    """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
-    none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
-    """
-    from backend.app.datasources.registry import authenticates_without_secret as answer
-
-    return answer(conn_type, config)

@@ -13,11 +13,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import (
-    MissingCredentialError,
-    file_stat,
-    resolve_flatfile_secret,
-)
+from backend.app.datasources.flatfile import file_stat
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     ROW_DELETES_PRESENT,
@@ -28,8 +24,13 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
     row_delete_reason,
 )
+from backend.app.datasources.registry import (
+    MissingCredentialError,
+    authenticates_without_secret,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.sampling import enforce_byte_cap
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import (
     TSQL_CTE_IN_DERIVED_TABLE,

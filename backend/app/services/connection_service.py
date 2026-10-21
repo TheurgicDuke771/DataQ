@@ -21,11 +21,11 @@ from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
+    authenticates_without_secret,
     credential_expiry,
     destination_fields,
     get_connection_adapter,
 )
-from backend.app.datasources.sql_engines import authenticates_without_secret
 from backend.app.db.models import (
     CHECK_ORDER,
     ENVS,

@@ -29,7 +29,6 @@ from backend.app.datasources.flatfile import (
     read_csv_head,
     read_csv_projected_sample,
     read_json_head,
-    resolve_flatfile_secret,
 )
 from backend.app.datasources.generic_sql import ColumnCaps, SqlEngineSpec
 from backend.app.datasources.iceberg import (
@@ -39,6 +38,7 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
 )
 from backend.app.datasources.jsonfile import JsonFileError
+from backend.app.datasources.registry import authenticates_without_secret, resolve_flatfile_secret
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
     build_connect_args,
@@ -47,7 +47,6 @@ from backend.app.datasources.snowflake import (
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.datasources.sql_engines import (
     SQL_ENGINES,
-    authenticates_without_secret,
     default_schema,
 )
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url

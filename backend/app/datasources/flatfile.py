@@ -17,7 +17,6 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import addressing_config_kwargs
-from backend.app.core.secrets import SecretStore
 from backend.app.datasources import jsonfile
 from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.datasources.base import (
@@ -1478,55 +1477,6 @@ class FlatFileCheckRunner:
             len(checks), (runnable, stamped.checks), (list(refused), list(refused.values()))
         )
         return SuiteOutcome(success=False, checks=merged)
-
-
-def build_flatfile_runner(
-    *,
-    conn_type: str,
-    config: dict[str, Any],
-    secret_ref: str | None,
-    secret_store: SecretStore,
-    sampling: SampleSpec | None = None,
-) -> FlatFileCheckRunner:
-    """Build a runner from a flat-file `Connection`'s primitives (secret resolved
-    eagerly; raw config, not the ORM model). ``sampling=None`` = whole-object read.
-    """
-    if conn_type not in _FILE_TYPES:
-        raise ValueError(f"{conn_type!r} is not a flat-file datasource")
-    secret = resolve_flatfile_secret(
-        conn_type=conn_type, config=config, secret_ref=secret_ref, secret_store=secret_store
-    )
-    return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
-
-
-class MissingCredentialError(ValueError):
-    """The connection stores no credential and its auth mode needs one."""
-
-
-def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
-    """Whether a flat-file connection of this config needs no stored secret (GCS anonymous)."""
-    from backend.app.datasources.registry import authenticates_without_secret as answer
-
-    return answer(conn_type, config)
-
-
-def missing_credential(conn_type: str, config: dict[str, Any], secret_ref: str | None) -> bool:
-    """The connection stores no credential and its auth mode needs one — the one rule every
-    flat-file caller checks before it reaches the store."""
-    return not secret_ref and not authenticates_without_secret(conn_type, config)
-
-
-def resolve_flatfile_secret(
-    *,
-    conn_type: str,
-    config: dict[str, Any],
-    secret_ref: str | None,
-    secret_store: SecretStore,
-) -> str | None:
-    """The credential every flat-file read presents, or ``None`` for an anonymous connection."""
-    if missing_credential(conn_type, config, secret_ref):
-        raise MissingCredentialError("flat-file connection requires secret_ref for the credential")
-    return secret_store.get(secret_ref) if secret_ref else None
 
 
 # ───────────────────────── batch resolution ────────────────────────

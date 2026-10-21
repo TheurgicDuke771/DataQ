@@ -31,7 +31,8 @@ from backend.app.datasources.generic_sql import (
     schema_names,
     typed_table_rows,
 )
-from backend.app.datasources.sql_engines import SQL_ENGINES, authenticates_without_secret
+from backend.app.datasources.registry import authenticates_without_secret
+from backend.app.datasources.sql_engines import SQL_ENGINES
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.failure_classifier import safe_failure_reason
 

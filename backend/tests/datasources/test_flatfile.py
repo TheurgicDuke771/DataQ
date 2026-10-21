@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from backend.app.core.config import get_settings
-from backend.app.datasources import flatfile
+from backend.app.datasources import flatfile, registry
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec, SampleSpec
 from backend.app.datasources.sampling import SamplingDrawError, ScanTooLargeError
 from backend.tests.support.adversarial import ADVERSARIAL_CSV_BODIES
@@ -551,7 +551,7 @@ def test_runner_advertises_the_kinds_it_implements() -> None:
 
 
 def test_build_flatfile_runner_resolves_secret() -> None:
-    runner = flatfile.build_flatfile_runner(
+    runner = registry.build_flatfile_runner(
         conn_type="s3",
         config={"bucket": "b"},
         secret_ref="ref",
@@ -562,7 +562,7 @@ def test_build_flatfile_runner_resolves_secret() -> None:
 
 def test_build_flatfile_runner_rejects_non_flatfile_type() -> None:
     with pytest.raises(ValueError, match="not a flat-file datasource"):
-        flatfile.build_flatfile_runner(
+        registry.build_flatfile_runner(
             conn_type="snowflake",
             config={},
             secret_ref="ref",
@@ -572,7 +572,7 @@ def test_build_flatfile_runner_rejects_non_flatfile_type() -> None:
 
 def test_build_flatfile_runner_requires_secret_ref() -> None:
     with pytest.raises(ValueError, match="requires secret_ref"):
-        flatfile.build_flatfile_runner(
+        registry.build_flatfile_runner(
             conn_type="s3",
             config={},
             secret_ref=None,
@@ -4381,7 +4381,7 @@ def test_list_directory_gcs_reports_truncation_past_the_limit(
 def test_build_flatfile_runner_gcs_anonymous_needs_no_secret_ref() -> None:
     from backend.tests.support.fake_secret_store import FakeSecretStore
 
-    runner = flatfile.build_flatfile_runner(
+    runner = registry.build_flatfile_runner(
         conn_type="gcs",
         config={"bucket": "raw", "auth_type": "anonymous"},
         secret_ref=None,
@@ -4389,6 +4389,6 @@ def test_build_flatfile_runner_gcs_anonymous_needs_no_secret_ref() -> None:
     )
     assert isinstance(runner, flatfile.FlatFileCheckRunner)
     with pytest.raises(ValueError, match="requires secret_ref"):
-        flatfile.build_flatfile_runner(
+        registry.build_flatfile_runner(
             conn_type="gcs", config=_GCS_CONFIG, secret_ref=None, secret_store=FakeSecretStore()
         )
