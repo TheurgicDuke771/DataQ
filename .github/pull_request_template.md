@@ -52,6 +52,16 @@ Fixes #
 - [ ] **`docs/progress.md` — N/A** for this PR
 - [ ] **Security implications considered** (auth, input validation, secret handling, PII in logs)
 
+## Standards for new code (CONTRIBUTING rule 44)
+
+<!-- Tick what applies; write N/A beside a group that does not. A standard the PR cannot meet is named here with its filed issue. -->
+- [ ] **UI a11y:** new controls work by keyboard; dialogs and drawers take and return focus; every control has an accessible name; async status is announced (live region); charts have a text or table alternative; theme tokens only, both themes; new routes scanned (rule 4b) and new click-to-navigate rows have a `keyboard.spec.ts` case; checked in the accessibility tree
+- [ ] **MCP:** `mcp-honesty-reviewer` run on any `backend/app/mcp/server.py` change; sibling docstrings re-read
+- [ ] **Migrations:** `migration-safety` run; single alembic head after merging `main`
+- [ ] **Dependencies:** pinned in the single source of truth; licence gate passes
+- [ ] **Driver boundary:** values from a driver/SDK tested in the shape it returns (`driver-boundary-guard`)
+- [ ] **Published docs:** no ticket or internal-doc references; counts checked against the code
+
 ## Schema migration?
 
 - [ ] No schema change
