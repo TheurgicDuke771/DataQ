@@ -155,6 +155,11 @@ section below.
 
 ### Fixed
 
+- **Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.**
+  Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
+  automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
+  keep focus where you were and announce the result; and per-row actions (promote, enable or
+  disable a check, dismiss or restore masking) are named for the row they act on.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
