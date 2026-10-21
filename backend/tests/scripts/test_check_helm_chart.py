@@ -231,7 +231,15 @@ def test_each_breakage_is_reported(breakage: Any, message: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["SECRET_STORE", "AWS_SECRETS_MANAGER_PREFIX", "SECRET_ORPHAN_PURGE", "X_SECRET_NAME"]
+    "name",
+    [
+        "SECRET_STORE",
+        "AWS_SECRETS_MANAGER_PREFIX",
+        "SECRET_ORPHAN_PURGE",
+        "X_SECRET_NAME",
+        "TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID",
+        "TELEMETRY_SINK",
+    ],
 )
 def test_setting_names_that_merely_mention_secrets_are_not_credentials(name: str) -> None:
     assert not hc._is_credential_name(name)

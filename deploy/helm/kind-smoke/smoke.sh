@@ -18,7 +18,7 @@ mail_port=18025
 pids=()
 
 cleanup() {
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
   if [ "${KEEP:-}" != "1" ]; then kind delete cluster --name "$cluster" >/dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT
@@ -30,10 +30,12 @@ k() { kubectl -n "$ns" "$@"; }
 step "kind cluster $cluster"
 kind get clusters 2>/dev/null | grep -qx "$cluster" || kind create cluster --name "$cluster" --wait 120s
 kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
-# Pulled once on the host and loaded, rather than pulled again inside the node.
+# Pulled once on the host and imported into the node, rather than pulled again inside it.
+# (`kind load` asks for every platform of a multi-arch image and fails when only one is local.)
 for image in dataq-backend dataq-frontend; do
-  docker pull -q "ghcr.io/theurgicduke771/$image:$tag" >/dev/null
-  kind load docker-image --name "$cluster" "ghcr.io/theurgicduke771/$image:$tag"
+  ref="ghcr.io/theurgicduke771/$image:$tag"
+  docker pull -q "$ref" >/dev/null
+  docker save "$ref" | docker exec -i "$cluster-control-plane" ctr -n k8s.io images import - >/dev/null
 done
 
 step "throwaway dependencies (credentials generated now, never written to disk)"

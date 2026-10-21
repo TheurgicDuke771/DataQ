@@ -101,6 +101,13 @@ config:
   rateLimitXffTrustedHops: 0
   warehouseLineageEnabled: false
   otlpEndpoint: ""
+  # Usage telemetry: off | file | otlp. Nothing is recorded until a workspace admin also opts in.
+  # otlp needs otlpEndpoint (or an App Insights connection string in existingSecret).
+  telemetry:
+    sink: "off"
+    # file sink: a PersistentVolumeClaim you own, mounted at /var/lib/dataq on the api, worker
+    # and beat; events go to usage-events.jsonl in it. ReadWriteMany if those pods span nodes.
+    existingClaim: ""
   # Further NON-secret settings, NAME: value. A name that looks like a credential is refused;
   # put those in existingSecret.
   extraEnv: {}

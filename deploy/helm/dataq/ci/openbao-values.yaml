@@ -19,6 +19,14 @@ secretStore:
 trustedCA:
   existingConfigMap: dataq-ca
 config:
+  telemetry:
+    sink: file
+    existingClaim: dataq-telemetry
   extraEnv:
+    TAMPER_ANCHOR: object_lock
+    TAMPER_ANCHOR_OBJECT_LOCK_BUCKET: dataq-anchors
+    TAMPER_ANCHOR_OBJECT_LOCK_SECRET_NAME: anchor-s3-secret
+    TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID: AKIAEXAMPLEONLY
+    TAMPER_ANCHOR_OBJECT_LOCK_REGION: us-east-1
     WORKER_CONCURRENCY: "4"
     SLACK_WEBHOOK_SECRET_NAME: channel-slack

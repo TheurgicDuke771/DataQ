@@ -150,6 +150,14 @@
         "rateLimitXffTrustedHops": {"type": "integer", "minimum": 0},
         "warehouseLineageEnabled": {"type": "boolean"},
         "otlpEndpoint": {"type": "string"},
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sink": {"enum": ["off", "file", "otlp"]},
+            "existingClaim": {"type": "string"}
+          }
+        },
         "extraEnv": {
           "type": "object",
           "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},

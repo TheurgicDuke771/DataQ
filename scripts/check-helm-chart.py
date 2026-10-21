@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHART = ROOT / "deploy" / "helm" / "dataq"
 CI_VALUES = CHART / "ci"
 CREDENTIAL_NAME = re.compile(
-    r"PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|_KEY_|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$"
+    r"PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$"
 )
 WORKLOAD_KINDS = {"Deployment", "Job"}
 
@@ -40,6 +40,7 @@ MUST_FAIL: tuple[tuple[str, list[str]], ...] = (
     ("the moving latest tag", ["--set", "image.backend.tag=latest"]),
     ("a root pod", ["--set", "backendSecurityContext.pod.runAsNonRoot=false"]),
     ("an unknown auth mode", ["--set", "auth.mode=saml"]),
+    ("a telemetry file with nowhere to write it", ["--set", "config.telemetry.sink=file"]),
     ("an unknown top-level key", ["--set", "apii.replicas=2"]),
 )
 

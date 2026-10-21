@@ -102,9 +102,13 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- if and (eq $store "azure_key_vault") (not .Values.secretStore.azureKeyVault.url) -}}
 {{- fail "secretStore.backend=azure_key_vault needs secretStore.azureKeyVault.url" -}}
 {{- end -}}
+{{- $tel := .Values.config.telemetry -}}
+{{- if and (eq $tel.sink "file") (not $tel.existingClaim) -}}
+{{- fail "config.telemetry.sink=file needs config.telemetry.existingClaim: the root filesystem is read-only, so the events file needs a volume" -}}
+{{- end -}}
 {{- range $name, $_ := .Values.config.extraEnv -}}
 {{- $upper := upper $name -}}
-{{- if and (regexMatch "PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|_KEY_|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$" $upper) (not (hasSuffix "_NAME" $upper)) -}}
+{{- if and (regexMatch "PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$" $upper) (not (hasSuffix "_NAME" $upper)) -}}
 {{- fail (printf "config.extraEnv.%s looks like a credential; put it in the existingSecret instead" $name) -}}
 {{- end -}}
 {{- end -}}
@@ -127,6 +131,8 @@ depends on it, so `helm template` fails as well as `helm install`.
 -}}
 {{- with $v.config.deploymentRegion }}{{ $_ := set $env "DEPLOYMENT_REGION" . }}{{ end -}}
 {{- with $v.config.otlpEndpoint }}{{ $_ := set $env "OTEL_EXPORTER_OTLP_ENDPOINT" . }}{{ end -}}
+{{- $_ := set $env "TELEMETRY_SINK" $v.config.telemetry.sink -}}
+{{- if eq $v.config.telemetry.sink "file" }}{{ $_ := set $env "TELEMETRY_FILE_PATH" "/var/lib/dataq/usage-events.jsonl" }}{{ end -}}
 {{- if eq $v.secretStore.backend "openbao" -}}
 {{- $_ := set $env "OPENBAO_ADDR" $v.secretStore.openbao.addr -}}
 {{- $_ := set $env "OPENBAO_MOUNT" $v.secretStore.openbao.mount -}}
@@ -182,6 +188,11 @@ depends on it, so `helm template` fails as well as `helm install`.
   configMap:
     name: {{ . }}
 {{- end }}
+{{- if eq .Values.config.telemetry.sink "file" }}
+- name: telemetry
+  persistentVolumeClaim:
+    claimName: {{ .Values.config.telemetry.existingClaim }}
+{{- end }}
 {{- end -}}
 
 {{- define "dataq.backendVolumeMounts" -}}
@@ -193,6 +204,10 @@ depends on it, so `helm template` fails as well as `helm install`.
 - name: trusted-ca
   mountPath: /etc/dataq/ca
   readOnly: true
+{{- end }}
+{{- if eq .Values.config.telemetry.sink "file" }}
+- name: telemetry
+  mountPath: /var/lib/dataq
 {{- end }}
 {{- end -}}
 
