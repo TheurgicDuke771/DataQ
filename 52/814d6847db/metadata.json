@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "52814d6847db",
+  "strategy": "manual-commit",
+  "branch": "docs/a11y-marketing-claim",
+  "checkpoints_count": 5,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/52/814d6847db/0/metadata.json",
+      "transcript": "/52/814d6847db/0/full.jsonl",
+      "compact_transcript": "/52/814d6847db/0/transcript.jsonl",
+      "content_hash": "/52/814d6847db/0/content_hash.txt",
+      "prompt": "/52/814d6847db/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 6657,
+    "cache_read_tokens": 2822550,
+    "output_tokens": 4661,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 123187,
+      "cache_read_tokens": 1259439,
+      "output_tokens": 1282,
+      "api_call_count": 12
+    }
+  }
+}
