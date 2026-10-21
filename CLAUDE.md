@@ -158,7 +158,7 @@ Airflow callbacks require the user to add a snippet to their DAGs (we can't muta
 
 ## 6. Working agreements (rules above feature work)
 
-Full list (42 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
+Full list (45 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
 
 ### Commit & change discipline
 Per-functionality workflow, in order:
@@ -213,7 +213,7 @@ Per-functionality workflow, in order:
 
 ## 7. Required reading before coding
 
-1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 42-rule working agreements + DoD + commit/branch conventions
+1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 45-rule working agreements + DoD + commit/branch conventions
 2. [docs/site/adr/](docs/site/adr/) — all ADRs (architecture decisions with rationale)
 3. [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) — the 8-week, 100-task product roadmap
 4. The current week's milestone target (see §13 below)
@@ -287,7 +287,7 @@ The full decision index — one line per ADR with status — lives at **[docs/si
 | Story ledger (curated narrative wins — internal) | [docs/stories.md](docs/stories.md) |
 | System architecture diagram | [docs/site/architecture/overview.md](docs/site/architecture/overview.md) |
 | Architecture Decision Records | [docs/site/adr/](docs/site/adr/) |
-| Working agreements (full 42-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Working agreements (full 45-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Live task tracker (post-v1, per-PR status) | [docs/progress.md](docs/progress.md) — completed ledgers are archived at [docs/progress-v1.md](docs/progress-v1.md), [docs/progress-v1.1.md](docs/progress-v1.1.md) and [docs/progress-v1.2.md](docs/progress-v1.2.md) |
 | **Deploy runbook + pre-/post-deploy checklists** | [deploy/README.md](deploy/README.md) — provisioning, the `workflow_dispatch` Deploy flow, and the **pre-deploy** (CI green, docs current, migration-safe) + **post-deploy smoke** (login, UI renders, every high-level flow works, infra rolled) checklists. **Run both around every deploy.** |
 | **Static read-only demo** (Pages `/demo/`, #2419) | [frontend/e2e-demo/README.md](frontend/e2e-demo/README.md) — the real SPA built with `VITE_DEMO`, answering from API responses that CI's `frontend-e2e` job records off the seeded stack on every run (never committed); `publish-demo` republishes on each push to `main`. **A new `<Route>` must be added to `e2e-demo/routes.ts`** (a Vitest check fails otherwise). |
