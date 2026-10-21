@@ -41,7 +41,11 @@ from backend.app.services import (
     trigger_labels,
 )
 from backend.app.services import run_service as svc
-from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
+from backend.app.services.comparison_report import (
+    REPORT_MEDIA_TYPES,
+    ComparisonReportInvalidError,
+    build_report,
+)
 from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["runs"])
@@ -678,10 +682,8 @@ def list_near_misses(
         200: {
             "description": "The report file, CSV or XLSX as `fmt` asks.",
             "content": {
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
-                    "schema": {"type": "string", "format": "binary"}
-                },
-                "text/csv": {"schema": {"type": "string", "format": "binary"}},
+                media: {"schema": {"type": "string", "format": "binary"}}
+                for media in REPORT_MEDIA_TYPES.values()
             },
         }
     },
