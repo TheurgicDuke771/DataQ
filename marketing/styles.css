@@ -717,3 +717,13 @@ img { max-width: 100%; }
 .small-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 960px) { .small-grid-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .small-grid-6 { grid-template-columns: minmax(0, 1fr); } }
+
+/* Detect → Explain → Impact → Gate → Remediate. */
+.flow { background: var(--bg-subtle); }
+.flow-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+.flow-step { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; }
+.flow-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--indigo-600); color: #fff; font-size: 14px; font-weight: 700; }
+.flow-step h3 { margin: 14px 0 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.flow-step p { margin: 6px 0 0; font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+@media (max-width: 1080px) { .flow-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .flow-steps { grid-template-columns: minmax(0, 1fr); } }
