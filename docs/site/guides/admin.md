@@ -4,7 +4,7 @@ The admin area is where a **workspace Admin** sees the whole workspace and manag
 things that are shared rather than owned: membership, roles, access grants, workspace
 settings, compliance evidence, and inbound integrations.
 
-It lives at `/admin` and is split into six deep-linkable sub-pages. The tab you are on
+It lives at `/admin` and is split into seven deep-linkable sub-pages. The tab you are on
 **is** the URL, so any tab can be bookmarked, shared with another admin, or reloaded
 without losing your place. `/admin` on its own lands on **Overview**.
 
@@ -16,6 +16,7 @@ without losing your place. `/admin` on its own lands on **Overview**.
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
 | Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone. |
+| Calendar | `/admin/calendar` | The workspace's seasonal calendar: named sale and holiday periods that per-period anomaly checks can attach. |
 | Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture. |
 | Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses. |
 
@@ -394,6 +395,26 @@ score at once — the dashboard cards and their period-over-period deltas, the s
 asset scorecards, and any run you look at from before the change. There is no data-side
 event to explain the step; the audit log carries it, with the old and new weights and who
 saved them. **Reset to defaults** removes the stored row and is audited the same way.
+
+## Calendar — seasonal periods
+
+`/admin/calendar` holds the periods when the business runs differently on purpose: a sale,
+a holiday, a launch. Each entry is either **every year on the same dates** (a month and day
+range, which may cross the year end) or **on specific dates**, for a period that moves.
+Give each year's dated entry the same **series** so this year's sale is compared with last
+year's.
+
+An entry changes no check by being here. A check author attaches it in the check editor,
+on an anomaly check that watches rows or a sum per period with yearly seasonality on; from
+then on that check lines the period up with its previous occurrence. The **Attached
+checks** column counts them, and deleting an entry that any check still attaches is
+refused: the page lists those checks, each linking to its editor, so you can remove it
+there first. Every add, edit and delete is audited.
+
+Members and viewers cannot open this page, but they see the entries' names and dates in
+the check editor's picker. An admin can also add an entry straight from a check's trend,
+where the check's own history shows a period that recurs: see
+[Detected seasonal periods](datasources-checks.md).
 
 ## Integrations — webhook auth
 

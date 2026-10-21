@@ -29,6 +29,7 @@ import { AssetLink } from '../components/assets/AssetLink';
 import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
 import { EngineTag } from '../components/checks/checkBadges';
 import { CheckTrend } from '../components/checks/CheckTrend';
+import { SeasonalResultSummary } from '../components/results/SeasonalResultSummary';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
 import {
   checkExportName,
@@ -642,6 +643,9 @@ function ResultsTable({
             <Flex vertical gap={16}>
               <CheckTrend key={record.check_id} suiteId={suiteId} check={check} />
               {coldStart && <Alert type="info" showIcon title={coldStart} />}
+              {check.kind === 'anomaly' && (
+                <SeasonalResultSummary observed={record.observed_value} />
+              )}
               {check.kind === 'comparison' ? (
                 <ComparisonResultDetail runId={runId} result={record} />
               ) : (

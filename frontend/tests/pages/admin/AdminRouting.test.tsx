@@ -140,6 +140,15 @@ describe('admin routing', () => {
     expect(mockUsers).not.toHaveBeenCalled();
   });
 
+  it('refuses the seasonal calendar to a member and a viewer, reading nothing', async () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const { unmount } = renderAdminAt('/admin/calendar', role);
+      expect(await screen.findByText('403 — Forbidden', undefined, LAZY)).toBeInTheDocument();
+      expect(screen.queryByText('Seasonal calendar')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
   it('a viewer is refused the members sub-page too', async () => {
     renderAdminAt('/admin/members', 'viewer');
     expect(await screen.findByText('403 — Forbidden', undefined, LAZY)).toBeInTheDocument();

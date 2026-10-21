@@ -118,7 +118,15 @@ function defineScans(mode: Theme): void {
     });
 
     // Every admin sub-page is its own route; `/admin` redirects to Overview.
-    for (const sub of ['overview', 'members', 'suites', 'integrations', 'settings', 'compliance']) {
+    for (const sub of [
+      'overview',
+      'members',
+      'suites',
+      'integrations',
+      'settings',
+      'calendar',
+      'compliance',
+    ]) {
       test(`admin ${sub}`, async ({ page }) => {
         // dev-bypass is workspace-admin in this lane (CI + compose parity, see e2e/README.md).
         await page.goto(`/admin/${sub}`);

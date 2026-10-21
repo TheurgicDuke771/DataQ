@@ -30,6 +30,7 @@ const ROUTES: [string, string][] = [
   ['/admin/suites', 'Suites · Admin · DataQ'],
   ['/admin/integrations', 'Integrations · Admin · DataQ'],
   ['/admin/settings', 'Settings · Admin · DataQ'],
+  ['/admin/calendar', 'Seasonal calendar · Admin · DataQ'],
   ['/admin/compliance', 'Compliance · Admin · DataQ'],
 ];
 

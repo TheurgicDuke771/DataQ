@@ -22,6 +22,7 @@ export const ROUTE_PATTERNS = [
   '/admin/members',
   '/admin/suites',
   '/admin/settings',
+  '/admin/calendar',
   '/admin/compliance',
   '/admin/integrations',
 ] as const;

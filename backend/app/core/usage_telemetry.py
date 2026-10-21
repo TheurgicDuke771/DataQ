@@ -105,6 +105,7 @@ ROUTE_NAMES: Final[tuple[str, ...]] = (
     "admin_members",
     "admin_suites",
     "admin_settings",
+    "admin_calendar",
     "admin_compliance",
     "admin_integrations",
     "not_found",

@@ -16,6 +16,9 @@ const AdminSuites = lazy(() => import('./AdminSuites').then((m) => ({ default: m
 const AdminSettings = lazy(() =>
   import('./AdminSettings').then((m) => ({ default: m.AdminSettings })),
 );
+const AdminCalendar = lazy(() =>
+  import('./AdminCalendar').then((m) => ({ default: m.AdminCalendar })),
+);
 const AdminCompliance = lazy(() =>
   import('./AdminCompliance').then((m) => ({ default: m.AdminCompliance })),
 );
@@ -42,6 +45,7 @@ export const ADMIN_ROUTES = (
     <Route path="members" element={<AdminMembers />} />
     <Route path="suites" element={<AdminSuites />} />
     <Route path="settings" element={<AdminSettings />} />
+    <Route path="calendar" element={<AdminCalendar />} />
     <Route path="compliance" element={<AdminCompliance />} />
     <Route path="integrations" element={<AdminIntegrations />} />
     {/* Unknown sub-page → Overview, not a 404 under a tab bar with nothing selected. */}
