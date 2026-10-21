@@ -36,6 +36,17 @@ jobs:
       - name: Ruff (lint)
         run: ruff check backend/
 
+      # In this required job rather than its own, which would need the ruleset edited. helm is on
+      # the runner image; PyYAML comes with pre-commit above.
+      - name: Helm chart (lint, render, kubeconform, invariants)
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  /tmp/kubeconform.tgz" | sha256sum -c -
+          tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
+          helm version
+          python scripts/check-helm-chart.py --kubeconform /tmp/kubeconform
+
   backend-types:
     name: Backend — type check
     runs-on: ubuntu-latest

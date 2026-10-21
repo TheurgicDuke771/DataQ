@@ -1,0 +1,18 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $component, $replicas := dict "api" .Values.api.replicas "worker" .Values.worker.replicas "frontend" .Values.frontend.replicas }}
+{{- if gt (int $replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dataq.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,25 @@
+# Test-only values for the kind smoke (smoke.sh): plain-HTTP in-cluster dependencies, OTP
+# sign-in through the bundled Mailpit, NetworkPolicy and PodDisruptionBudgets exercised.
+existingSecret: dataq-env
+auth:
+  workspaceAdminEmails: admin@example.com
+  otp:
+    smtpHost: mailpit
+    smtpPort: 1025
+    tlsMode: none
+    username: dataq
+    from: dataq@example.com
+    passwordSecretName: dataq-smtp
+    allowedEmails: admin@example.com
+secretStore:
+  openbao:
+    addr: http://openbao:8200
+config:
+  publicBaseUrl: http://localhost:8080
+api:
+  replicas: 2
+frontend:
+  replicas: 2
+  hsts: ""
+networkPolicy:
+  enabled: true

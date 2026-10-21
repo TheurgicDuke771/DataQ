@@ -113,7 +113,8 @@ code in the bundled inbox at **`http://localhost:8025`**.
   history before it scores. No new orders arrive while the stack runs, so the freshness
   check warns after a day and fails after three, which is the monitor doing its job;
   restarting the stack makes the data current again. The sample warehouse has no host
-  port and is reachable only inside the compose network.
+  port and is reachable only inside the compose network. The project site has a
+  [walkthrough of these screens](https://theurgicduke771.github.io/DataQ/#walkthrough).
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
   Take the compose file from the same release (replace `main` with `vX.Y.Z` in the

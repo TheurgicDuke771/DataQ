@@ -17,6 +17,10 @@ is a fallback for the other — no Azure resource names are hardcoded in app cod
 identity lives only behind the app's seams (ADR 0010/0013), and each cloud's manifests
 are infra config, not business logic.
 
+For a customer's own Kubernetes cluster, the portable artifact is the Helm chart in
+[`deploy/helm/dataq/`](helm/dataq/) — install, upgrade and rollback are in
+[Install on Kubernetes (Helm)](../docs/site/operate/kubernetes.md).
+
 ## Before you deploy: production prerequisites
 
 Read this before a production rollout. It's the "what must change, what access you

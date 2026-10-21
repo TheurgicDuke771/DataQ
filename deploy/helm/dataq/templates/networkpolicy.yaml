@@ -1,0 +1,53 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dataq.fullname" . }}-api
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "dataq.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 14 }}
+      ports:
+        - port: http
+---
+{{- range $component := list "worker" "beat" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dataq.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+  policyTypes: [Ingress]
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dataq.fullname" . }}-frontend
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: http
+      {{- with .Values.networkPolicy.frontendIngressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

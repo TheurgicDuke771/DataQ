@@ -1,0 +1,272 @@
+# DataQ Helm chart values. Install guide: docs/site/operate/kubernetes.md.
+#
+# No field here holds a credential. Every secret value — DATABASE_URL, REDIS_URL, the vault
+# token — lives in a Secret you create before installing, named by `existingSecret`.
+
+# REQUIRED. A Secret in the release namespace whose keys become environment variables on the
+# api, worker, beat and the migration job: DATABASE_URL and REDIS_URL always, plus what the
+# secret store needs (OPENBAO_TOKEN, or OPENBAO_ROLE_ID + OPENBAO_SECRET_ID).
+existingSecret: ""
+
+# More Secrets mounted as env on the backend pods (e.g. KV_SECRET_* for SECRET_STORE=env).
+extraEnvFromSecrets: []
+
+image:
+  registry: ghcr.io
+  pullPolicy: IfNotPresent
+  backend:
+    repository: theurgicduke771/dataq-backend
+    # Defaults to the chart's appVersion. Pin a release; never `latest`.
+    tag: ""
+    # sha256:… — when set, the image is pulled by digest.
+    digest: ""
+  frontend:
+    repository: theurgicduke771/dataq-frontend
+    tag: ""
+    digest: ""
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Used to build the api's in-cluster address for the frontend proxy (nginx resolves it without
+# the pod's DNS search path).
+clusterDomain: cluster.local
+
+auth:
+  # otp | oidc | bypass. Must match on the backend and the frontend; the chart sets both.
+  mode: otp
+  # `bypass` signs everyone in as an admin with no credential. Refused unless this is true AND
+  # config.environment is `dev`.
+  allowDevBypass: false
+  # Bootstrap + break-glass workspace admins (comma-separated emails).
+  workspaceAdminEmails: ""
+  otp:
+    smtpHost: ""
+    smtpPort: 587
+    # starttls | implicit | none
+    tlsMode: starttls
+    username: ""
+    from: ""
+    # The NAME the SMTP password is stored under in the secret store, never the password.
+    passwordSecretName: ""
+    # Path to a PEM CA bundle for a privately-signed relay (see trustedCA).
+    caBundle: ""
+    # Signup allowlist — at least one of these is required; there is no open registration.
+    allowedEmails: ""
+    allowedDomains: ""
+    defaultRole: member
+  oidc:
+    # Backend token validation.
+    issuer: ""
+    audience: ""
+    allowedEmails: ""
+    allowedDomains: ""
+    defaultRole: member
+    # An allowlist above is required. true admits anyone the identity provider signs in: only
+    # when the provider itself restricts who can (e.g. a single-tenant directory).
+    openSignup: false
+    # Frontend sign-in. authority defaults to issuer.
+    authority: ""
+    clientId: ""
+    apiScope: ""
+    scope: ""
+    # "" (RP-initiated logout) | cognito
+    logoutStyle: ""
+
+secretStore:
+  # openbao | azure_key_vault | aws_secrets_manager | env
+  backend: openbao
+  openbao:
+    addr: ""
+    mount: secret
+    # Path to the CA bundle the vault's certificate chains to (see trustedCA).
+    caBundle: ""
+  azureKeyVault:
+    url: ""
+    # Client id of the user-assigned identity (workload identity).
+    clientId: ""
+  awsSecretsManager:
+    prefix: dataq/
+
+config:
+  # prod | staging | dev. prod hides /docs; only dev allows the dev bypass.
+  environment: prod
+  logLevel: INFO
+  # The browser-facing origin, e.g. https://dataq.example.com. Derived from the first ingress
+  # host when empty and the ingress is on.
+  publicBaseUrl: ""
+  deploymentRegion: ""
+  rateLimitEnabled: true
+  # Proxies that append X-Forwarded-For before the api. 0 = derive: 2 with the ingress on
+  # (ingress controller + frontend), else 1.
+  rateLimitXffTrustedHops: 0
+  warehouseLineageEnabled: false
+  otlpEndpoint: ""
+  # Usage telemetry (backend v1.3.0 on): off | file | otlp. Nothing is recorded until a
+  # workspace admin also opts in.
+  # otlp needs otlpEndpoint (or an App Insights connection string in existingSecret).
+  telemetry:
+    sink: "off"
+    # file sink: a PersistentVolumeClaim you own, mounted at /var/lib/dataq on the api, worker
+    # and beat; events go to usage-events.jsonl in it. ReadWriteMany if those pods span nodes.
+    existingClaim: ""
+  # Further NON-secret settings, NAME: "value" (quote numbers). Refused: a name that looks like
+  # a credential (put those in existingSecret) or one the chart sets from the values above.
+  extraEnv: {}
+
+# A ConfigMap of CA certificates (yours, created beforehand) mounted read-only on every backend
+# pod at /etc/dataq/ca. Point DATABASE_URL's sslrootcert, OPENBAO_CA_BUNDLE etc. at a file in it.
+trustedCA:
+  existingConfigMap: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # e.g. IRSA (eks.amazonaws.com/role-arn) or Azure workload identity (azure.workload.identity/client-id).
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+backendSecurityContext:
+  pod:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  container:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+
+api:
+  replicas: 1
+  # TLS on the frontend→api hop. A kubernetes.io/tls Secret (tls.crt, tls.key, ca.crt) whose
+  # certificate names the api Service; the frontend verifies it against ca.crt.
+  tls:
+    existingSecret: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 4
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  service:
+    port: 8000
+
+worker:
+  replicas: 1
+  # Celery finishes in-flight tasks on SIGTERM before exiting.
+  terminationGracePeriodSeconds: 120
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  livenessProbe: {}
+
+beat:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  livenessProbe: {}
+
+frontend:
+  replicas: 1
+  # Space-separated origins the browser may call besides 'self' (CSP connect-src). The image
+  # default is `https:`; narrow it to your IdP's origins.
+  cspConnectSrc: ""
+  # Strict-Transport-Security value; "" turns the header off.
+  hsts: "max-age=31536000; includeSubDomains"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /_alb-health
+      port: http
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /_alb-health
+      port: http
+    periodSeconds: 10
+  service:
+    type: ClusterIP
+    port: 80
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      runAsUser: 101
+      runAsGroup: 101
+      fsGroup: 101
+      seccompProfile:
+        type: RuntimeDefault
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+
+migrate:
+  # Seconds before a hung migration is killed (and the install/upgrade fails).
+  activeDeadlineSeconds: 900
+  # The hook runs before the chart's own ServiceAccount exists on a first install, so it uses
+  # this one ("" = the namespace default, with no API token mounted).
+  serviceAccountName: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  #  - host: dataq.example.com
+  # Each entry: {secretName, hosts: [...]}; the certificate Secret is yours.
+  tls: []
+
+podDisruptionBudget:
+  # Rendered for api, worker and frontend only when that component runs more than one replica.
+  enabled: true
+
+networkPolicy:
+  # Ingress-only policies: the api accepts traffic from the frontend pods alone; worker and
+  # beat accept none. Egress is left open (warehouses can live anywhere).
+  enabled: false
+  # Peers allowed to reach the frontend; empty = anyone.
+  frontendIngressFrom: []

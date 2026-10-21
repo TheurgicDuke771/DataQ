@@ -1,0 +1,153 @@
+{{- include "dataq.validate" . }}
+{{- $tls := .Values.api.tls.existingSecret }}
+{{- $mode := .Values.auth.mode }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dataq.fullname" . }}-frontend
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "dataq.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dataq.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.frontend.securityContext.pod | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # The image's entrypoint writes its generated config under /etc/nginx, which belongs to
+      # root. A writable copy lets nginx run unprivileged on a read-only root filesystem.
+      initContainers:
+        - name: nginx-config
+          image: {{ include "dataq.image" (dict "ctx" . "image" .Values.image.frontend) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["cp", "-R", "/etc/nginx/.", "/nginx-etc/"]
+          securityContext:
+            {{- toYaml .Values.frontend.securityContext.container | nindent 12 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-etc
+              mountPath: /nginx-etc
+      containers:
+        - name: frontend
+          image: {{ include "dataq.image" (dict "ctx" . "image" .Values.image.frontend) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATAQ_API_UPSTREAM
+              value: {{ printf "%s://%s-api.%s.svc.%s:%v" (include "dataq.apiScheme" .) (include "dataq.fullname" .) .Release.Namespace .Values.clusterDomain .Values.api.service.port | quote }}
+            {{- if $tls }}
+            - name: DATAQ_API_UPSTREAM_CA
+              value: /etc/dataq/api-ca/ca.crt
+            {{- end }}
+            - name: DATAQ_AUTH_MODE
+              value: {{ $mode | quote }}
+            {{- if eq $mode "oidc" }}
+            - name: DATAQ_AUTH_AUTHORITY
+              value: {{ default .Values.auth.oidc.issuer .Values.auth.oidc.authority | quote }}
+            - name: DATAQ_AUTH_CLIENT_ID
+              value: {{ .Values.auth.oidc.clientId | quote }}
+            - name: DATAQ_AUTH_API_SCOPE
+              value: {{ .Values.auth.oidc.apiScope | quote }}
+            - name: DATAQ_AUTH_SCOPE
+              value: {{ .Values.auth.oidc.scope | quote }}
+            - name: DATAQ_AUTH_LOGOUT_STYLE
+              value: {{ .Values.auth.oidc.logoutStyle | quote }}
+            {{- end }}
+            {{- with .Values.frontend.cspConnectSrc }}
+            - name: DATAQ_CSP_CONNECT_SRC
+              value: {{ . | quote }}
+            {{- end }}
+            - name: DATAQ_HSTS
+              value: {{ .Values.frontend.hsts | quote }}
+          {{- with .Values.frontend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.frontend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.frontend.securityContext.container | nindent 12 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-etc
+              mountPath: /etc/nginx
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+            {{- if $tls }}
+            - name: api-ca
+              mountPath: /etc/dataq/api-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: nginx-etc
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        {{- if $tls }}
+        # Only the CA certificate: the api's private key never reaches this pod.
+        - name: api-ca
+          secret:
+            secretName: {{ $tls }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dataq.fullname" . }}-frontend
+  labels:
+    {{- include "dataq.componentLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "dataq.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
