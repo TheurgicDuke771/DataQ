@@ -68,8 +68,9 @@ watches what you point it at, plus every table of a warehouse connection you swi
 | **Author precise checks without code** | Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, comparisons against a second dataset, anomaly detection on a learned baseline. Let the built-in assistant suggest checks from a column profile. |
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
-| **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
+| **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a Helm chart for your own Kubernetes; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
 | **Let assistants do the work** | Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Built with accessibility in mind** | Every screen of the app is scanned for serious accessibility violations in light and dark themes on every change, colour contrast is held to WCAG ratios, severity and run status carry a text label or pattern as well as colour, and core navigation works from the keyboard. A full WCAG conformance review is planned, so this describes the checks, not a conformance claim. |
 
 ## Who it is for
 
