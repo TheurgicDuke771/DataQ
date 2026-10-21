@@ -1,5 +1,5 @@
 import { App, Alert, Button, Card, Flex, Input, Select, Spin, Switch, Tag, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -21,6 +21,7 @@ import {
 import { useIsWorkspaceAdmin } from '../../auth/useMe';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useFocusFallback } from '../../hooks/useFocusFallback';
 import { errorMessage } from '../../utils/errors';
 import { Modal } from '../shared/Modal';
 
@@ -47,9 +48,20 @@ export function NotificationsPanel({
   const legacy =
     state.status === 'ok' &&
     (state.data.has_webhook || state.data.has_slack_webhook || !!state.data.email_recipients);
+  const [promoting, setPromoting] = useState<{ destination: LegacyDestination; label: string }>();
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  // A promote removes the row (often the whole card) its button sat in.
+  const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
+  const refocusAfterReload = useRef(false);
+  useEffect(() => {
+    if (refocusAfterReload.current && state.status === 'ok') {
+      refocusAfterReload.current = false;
+      restoreFocus();
+    }
+  }, [state, restoreFocus]);
 
   return (
-    <Flex vertical gap={16}>
+    <Flex vertical gap={16} ref={fallbackRef} tabIndex={-1}>
       <Card
         size="small"
         title={
@@ -92,8 +104,26 @@ export function NotificationsPanel({
           canManage={canManage}
           config={state.data}
           onChanged={reload}
+          onPromote={(destination, label) => {
+            setPromoting({ destination, label });
+            setPromoteOpen(true);
+          }}
+        />
+      )}
+      {promoting && (
+        <PromoteModal
+          open={promoteOpen}
+          suiteId={suiteId}
+          destination={promoting.destination}
+          label={promoting.label}
+          onClose={() => setPromoteOpen(false)}
+          afterClose={() => {
+            setPromoting(undefined);
+            restoreFocus();
+          }}
           onPromoted={() => {
             setChannelsEpoch((n) => n + 1);
+            refocusAfterReload.current = true;
             reload();
           }}
         />
@@ -257,16 +287,15 @@ function LegacyDestinations({
   canManage,
   config,
   onChanged,
-  onPromoted,
+  onPromote,
 }: {
   suiteId: string;
   canManage: boolean;
   config: SuiteNotification;
   onChanged: () => void;
-  onPromoted: () => void;
+  onPromote: (destination: LegacyDestination, label: string) => void;
 }) {
   const isAdmin = useIsWorkspaceAdmin();
-  const [promoting, setPromoting] = useState<{ destination: LegacyDestination; label: string }>();
   const { run, loading } = useAsyncAction('Could not clear the destination');
   // Clearing sends the loaded (server-known) enabled/alert_on so it never persists an
   // unsaved edit from the form above (#639 review).
@@ -330,7 +359,8 @@ function LegacyDestinations({
                   size="small"
                   type="primary"
                   disabled={loading}
-                  onClick={() => setPromoting({ destination: r.destination, label: r.label })}
+                  aria-label={`Promote to channel: ${r.label}`}
+                  onClick={() => onPromote(r.destination, r.label)}
                 >
                   Promote to channel
                 </Button>
@@ -343,26 +373,21 @@ function LegacyDestinations({
             </Flex>
           ))}
       </Flex>
-      {promoting && (
-        <PromoteModal
-          suiteId={suiteId}
-          destination={promoting.destination}
-          label={promoting.label}
-          onClose={() => setPromoting(undefined)}
-          onPromoted={onPromoted}
-        />
-      )}
     </Card>
   );
 }
 
 function PromoteModal({
+  open,
   suiteId,
   destination,
   label,
   onClose,
+  afterClose,
   onPromoted,
 }: {
+  open: boolean;
+  afterClose: () => void;
   suiteId: string;
   destination: LegacyDestination;
   label: string;
@@ -394,7 +419,9 @@ function PromoteModal({
 
   return (
     <Modal
-      open
+      open={open}
+      afterClose={afterClose}
+      destroyOnHidden
       title="Promote to channel"
       okText="Promote"
       okButtonProps={{ disabled: !trimmed }}
@@ -408,6 +435,7 @@ function PromoteModal({
           suite and removes the inline value. Alerts keep going to the same place.
         </Typography.Text>
         <Input
+          autoFocus
           aria-label="Channel name"
           placeholder="Channel name"
           maxLength={128}

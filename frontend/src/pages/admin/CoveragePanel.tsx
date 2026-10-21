@@ -1,4 +1,4 @@
-import { Alert, Card, Flex, Tag, Typography } from 'antd';
+import { Alert, App, Card, Flex, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -12,6 +12,7 @@ import { CoverageSettingsForm } from '../../components/coverage-settings/Coverag
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useFocusFallback } from '../../hooks/useFocusFallback';
 import { fetchFailure } from '../../utils/errors';
 
 /** Workspace sensitivity for automatic baselines (ADR 0047): applied by every automatic check
@@ -21,6 +22,14 @@ export function CoveragePanel() {
   const [saved, setSaved] = useState<CoverageSettings | null>(null);
   const { run, loading } = useAsyncAction('Could not save the coverage settings');
   const current = saved ?? (state.status === 'ok' ? state.data : null);
+  const { message } = App.useApp();
+  const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
+  const apply = (request: () => Promise<CoverageSettings>, done: string) =>
+    void run(async () => {
+      setSaved(await request());
+      message.success(done);
+      restoreFocus();
+    });
 
   return (
     <Card title="Automatic coverage" size="small">
@@ -36,7 +45,7 @@ export function CoveragePanel() {
         />
       )}
       {current && (
-        <Flex vertical gap={12}>
+        <Flex vertical gap={12} ref={fallbackRef} tabIndex={-1}>
           <Flex align="center" gap={12} wrap>
             <Typography.Text strong>Sensitivity of automatic checks</Typography.Text>
             <Tag color={current.is_default ? 'default' : 'blue'}>
@@ -57,8 +66,8 @@ export function CoveragePanel() {
             scope="Set for the workspace"
             clearLabel="Reset to defaults"
             saving={loading}
-            onSave={(doc) => void run(async () => setSaved(await putCoverageSettings(doc)))}
-            onClear={() => void run(async () => setSaved(await resetCoverageSettings()))}
+            onSave={(doc) => apply(() => putCoverageSettings(doc), 'Coverage settings saved')}
+            onClear={() => apply(resetCoverageSettings, 'Coverage settings reset to the defaults')}
           />
           <Alert
             type="info"

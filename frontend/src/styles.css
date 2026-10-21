@@ -257,6 +257,11 @@ a:focus-visible,
   text-decoration: underline;
 }
 
+/* A link inside running text: underlined, so it is not told apart by colour alone. */
+.dq-text-link {
+  text-decoration: underline;
+}
+
 /* Text for assistive tech only. */
 .dq-sr-only {
   position: absolute;

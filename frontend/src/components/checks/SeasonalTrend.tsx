@@ -21,6 +21,7 @@ import {
 } from '../../api/seasonalPeriods';
 import type { SeasonalPoint } from '../../api/suites';
 import { useIsWorkspaceAdmin } from '../../auth/useMe';
+import { useFocusFallback } from '../../hooks/useFocusFallback';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError } from '../../utils/fieldErrors';
 import { SEVERITY_SCALE } from '../../theme';
@@ -123,7 +124,12 @@ export function PeriodBaselineChart({
       isEmpty={data.length === 0}
       emptyText="No baseline observations recorded yet"
     >
-      <ComposedChart data={data} margin={{ top: 14, right: 12, left: -16, bottom: 0 }}>
+      <ComposedChart
+        data={data}
+        margin={{ top: 14, right: 12, left: -16, bottom: 0 }}
+        title="Stored periods and the band each judged period was scored against"
+        desc="The caption above describes the band, the expected line and the shaded periods; the Table view lists every value."
+      >
         <CartesianGrid {...GRID_PROPS} vertical={false} />
         <XAxis
           dataKey="x"
@@ -220,6 +226,8 @@ export function DetectedPeriodsList({
 }) {
   const isAdmin = useIsWorkspaceAdmin();
   const [promoting, setPromoting] = useState<DetectedPeriod | null>(null);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
   const ratio = detected.thresholds.ratio;
 
   if (detected.periods.length === 0) {
@@ -232,7 +240,7 @@ export function DetectedPeriodsList({
   }
 
   return (
-    <Flex vertical gap={4} data-testid="detected-periods">
+    <Flex vertical gap={4} data-testid="detected-periods" ref={fallbackRef} tabIndex={-1}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Detected periods (outlined on the chart): runs of periods at {ratio}× the level or more in
         this check’s own history. They change no verdict unless an admin adds one to the calendar
@@ -246,7 +254,15 @@ export function DetectedPeriodsList({
             actions={
               isAdmin && p.declared.length === 0
                 ? [
-                    <Button key="promote" size="small" onClick={() => setPromoting(p)}>
+                    <Button
+                      key="promote"
+                      size="small"
+                      aria-label={`Promote to calendar: ${spanText(p)}`}
+                      onClick={() => {
+                        setPromoting(p);
+                        setPromoteOpen(true);
+                      }}
+                    >
                       Promote to calendar
                     </Button>,
                   ]
@@ -273,12 +289,17 @@ export function DetectedPeriodsList({
       {promoting && (
         <PromoteModal
           period={promoting}
+          open={promoteOpen}
           suiteId={suiteId}
           checkId={checkId}
           yearly={yearly}
-          onClose={() => setPromoting(null)}
-          onDone={(entryId, attached) => {
+          onClose={() => setPromoteOpen(false)}
+          afterClose={() => {
             setPromoting(null);
+            restoreFocus();
+          }}
+          onDone={(entryId, attached) => {
+            setPromoteOpen(false);
             onPromoted(entryId, attached);
           }}
         />
@@ -296,6 +317,8 @@ interface PromoteValues {
 
 function PromoteModal({
   period,
+  open,
+  afterClose,
   suiteId,
   checkId,
   yearly,
@@ -303,6 +326,8 @@ function PromoteModal({
   onDone,
 }: {
   period: DetectedPeriod;
+  open: boolean;
+  afterClose: () => void;
   suiteId: string;
   checkId: string;
   yearly: boolean;
@@ -352,9 +377,10 @@ function PromoteModal({
 
   return (
     <Modal
-      open
+      open={open}
       title="Add this period to the calendar"
       onCancel={onClose}
+      afterClose={afterClose}
       destroyOnHidden
       okText="Add to calendar"
       okButtonProps={{ loading: saving }}

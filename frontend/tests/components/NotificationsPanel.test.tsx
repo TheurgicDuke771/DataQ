@@ -164,7 +164,7 @@ describe('NotificationsPanel', () => {
     renderPanel();
     await screen.findByText('Legacy inline destinations');
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Promote to channel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Promote to channel/ })).not.toBeInTheDocument();
   });
 
   it('promotes a legacy destination under the name given and refetches the linked channels', async () => {
@@ -177,7 +177,7 @@ describe('NotificationsPanel', () => {
       workspace_default_now_applies: false,
     });
     renderPanel();
-    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Promote to channel/ }));
 
     const promote = screen.getByRole('button', { name: 'Promote' });
     expect(promote).toBeDisabled(); // no name yet
@@ -203,7 +203,7 @@ describe('NotificationsPanel', () => {
       workspace_default_now_applies: true,
     });
     renderPanel();
-    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Promote to channel/ }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
     await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
 
@@ -217,7 +217,7 @@ describe('NotificationsPanel', () => {
     mockListSuiteChannels.mockResolvedValue([]);
     mockPromote.mockReturnValue(new Promise(() => {})); // never settles
     renderPanel();
-    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Promote to channel/ }));
 
     await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'P{Enter}{Enter}');
 
@@ -231,7 +231,7 @@ describe('NotificationsPanel', () => {
     mockListSuiteChannels.mockResolvedValue([]);
     mockPromote.mockRejectedValue(new Error('boom'));
     renderPanel();
-    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Promote to channel/ }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
     await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
 

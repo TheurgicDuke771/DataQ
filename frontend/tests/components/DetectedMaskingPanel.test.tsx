@@ -91,8 +91,8 @@ describe('DetectedMaskingPanel (ADR 0049)', () => {
 
   it('offers no dismiss or restore control to a non-admin', () => {
     renderPanel();
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Restore masking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dismiss/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Restore masking/ })).not.toBeInTheDocument();
   });
 
   it('lets an admin dismiss after confirming, and restore directly', async () => {
@@ -105,19 +105,13 @@ describe('DetectedMaskingPanel (ADR 0049)', () => {
     });
     renderPanel({ canDismiss: true, onChanged });
 
-    // Two rows still mask (`contact`, and `ssn` under its tag), so two triggers: take the first.
-    await userEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss: contact' }));
     expect(mockSet).not.toHaveBeenCalled(); // behind a confirmation: it loosens masking
-    // Popconfirm — wait for the confirming "Dismiss" to render; the trigger is the first match.
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'Dismiss' }).length).toBeGreaterThan(2),
-    );
-    const confirms = screen.getAllByRole('button', { name: 'Dismiss' });
-    await userEvent.click(confirms[confirms.length - 1]);
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(mockSet).toHaveBeenCalledWith('a1', 'contact', true));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Restore masking' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Restore masking: payload' }));
     await waitFor(() => expect(mockSet).toHaveBeenCalledWith('a1', 'payload', false));
   }, 15000);
 });
