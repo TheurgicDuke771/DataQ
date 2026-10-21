@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "385072bcb6c4",
+  "session_id": "641b53ca-47b3-45aa-9ab6-6db8524d561d",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T02:28:17.779554Z",
+  "branch": "docs/progress-2440-done",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "a2f48441ac1b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 465896,
+    "cache_read_tokens": 6279927,
+    "output_tokens": 6350,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 242,
+      "cache_creation_tokens": 4965288,
+      "cache_read_tokens": 32681734,
+      "output_tokens": 10323,
+      "api_call_count": 124
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0191jHCgaLoaGZupnwkeezRs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "0571ee74a7ef",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 1675,
+        "end": 1676,
+        "entry_ids": [
+          "ef059ff8-3434-47d5-9d28-851022d41b3c"
+        ],
+        "tool_use_id": "toolu_0191jHCgaLoaGZupnwkeezRs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0191jHCgaLoaGZupnwkeezRs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 50
+  }
+}
