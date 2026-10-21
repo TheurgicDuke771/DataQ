@@ -4,9 +4,13 @@ Everything DataQ offers, by area. This is the readable tour — for the terse
 what-runs-where lookup see the [feature matrix](../reference/feature-matrix.md), and for how to turn
 each feature on the recommended way see [Recommended usage](recommended-usage.md).
 
-DataQ is a single-tenant **data-quality monitoring platform**: it runs checks against your
-data stores, records every result, surfaces health on a dashboard, alerts the right people,
-and reacts to your pipelines — all behind SSO, with an AI-assistant surface.
+DataQ is a single-tenant **data-quality control plane**: it connects quality checks to the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your data stores, records every result,
+surfaces health on a dashboard, alerts the right people, and reacts to your pipelines — all
+behind sign-in, with an AI-assistant surface. The workflow is **detect → explain → impact →
+gate → remediate**; today that makes it a data-quality platform with an emerging
+observability layer, not a full observability suite.
 
 ## Datasources
 
@@ -23,14 +27,17 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 - **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
   and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery** — the generic SQL engines
   (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
+- **Google Cloud Storage** — flat files, the same shapes as ADLS Gen2 and S3, with a
+  service-account key or anonymous access and an optional emulator endpoint. Verified
+  against the `fake-gcs-server` emulator so far ([notes](datasources-checks.md#google-cloud-storage)).
 - **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
   principal, not a separate type.
 
 ## Checks & authoring
 
-A check is one data-quality rule, authored in the UI. Seven kinds ship (`check.kind`): GX
+A check is one data-quality rule, authored in the UI. Eight kinds ship (`check.kind`): GX
 **expectations** (including custom SQL), and the **freshness / volume / aggregate /
-schema-drift / anomaly / comparison** monitor kinds:
+schema-drift / anomaly / PII-drift / comparison** monitor kinds:
 
 - **DQ dimension** — every check is classified by the quality aspect it measures
   (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).
@@ -268,9 +275,9 @@ and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
 
 ## Deployment & portability
 
-Runs live today on **both Azure Container Apps and AWS ECS Fargate** — two independent,
-equally-real deployments (API + worker + frontend; the frontend is the sole public
-surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+Ships reference OpenTofu stacks for **both Azure Container Apps and AWS ECS Fargate** —
+two independent deployments of the same images (API + worker + frontend; the frontend is
+the sole public surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
 code differing between clouds ([Architecture](../architecture/overview.md), [deployment

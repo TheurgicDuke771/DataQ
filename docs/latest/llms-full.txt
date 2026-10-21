@@ -7,13 +7,14 @@
 
 # DataQ
 
-**Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
-against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
-PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
-Amazon Redshift, Google BigQuery, ADLS Gen2 or
-Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
-team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
-checks the moment a load finishes.
+**The data-quality control plane: know your data is right before anyone else finds out it
+isn't.** DataQ is an engineering-first, extensible place that connects quality checks, the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your tables and files — in Snowflake,
+Databricks Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure
+SQL, Synapse, Fabric), Amazon Athena, Amazon Redshift, Google BigQuery, ADLS Gen2 or Fabric
+OneLake, AWS S3 or any S3-compatible store, or Google Cloud Storage — the moment your Azure Data
+Factory, Airflow or dbt pipeline finishes a load, and alerts the team that owns it.
 
 <video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">
@@ -52,6 +53,20 @@ checks the moment a load finishes.
 
 </div>
 
+## From a bad load to a fixed one
+
+| Step | What DataQ does |
+|---|---|
+| **Detect** | A pipeline finishes and the bound suite runs, or a schedule fires. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape. |
+| **Explain** | Each result carries the measured value, the expected range and a redacted sample of failing rows. With a bring-your-own LLM configured, a root-cause narrative is drafted from that evidence. |
+| **Impact** | A failing check (warn, fail or critical) on a run whose target is a known asset opens an incident on that asset, or joins the one already open; lineage from dbt, OpenLineage or the warehouse shows the downstream tables that may be affected. |
+| **Gate** | A pipeline stage can ask DataQ for the verdict before it publishes. DataQ answers; your DAG decides ([Gate a pipeline on DataQ](guides/orchestration.md#gate-a-pipeline-on-dataq)). |
+| **Remediate** | The owning team is alerted once, acknowledges the incident, fixes the data and re-runs the suite to confirm before resolving it — in the UI, over the API or from an AI agent over MCP. |
+
+Where it stands today: a data-quality platform with an emerging observability layer. It
+watches what you point it at, plus every table of a warehouse connection you switch
+[automatic coverage](guides/datasources-checks.md#automatic-coverage-watch-every-table-without-writing-checks) on for.
+
 ## What you can do with it
 
 | | |
@@ -61,7 +76,7 @@ checks the moment a load finishes.
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
-| **Let assistants do the work** | Fifty-four MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Let assistants do the work** | Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
 
 ## Who it is for
 
@@ -235,7 +250,7 @@ flowchart LR
 | **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly, PII drift), a comparison, or custom SQL | Suite → Checks |
 | **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
 | **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
-| **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
+| **Incident** | A failing check (warn, fail or critical) anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
 
 
 ## The one distinction: datasource vs orchestration
@@ -262,12 +277,13 @@ flowchart LR
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).
-- **Check** — a single data-quality rule. Seven kinds: a **Great Expectations expectation**
+- **Check** — a single data-quality rule. Eight kinds: a **Great Expectations expectation**
   (e.g. "this column is never null", or a custom SQL rule), or one of the monitor kinds —
   **freshness** (is the data stale?), **volume** (did the load land whole?),
   **aggregate** (is a column's mean / median / sum / spread / min / max inside its bands?),
   **schema drift** (did the shape change?), **anomaly** (is this value abnormal for this
-  dataset?), and **comparison** (does it reconcile against a baseline dataset?).
+  dataset?), **PII drift** (did a column start to look like personal data nobody classified?)
+  and **comparison** (does it reconcile against a baseline dataset?).
 - **Run** — one execution of a suite. Each check produces a **result** with a status:
   **pass / warn / fail / critical** (plus *skip* / *error* for operational outcomes).
 - **Severity & health score** — warn/fail/critical are weighted into a workspace **health
@@ -3643,9 +3659,13 @@ Everything DataQ offers, by area. This is the readable tour — for the terse
 what-runs-where lookup see the [feature matrix](../reference/feature-matrix.md), and for how to turn
 each feature on the recommended way see [Recommended usage](recommended-usage.md).
 
-DataQ is a single-tenant **data-quality monitoring platform**: it runs checks against your
-data stores, records every result, surfaces health on a dashboard, alerts the right people,
-and reacts to your pipelines — all behind SSO, with an AI-assistant surface.
+DataQ is a single-tenant **data-quality control plane**: it connects quality checks to the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your data stores, records every result,
+surfaces health on a dashboard, alerts the right people, and reacts to your pipelines — all
+behind sign-in, with an AI-assistant surface. The workflow is **detect → explain → impact →
+gate → remediate**; today that makes it a data-quality platform with an emerging
+observability layer, not a full observability suite.
 
 ## Datasources
 
@@ -3662,14 +3682,17 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 - **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
   and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery** — the generic SQL engines
   (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
+- **Google Cloud Storage** — flat files, the same shapes as ADLS Gen2 and S3, with a
+  service-account key or anonymous access and an optional emulator endpoint. Verified
+  against the `fake-gcs-server` emulator so far ([notes](datasources-checks.md#google-cloud-storage)).
 - **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
   principal, not a separate type.
 
 ## Checks & authoring
 
-A check is one data-quality rule, authored in the UI. Seven kinds ship (`check.kind`): GX
+A check is one data-quality rule, authored in the UI. Eight kinds ship (`check.kind`): GX
 **expectations** (including custom SQL), and the **freshness / volume / aggregate /
-schema-drift / anomaly / comparison** monitor kinds:
+schema-drift / anomaly / PII-drift / comparison** monitor kinds:
 
 - **DQ dimension** — every check is classified by the quality aspect it measures
   (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).
@@ -3907,9 +3930,9 @@ and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
 
 ## Deployment & portability
 
-Runs live today on **both Azure Container Apps and AWS ECS Fargate** — two independent,
-equally-real deployments (API + worker + frontend; the frontend is the sole public
-surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+Ships reference OpenTofu stacks for **both Azure Container Apps and AWS ECS Fargate** —
+two independent deployments of the same images (API + worker + frontend; the frontend is
+the sole public surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
 code differing between clouds ([Architecture](../architecture/overview.md), [deployment

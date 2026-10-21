@@ -3,7 +3,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+        <meta name="description" content="DataQ — a single-tenant data-quality control plane built on Great Expectations. User-friendly guides + developer references.">
       
       
       
@@ -2767,9 +2767,13 @@
 <p>Everything DataQ offers, by area. This is the readable tour — for the terse
 what-runs-where lookup see the <a href="../../reference/feature-matrix/">feature matrix</a>, and for how to turn
 each feature on the recommended way see <a href="../recommended-usage/">Recommended usage</a>.</p>
-<p>DataQ is a single-tenant <strong>data-quality monitoring platform</strong>: it runs checks against your
-data stores, records every result, surfaces health on a dashboard, alerts the right people,
-and reacts to your pipelines — all behind SSO, with an AI-assistant surface.</p>
+<p>DataQ is a single-tenant <strong>data-quality control plane</strong>: it connects quality checks to the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your data stores, records every result,
+surfaces health on a dashboard, alerts the right people, and reacts to your pipelines — all
+behind sign-in, with an AI-assistant surface. The workflow is <strong>detect → explain → impact →
+gate → remediate</strong>; today that makes it a data-quality platform with an emerging
+observability layer, not a full observability suite.</p>
 <h2 id="datasources">Datasources<a class="headerlink" href="#datasources" title="Permanent link">¶</a></h2>
 <p>Stores you write checks <strong>against</strong> (see <a href="../datasources-checks/">Datasources &amp; checks</a>):</p>
 <ul>
@@ -2784,13 +2788,16 @@ and reacts to your pipelines — all behind SSO, with an AI-assistant surface.</
 <li><strong>PostgreSQL</strong>, <strong>MySQL / MariaDB</strong>, <strong>Trino</strong>, <strong>SQL Server</strong> (incl. Azure SQL, Synapse
   and Fabric SQL), <strong>Amazon Athena</strong>, <strong>Amazon Redshift</strong> and <strong>Google BigQuery</strong> — the generic SQL engines
   (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.</li>
+<li><strong>Google Cloud Storage</strong> — flat files, the same shapes as ADLS Gen2 and S3, with a
+  service-account key or anonymous access and an optional emulator endpoint. Verified
+  against the <code>fake-gcs-server</code> emulator so far (<a href="../datasources-checks/#google-cloud-storage">notes</a>).</li>
 <li><strong>Fabric OneLake</strong> lakehouse files — through an ADLS Gen2 connection with a service
   principal, not a separate type.</li>
 </ul>
 <h2 id="checks-authoring">Checks &amp; authoring<a class="headerlink" href="#checks-authoring" title="Permanent link">¶</a></h2>
-<p>A check is one data-quality rule, authored in the UI. Seven kinds ship (<code>check.kind</code>): GX
+<p>A check is one data-quality rule, authored in the UI. Eight kinds ship (<code>check.kind</code>): GX
 <strong>expectations</strong> (including custom SQL), and the <strong>freshness / volume / aggregate /
-schema-drift / anomaly / comparison</strong> monitor kinds:</p>
+schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
 <ul>
 <li>
 <p><strong>DQ dimension</strong> — every check is classified by the quality aspect it measures
@@ -3019,9 +3026,9 @@ writes (<a href="../mcp-setup/">AI assistants</a>, ADR 0008 + its Tier 1–3B am
 the logger, and <strong>OpenTelemetry</strong> traces + logs — exported to Azure Application Insights
 and/or a generic OTLP endpoint (<a href="../../operate/observability/">Observability</a>).</p>
 <h2 id="deployment-portability">Deployment &amp; portability<a class="headerlink" href="#deployment-portability" title="Permanent link">¶</a></h2>
-<p>Runs live today on <strong>both Azure Container Apps and AWS ECS Fargate</strong> — two independent,
-equally-real deployments (API + worker + frontend; the frontend is the sole public
-surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+<p>Ships reference OpenTofu stacks for <strong>both Azure Container Apps and AWS ECS Fargate</strong> —
+two independent deployments of the same images (API + worker + frontend; the frontend is
+the sole public surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
 code differing between clouds (<a href="../../architecture/overview/">Architecture</a>, <a href="../../operate/deployment-parity/">deployment

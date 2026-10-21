@@ -3,7 +3,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+        <meta name="description" content="DataQ — a single-tenant data-quality control plane built on Great Expectations. User-friendly guides + developer references.">
       
       
       
@@ -500,6 +500,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#from-a-bad-load-to-a-fixed-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From a bad load to a fixed one
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#what-you-can-do-with-it" class="md-nav__link">
@@ -2468,6 +2479,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
       
         <li class="md-nav__item">
+  <a href="#from-a-bad-load-to-a-fixed-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From a bad load to a fixed one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-you-can-do-with-it" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2559,13 +2581,14 @@
 
 
 <h1 id="dataq">DataQ<a class="headerlink" href="#dataq" title="Permanent link">¶</a></h1>
-<p><strong>Know your data is right before anyone else finds out it isn't.</strong> DataQ runs automated checks
-against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
-PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
-Amazon Redshift, Google BigQuery, ADLS Gen2 or
-Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
-team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
-checks the moment a load finishes.</p>
+<p><strong>The data-quality control plane: know your data is right before anyone else finds out it
+isn't.</strong> DataQ is an engineering-first, extensible place that connects quality checks, the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your tables and files — in Snowflake,
+Databricks Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure
+SQL, Synapse, Fabric), Amazon Athena, Amazon Redshift, Google BigQuery, ADLS Gen2 or Fabric
+OneLake, AWS S3 or any S3-compatible store, or Google Cloud Storage — the moment your Azure Data
+Factory, Airflow or dbt pipeline finishes a load, and alerts the team that owns it.</p>
 <video class="clip" autoplay="" loop="" muted="" playsinline="" poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">
 </video>
@@ -2596,6 +2619,40 @@ cannot drift.</p>
 </li>
 </ul>
 </div>
+<h2 id="from-a-bad-load-to-a-fixed-one">From a bad load to a fixed one<a class="headerlink" href="#from-a-bad-load-to-a-fixed-one" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What DataQ does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Detect</strong></td>
+<td>A pipeline finishes and the bound suite runs, or a schedule fires. Freshness, volume, schema-drift, anomaly and value checks find the load that never arrived, arrived half-empty or changed shape.</td>
+</tr>
+<tr>
+<td><strong>Explain</strong></td>
+<td>Each result carries the measured value, the expected range and a redacted sample of failing rows. With a bring-your-own LLM configured, a root-cause narrative is drafted from that evidence.</td>
+</tr>
+<tr>
+<td><strong>Impact</strong></td>
+<td>A failing check (warn, fail or critical) on a run whose target is a known asset opens an incident on that asset, or joins the one already open; lineage from dbt, OpenLineage or the warehouse shows the downstream tables that may be affected.</td>
+</tr>
+<tr>
+<td><strong>Gate</strong></td>
+<td>A pipeline stage can ask DataQ for the verdict before it publishes. DataQ answers; your DAG decides (<a href="guides/orchestration/#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a>).</td>
+</tr>
+<tr>
+<td><strong>Remediate</strong></td>
+<td>The owning team is alerted once, acknowledges the incident, fixes the data and re-runs the suite to confirm before resolving it — in the UI, over the API or from an AI agent over MCP.</td>
+</tr>
+</tbody>
+</table>
+<p>Where it stands today: a data-quality platform with an emerging observability layer. It
+watches what you point it at, plus every table of a warehouse connection you switch
+<a href="guides/datasources-checks/#automatic-coverage-watch-every-table-without-writing-checks">automatic coverage</a> on for.</p>
 <h2 id="what-you-can-do-with-it">What you can do with it<a class="headerlink" href="#what-you-can-do-with-it" title="Permanent link">¶</a></h2>
 <table>
 <thead>
@@ -2627,7 +2684,7 @@ cannot drift.</p>
 </tr>
 <tr>
 <td><strong>Let assistants do the work</strong></td>
-<td>Fifty-four MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see.</td>
+<td>Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see.</td>
 </tr>
 </tbody>
 </table>

@@ -1,6 +1,6 @@
 # DataQ
 
-> DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.
+> DataQ — a single-tenant data-quality control plane built on Great Expectations. User-friendly guides + developer references.
 
 Every page below is available as raw Markdown at the linked `.md` URL. A curated subset
 of them is also served to AI assistants by DataQ's MCP `get_doc` tool (its `page` enum
@@ -8,7 +8,7 @@ lists which).
 
 ## Home
 
-- [Home](https://theurgicduke771.github.io/DataQ/docs/latest/index.md): against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
+- [Home](https://theurgicduke771.github.io/DataQ/docs/latest/index.md): isn't.** DataQ is an engineering-first, extensible place that connects quality checks, the
 
 ## Get started
 
