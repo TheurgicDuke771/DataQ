@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **83** open repo-wide (2026-10-20, live re-count), in the eight v1.3 weekly milestones, apart from #2440 in `v1.3 Backlog`; `v1.2 Backlog` is closed. |
-| **Open PRs** | **1 feature PR open** (2026-10-20: #2467, a frontend dialog fix) plus the #2440 phase-4 service PR in progress and the Dependabot bumps, apart from the one carrying this update. |
+| **Open issues** | **93** open repo-wide (2026-10-21, live re-count): Week 4 6, Week 5 6, Week 6 23, Week 7 27, Week 8 26, `v1.3 Backlog` 5 (#2309, #505 and #717 moved there 2026-10-21); every open issue has a milestone. Weeks 1 and 2 are closed; Week 3 is complete and its milestone closes when this update merges. |
+| **Open PRs** | **0 open** (2026-10-21), apart from the one carrying this update. |
 
 ---
 
@@ -83,10 +83,12 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 |---|---|
 | ✅ | [#1681](https://github.com/TheurgicDuke771/DataQ/issues/1681) feat(datasource): Google BigQuery adapter — the biggest warehouse omission — [PR #2489](https://github.com/TheurgicDuke771/DataQ/pull/2489) type-set migration, [PR #2493](https://github.com/TheurgicDuke771/DataQ/pull/2493) adapter on the engine-generic SQL base (`sqlalchemy-bigquery`, per-query `maximum_bytes_billed` cap); live-verified on the BigQuery emulator, real BigQuery unverified |
 | ✅ | [#1683](https://github.com/TheurgicDuke771/DataQ/issues/1683) feat(datasource): Google Cloud Storage flat-file adapter — completes the object-store trio — [PR #2484](https://github.com/TheurgicDuke771/DataQ/pull/2484): `gcs` type on the shared flat-file runner via `google-cloud-storage` (gcsfs rejected: its gRPC probe stalls ~60 s per bucket off Google), service-account key or anonymous, optional endpoint; live-verified on fake-gcs-server, real GCS unverified |
-| ⬜ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) Post-v1: AWS + GCP deploy IaC (behind the provider-agnostic seams) |
-| ⬜ | [#2309](https://github.com/TheurgicDuke771/DataQ/issues/2309) feat(datasources): keyless auth — managed identity / IAM role / workload identity |
-| ✅ | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) — PR open: `TAMPER_ANCHOR=object_lock` + read-back `anchors` section on verify, live-verified on MinIO with lock; real AWS/Azure unverifiable (#2224). Also closes #2397 (both posture vectors). Filed #2473, #2474 — [PR #2480](https://github.com/TheurgicDuke771/DataQ/pull/2480) |
-| ⬜ | [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Revisit Iceberg v3 support (deletion vectors, row lineage) behind a capability gate — ADR 0030 |
+| ➡️ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) Post-v1: AWS + GCP deploy IaC (behind the provider-agnostic seams) — moved to `v1.3 Backlog` 2026-10-21 on the maintainer's decision: needs a live cloud (#2224) |
+| ➡️ | [#2309](https://github.com/TheurgicDuke771/DataQ/issues/2309) feat(datasources): keyless auth — managed identity / IAM role / workload identity — moved to `v1.3 Backlog` 2026-10-21 on the maintainer's decision: needs a live cloud (#2224) |
+| ✅ | [#2310](https://github.com/TheurgicDuke771/DataQ/issues/2310) feat(audit): an object-lock tamper anchor (S3 Object Lock / Azure immutable blob) — [PR #2480](https://github.com/TheurgicDuke771/DataQ/pull/2480) |
+| ➡️ | [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Revisit Iceberg v3 support (deletion vectors, row lineage) behind a capability gate — ADR 0030 — moved to `v1.3 Backlog` 2026-10-21 on the maintainer's decision: pick-up gate not met (pyiceberg v3 deletion-vector reads) |
+
+Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CONTRIBUTING rules 44–45 and their guard tests ([#2512](https://github.com/TheurgicDuke771/DataQ/pull/2512)), the OpenAPI contract gate with the comparison-report fix ([#2515](https://github.com/TheurgicDuke771/DataQ/pull/2515), #2514), the rule-44 audit of v1.3's UI ([#2517](https://github.com/TheurgicDuke771/DataQ/pull/2517), #2516), the CodeQL import-cycle and dead-alias clean-up ([#2510](https://github.com/TheurgicDuke771/DataQ/pull/2510), [#2513](https://github.com/TheurgicDuke771/DataQ/pull/2513)), the dependency-audit fix ([#2508](https://github.com/TheurgicDuke771/DataQ/pull/2508), #2506) and the accessibility wording on the marketing page ([#2521](https://github.com/TheurgicDuke771/DataQ/pull/2521); conformance report filed as #2520).
 
 ### v1.3 Week 4 — product surfaces (due 2026-11-01)
 
@@ -130,6 +132,10 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 | ⬜ | [#2136](https://github.com/TheurgicDuke771/DataQ/issues/2136) Flaky test: test_revoke_all_for_user_is_attributed_to_the_actor orders audit events by a tied timestamp |
 | ⬜ | [#2413](https://github.com/TheurgicDuke771/DataQ/issues/2413) Promote to channel: a legacy ref whose secret is gone becomes a channel that never delivers |
 | ⬜ | [#2416](https://github.com/TheurgicDuke771/DataQ/issues/2416) A suite with no runnable check still runs and ends succeeded with zero results (dashboard, gate and coverage read it as clean) |
+| ✅ | [#2506](https://github.com/TheurgicDuke771/DataQ/issues/2506) deps: certifi PYSEC-2026-4320 and follow-redirects GHSA-q3jh-wrc6-jgq8/GHSA-8r9p-f939-6h3c failed the audit gate on main — filed and fixed 2026-10-21, [PR #2508](https://github.com/TheurgicDuke771/DataQ/pull/2508) |
+| ✅ | [#2514](https://github.com/TheurgicDuke771/DataQ/issues/2514) OpenAPI: the comparison-report download was declared as JSON, so the generated client crashed on it — [PR #2515](https://github.com/TheurgicDuke771/DataQ/pull/2515), which also adds the OpenAPI contract gate |
+| ✅ | [#2516](https://github.com/TheurgicDuke771/DataQ/issues/2516) v1.3 UI surfaces against CONTRIBUTING rule 44 (focus return, announcements, accessible names) — [PR #2517](https://github.com/TheurgicDuke771/DataQ/pull/2517) |
+| ⬜ | [#2476](https://github.com/TheurgicDuke771/DataQ/issues/2476) privacy: detections a pii_drift run records do not mask that same run's failing samples — filed from the #2478 review, milestoned 2026-10-21 |
 
 ### v1.3 Week 7 — polish: MCP & API, performance, accessibility (due 2026-11-22)
 
@@ -174,6 +180,7 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 | ⬜ | [#732](https://github.com/TheurgicDuke771/DataQ/issues/732) docs: marketplace-listing readiness checklist — free OSS + BYOL (license audit clear; prerequisites & good-to-haves) |
 | ⬜ | [#1708](https://github.com/TheurgicDuke771/DataQ/issues/1708) security: external review — third-party pen test / audit pass before any commercial demo |
 | ⬜ | [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224) Epic: cloud live-verification — re-run once a cloud test instance is procured |
+| ⬜ | [#2520](https://github.com/TheurgicDuke771/DataQ/issues/2520) a11y: publish a WCAG 2.1 AA conformance report (ACR/VPAT) once the Week-7 audits close — filed 2026-10-21 |
 
 **Exit gate (Week 8):** every item closed or rolled by name with a rationale, zero open PRs,
 retro-v1.3 written, this file frozen, `v1.3.0` tagged and released with the client wheel and
