@@ -21,9 +21,12 @@ export function InheritedTag({ check }: { check: Check }) {
   if (!check.inherited) return null;
   return (
     <Tooltip
+      trigger={['hover', 'focus']}
       title={`Thresholds from: ${LEVEL_LABEL[check.inherited.sensitivity]}. History from: ${LEVEL_LABEL[check.inherited.baseline]}. They follow the coverage settings until someone edits them on this check.`}
     >
-      <Tag style={{ marginInlineEnd: 0 }}>Inherited thresholds</Tag>
+      <Tag tabIndex={0} style={{ marginInlineEnd: 0 }}>
+        Inherited thresholds
+      </Tag>
     </Tooltip>
   );
 }

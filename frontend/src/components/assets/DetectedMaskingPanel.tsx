@@ -100,8 +100,13 @@ export function DetectedMaskingPanel({
         }
         if (row.effect === 'overridden_by_tag') {
           return (
-            <Tooltip title="This column carries its own warehouse tag, which decides instead; the detection changes nothing.">
-              <Tag data-testid={`detection-${row.column}-overridden`}>warehouse tag decides</Tag>
+            <Tooltip
+              trigger={['hover', 'focus']}
+              title="This column carries its own warehouse tag, which decides instead; the detection changes nothing."
+            >
+              <Tag tabIndex={0} data-testid={`detection-${row.column}-overridden`}>
+                warehouse tag decides
+              </Tag>
             </Tooltip>
           );
         }

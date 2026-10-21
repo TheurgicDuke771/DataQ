@@ -300,4 +300,39 @@ test.describe('Keyboard: dialogs and saves keep focus', () => {
     ).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Restore masking: contact' })).toBeFocused();
   });
+
+  test("a disabled check's badge explains itself to keyboard focus", async ({ page, request }) => {
+    const suites = (await (await request.get('/api/v1/suites')).json()) as {
+      id: string;
+      name: string;
+    }[];
+    const suite = suites.find((s) => s.name === 'Orders volume');
+    if (!suite) throw new Error('seeded suite "Orders volume" not found');
+    const res = await request.post(`/api/v1/suites/${suite.id}/checks`, {
+      data: {
+        name: `kb disabled ${Date.now()}`,
+        expectation_type: 'expect_column_values_to_not_be_null',
+        config: { column: 'id' },
+        enabled: false,
+      },
+    });
+    expect(res.status()).toBe(201);
+    const check = (await res.json()) as { id: string; enabled?: boolean };
+    try {
+      if (check.enabled !== false) {
+        await request.patch(`/api/v1/suites/${suite.id}/checks/${check.id}`, {
+          data: { enabled: false },
+        });
+      }
+      await page.goto(`/suites/${suite.id}`);
+      const badge = page.getByText('Disabled', { exact: true });
+      await badge.focus();
+      await expect(badge).toBeFocused();
+      const tip = page.getByRole('tooltip').filter({ hasText: 'runs skip this check' });
+      await expect(tip).toBeVisible();
+      await expect(badge).toHaveAccessibleDescription(/runs skip this check/);
+    } finally {
+      await request.delete(`/api/v1/suites/${suite.id}/checks/${check.id}`);
+    }
+  });
 });
