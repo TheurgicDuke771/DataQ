@@ -714,10 +714,12 @@ img { max-width: 100%; }
 .shots-grid { display: grid; grid-template-columns: var(--feat-4up-cols); gap: 16px; }
 .shots-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 720px) { .shots-grid { grid-template-columns: minmax(0, 1fr); } }
-.small-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 960px) { .small-grid-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .small-grid-6 { grid-template-columns: minmax(0, 1fr); } }
-.small-grid-6 > .small-card:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.small-grid-3up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* A last card that would sit alone in its row spans the row, at each column count. */
+@media (min-width: 961px) { .small-grid-3up > .small-card:last-child:nth-child(3n + 1) { grid-column: 1 / -1; } }
+@media (min-width: 561px) and (max-width: 960px) { .small-grid-3up > .small-card:last-child:nth-child(2n + 1) { grid-column: 1 / -1; } }
+@media (max-width: 960px) { .small-grid-3up { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .small-grid-3up { grid-template-columns: minmax(0, 1fr); } }
 
 /* Demo-profile walkthrough. */
 .walk-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 24px; }
