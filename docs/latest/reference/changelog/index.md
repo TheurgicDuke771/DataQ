@@ -160,6 +160,7 @@ section below.
   automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
   keep focus where you were and announce the result; and per-row actions (promote, enable or
   disable a check, dismiss or restore masking) are named for the row they act on.
+- **The comparison-report download is described correctly in the API reference.** It was documented as returning JSON, so the generated Python client failed on every download; the reference now lists its CSV and XLSX media types and the client returns the downloaded file.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
