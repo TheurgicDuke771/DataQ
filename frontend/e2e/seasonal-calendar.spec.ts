@@ -180,6 +180,11 @@ test.describe('Seasonal calendar', () => {
           })),
         }),
       );
+      let promoted = false;
+      await page.route(`**${API}/admin/seasonal-periods/promote`, (route) => {
+        promoted = true;
+        return route.fulfill({ status: 201, json: { id: 'promoted', name: 'kb promoted' } });
+      });
       await page.route(`**${API}/suites/*/checks/${check}/seasonal-periods/detected`, (route) =>
         route.fulfill({
           json: {
@@ -202,7 +207,7 @@ test.describe('Seasonal calendar', () => {
                     backfilled_periods: 0,
                   },
                 ],
-                declared: [],
+                declared: promoted ? [{ id: 'promoted', name: 'kb promoted' }] : [],
               },
             ],
             thresholds: { ratio: 1.5, min_consecutive: 2, same_time_days: 7, level: 'median' },
@@ -230,8 +235,26 @@ test.describe('Seasonal calendar', () => {
       await expect(drawer.locator('.recharts-line path[stroke-dasharray="6 3"]')).toHaveCount(1);
       await expect(drawer.locator('.recharts-reference-area')).not.toHaveCount(0);
       await expect(drawer.getByTestId('detected-periods')).toContainText('Seen once');
-      await expect(drawer.getByRole('button', { name: 'Promote to calendar' })).toBeVisible();
+      await expect(drawer.getByRole('button', { name: /^Promote to calendar/ })).toBeVisible();
       await expectAccessible(page, '.ant-drawer [role="dialog"]');
+
+      // By keyboard: the promote dialog hands focus back on Escape, and after a promote that
+      // removes its own button, focus stays on the detected periods instead of the page.
+      const promote = drawer.getByRole('button', { name: /^Promote to calendar/ });
+      await promote.focus();
+      await page.keyboard.press('Enter');
+      const promoteDialog = page.getByRole('dialog', { name: 'Add this period to the calendar' });
+      await expect(promoteDialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(promoteDialog).toHaveCount(0);
+      await expect(promote).toBeFocused();
+      await page.keyboard.press('Enter');
+      await promoteDialog.getByRole('textbox', { name: /Name/ }).fill('kb promoted');
+      await promoteDialog.getByRole('button', { name: 'Add to calendar' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('alert').filter({ hasText: 'kb promoted added' })).toBeVisible();
+      await expect(promote).toHaveCount(0);
+      await expect(drawer.getByTestId('detected-periods')).toBeFocused();
 
       await drawer.getByText('Table', { exact: true }).click();
       await expect(drawer.getByRole('columnheader', { name: 'Expected' })).toBeVisible();

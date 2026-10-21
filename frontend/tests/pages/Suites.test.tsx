@@ -414,15 +414,17 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
     expect(screen.queryByText('Disabled')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Disable' }));
+    await user.click(screen.getByRole('button', { name: 'Disable order_id not null' }));
 
     await waitFor(() =>
       expect(mockUpdateCheck).toHaveBeenCalledWith('s1', 'chk1', { enabled: false }),
     );
     expect(await screen.findByText('Disabled')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Disable order_id not null' }),
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Enable' }));
+    await user.click(screen.getByRole('button', { name: 'Enable order_id not null' }));
 
     await waitFor(() =>
       expect(mockUpdateCheck).toHaveBeenLastCalledWith('s1', 'chk1', { enabled: true }),
@@ -438,10 +440,10 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: 'Disable' }));
+    await user.click(await screen.findByRole('button', { name: 'Disable order_id not null' }));
 
     expect(await screen.findByText(/Disable failed: boom/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Disable' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disable order_id not null' })).toBeInTheDocument();
   });
 
   it('shows a viewer the Disabled badge but no way to change it', async () => {
@@ -454,7 +456,9 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
 
     expect(await screen.findByText('Disabled')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Enable' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Enable order_id not null' }),
+    ).not.toBeInTheDocument();
   });
 
   describe('bulk check actions', () => {

@@ -12,8 +12,13 @@ export function isDisabled(check: Pick<Check, 'enabled'>): boolean {
 export function DisabledTag({ check }: { check: Pick<Check, 'enabled'> }) {
   if (!isDisabled(check)) return null;
   return (
-    <Tooltip title="Switched off: runs skip this check, so it records no result and raises no alert. Its history is kept.">
-      <Tag style={{ marginInlineEnd: 0 }}>Disabled</Tag>
+    <Tooltip
+      trigger={['hover', 'focus']}
+      title="Switched off: runs skip this check, so it records no result and raises no alert. Its history is kept."
+    >
+      <Tag tabIndex={0} style={{ marginInlineEnd: 0 }}>
+        Disabled
+      </Tag>
     </Tooltip>
   );
 }

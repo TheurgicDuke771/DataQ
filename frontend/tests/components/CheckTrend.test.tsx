@@ -636,7 +636,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
       </AntApp>,
     );
     expect(await screen.findByText('Recurring, 3 years')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Promote to calendar' }));
+    await user.click(screen.getByRole('button', { name: /^Promote to calendar/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('checkbox', { name: /Also attach/ })).toBeChecked();
     await user.type(within(dialog).getByLabelText('Name'), 'Black Friday');
@@ -673,7 +673,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
         </WithMe>
       </AntApp>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    await user.click(await screen.findByRole('button', { name: /^Promote to calendar/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('checkbox', { name: /Also attach/ })).toBeDisabled();
     expect(within(dialog).getByText(/Attaching needs yearly seasonality/)).toBeInTheDocument();
@@ -694,7 +694,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
       </WithMe>,
     );
     expect(await screen.findByText('Recurring, 3 years')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Promote to calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Promote to calendar/ })).not.toBeInTheDocument();
   });
 
   it('does not offer to promote a period an attached entry already covers', async () => {
@@ -709,7 +709,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
       </WithMe>,
     );
     expect(await screen.findByText(/Covered by Black Friday on the calendar/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Promote to calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Promote to calendar/ })).not.toBeInTheDocument();
   });
 
   it('never asks a whole-table anomaly check for detected periods', async () => {
@@ -795,7 +795,7 @@ describe('CheckTrend — per-period seasonal overlays', () => {
         </WithMe>
       </AntApp>,
     );
-    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    await user.click(await screen.findByRole('button', { name: /^Promote to calendar/ }));
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('Name'), 'BF');
     await user.click(within(dialog).getByRole('button', { name: 'Add to calendar' }));

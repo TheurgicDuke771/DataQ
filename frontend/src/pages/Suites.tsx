@@ -983,6 +983,7 @@ function ChecksList({
                           key="enabled"
                           type="link"
                           size="small"
+                          aria-label={`${isDisabled(check) ? 'Enable' : 'Disable'} ${check.name}`}
                           onClick={() => onSetEnabled(check, isDisabled(check))}
                         >
                           {isDisabled(check) ? 'Enable' : 'Disable'}

@@ -42,6 +42,13 @@ import { apiFieldError } from '../../utils/fieldErrors';
 export function AdminCalendar() {
   const { state, reload } = useAsyncData(listSeasonalPeriods);
   const [modal, setModal] = useState<{ period?: SeasonalPeriod } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [opens, setOpens] = useState(0);
+  const openModal = (period?: SeasonalPeriod) => {
+    setModal({ period });
+    setOpens((n) => n + 1);
+    setModalOpen(true);
+  };
   const [blocked, setBlocked] = useState<{ name: string; checks: AttachedCheck[] } | null>(null);
 
   return (
@@ -76,7 +83,12 @@ export function AdminCalendar() {
                 <ul style={{ margin: 0, paddingInlineStart: 20 }}>
                   {blocked.checks.map((c) => (
                     <li key={c.id}>
-                      <Link to={`/suites/${c.suite_id}/checks/${c.id}/edit`}>{c.name}</Link>{' '}
+                      <Link
+                        className="dq-text-link"
+                        to={`/suites/${c.suite_id}/checks/${c.id}/edit`}
+                      >
+                        {c.name}
+                      </Link>{' '}
                       <Typography.Text type="secondary">in {c.suite_name}</Typography.Text>
                     </li>
                   ))}
@@ -93,7 +105,7 @@ export function AdminCalendar() {
           {(periods) => (
             <Flex vertical gap={12}>
               <Flex justify="flex-end">
-                <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal({})}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
                   New entry
                 </Button>
               </Flex>
@@ -105,7 +117,7 @@ export function AdminCalendar() {
               ) : (
                 <PeriodTable
                   periods={periods}
-                  onEdit={(period) => setModal({ period })}
+                  onEdit={openModal}
                   onDeleted={() => {
                     setBlocked(null);
                     reload();
@@ -119,11 +131,13 @@ export function AdminCalendar() {
       </Flex>
       {modal !== null && (
         <PeriodFormModal
-          key={modal.period?.id ?? 'new'}
+          key={opens}
           period={modal.period}
-          onClose={() => setModal(null)}
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          afterClose={() => setModal(null)}
           onSaved={() => {
-            setModal(null);
+            setModalOpen(false);
             reload();
           }}
         />
@@ -283,11 +297,15 @@ function toWrite(values: FormValues): SeasonalPeriodWrite {
 
 function PeriodFormModal({
   period,
+  open,
   onClose,
+  afterClose,
   onSaved,
 }: {
   period?: SeasonalPeriod;
+  open: boolean;
   onClose: () => void;
+  afterClose: () => void;
   onSaved: () => void;
 }) {
   const { message } = App.useApp();
@@ -320,9 +338,10 @@ function PeriodFormModal({
   const required = [{ required: true, message: 'Required' }];
   return (
     <Modal
-      open
+      open={open}
       title={period ? `Edit “${period.name}”` : 'New calendar entry'}
       onCancel={onClose}
+      afterClose={afterClose}
       destroyOnHidden
       okText={period ? 'Save' : 'Add'}
       okButtonProps={{ loading: saving }}
@@ -351,6 +370,7 @@ function PeriodFormModal({
         </Form.Item>
         <Form.Item name="kind" label="Repeats">
           <Radio.Group
+            aria-label="Repeats"
             options={[
               { value: 'recurring', label: 'Every year on the same dates' },
               { value: 'dated', label: 'On specific dates (a period that moves)' },
