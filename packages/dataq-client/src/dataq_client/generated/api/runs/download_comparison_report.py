@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from io import BytesIO
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID
@@ -8,7 +9,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...types import UNSET, Response, Unset
+from ...types import UNSET, File, Response, Unset
 
 
 def _get_kwargs(
@@ -38,9 +39,10 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | None:
+) -> File | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = response.json()
+        response_200 = File(payload=BytesIO(response.content))
+
         return response_200
 
     if response.status_code == 422:
@@ -56,7 +58,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError]:
+) -> Response[File | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -71,7 +73,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     fmt: str | Unset = "csv",
-) -> Response[Any | HTTPValidationError]:
+) -> Response[File | HTTPValidationError]:
     """Download a comparison result's report (derived, never stored)
 
      CSV/XLSX derived at request time from the persisted **redacted** buckets
@@ -89,7 +91,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[File | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -111,7 +113,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
     fmt: str | Unset = "csv",
-) -> Any | HTTPValidationError | None:
+) -> File | HTTPValidationError | None:
     """Download a comparison result's report (derived, never stored)
 
      CSV/XLSX derived at request time from the persisted **redacted** buckets
@@ -129,7 +131,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        File | HTTPValidationError
     """
 
     return sync_detailed(
@@ -146,7 +148,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     fmt: str | Unset = "csv",
-) -> Response[Any | HTTPValidationError]:
+) -> Response[File | HTTPValidationError]:
     """Download a comparison result's report (derived, never stored)
 
      CSV/XLSX derived at request time from the persisted **redacted** buckets
@@ -164,7 +166,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[File | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -184,7 +186,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     fmt: str | Unset = "csv",
-) -> Any | HTTPValidationError | None:
+) -> File | HTTPValidationError | None:
     """Download a comparison result's report (derived, never stored)
 
      CSV/XLSX derived at request time from the persisted **redacted** buckets
@@ -202,7 +204,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        File | HTTPValidationError
     """
 
     return (

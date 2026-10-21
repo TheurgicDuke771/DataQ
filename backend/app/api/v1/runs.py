@@ -41,7 +41,11 @@ from backend.app.services import (
     trigger_labels,
 )
 from backend.app.services import run_service as svc
-from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
+from backend.app.services.comparison_report import (
+    REPORT_MEDIA_TYPES,
+    ComparisonReportInvalidError,
+    build_report,
+)
 from backend.app.services.suite_authz import require_permission
 
 router = APIRouter(tags=["runs"])
@@ -673,6 +677,16 @@ def list_near_misses(
 @router.get(
     "/runs/{run_id}/results/{result_id}/comparison_report",
     summary="Download a comparison result's report (derived, never stored)",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The report file, CSV or XLSX as `fmt` asks.",
+            "content": {
+                media: {"schema": {"type": "string", "format": "binary"}}
+                for media in REPORT_MEDIA_TYPES.values()
+            },
+        }
+    },
 )
 def download_comparison_report(
     run_id: uuid.UUID,
