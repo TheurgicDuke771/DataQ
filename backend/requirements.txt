@@ -77,7 +77,7 @@ adlfs==2026.8.0                   # pyiceberg FileIO for abfss:// (ADLS) warehou
 python-tds==1.17.1                # the TDS driver. datasources/mssql_tds.py REPLACES its hostname check (broken on current pyOpenSSL) and patches named-instance routing — re-verify both, and install()'s shape guard, before any bump
 sqlalchemy-pytds==1.0.2           # the `mssql+pytds` SQLAlchemy dialect (~360 lines; vendorable if it goes unmaintained)
 pyOpenSSL==26.4.0                 # python-tds's TLS; was a snowflake-connector transitive, now imported directly. Apache-2.0
-certifi==2026.7.22                # the CA bundle python-tds verifies against (TLS is only ON when a cafile is passed). MPL-2.0 (weak copyleft, unmodified — OK under rule 40)
+certifi==2026.10.19               # the CA bundle python-tds verifies against (TLS is only ON when a cafile is passed). MPL-2.0 (weak copyleft, unmodified — OK under rule 40)
 
 # ── Lineage (OpenLineage emission — ADR 0034 / #758) ──
 PyYAML==6.0.3                     # MIT; parses YAML suite documents (SafeLoader subclass only). Was transitive via openlineage-python — pinned from our side once imported directly
