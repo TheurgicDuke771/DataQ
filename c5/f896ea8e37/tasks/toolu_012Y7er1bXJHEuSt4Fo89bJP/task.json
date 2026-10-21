@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_012Y7er1bXJHEuSt4Fo89bJP",
+  "agent_id": "ac1e0d170bb529f30",
+  "subagent_type": "general-purpose",
+  "task_description": "#1681 BigQuery adapter",
+  "started_at": "2026-10-20T17:23:35.093102+05:30"
+}
