@@ -4704,7 +4704,7 @@ table: <code>period_row_count</code> is the rows whose date falls in the period,
 the sum of a numeric column over them. Use them for a table that only grows, where the
 whole-table row count has no "normal" to return to: orders per day, sales amount per week.</p>
 <ul>
-<li><code>date_column</code> says which column dates a row, <code>period</code> is <code>day</code> or <code>week</code> (Monday to
+<li><code>date_column</code> says which column dates a row (the editor suggests the target's columns), <code>period</code> is <code>day</code> or <code>week</code> (Monday to
   Sunday), and <code>period_sum</code> also names a <code>value_column</code>.</li>
 <li>Only <strong>complete</strong> periods are judged. <code>timezone</code> (an IANA name spelled exactly, default
   <code>UTC</code>) is the zone the date column's values are written in, and decides when a day ends.
@@ -4805,17 +4805,20 @@ has no period of its own, so it keeps two histories:</p>
 </ul>
 <p><strong>Declared seasonal periods</strong> line up the peaks the weekday matching cannot: a sale that
 moves by more than a few days, or a fixed date such as 25 December. They live in one
-workspace calendar, managed through the REST API under <code>/api/v1/admin/seasonal-periods</code>
-(there is no calendar screen in the app yet; anyone signed in can read it, workspace
-admins change it, every change is audited, and AI assistants read it with the
-<code>list_seasonal_periods</code> MCP tool). An entry
+workspace calendar, managed in <strong>Admin → Calendar</strong> (or through the REST API under
+<code>/api/v1/admin/seasonal-periods</code>; anyone signed in can read it, workspace admins change it,
+every change is audited, and AI assistants read it with the <code>list_seasonal_periods</code> MCP
+tool). An entry
 is either <strong>recurring</strong>, a month-and-day range every year that may wrap the year end (20
 December to 5 January; a 29 February bound is taken as 28 February in a year without one),
 or <strong>dated</strong>, an explicit start and end. Dated entries that share a <strong>series</strong> (compared
 case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
 "Spring sale 2026" with series "Spring sale".</p>
-<p>An entry changes no check until it is attached: an anomaly check with <code>yearly</code> on
-lists the entries that apply to its table in <code>seasonal_periods</code> (their ids; an unknown id is
+<p>An entry changes no check until it is attached: in the check editor, an anomaly check with
+<strong>Yearly seasonality</strong> on has a <strong>Declared seasonal periods</strong> picker listing the calendar
+by name and dates. Turning yearly seasonality off on a check that has entries attached
+warns that saving removes them. Through the API the check lists the entries in
+<code>seasonal_periods</code> (their ids; an unknown id is
 refused when the check is saved, and an entry that any check still names cannot be deleted —
 the refusal names the checks). While attached:</p>
 <ul>
@@ -4865,8 +4868,20 @@ check's metric, date column or day/week setting was edited). A peak that lasts m
 about half the check's window of prior periods (same-weekday periods when seasonality is
 on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
 a calendar entry over it fixes that, for detection as for scoring.</p>
-<p>A workspace admin turns a detected period into a calendar entry with
-<code>POST /api/v1/admin/seasonal-periods/promote</code>, naming the check, the period's <code>start</code> (its
+<p><strong>On the trend.</strong> Open a per-period check's <strong>Trend</strong> (from its editor, or from a result row
+in run detail). The baseline chart shows every stored period: filled points were measured by
+a run, hollow ones seeded from the table. For each period a run judged, the shaded band is
+what that run was scored against, and with yearly seasonality the dashed line is the
+expected value (the level times what this time of year ran at in earlier years); the caption
+says how many of the periods shown had the yearly comparison and, for the rest, why not.
+Attached calendar entries are highlighted with their names and detected periods are
+outlined, listed under the chart. The <strong>Table</strong> view gives the same numbers per period. In
+run detail, each result of a per-period check also says which period it judged, its
+expected value, the calendar entry it fell inside and whether the calendar changed the
+verdict.</p>
+<p>A workspace admin turns a detected period into a calendar entry with <strong>Promote to calendar</strong>
+under the trend (it offers to attach the entry to the check when the check has yearly
+seasonality on), or with <code>POST /api/v1/admin/seasonal-periods/promote</code>, naming the check, the period's <code>start</code> (its
 most recent occurrence, as the detection returned it) and a <code>name</code>. The history is read
 again, so a period it no longer shows is refused, and so is a season an entry on the
 calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring

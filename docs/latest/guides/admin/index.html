@@ -1460,6 +1460,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#calendar-seasonal-periods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calendar — seasonal periods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3135,6 +3146,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#calendar-seasonal-periods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calendar — seasonal periods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3235,7 +3257,7 @@
 <p>The admin area is where a <strong>workspace Admin</strong> sees the whole workspace and manages the
 things that are shared rather than owned: membership, roles, access grants, workspace
 settings, compliance evidence, and inbound integrations.</p>
-<p>It lives at <code>/admin</code> and is split into six deep-linkable sub-pages. The tab you are on
+<p>It lives at <code>/admin</code> and is split into seven deep-linkable sub-pages. The tab you are on
 <strong>is</strong> the URL, so any tab can be bookmarked, shared with another admin, or reloaded
 without losing your place. <code>/admin</code> on its own lands on <strong>Overview</strong>.</p>
 <h2 id="page-map">Page map<a class="headerlink" href="#page-map" title="Permanent link">¶</a></h2>
@@ -3267,6 +3289,11 @@ without losing your place. <code>/admin</code> on its own lands on <strong>Overv
 <td>Settings</td>
 <td><code>/admin/settings</code></td>
 <td>Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone.</td>
+</tr>
+<tr>
+<td>Calendar</td>
+<td><code>/admin/calendar</code></td>
+<td>The workspace's seasonal calendar: named sale and holiday periods that per-period anomaly checks can attach.</td>
 </tr>
 <tr>
 <td>Compliance</td>
@@ -3665,6 +3692,22 @@ score at once — the dashboard cards and their period-over-period deltas, the s
 asset scorecards, and any run you look at from before the change. There is no data-side
 event to explain the step; the audit log carries it, with the old and new weights and who
 saved them. <strong>Reset to defaults</strong> removes the stored row and is audited the same way.</p>
+<h2 id="calendar-seasonal-periods">Calendar — seasonal periods<a class="headerlink" href="#calendar-seasonal-periods" title="Permanent link">¶</a></h2>
+<p><code>/admin/calendar</code> holds the periods when the business runs differently on purpose: a sale,
+a holiday, a launch. Each entry is either <strong>every year on the same dates</strong> (a month and day
+range, which may cross the year end) or <strong>on specific dates</strong>, for a period that moves.
+Give each year's dated entry the same <strong>series</strong> so this year's sale is compared with last
+year's.</p>
+<p>An entry changes no check by being here. A check author attaches it in the check editor,
+on an anomaly check that watches rows or a sum per period with yearly seasonality on; from
+then on that check lines the period up with its previous occurrence. The <strong>Attached
+checks</strong> column counts them, and deleting an entry that any check still attaches is
+refused: the page lists those checks, each linking to its editor, so you can remove it
+there first. Every add, edit and delete is audited.</p>
+<p>Members and viewers cannot open this page, but they see the entries' names and dates in
+the check editor's picker. An admin can also add an entry straight from a check's trend,
+where the check's own history shows a period that recurs: see
+<a href="../datasources-checks/">Detected seasonal periods</a>.</p>
 <h2 id="integrations-webhook-auth">Integrations — webhook auth<a class="headerlink" href="#integrations-webhook-auth" title="Permanent link">¶</a></h2>
 <p>Each inbound webhook row states the auth mode it uses, because that determines how the URL
 must be handled. The Azure Data Factory URL carries a <strong>shared secret in the query string</strong>

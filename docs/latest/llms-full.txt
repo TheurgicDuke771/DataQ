@@ -1073,7 +1073,7 @@ The admin area is where a **workspace Admin** sees the whole workspace and manag
 things that are shared rather than owned: membership, roles, access grants, workspace
 settings, compliance evidence, and inbound integrations.
 
-It lives at `/admin` and is split into six deep-linkable sub-pages. The tab you are on
+It lives at `/admin` and is split into seven deep-linkable sub-pages. The tab you are on
 **is** the URL, so any tab can be bookmarked, shared with another admin, or reloaded
 without losing your place. `/admin` on its own lands on **Overview**.
 
@@ -1085,6 +1085,7 @@ without losing your place. `/admin` on its own lands on **Overview**.
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
 | Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone. |
+| Calendar | `/admin/calendar` | The workspace's seasonal calendar: named sale and holiday periods that per-period anomaly checks can attach. |
 | Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture. |
 | Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses. |
 
@@ -1463,6 +1464,26 @@ score at once — the dashboard cards and their period-over-period deltas, the s
 asset scorecards, and any run you look at from before the change. There is no data-side
 event to explain the step; the audit log carries it, with the old and new weights and who
 saved them. **Reset to defaults** removes the stored row and is audited the same way.
+
+## Calendar — seasonal periods
+
+`/admin/calendar` holds the periods when the business runs differently on purpose: a sale,
+a holiday, a launch. Each entry is either **every year on the same dates** (a month and day
+range, which may cross the year end) or **on specific dates**, for a period that moves.
+Give each year's dated entry the same **series** so this year's sale is compared with last
+year's.
+
+An entry changes no check by being here. A check author attaches it in the check editor,
+on an anomaly check that watches rows or a sum per period with yearly seasonality on; from
+then on that check lines the period up with its previous occurrence. The **Attached
+checks** column counts them, and deleting an entry that any check still attaches is
+refused: the page lists those checks, each linking to its editor, so you can remove it
+there first. Every add, edit and delete is audited.
+
+Members and viewers cannot open this page, but they see the entries' names and dates in
+the check editor's picker. An admin can also add an entry straight from a check's trend,
+where the check's own history shows a period that recurs: see
+[Detected seasonal periods](datasources-checks.md).
 
 ## Integrations — webhook auth
 
@@ -3291,7 +3312,7 @@ table: `period_row_count` is the rows whose date falls in the period, and `perio
 the sum of a numeric column over them. Use them for a table that only grows, where the
 whole-table row count has no "normal" to return to: orders per day, sales amount per week.
 
-- `date_column` says which column dates a row, `period` is `day` or `week` (Monday to
+- `date_column` says which column dates a row (the editor suggests the target's columns), `period` is `day` or `week` (Monday to
   Sunday), and `period_sum` also names a `value_column`.
 - Only **complete** periods are judged. `timezone` (an IANA name spelled exactly, default
   `UTC`) is the zone the date column's values are written in, and decides when a day ends.
@@ -3393,18 +3414,21 @@ has no period of its own, so it keeps two histories:
 
 **Declared seasonal periods** line up the peaks the weekday matching cannot: a sale that
 moves by more than a few days, or a fixed date such as 25 December. They live in one
-workspace calendar, managed through the REST API under `/api/v1/admin/seasonal-periods`
-(there is no calendar screen in the app yet; anyone signed in can read it, workspace
-admins change it, every change is audited, and AI assistants read it with the
-`list_seasonal_periods` MCP tool). An entry
+workspace calendar, managed in **Admin → Calendar** (or through the REST API under
+`/api/v1/admin/seasonal-periods`; anyone signed in can read it, workspace admins change it,
+every change is audited, and AI assistants read it with the `list_seasonal_periods` MCP
+tool). An entry
 is either **recurring**, a month-and-day range every year that may wrap the year end (20
 December to 5 January; a 29 February bound is taken as 28 February in a year without one),
 or **dated**, an explicit start and end. Dated entries that share a **series** (compared
 case-insensitively) are the occurrences of one period across years: "Spring sale 2025" and
 "Spring sale 2026" with series "Spring sale".
 
-An entry changes no check until it is attached: an anomaly check with `yearly` on
-lists the entries that apply to its table in `seasonal_periods` (their ids; an unknown id is
+An entry changes no check until it is attached: in the check editor, an anomaly check with
+**Yearly seasonality** on has a **Declared seasonal periods** picker listing the calendar
+by name and dates. Turning yearly seasonality off on a check that has entries attached
+warns that saving removes them. Through the API the check lists the entries in
+`seasonal_periods` (their ids; an unknown id is
 refused when the check is saved, and an entry that any check still names cannot be deleted —
 the refusal names the checks). While attached:
 
@@ -3457,8 +3481,21 @@ about half the check's window of prior periods (same-weekday periods when season
 on) lifts the level with it, so its occurrence is reported shorter than it ran; attaching
 a calendar entry over it fixes that, for detection as for scoring.
 
-A workspace admin turns a detected period into a calendar entry with
-`POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
+**On the trend.** Open a per-period check's **Trend** (from its editor, or from a result row
+in run detail). The baseline chart shows every stored period: filled points were measured by
+a run, hollow ones seeded from the table. For each period a run judged, the shaded band is
+what that run was scored against, and with yearly seasonality the dashed line is the
+expected value (the level times what this time of year ran at in earlier years); the caption
+says how many of the periods shown had the yearly comparison and, for the rest, why not.
+Attached calendar entries are highlighted with their names and detected periods are
+outlined, listed under the chart. The **Table** view gives the same numbers per period. In
+run detail, each result of a per-period check also says which period it judged, its
+expected value, the calendar entry it fell inside and whether the calendar changed the
+verdict.
+
+A workspace admin turns a detected period into a calendar entry with **Promote to calendar**
+under the trend (it offers to attach the entry to the check when the check has yearly
+seasonality on), or with `POST /api/v1/admin/seasonal-periods/promote`, naming the check, the period's `start` (its
 most recent occurrence, as the detection returned it) and a `name`. The history is read
 again, so a period it no longer shows is refused, and so is a season an entry on the
 calendar already covers (the refusal names the entry to attach instead). A recurring period becomes a recurring
@@ -5085,9 +5122,10 @@ section below.
   against it, and a peak that fails to arrive is flagged. It applies once the history
   reaches back a year, which seeding supplies at once, and each result says whether it was
   applied and what was expected.
-- **A declared seasonal calendar for anomaly checks.** Workspace admins keep one calendar of named seasonal periods (recurring month-and-day ranges, or dated entries grouped into a series across years) through the REST API, audited like other admin changes. A per-period anomaly check with `yearly` on attaches the entries that apply to its table: a day inside one is compared with the same day of the period's previous occurrence, so a sale that moves or a fixed date lines up, and the days after it are not judged against it. In a period's first year a rise is reported as within the period rather than banded, while a drop still alerts. Every result says which entry applied and what the run would have scored without the calendar.
+- **A declared seasonal calendar for anomaly checks.** Workspace admins keep one calendar of named seasonal periods (recurring month-and-day ranges, or dated entries grouped into a series across years) in Admin → Calendar or through the REST API, audited like other admin changes. A per-period anomaly check with `yearly` on attaches the entries that apply to its table: a day inside one is compared with the same day of the period's previous occurrence, so a sale that moves or a fixed date lines up, and the days after it are not judged against it. In a period's first year a rise is reported as within the period rather than banded, while a drop still alerts. Every result says which entry applied and what the run would have scored without the calendar.
 - **Detected seasonal periods, and promoting one to the calendar.** A per-period anomaly check now reports the seasonal periods its own history shows: runs of at least two days (or one week) at 1.5 times the level the check is scored against, called recurring when they come at the same time in two or more years and seen once otherwise, with each year's dates, peak ratio and how much history stood behind them. A detected period is a description and changes no verdict. A workspace admin can promote one to the declared calendar (a recurring period as a month-and-day range, one seen once as a dated entry) and attach it to the check in the same step. AI assistants gain two read-only MCP tools, `list_seasonal_periods` and `get_detected_seasonal_periods`.
 - **Yearly seasonality on whole-table row count and freshness anomaly checks, and in automatic coverage.** `yearly: true` now works on `row_count` and `freshness_age_hours` anomaly checks. The check keeps a daily history (the median of each day's runs, in its `timezone`) beside its usual run-by-run one and uses it only to learn what this time of year looks like; each run is still scored against its recent runs, scaled by that. The daily history starts when the setting is switched on, so the first yearly verdict comes a year later and every result says why until then. Switching it off keeps both histories. Workspace admins can switch it on for the automatic row-count and freshness baselines under **Admin → Settings → Automatic coverage** or per table; it is off by default.
+- **Seasonal calendar and per-period trends in the app.** A new **Admin → Calendar** page lists, adds, edits and deletes the workspace's seasonal periods; deleting one a check still attaches is refused with those checks listed. In the check editor a per-period anomaly check picks its date and sum columns from the table's columns, its time zone from a list, and, with yearly seasonality on, the calendar entries that apply to it; turning yearly off warns that saving removes them. The check's trend draws, for each judged period, the band it was scored against and the expected value where the yearly comparison applied, marks seeded points, highlights attached calendar entries and outlines detected periods, and says why the yearly comparison did not apply where it did not. Admins can promote a detected period to the calendar from the trend. Run detail explains how each period was judged and whether the calendar changed the verdict.
 - **Third-party notices and an SPDX SBOM ship with every image and release.** Both container images carry `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (`scripts/check-licenses.py`, with reviewed overrides in `scripts/licenses/overrides.toml`).
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
