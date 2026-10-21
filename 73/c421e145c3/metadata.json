@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "73c421e145c3",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2506-dep-audit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/requirements.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/73/c421e145c3/0/metadata.json",
+      "transcript": "/73/c421e145c3/0/full.jsonl",
+      "compact_transcript": "/73/c421e145c3/0/transcript.jsonl",
+      "content_hash": "/73/c421e145c3/0/content_hash.txt",
+      "prompt": "/73/c421e145c3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 11884,
+    "cache_read_tokens": 4952424,
+    "output_tokens": 5287,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 12,
+      "cache_creation_tokens": 8997,
+      "cache_read_tokens": 1988759,
+      "output_tokens": 77,
+      "api_call_count": 6
+    }
+  }
+}
