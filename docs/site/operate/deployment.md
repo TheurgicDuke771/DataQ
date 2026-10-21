@@ -164,7 +164,7 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake, ADLS, Athena or Redshift **connection** needs the live service to run against.
+Snowflake, ADLS, Athena, Redshift or BigQuery **connection** needs the live service to run against.
 The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
 Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
 SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse

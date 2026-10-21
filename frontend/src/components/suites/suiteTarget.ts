@@ -22,6 +22,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     case 'mssql':
     case 'athena':
     case 'redshift':
+    case 'bigquery':
       return 'sql';
     case 'unity_catalog':
       return 'uc';
@@ -97,6 +98,7 @@ export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
 ]);
 
 /** Placeholder hints for the SQL target fields, in each engine's own name case. */
@@ -114,6 +116,8 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
   if (type === 'athena') return { schema: 'sales', table: 'orders' };
   // Redshift folds every name to lower case.
   if (type === 'redshift') return { schema: 'public', table: 'orders' };
+  // A BigQuery dataset; dataset and table names keep their case.
+  if (type === 'bigquery') return { schema: 'sales', table: 'orders' };
   if (type === 'mssql') return { schema: 'dbo', table: 'Orders' };
   return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }

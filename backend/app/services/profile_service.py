@@ -674,6 +674,13 @@ def _column_caps(
     spec = SQL_ENGINES.get(connection.type)
     if spec is None or spec.column_caps is None:
         return {}
+    if spec.column_names_case_insensitive:
+        by_lower = {
+            name.lower(): cap for name, cap in spec.column_caps(conn, schema, table).items()
+        }
+        return {
+            column: by_lower[column.lower()] for column in columns if column.lower() in by_lower
+        }
     if not spec.config_model.names_are_lower_case:
         return spec.column_caps(conn, schema, table)
     # An engine that folds every name (Trino) resolves `Events.Payload` as `events.payload` and

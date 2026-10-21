@@ -1058,6 +1058,47 @@ describe('ConnectionForm — Google Cloud Storage', () => {
   });
 });
 
+describe('ConnectionForm — Google BigQuery', () => {
+  it('takes a project, dataset, byte cap and a pasted key file; no host, port or user', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'bigquery' });
+    render(
+      <AntApp>
+        <ConnectionForm type="bigquery" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'warehouse');
+    await selectOption(user, 'DEV');
+    expect(screen.queryByLabelText('Host')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Port')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('User')).not.toBeInTheDocument();
+    expect(screen.getByText(/A query that would bill more is refused/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Project ID'), 'acme-analytics');
+    await user.type(screen.getByLabelText(/Default dataset/), 'Sales');
+    await user.type(screen.getByLabelText(/Maximum bytes billed/), '52428800');
+    const key = screen.getByLabelText('Service account key file (JSON)');
+    expect(key.tagName).toBe('TEXTAREA');
+    await user.click(key);
+    await user.paste('{"type": "service_account", "client_email": "dq@p.iam.gserviceaccount.com"}');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('bigquery');
+    expect(payload.config).toMatchObject({
+      project_id: 'acme-analytics',
+      schema: 'Sales',
+      maximum_bytes_billed: '52428800',
+      auth_type: 'service_account_key',
+    });
+    expect(payload.config).not.toHaveProperty('host');
+    expect(payload.secret).toBe(
+      '{"type": "service_account", "client_email": "dq@p.iam.gserviceaccount.com"}',
+    );
+  });
+});
+
 describe('ConnectionForm — dbt ADLS service principal', () => {
   it('reads OneLake artifacts as a service principal: tenant, client and a required secret', async () => {
     const user = userEvent.setup();
