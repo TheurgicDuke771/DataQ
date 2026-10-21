@@ -261,8 +261,9 @@ const AGGREGATE_OPTIONS = [
 ];
 
 /** Mirrors the backend engine specs' `exact_median = False`: only an approximate percentile
- *  (Trino, Athena) or none (MySQL). */
-const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena'];
+ *  (Trino, Athena), an exact one that runs the whole table on one worker (BigQuery), or none
+ *  (MySQL). */
+const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena', 'bigquery'];
 
 /** Every DQX check: read the whole table, or only the rows appended since the last run. */
 const DQX_MODE: ConfigField = {
@@ -525,7 +526,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values are valid JSON',
     description:
-      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
+      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift or BigQuery: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
     category: 'Column values',
     fields: [COLUMN, MOSTLY],
   },
@@ -691,7 +692,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values match a date format',
     description:
-      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
+      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift or BigQuery: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
     category: 'Column values',
     fields: [
       COLUMN,
@@ -770,7 +771,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         label: 'Statistic',
         type: 'select',
         options: AGGREGATE_OPTIONS,
-        help: 'Standard deviation is the sample one (n − 1). Median is exact, so it is not offered on MySQL, Trino or Athena, which have only an approximate percentile.',
+        help: 'Standard deviation is the sample one (n − 1). Median is exact, so it is not offered on MySQL, Trino or Athena, which have only an approximate percentile, or on BigQuery, whose exact percentile does not scale to a large table.',
       },
       { ...COLUMN, help: 'A numeric column. NULLs are skipped, as SQL aggregates do.' },
       {

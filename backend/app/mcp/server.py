@@ -599,7 +599,7 @@ def list_suites() -> list[dict[str, Any]]:
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
     against (snowflake / adls_gen2 / s3 / gcs / unity_catalog / iceberg / postgres / mysql /
-    mssql / trino / athena / redshift), the environment (dev / qa / uat), how many checks
+    mssql / trino / athena / redshift / bigquery), the environment (dev / qa / uat), how many checks
     it has (``check_count``),
     how many of those are switched on and so actually run (``enabled_check_count`` —
     quote this one for "how many checks run on orders"; ``list_checks`` says which are
@@ -1529,7 +1529,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     to find the connection a suite should run against. Returns, per connection:
     its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``gcs`` / ``unity_catalog``
     / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` / ``athena`` / ``redshift``
-    for datasources; ``adf`` / ``airflow`` / ``dbt`` for orchestration providers),
+    / ``bigquery`` for datasources; ``adf`` / ``airflow`` / ``dbt`` for orchestration providers),
     environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
     when it is failing, how many consecutive failures it has had, and when its
@@ -1558,7 +1558,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     apart, and null there means we have never looked. "No readable lifetime" is not
     "never expires": a password or a service-principal client secret (an ADLS
     connection's ``service_principal`` mode) expires on a date only the identity
-    provider knows, and a GCS service-account key file states no expiry yet can be
+    provider knows, and a GCS or BigQuery service-account key file states no expiry yet can be
     revoked or rotated at any time. Report all of these as silence rather than reassurance.
 
     ``credential_health`` answers the narrower question "is this connection's
@@ -2374,8 +2374,8 @@ def create_check(
     warn/fail/critical threshold arguments — passing one is refused, because those
     band a metric that only gets worse upward. An empty table or all-NULL column
     reports ``error``, not a pass on 0; a text/date column is also an ``error``.
-    ``median`` is refused on MySQL/MariaDB, Trino and Athena (no exact median
-    there). The dimension is left unset unless you pass one.
+    ``median`` is refused on MySQL/MariaDB, Trino, Athena and BigQuery (no exact
+    median that scales there). The dimension is left unset unless you pass one.
 
     For a cross-dataset reconciliation check use ``kind="comparison"`` with
     ``expectation_type="comparison:records"``, ``source_connection_id`` (the
@@ -3465,7 +3465,7 @@ def browse_connection(
 
     - **``kind: "tables"``** — Unity Catalog, Snowflake, Iceberg and the SQL
       databases (PostgreSQL, MySQL/MariaDB, Trino, SQL Server/Azure SQL, Athena,
-      Redshift). On
+      Redshift, BigQuery — whose "schemas" are datasets). On
       Unity Catalog, no ``catalog`` lists catalogs; a ``catalog`` lists its
       schemas; ``catalog`` + ``schema`` lists tables. Every other type pins one
       database, so it has **no catalog level**: start at ``schema`` (omit it to
@@ -5031,10 +5031,12 @@ def profile_column(
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
     your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
-    Server, Athena and Redshift are profiled in full; ADLS, S3, GCS and Iceberg targets are
+    Server, Athena, Redshift and BigQuery are profiled in full; ADLS, S3, GCS and Iceberg
+    targets are
     profiled over a sample of at most 100,000 rows** (for an ADLS, S3 or GCS file, its first 100,000
-    rows — not a random draw). On Athena every statistic is a billed
-    query. When
+    rows — not a random draw). On Athena and BigQuery every statistic is a billed
+    query (on BigQuery, refused uncharged when it would bill more than the connection's
+    ``maximum_bytes_billed``). When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that
     sample. Say so rather than reporting a sample fraction as a fact about the

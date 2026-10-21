@@ -24,15 +24,17 @@ from backend.app.datasources.monitors import (
     AGGREGATE_SUM,
 )
 
-# Dialects with no exact median aggregate: Trino and Athena offer only `approx_percentile`, MySQL
+# Dialects with no usable exact median: Trino and Athena offer only `approx_percentile`, BigQuery's
+# exact PERCENTILE_CONT is a window that runs the whole table on one worker, MySQL
 # has none and MariaDB only a window form MySQL lacks. Refused at author time too.
-NO_EXACT_MEDIAN_DIALECTS = ("mysql", "mariadb", "trino", "awsathena")
+NO_EXACT_MEDIAN_DIALECTS = ("mysql", "mariadb", "trino", "awsathena", "bigquery")
 
 _DOUBLE_TYPE = {
     "snowflake": "DOUBLE",
     "databricks": "DOUBLE",
     "trino": "DOUBLE",
     "awsathena": "DOUBLE",
+    "bigquery": "FLOAT64",
 }
 
 

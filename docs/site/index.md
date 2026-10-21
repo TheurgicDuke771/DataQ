@@ -5,9 +5,9 @@ isn't.** DataQ is an engineering-first, extensible place that connects quality c
 pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
 agents your team works with. It runs checks against your tables and files — in Snowflake,
 Databricks Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure
-SQL, Synapse, Fabric), Amazon Athena, Amazon Redshift, ADLS Gen2 or Fabric OneLake, AWS S3 or
-any S3-compatible store, or Google Cloud Storage — the moment your Azure Data Factory, Airflow or
-dbt pipeline finishes a load, and alerts the team that owns it.
+SQL, Synapse, Fabric), Amazon Athena, Amazon Redshift, Google BigQuery, ADLS Gen2 or Fabric
+OneLake, AWS S3 or any S3-compatible store, or Google Cloud Storage — the moment your Azure Data
+Factory, Airflow or dbt pipeline finishes a load, and alerts the team that owns it.
 
 <video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">

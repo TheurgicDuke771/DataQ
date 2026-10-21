@@ -11,7 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.datasources.athena import ATHENA
-from backend.app.datasources.generic_sql import GenericSqlConfig, SqlEngineSpec
+from backend.app.datasources.bigquery import BIGQUERY
+from backend.app.datasources.generic_sql import (
+    GenericSqlConfig,
+    NoDefaultSchemaError,
+    SqlEngineSpec,
+)
 from backend.app.datasources.mssql import MSSQL
 from backend.app.datasources.mysql import MYSQL
 from backend.app.datasources.postgres import POSTGRES
@@ -19,7 +24,7 @@ from backend.app.datasources.redshift import REDSHIFT
 from backend.app.datasources.trino import TRINO
 
 SQL_ENGINES: dict[str, SqlEngineSpec] = {
-    spec.conn_type: spec for spec in (POSTGRES, MYSQL, TRINO, MSSQL, ATHENA, REDSHIFT)
+    spec.conn_type: spec for spec in (POSTGRES, MYSQL, TRINO, MSSQL, ATHENA, REDSHIFT, BIGQUERY)
 }
 
 GENERIC_SQL_TYPES: frozenset[str] = frozenset(SQL_ENGINES)
@@ -38,13 +43,17 @@ def sql_engine(conn_type: str) -> SqlEngineSpec | None:
 
 def default_schema(conn_type: str, config: dict[str, Any]) -> str | None:
     """The schema an unqualified target resolves in on a generic SQL connection, or ``None``
-    when ``conn_type`` is not one (the caller then applies its own rule).
+    when ``conn_type`` is not one or the connection has no default (the caller then applies its
+    own rule).
     """
     spec = SQL_ENGINES.get(conn_type)
     if spec is None:
         return None
     validated: GenericSqlConfig = spec.validate_config(config)
-    return validated.default_schema
+    try:
+        return validated.default_schema
+    except NoDefaultSchemaError:
+        return None
 
 
 def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:

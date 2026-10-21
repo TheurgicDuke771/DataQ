@@ -19,7 +19,7 @@ the credential again.**
 
 You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
-`workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
+`workspace_url`, BigQuery `endpoint_url` / `auth_type`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
 PostgreSQL / MySQL / Redshift `host` / `port`, Trino `host` / `port` / `sslmode` / `ca_bundle` /
 `auth_type`, SQL Server `host` / `port` / `auth_type` / `tenant_id` / `client_id` / `ca_bundle` /
 `driver`, Athena `host` / `region` / `work_group` / `s3_staging_dir`, Airflow `base_url`, dbt

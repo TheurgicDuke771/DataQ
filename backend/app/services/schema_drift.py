@@ -105,6 +105,15 @@ def _sql_columns(
     if catalog is not None:
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
+    api = SQL_ENGINES[connection.type].catalog.api if connection.type in GENERIC_SQL_TYPES else None
+    if api is not None:
+        with _open_connection(connection, secret_store) as conn:
+            listed = api.columns(conn, schema=effective_schema, table=table)
+        if not listed:
+            raise SchemaIntrospectionError(
+                f"table {table!r} not found (schema {effective_schema!r})"
+            )
+        return [{"name": name, "type": data_type} for name, data_type in listed]
     columns_view = (
         SQL_ENGINES[connection.type].columns_view
         if connection.type in GENERIC_SQL_TYPES

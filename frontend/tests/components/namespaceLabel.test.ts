@@ -150,6 +150,9 @@ describe('datasourceKind', () => {
     ['mssql://srv:1433', 'mssql'],
     ['awsathena://athena.us-east-2.amazonaws.com', 'athena'],
     ['redshift://analytics.us-east-2:5439', 'redshift'],
+    ['bigquery', 'bigquery'],
+    ['BigQuery ', 'bigquery'],
+    ['bigquery://127.0.0.1:9050', 'bigquery'],
     // Nor is a pyodbc/pytds driver DSN the SQL Server datasource namespace.
     ['mssql+pyodbc://u@h/db', 'other'],
     ['file', 'other'],
@@ -173,6 +176,8 @@ describe('datasourceKind', () => {
       'mssql://srv:1433',
       'awsathena://athena.us-east-2.amazonaws.com',
       'redshift://analytics.us-east-2:5439',
+      'bigquery',
+      'bigquery://127.0.0.1:9050',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');
@@ -200,6 +205,13 @@ describe('Redshift namespace', () => {
     expect(namespaceLabel('redshift://analytics.us-east-2:5439')).toBe(
       'Redshift · analytics.us-east-2:5439',
     );
+  });
+});
+
+describe('BigQuery namespace', () => {
+  it('names Google Cloud for the bare OpenLineage namespace, and an emulator by its endpoint', () => {
+    expect(namespaceLabel('bigquery')).toBe('BigQuery · Google Cloud');
+    expect(namespaceLabel('bigquery://127.0.0.1:9050')).toBe('BigQuery · 127.0.0.1:9050');
   });
 });
 

@@ -53,7 +53,7 @@
 | Kind | Supported |
 |---|---|
 | Warehouses / lakehouses | Snowflake (incl. native DMF checks) · Databricks Unity Catalog (incl. DQX) · Apache Iceberg (native read) |
-| SQL databases | PostgreSQL · MySQL / MariaDB · Trino · SQL Server — Azure SQL, Synapse, Fabric SQL · Amazon Athena · Amazon Redshift ([driver notes](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/)) |
+| SQL databases | PostgreSQL · MySQL / MariaDB · Trino · SQL Server — Azure SQL, Synapse, Fabric SQL · Amazon Athena · Amazon Redshift · Google BigQuery ([driver notes](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/)) |
 | Files (CSV / Parquet / JSON, batch patterns) | ADLS Gen2 · Fabric OneLake · AWS S3 and any S3-compatible store (MinIO, R2, Ceph, …) · Google Cloud Storage |
 | Orchestration (monitor + trigger, not checked) | Azure Data Factory · Apache Airflow · dbt |
 

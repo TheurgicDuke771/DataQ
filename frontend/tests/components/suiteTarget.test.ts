@@ -60,6 +60,7 @@ describe('SCHEMA_BROWSE_TYPES', () => {
       'mssql',
       'athena',
       'redshift',
+      'bigquery',
     ]);
   });
 });

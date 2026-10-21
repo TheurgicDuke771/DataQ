@@ -25,7 +25,7 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
 - **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
-  and Fabric SQL), **Amazon Athena** and **Amazon Redshift** — the generic SQL engines
+  and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery** — the generic SQL engines
   (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
 - **Google Cloud Storage** — flat files, the same shapes as ADLS Gen2 and S3, with a
   service-account key or anonymous access and an optional emulator endpoint. Verified
@@ -61,7 +61,7 @@ schema-drift / anomaly / PII-drift / comparison** monitor kinds:
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
   datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
-  Redshift), Apache Iceberg (computed natively via a
+  Redshift / BigQuery), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —

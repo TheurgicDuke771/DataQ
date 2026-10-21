@@ -38,7 +38,7 @@ like this:
     *Adding a Snowflake connection, start to finish (12 s)*
 
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Google Cloud Storage, Apache Iceberg,
-   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.
+   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift or Google BigQuery). The form is spec-driven — it asks only for what that type needs.
 
     ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 

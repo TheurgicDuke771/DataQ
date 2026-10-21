@@ -15,6 +15,7 @@ export const CONNECTION_TYPES = [
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
   'adf',
   'airflow',
   'dbt',
@@ -41,6 +42,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   mssql: 'datasource',
   athena: 'datasource',
   redshift: 'datasource',
+  bigquery: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -73,6 +75,7 @@ export const DATASOURCE_CATEGORIES = [
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
 ] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
@@ -89,6 +92,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   mssql: 'mssql',
   athena: 'athena',
   redshift: 'redshift',
+  bigquery: 'bigquery',
   adf: null,
   airflow: null,
   dbt: null,
@@ -105,6 +109,7 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   mssql: 'SQL Server',
   athena: 'Amazon Athena',
   redshift: 'Amazon Redshift',
+  bigquery: 'Google BigQuery',
 };
 
 /**
@@ -120,6 +125,7 @@ export const SQL_QUERYABLE_TYPES: ConnectionType[] = [
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
 ];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
@@ -143,6 +149,7 @@ export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
   'iceberg',
   ...FILE_TYPES,
 ];
@@ -163,6 +170,7 @@ export const SQL_BATCH_TYPES: ConnectionType[] = [
   'mssql',
   'athena',
   'redshift',
+  'bigquery',
 ];
 
 export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
@@ -290,6 +298,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   mssql: 'SQL Server',
   athena: 'Amazon Athena',
   redshift: 'Amazon Redshift',
+  bigquery: 'Google BigQuery',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',
