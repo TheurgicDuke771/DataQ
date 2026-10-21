@@ -64,7 +64,8 @@ MUST_FAIL: tuple[tuple[str, list[str], str], ...] = (
         "OIDC with no signup allowlist",
         [
             "--set",
-            "auth.mode=oidc,auth.oidc.issuer=https://idp.example.com,"
+            "auth.mode=oidc,auth.oidc.issuer=https://idp.example.com",
+            "--set",
             "auth.oidc.audience=a,auth.oidc.clientId=c",
         ],
         "auth.oidc.openSignup=true",
