@@ -1,0 +1,1 @@
+function e(e,t){let n=t?.[`x-total-count`],r=n===void 0?e.length:Number(n);return{items:e,total:Number.isFinite(r)?r:e.length}}export{e as t};

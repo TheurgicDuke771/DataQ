@@ -1,0 +1,1 @@
+import{t as e}from"./react-BQfAyeqr.js";import{b as t}from"./index-OWS9eQrQ.js";var n=e();function r(){return(0,n.jsx)(t,{code:404})}export{r as NotFound};
