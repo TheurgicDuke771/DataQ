@@ -53,6 +53,7 @@ const ROUTE_NAMES: [string, string][] = [
   ['/admin/members', 'admin_members'],
   ['/admin/suites', 'admin_suites'],
   ['/admin/settings', 'admin_settings'],
+  ['/admin/calendar', 'admin_calendar'],
   ['/admin/compliance', 'admin_compliance'],
   ['/admin/integrations', 'admin_integrations'],
 ];

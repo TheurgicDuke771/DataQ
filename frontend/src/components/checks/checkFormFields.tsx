@@ -19,6 +19,12 @@ import { customDmfListingNote } from './customDmf';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
 import {
+  CalendarEntriesInput,
+  ColumnPickerInput,
+  type ColumnSource,
+  TimezoneInput,
+} from './seasonalFields';
+import {
   DQ_DIMENSION_HELP,
   DQ_DIMENSIONS,
   TYPE_FIELD_NAMES,
@@ -56,6 +62,7 @@ export function ConfigFieldItem({
   connectionType,
   configValues,
   dmfCapability,
+  columnSource,
 }: {
   field: ConfigField;
   /** Suite's connection type — drives the `type_` field's datasource-tailored
@@ -65,6 +72,8 @@ export function ConfigFieldItem({
   configValues?: Record<string, unknown>;
   /** The connection's probed DMF capability — the custom-DMF field's suggestions. */
   dmfCapability?: DmfCapability;
+  /** The suite and run target a column picker lists columns from. */
+  columnSource?: ColumnSource;
 }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
@@ -127,6 +136,13 @@ export function ConfigFieldItem({
       </Form.Item>
     );
   }
+  if (field.type === 'calendar') {
+    return (
+      <Form.Item name={['config', field.name]} label={label} extra={help}>
+        <CalendarEntriesInput yearly={configValues?.yearly === true} />
+      </Form.Item>
+    );
+  }
   if (field.type === 'sql') {
     // Inline mirror of the backend read-only guardrail (ADR 0019) for fast feedback; the backend is
     // authoritative.
@@ -173,6 +189,10 @@ export function ConfigFieldItem({
         <Select options={field.options} placeholder={label} />
       ) : field.type === 'boolean' ? (
         <Switch />
+      ) : field.picker === 'column' ? (
+        <ColumnPickerInput source={columnSource} />
+      ) : field.picker === 'timezone' ? (
+        <TimezoneInput />
       ) : (
         <Input placeholder={field.type === 'list' ? 'value1, value2, value3' : undefined} />
       )}
