@@ -1515,6 +1515,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1609,7 +1620,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#security" class="md-nav__link">
+  <a href="#security_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Security
@@ -2587,6 +2598,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2681,7 +2703,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#security" class="md-nav__link">
+  <a href="#security_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Security
@@ -2774,6 +2796,10 @@ section below.</p>
 <!-- changelog.d:unreleased -->
 
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
+<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>Dependency security updates.</strong> The CA bundle (<code>certifi</code>) moves to 2026.10.19 for PYSEC-2026-4320. <code>follow-redirects</code>, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.</li>
+</ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li><strong>Anomaly checks on a value per day or week.</strong> Two new anomaly metrics,
@@ -3183,7 +3209,7 @@ section below.</p>
   <a href="../../guides/datasources-checks/#sql-server-azure-sql-fabric-t-sql">Datasources &amp; checks</a>.</p>
 </li>
 </ul>
-<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
+<h3 id="security_1">Security<a class="headerlink" href="#security_1" title="Permanent link">¶</a></h3>
 <ul>
 <li>
 <p><strong>The custom-SQL guard now lexes each engine's own quoting.</strong> A T-SQL <code>[bracket]</code> or a

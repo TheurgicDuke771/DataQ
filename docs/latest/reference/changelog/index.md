@@ -10,6 +10,10 @@ section below.
 
 ## Unreleased
 
+### Security
+
+- **Dependency security updates.** The CA bundle (`certifi`) moves to 2026.10.19 for PYSEC-2026-4320. `follow-redirects`, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+
 ### Added
 
 - **Anomaly checks on a value per day or week.** Two new anomaly metrics,
