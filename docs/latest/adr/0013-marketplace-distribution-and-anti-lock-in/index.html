@@ -2089,6 +2089,8 @@
       
         
       
+        
+      
     
     
     
@@ -2186,6 +2188,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Kubernetes (Helm)
   
 
     
@@ -2481,6 +2511,11 @@
 <li><strong>Deciders:</strong> @TheurgicDuke771</li>
 </ul>
 <blockquote>
+<p><strong>Status note (2026-10-21):</strong> the Phase 2 Helm chart is delivered —
+<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/helm/dataq"><code>deploy/helm/dataq/</code></a>,
+installed per <a href="../../operate/kubernetes/">Install on Kubernetes (Helm)</a>. Generic OIDC, the OTel
+exporter, the AWS <code>SecretStore</code> and the published images shipped earlier; a GCP <code>SecretStore</code>
+has not been built.</p>
 <p><strong>Amendment (2026-07-09, <a href="../0031-oss-byol-distribution-licensing/">ADR 0031</a>):</strong>
 the licensing model is decided as <strong>free open-source (MIT) — there is no license
 revenue</strong>. This supersedes §5's "licensing model + entitlement/license-key" open
@@ -2564,8 +2599,8 @@ dropped; SOC 2 / pen test remain an enterprise-buyer ask independent of price).<
 </tr>
 <tr>
 <td><strong>Packaging</strong></td>
-<td>Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a <strong>Helm chart</strong> (build deferred).</td>
-<td>images portable; chart deferred</td>
+<td>Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a <strong>Helm chart</strong>.</td>
+<td>images portable; chart delivered (<code>deploy/helm/dataq/</code>)</td>
 </tr>
 <tr>
 <td><strong>Datasource auth</strong></td>

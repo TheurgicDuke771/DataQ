@@ -22,6 +22,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 | Observability | App Insights via OTel | ADOT collector sidecar → X-Ray + CloudWatch | Off by default; Jaeger via `--profile telemetry` |
 | Email transport | Any SMTP relay | SES (note: a sandboxed SES account can only mail verified addresses) | Mailpit catcher |
 | IaC | [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure) | [`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) | `scripts/setup.sh` + compose |
+| Your own Kubernetes (AKS / EKS / any) | The [Helm chart](kubernetes.md) runs the same images and the same four services, with migrations as a pre-upgrade hook; you bring PostgreSQL, Redis and the secret store | ← same chart | ← same chart, smoke-tested on kind |
 
 ## Features
 

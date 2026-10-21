@@ -2302,6 +2302,8 @@
       
         
       
+        
+      
     
     
     
@@ -2399,6 +2401,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Kubernetes (Helm)
   
 
     
@@ -2819,6 +2849,7 @@ section below.</p>
 <li><strong>Detected seasonal periods, and promoting one to the calendar.</strong> A per-period anomaly check now reports the seasonal periods its own history shows: runs of at least two days (or one week) at 1.5 times the level the check is scored against, called recurring when they come at the same time in two or more years and seen once otherwise, with each year's dates, peak ratio and how much history stood behind them. A detected period is a description and changes no verdict. A workspace admin can promote one to the declared calendar (a recurring period as a month-and-day range, one seen once as a dated entry) and attach it to the check in the same step. AI assistants gain two read-only MCP tools, <code>list_seasonal_periods</code> and <code>get_detected_seasonal_periods</code>.</li>
 <li><strong>Yearly seasonality on whole-table row count and freshness anomaly checks, and in automatic coverage.</strong> <code>yearly: true</code> now works on <code>row_count</code> and <code>freshness_age_hours</code> anomaly checks. The check keeps a daily history (the median of each day's runs, in its <code>timezone</code>) beside its usual run-by-run one and uses it only to learn what this time of year looks like; each run is still scored against its recent runs, scaled by that. The daily history starts when the setting is switched on, so the first yearly verdict comes a year later and every result says why until then. Switching it off keeps both histories. Workspace admins can switch it on for the automatic row-count and freshness baselines under <strong>Admin → Settings → Automatic coverage</strong> or per table; it is off by default.</li>
 <li><strong>Seasonal calendar and per-period trends in the app.</strong> A new <strong>Admin → Calendar</strong> page lists, adds, edits and deletes the workspace's seasonal periods; deleting one a check still attaches is refused with those checks listed. In the check editor a per-period anomaly check picks its date and sum columns from the table's columns, its time zone from a list, and, with yearly seasonality on, the calendar entries that apply to it; turning yearly off warns that saving removes them. The check's trend draws, for each judged period, the band it was scored against and the expected value where the yearly comparison applied, marks seeded points, highlights attached calendar entries and outlines detected periods, and says why the yearly comparison did not apply where it did not. Admins can promote a detected period to the calendar from the trend. Run detail explains how each period was judged and whether the calendar changed the verdict.</li>
+<li><strong>A Helm chart for your own Kubernetes cluster.</strong> <code>deploy/helm/dataq/</code> installs the api, worker, scheduler and frontend from the published images, runs database migrations as a pre-install/pre-upgrade hook so a failed migration stops the roll, and reads every credential from a Secret you create — no value in the chart holds one. Sign-in mode, secret store, ingress, TLS to the api, PodDisruptionBudgets and a NetworkPolicy that admits only the frontend to the api are all values, checked by a schema at install time. Every pod runs non-root on a read-only root filesystem. See <em>Install on Kubernetes (Helm)</em>.</li>
 <li><strong>Third-party notices and an SPDX SBOM ship with every image and release.</strong> Both container images carry <code>/THIRD-PARTY-NOTICES.md</code> (the frontend also serves it at <code>/third-party-notices</code>), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (<code>scripts/check-licenses.py</code>, with reviewed overrides in <code>scripts/licenses/overrides.toml</code>).</li>
 <li><strong>Disable a check without deleting it.</strong> A check can be switched off from its row on the
   suite page, from its editor, or many at once with <strong>Disable selected</strong> and <strong>Enable

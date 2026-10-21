@@ -5154,6 +5154,7 @@ section below.
 - **Detected seasonal periods, and promoting one to the calendar.** A per-period anomaly check now reports the seasonal periods its own history shows: runs of at least two days (or one week) at 1.5 times the level the check is scored against, called recurring when they come at the same time in two or more years and seen once otherwise, with each year's dates, peak ratio and how much history stood behind them. A detected period is a description and changes no verdict. A workspace admin can promote one to the declared calendar (a recurring period as a month-and-day range, one seen once as a dated entry) and attach it to the check in the same step. AI assistants gain two read-only MCP tools, `list_seasonal_periods` and `get_detected_seasonal_periods`.
 - **Yearly seasonality on whole-table row count and freshness anomaly checks, and in automatic coverage.** `yearly: true` now works on `row_count` and `freshness_age_hours` anomaly checks. The check keeps a daily history (the median of each day's runs, in its `timezone`) beside its usual run-by-run one and uses it only to learn what this time of year looks like; each run is still scored against its recent runs, scaled by that. The daily history starts when the setting is switched on, so the first yearly verdict comes a year later and every result says why until then. Switching it off keeps both histories. Workspace admins can switch it on for the automatic row-count and freshness baselines under **Admin → Settings → Automatic coverage** or per table; it is off by default.
 - **Seasonal calendar and per-period trends in the app.** A new **Admin → Calendar** page lists, adds, edits and deletes the workspace's seasonal periods; deleting one a check still attaches is refused with those checks listed. In the check editor a per-period anomaly check picks its date and sum columns from the table's columns, its time zone from a list, and, with yearly seasonality on, the calendar entries that apply to it; turning yearly off warns that saving removes them. The check's trend draws, for each judged period, the band it was scored against and the expected value where the yearly comparison applied, marks seeded points, highlights attached calendar entries and outlines detected periods, and says why the yearly comparison did not apply where it did not. Admins can promote a detected period to the calendar from the trend. Run detail explains how each period was judged and whether the calendar changed the verdict.
+- **A Helm chart for your own Kubernetes cluster.** `deploy/helm/dataq/` installs the api, worker, scheduler and frontend from the published images, runs database migrations as a pre-install/pre-upgrade hook so a failed migration stops the roll, and reads every credential from a Secret you create — no value in the chart holds one. Sign-in mode, secret store, ingress, TLS to the api, PodDisruptionBudgets and a NetworkPolicy that admits only the frontend to the api are all values, checked by a schema at install time. Every pod runs non-root on a read-only root filesystem. See *Install on Kubernetes (Helm)*.
 - **Third-party notices and an SPDX SBOM ship with every image and release.** Both container images carry `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (`scripts/check-licenses.py`, with reviewed overrides in `scripts/licenses/overrides.toml`).
 - **Disable a check without deleting it.** A check can be switched off from its row on the
   suite page, from its editor, or many at once with **Disable selected** and **Enable
@@ -12086,6 +12087,7 @@ Running DataQ for real: deploying it, watching it, and fixing it.
 |---|---|
 | [Deployment](deployment.md) | Azure Container Apps and AWS ECS reference deployments, the local Docker stack, every environment variable, and the Azure-free path. |
 | [Deployment parity](deployment-parity.md) | What is identical and what differs across Azure, AWS and local, service by service. |
+| [Install on Kubernetes (Helm)](kubernetes.md) | The Helm chart for your own cluster: what it installs, the Secret it reads, values, upgrade and rollback, and a kind test. |
 | [Upgrading](upgrading.md) | Moving to a newer release: the steps per deployment. |
 | [Backup, restore & rollback](backup-restore-upgrade.md) | What to back up and how, restoring with a verification step, what a restore loses, and the rollback doctrine behind each release's **Rollback** line. |
 | [Observability](observability.md) | Structured logs, request and task spans, and where to find them on each cloud. |
@@ -12344,6 +12346,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 | Observability | App Insights via OTel | ADOT collector sidecar → X-Ray + CloudWatch | Off by default; Jaeger via `--profile telemetry` |
 | Email transport | Any SMTP relay | SES (note: a sandboxed SES account can only mail verified addresses) | Mailpit catcher |
 | IaC | [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure) | [`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) | `scripts/setup.sh` + compose |
+| Your own Kubernetes (AKS / EKS / any) | The [Helm chart](kubernetes.md) runs the same images and the same four services, with migrations as a pre-upgrade hook; you bring PostgreSQL, Redis and the secret store | ← same chart | ← same chart, smoke-tested on kind |
 
 ## Features
 
@@ -12621,6 +12624,181 @@ any kind.
 
 For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
 the checklists — see the repository's `deploy/README.md`.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/kubernetes/ -->
+
+# Install on Kubernetes (Helm)
+
+The Helm chart at
+[`deploy/helm/dataq/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/helm/dataq)
+installs DataQ into any Kubernetes cluster (1.25 or later): AKS, EKS, GKE, OpenShift or your
+own. It runs the same published images as the cloud reference deployments and the
+prebuilt-image Docker stack.
+
+## What it installs
+
+| Component | Kind | Notes |
+|---|---|---|
+| api | Deployment + ClusterIP Service | Never exposed outside the cluster. |
+| worker | Deployment | Consumes both task queues. Scale it with `worker.replicas`. |
+| beat | Deployment | The scheduler. Always exactly one pod, replaced rather than rolled, so periodic tasks never fire twice. |
+| frontend | Deployment + Service | The only way in. Serves the app and proxies `/api`, `/mcp` and `/healthz` to the api. |
+| migrate | Job (pre-install / pre-upgrade hook) | Runs `alembic upgrade head` before anything rolls. |
+| Ingress | optional, off by default | Routes to the frontend only. |
+| PodDisruptionBudgets | when a component runs more than one replica | api, worker, frontend. |
+| NetworkPolicy | optional, off by default | The api accepts traffic from the frontend pods only; worker and beat accept none. |
+
+It does **not** install PostgreSQL, Redis or a vault. Use managed services or ones you already
+run; the chart takes their addresses from a Secret you create.
+
+Every pod runs as a non-root user on a read-only root filesystem, with all capabilities
+dropped and no Kubernetes API token mounted.
+
+## Before you install
+
+1. **PostgreSQL 16** with an empty database and a role that owns it, and **Redis 7**.
+2. **A secret store** for connection credentials: OpenBao or Vault (KV v2), Azure Key Vault
+   or AWS Secrets Manager.
+3. **A sign-in method**: an OIDC provider, or an SMTP relay for emailed one-time codes.
+4. **A Secret** in the release namespace holding the credentials. The chart never takes a
+   credential as a value; it reads this Secret by name.
+
+```bash
+kubectl create namespace dataq
+kubectl -n dataq create secret generic dataq-env \
+  --from-literal=DATABASE_URL='postgresql+psycopg2://dataq:<password>@<host>:5432/dataq?sslmode=verify-full' \
+  --from-literal=REDIS_URL='rediss://:<password>@<host>:6380/0?ssl_cert_reqs=required' \
+  --from-literal=OPENBAO_TOKEN='<token>'
+```
+
+Every key in this Secret becomes an environment variable on the api, worker, beat and the
+migration job. Use `OPENBAO_ROLE_ID` and `OPENBAO_SECRET_ID` instead of a token for AppRole
+sign-in. With a cloud secret store there is no vault credential: give the pods an identity
+through `serviceAccount.annotations` (EKS IRSA or Azure workload identity) instead. Further
+credentials, such as a tamper-anchor webhook secret, go in the same Secret, or in another one
+listed under `extraEnvFromSecrets`.
+
+If your database, Redis or vault certificates come from a private CA, put the CA certificate
+in a ConfigMap and name it in `trustedCA.existingConfigMap`. It is mounted at
+`/etc/dataq/ca`, so `sslrootcert=/etc/dataq/ca/ca.pem` in `DATABASE_URL` and
+`secretStore.openbao.caBundle: /etc/dataq/ca/ca.pem` find it.
+
+## Install
+
+A values file for OIDC sign-in, OpenBao and an ingress:
+
+```yaml
+existingSecret: dataq-env
+auth:
+  mode: oidc
+  workspaceAdminEmails: you@example.com
+  oidc:
+    issuer: https://idp.example.com/realms/dataq
+    audience: dataq-api
+    clientId: dataq-spa
+    allowedDomains: example.com
+secretStore:
+  backend: openbao
+  openbao:
+    addr: https://openbao.vault.svc:8200
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: dataq.example.com
+  tls:
+    - secretName: dataq-example-tls
+      hosts: [dataq.example.com]
+frontend:
+  cspConnectSrc: https://idp.example.com
+```
+
+```bash
+git clone --depth 1 --branch vX.Y.Z https://github.com/TheurgicDuke771/DataQ.git
+helm install dataq DataQ/deploy/helm/dataq -n dataq -f my-values.yaml --wait --timeout 10m
+```
+
+The chart's `appVersion` is the release its images default to. Pin `image.backend.tag` and
+`image.frontend.tag` (or a `digest`) if you install from a different checkout; the chart
+refuses `latest`.
+
+Then check it: `/healthz` through the frontend returns `200`, you can sign in, and a suite run
+completes.
+
+## Values that matter
+
+| Value | What it does |
+|---|---|
+| `existingSecret` | **Required.** The Secret above. |
+| `auth.mode` | `otp` (emailed codes; needs `auth.otp.*` and an allowlist), `oidc` (needs `issuer`, `audience`, `clientId`, and `allowedEmails` or `allowedDomains` — or `openSignup: true` when your identity provider itself limits who can sign in) or `bypass`. The chart sets both the api and the frontend from this one value. |
+| `auth.allowDevBypass` | `bypass` signs everyone in as an admin with no credential. The chart refuses it unless this is `true` and `config.environment` is `dev`. |
+| `secretStore.backend` | `openbao`, `azure_key_vault`, `aws_secrets_manager` or `env`. |
+| `config.publicBaseUrl` | The browser-facing origin, used in alert links and the webhook URLs the admin pages show. When empty it is `https://` plus the first ingress host if `ingress.tls` covers that host, and otherwise unset — set it if TLS ends at a load balancer in front of the ingress. |
+| `config.rateLimitXffTrustedHops` | Proxies in front of the api that append `X-Forwarded-For`. The default works out 2 with the ingress on (controller and frontend) and 1 without. Count again if a load balancer or CDN adds its own. |
+| `config.telemetry.sink` | Usage telemetry, from backend v1.3.0 (the chart refuses it with an older image tag): `off` (default), `otlp` (through `config.otlpEndpoint`) or `file`. Nothing is recorded until a workspace admin also opts in. `file` needs `config.telemetry.existingClaim`, a PersistentVolumeClaim mounted at `/var/lib/dataq`, because the root filesystem is read-only. |
+| `config.extraEnv` | Any other setting from the [environment reference](deployment.md), by name — for example the `TAMPER_ANCHOR_*` audit-anchor settings (backend v1.3.0 for the object-lock ones). Quote every value (`"4"`, not `4`). A setting the chart already derives from its own values is refused, and so is a name that looks like a credential: the anchor's webhook secret goes in `existingSecret`, while `TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID` and the `*_SECRET_NAME` lookups are plain values. |
+| `api.tls.existingSecret` | TLS on the frontend-to-api hop: a `kubernetes.io/tls` Secret with `ca.crt`, whose certificate names `<release>-api.<namespace>.svc.<clusterDomain>`. Only `ca.crt` reaches the frontend pods. |
+| `networkPolicy.enabled` | Restricts the api to the frontend. Needs a CNI that enforces NetworkPolicy. |
+
+`values.schema.json` checks every value at `helm install` time, so a typo or an unknown key
+fails before anything is created. `helm show values deploy/helm/dataq` lists them all.
+
+## Upgrade
+
+The [upgrade procedure](backup-restore-upgrade.md#upgrading) applies; on Kubernetes the steps
+are:
+
+1. **Back up** the database.
+2. **Read the release notes** for every release in between.
+3. **Upgrade with the new release's chart**:
+
+    ```bash
+    helm upgrade dataq DataQ/deploy/helm/dataq -n dataq -f my-values.yaml --wait --timeout 10m
+    ```
+
+    The migrate hook runs first. If it fails, the upgrade fails and every Deployment keeps its
+    previous version, so the running release keeps serving. The failed Job stays in the
+    namespace for its logs (`kubectl -n dataq logs job/dataq-migrate`) and is replaced on the
+    next attempt.
+4. **Run the release's one-time steps**, then verify as after an install.
+
+## Roll back
+
+`helm rollback` re-deploys the previous images but does **not** downgrade the schema, and the
+previous release's migration job cannot read a schema newer than itself. Follow the release's
+**Rollback** line ([the doctrine](backup-restore-upgrade.md#rolling-back)):
+
+1. Downgrade the schema with the **new** release's image, while it is still installed:
+
+    ```bash
+    kubectl -n dataq run dataq-downgrade --rm -i --restart=Never \
+      --image=ghcr.io/theurgicduke771/dataq-backend:<new tag> \
+      --overrides='{"spec":{"containers":[{"name":"dataq-downgrade","image":"ghcr.io/theurgicduke771/dataq-backend:<new tag>","workingDir":"/workspace/backend","command":["alembic","downgrade","<previous head>"],"envFrom":[{"configMapRef":{"name":"dataq-config"}},{"secretRef":{"name":"dataq-env"}}]}]}}'
+    ```
+
+2. `helm rollback dataq <revision> -n dataq`.
+3. Verify: `/healthz`, sign-in, one suite run.
+
+A release whose Rollback line says a database restore is needed is rolled back by restoring
+the backup from step 1 of the upgrade instead.
+
+## Test it on kind
+
+[`deploy/helm/kind-smoke/smoke.sh`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/helm/kind-smoke)
+installs the chart on a throwaway [kind](https://kind.sigs.k8s.io/) cluster with in-cluster
+PostgreSQL, Redis, OpenBao and a mail catcher, then checks: the migration ran, every pod is
+non-root on a read-only root filesystem, an emailed-code sign-in works through the frontend, a
+suite run against a sample warehouse succeeds, the NetworkPolicy keeps other pods off the api,
+an upgrade rolls, and a failing migration blocks the roll. It takes under three minutes once the
+images are on your machine, plus the first pull of the 1.4 GB backend image, so it is a manual
+check rather than a CI job; CI lints and renders the chart on every change.
+
+```bash
+deploy/helm/kind-smoke/smoke.sh          # KEEP=1 keeps the cluster afterwards
+```
 
 
 ---
@@ -14370,6 +14548,12 @@ monitor on Unity Catalog are the same `kind`, different `CheckRunner`.
 - **Date:** 2026-06-01
 - **Deciders:** @TheurgicDuke771
 
+> **Status note (2026-10-21):** the Phase 2 Helm chart is delivered —
+> [`deploy/helm/dataq/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/helm/dataq),
+> installed per [Install on Kubernetes (Helm)](../operate/kubernetes.md). Generic OIDC, the OTel
+> exporter, the AWS `SecretStore` and the published images shipped earlier; a GCP `SecretStore`
+> has not been built.
+
 > **Amendment (2026-07-09, [ADR 0031](0031-oss-byol-distribution-licensing.md)):**
 > the licensing model is decided as **free open-source (MIT) — there is no license
 > revenue**. This supersedes §5's "licensing model + entitlement/license-key" open
@@ -14413,7 +14597,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 | **Auth** | Protected routes depend on the generic `get_current_user` dependency (mode-bound in `core/auth.py`); **never read MSAL/Entra claims in route or service code**. Azure AD is one OIDC provider, not *the* auth. (extends [ADR 0010](0010-provider-agnostic-infrastructure-seams.md) §2) | discipline now; generic OIDC `AuthProvider` impl deferred |
 | **Secrets** | New backends (AWS Secrets Manager, GCP Secret Manager, Vault) are additive `SecretStore` classes; no call site changes. (ADR 0010 §1) | already abstracted |
 | **Observability** | App Insights stays behind the `core/logging.py` handler; second backend arrives via **OpenTelemetry/OTLP**, not a parallel hardcoded path. (ADR 0010 §3) | seam reserved |
-| **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart** (build deferred). | images portable; chart deferred |
+| **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart**. | images portable; chart delivered (`deploy/helm/dataq/`) |
 | **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, and the BigQuery adapter a service-account key file, keyless auth still additive). With Redshift, GCS and BigQuery the BYOL claim covers a warehouse **and** an object store on each of the three clouds (Azure: Synapse/Fabric SQL + ADLS Gen2; AWS: Redshift/Athena + S3; GCP: BigQuery + GCS). | seam exists; three object stores and a warehouse per cloud behind it |
 | **Config** | No hardcoded Azure resource names/endpoints in business logic — everything via Pydantic Settings (12-factor). | in place |
 

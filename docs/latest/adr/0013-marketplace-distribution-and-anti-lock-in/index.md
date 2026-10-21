@@ -4,6 +4,12 @@
 - **Date:** 2026-06-01
 - **Deciders:** @TheurgicDuke771
 
+> **Status note (2026-10-21):** the Phase 2 Helm chart is delivered —
+> [`deploy/helm/dataq/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/helm/dataq),
+> installed per [Install on Kubernetes (Helm)](../operate/kubernetes.md). Generic OIDC, the OTel
+> exporter, the AWS `SecretStore` and the published images shipped earlier; a GCP `SecretStore`
+> has not been built.
+
 > **Amendment (2026-07-09, [ADR 0031](0031-oss-byol-distribution-licensing.md)):**
 > the licensing model is decided as **free open-source (MIT) — there is no license
 > revenue**. This supersedes §5's "licensing model + entitlement/license-key" open
@@ -47,7 +53,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 | **Auth** | Protected routes depend on the generic `get_current_user` dependency (mode-bound in `core/auth.py`); **never read MSAL/Entra claims in route or service code**. Azure AD is one OIDC provider, not *the* auth. (extends [ADR 0010](0010-provider-agnostic-infrastructure-seams.md) §2) | discipline now; generic OIDC `AuthProvider` impl deferred |
 | **Secrets** | New backends (AWS Secrets Manager, GCP Secret Manager, Vault) are additive `SecretStore` classes; no call site changes. (ADR 0010 §1) | already abstracted |
 | **Observability** | App Insights stays behind the `core/logging.py` handler; second backend arrives via **OpenTelemetry/OTLP**, not a parallel hardcoded path. (ADR 0010 §3) | seam reserved |
-| **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart** (build deferred). | images portable; chart deferred |
+| **Packaging** | Container images stay cloud-neutral — no Azure-only assumptions baked into app code or entrypoints. The portable deploy artifact is a **Helm chart**. | images portable; chart delivered (`deploy/helm/dataq/`) |
 | **Datasource auth** | Credential modes stay behind `ConnectionAdapter`; Workload Identity / IAM-role / Managed-Identity are additive per cloud (already the Week-7 plan, SAS/access-key only in v1; the GCS adapter added a service-account key file + anonymous the same way, and the BigQuery adapter a service-account key file, keyless auth still additive). With Redshift, GCS and BigQuery the BYOL claim covers a warehouse **and** an object store on each of the three clouds (Azure: Synapse/Fabric SQL + ADLS Gen2; AWS: Redshift/Athena + S3; GCP: BigQuery + GCS). | seam exists; three object stores and a warehouse per cloud behind it |
 | **Config** | No hardcoded Azure resource names/endpoints in business logic — everything via Pydantic Settings (12-factor). | in place |
 

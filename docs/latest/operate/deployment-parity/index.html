@@ -13,7 +13,7 @@
         <link rel="prev" href="../deployment/">
       
       
-        <link rel="next" href="../upgrading/">
+        <link rel="next" href="../kubernetes/">
       
       
         
@@ -2097,6 +2097,8 @@
       
         
       
+        
+      
     
     
     
@@ -2324,6 +2326,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install on Kubernetes (Helm)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2705,6 +2735,12 @@ cloud-conditional code paths</strong>, and the same container images run everywh
 <td><a href="https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws"><code>deploy/terraform/aws/</code></a></td>
 <td><code>scripts/setup.sh</code> + compose</td>
 </tr>
+<tr>
+<td>Your own Kubernetes (AKS / EKS / any)</td>
+<td>The <a href="../kubernetes/">Helm chart</a> runs the same images and the same four services, with migrations as a pre-upgrade hook; you bring PostgreSQL, Redis and the secret store</td>
+<td>← same chart</td>
+<td>← same chart, smoke-tested on kind</td>
+</tr>
 </tbody>
 </table>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">¶</a></h2>
@@ -2995,13 +3031,13 @@ pointed at compose services.</p>
         
         
           
-          <a href="../upgrading/" class="md-footer__link md-footer__link--next" aria-label="Next: Upgrading">
+          <a href="../kubernetes/" class="md-footer__link md-footer__link--next" aria-label="Next: Install on Kubernetes (Helm)">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Upgrading
+                Install on Kubernetes (Helm)
               </div>
             </div>
             <div class="md-footer__button md-icon">

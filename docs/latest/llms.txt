@@ -74,6 +74,7 @@ lists which).
 - [Backup, restore & rollback](https://theurgicduke771.github.io/DataQ/docs/latest/operate/backup-restore-upgrade/index.md): DataQ's own PostgreSQL database holds every connection, suite, check, run, result, incident
 - [Deployment parity (Azure · AWS · Local)](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment-parity/index.md): How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
 - [Deployment](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/index.md): How to stand DataQ up in production. This is the operator's overview; the exhaustive
+- [Install on Kubernetes (Helm)](https://theurgicduke771.github.io/DataQ/docs/latest/operate/kubernetes/index.md): The Helm chart at
 - [Observability](https://theurgicduke771.github.io/DataQ/docs/latest/operate/observability/index.md): FastAPI → Celery → Great Expectations. **PII is redacted at the logger level**, so
 - [Runbook & FAQ](https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/index.md): `python scripts/changelog.py assemble --version X.Y.Z --date YYYY-MM-DD`: it moves every
 - [Troubleshooting](https://theurgicduke771.github.io/DataQ/docs/latest/operate/troubleshooting/index.md): Common problems and where to look. For deeper telemetry (logs, traces, where they land) see
