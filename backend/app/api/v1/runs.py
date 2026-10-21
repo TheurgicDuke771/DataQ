@@ -673,6 +673,18 @@ def list_near_misses(
 @router.get(
     "/runs/{run_id}/results/{result_id}/comparison_report",
     summary="Download a comparison result's report (derived, never stored)",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The report file, CSV or XLSX as `fmt` asks.",
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+                "text/csv": {"schema": {"type": "string", "format": "binary"}},
+            },
+        }
+    },
 )
 def download_comparison_report(
     run_id: uuid.UUID,

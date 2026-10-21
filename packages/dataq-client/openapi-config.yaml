@@ -5,3 +5,8 @@ package_name_override: generated
 post_hooks:
   - "ruff check . --isolated --no-cache --fix-only --quiet --line-length 100 --target-version py310"
   - "ruff format . --isolated --no-cache --quiet --line-length 100 --target-version py310"
+# File downloads: the generator parses text/* as str and skips unknown types, so a report would be
+# read as text (or wrapped in BytesIO(str), which raises). Mapping them to octet-stream returns bytes.
+content_type_overrides:
+  text/csv: application/octet-stream
+  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: application/octet-stream
