@@ -20,7 +20,6 @@ from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.datasources import jsonfile
 from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.datasources.base import (
-    FLAT_FILE_TYPES,
     SAMPLE_HEAD,
     CheckOutcome,
     CheckSpec,
@@ -63,7 +62,6 @@ _READ_TIMEOUT = 60
 
 log = get_logger(__name__)
 
-_FILE_TYPES = FLAT_FILE_TYPES
 
 # Sort floor for files the store reports without a modified time.
 _MIN_DT = datetime.min.replace(tzinfo=UTC)
