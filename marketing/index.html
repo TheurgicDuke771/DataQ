@@ -33,6 +33,7 @@
       <a href="#how-it-works">How it works</a>
       <a href="#features">Features</a>
       <a href="#see-it">Screens</a>
+      <a href="#walkthrough">Walkthrough</a>
       <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Docs</a>
       <a href="https://github.com/TheurgicDuke771/DataQ">GitHub</a>
     </nav>
@@ -231,6 +232,62 @@
   </div>
 </section>
 
+<section id="walkthrough" class="features">
+  <div class="features-inner">
+    <div class="section-head">
+      <h2>Walk through the demo</h2>
+      <p>These screens come from the Docker stack's <code>demo</code> profile: a sample PostgreSQL shop warehouse with deliberate defects, already connected and run when you first sign in. The read-only demo in your browser uses a different recorded sample workspace, so it shows other tables and suites.</p>
+      <div class="walk-actions">
+        <a href="https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/#the-demo-profile" class="btn btn-primary">Run the demo profile</a>
+        <a href="demo/" class="btn btn-secondary">Open the read-only demo</a>
+      </div>
+    </div>
+    <ol class="walk-steps">
+      <li>
+        <figure class="shot">
+          <a href="assets/shots/walkthrough-1-dashboard.webp" class="walk-zoom"><img src="assets/shots/walkthrough-1-dashboard.webp" width="1440" height="900" alt="The monitoring dashboard after first sign-in: two monitored assets, shop.shop.customers and shop.shop.orders, both failing; data quality by dimension with Completeness, Consistency, Timeliness, Uniqueness and Validity bars, and Accuracy and Integrity listed as not covered" loading="lazy"></a>
+          <figcaption><strong>1. Sign in to results.</strong> Both demo tables already need attention, and the dimension bars show which kinds of quality are failing and which nothing checks yet.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure class="shot">
+          <a href="assets/shots/walkthrough-2-suite.webp" class="walk-zoom"><img src="assets/shots/walkthrough-2-suite.webp" width="1440" height="900" alt="The Shop orders (demo) suite on the Demo warehouse (PostgreSQL) connection, targeting shop.orders, with the first of its eleven checks listed with their engine and quality dimension and snooze, disable, edit and delete actions" loading="lazy"></a>
+          <figcaption><strong>2. One suite, eleven checks.</strong> <em>Shop orders</em> covers value rules, custom SQL, freshness, volume, an aggregate, schema drift and anomaly detection. Its hourly schedule, triggers and alerting sit further down the same page.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure class="shot">
+          <a href="assets/shots/walkthrough-3-failed-check.webp" class="walk-zoom"><img src="assets/shots/walkthrough-3-failed-check.webp" width="1440" height="900" alt="A run of Shop orders (demo) with 4 of 11 checks passed; the failing check Customer email looks like an email is expanded to its metric history and a failing-rows sample in which order_id 77 is shown and customer_email reads redacted" loading="lazy"></a>
+          <figcaption><strong>3. A failed check, with evidence.</strong> Expanding a failing check shows its history and a sample of the failing rows. The email column is masked because DataQ classified it as personal data; the order id stays visible so you can find the row.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure class="shot">
+          <a href="assets/shots/walkthrough-4-anomaly-trend.webp" class="walk-zoom"><img src="assets/shots/walkthrough-4-anomaly-trend.webp" width="1440" height="900" alt="The trend drawer for the anomaly check Row count is normal: the z-score per run sits near 2 and then rises past the fail line at 3 on the last run, and below it the row count runs inside its learned band until the last run drops out of it" loading="lazy"></a>
+          <figcaption><strong>4. An anomaly, against its learned band.</strong> The row-count check's trend: each run's z-score against the warn and fail lines, and the row count against the band it learned. For this capture, rows were added between runs and then removed. On a fresh demo the check waits for five runs before it scores.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <figure class="shot">
+          <a href="assets/shots/walkthrough-5-asset.webp" class="walk-zoom"><img src="assets/shots/walkthrough-5-asset.webp" width="1440" height="900" alt="The asset page for shop.shop.orders on demo-warehouse:5432: connection reachable, data quality failing, an asset health score of 70.5 broken down by dimension, and Accuracy and Integrity listed as not covered" loading="lazy"></a>
+          <figcaption><strong>5. The table, not just the suite.</strong> The asset page rolls every suite on <code>shop.orders</code> into one health score by dimension and names the dimensions nothing checks yet.</figcaption>
+        </figure>
+      </li>
+      <li>
+        <div class="walk-card">
+          <div class="title">6. Ask your assistant</div>
+          <p>Connect Claude, Copilot or Cursor to <code>/mcp/</code> (keep the trailing slash) with a personal access token and ask <em>&ldquo;what is failing on shop.orders, and why?&rdquo;</em> The assistant works through the same MCP tools as the rest of the product, with your permissions. For example:</p>
+          <pre><code>list_incidents     what is open, and on which asset
+get_incident       the failing result and its evidence
+trigger_suite_run  re-run the suite once the data is fixed</code></pre>
+          <p>It never sees a connection credential, and each tool says what it cannot see.</p>
+          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/" class="btn btn-secondary">Set up an assistant</a>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
 <section class="closer">
   <img src="assets/mark.svg" alt="" class="closer-mark">
   <div class="closer-inner">
@@ -258,6 +315,7 @@
         <h4>Product</h4>
         <div class="footer-col-links">
           <a href="#features">Features</a>
+          <a href="#walkthrough">Demo walkthrough</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Documentation</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/">Check types</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/">Changelog</a>
