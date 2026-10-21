@@ -26,7 +26,7 @@ from backend.app.datasources.iceberg import (
 )
 from backend.app.datasources.registry import (
     MissingCredentialError,
-    authenticates_without_secret,
+    missing_credential,
     resolve_flatfile_secret,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
@@ -104,9 +104,7 @@ def _sql_read(
 ) -> Any:
     import pandas as pd
 
-    if not connection.secret_ref and not authenticates_without_secret(
-        connection.type, connection.config
-    ):
+    if missing_credential(connection.type, connection.config, connection.secret_ref):
         # Pre-check so a credential-less connection is the same clean 422 the
         # flat-file path gives, not `_open_connection`'s bare ValueError 500.
         raise DatasetReadUnsupportedError(

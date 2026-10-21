@@ -107,8 +107,10 @@ class MissingCredentialError(ValueError):
 
 
 def missing_credential(conn_type: str, config: dict[str, Any], secret_ref: str | None) -> bool:
-    """The connection stores no credential and its auth mode needs one — the one rule every
-    flat-file caller checks before it reaches the store."""
+    """The connection stores no credential and its auth mode needs one: the one rule every
+    caller, flat-file or SQL, checks before it reaches the store. It and the flat-file secret
+    helpers below live here, not in ``flatfile``, because the rule is the adapters' to answer
+    and ``flatfile`` importing the registry would be an import cycle."""
     return not secret_ref and not authenticates_without_secret(conn_type, config)
 
 

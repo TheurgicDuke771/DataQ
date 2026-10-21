@@ -38,7 +38,11 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
 )
 from backend.app.datasources.jsonfile import JsonFileError
-from backend.app.datasources.registry import authenticates_without_secret, resolve_flatfile_secret
+from backend.app.datasources.registry import (
+    authenticates_without_secret,
+    missing_credential,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
     build_connect_args,
@@ -538,10 +542,8 @@ def resolve_profiler(
         )
     # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3 adapters) — a local
     # warehouse or vended-credentials REST catalog has no secret.
-    if (
-        not isinstance(profiler, _IcebergProfiler)
-        and not connection.secret_ref
-        and not authenticates_without_secret(connection.type, connection.config)
+    if not isinstance(profiler, _IcebergProfiler) and missing_credential(
+        connection.type, connection.config, connection.secret_ref
     ):
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}

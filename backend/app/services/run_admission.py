@@ -24,7 +24,9 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.memory_budget import Admission, MemoryBudget, get_memory_budget
 from backend.app.core.secrets import get_secret_store
+from backend.app.datasources import flatfile
 from backend.app.datasources.base import FLAT_FILE_TYPES, ResolvedTarget
+from backend.app.datasources.registry import missing_credential, resolve_flatfile_secret
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import COMPARISON_KIND, Check, Connection, Run, Suite
 from backend.app.services import run_service, run_target
@@ -79,8 +81,6 @@ def _sample_bytes(target: ResolvedTarget) -> int | None:
 
 
 def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> MemoryEstimate | None:
-    from backend.app.datasources.flatfile import file_stat
-    from backend.app.datasources.registry import missing_credential, resolve_flatfile_secret
 
     if missing_credential(connection.type, dict(connection.config), connection.secret_ref):
         # Nothing to probe the store with. The run fails on the same missing credential
@@ -107,7 +107,7 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
     # A non-batch flat-file target carries the concrete path already, so this is one metadata
     # call and no listing.
     path = target.table
-    stat = file_stat(
+    stat = flatfile.file_stat(
         conn_type=connection.type,
         config=dict(connection.config),
         path=path,
