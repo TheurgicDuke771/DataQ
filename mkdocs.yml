@@ -1,6 +1,6 @@
 site_name: DataQ
 site_description: >-
-  DataQ — a single-tenant data-quality monitoring platform built on Great
+  DataQ — a single-tenant data-quality control plane built on Great
   Expectations. User-friendly guides + developer references.
 site_url: https://theurgicduke771.github.io/DataQ/docs/ # mike appends <version>/ at deploy time
 repo_url: https://github.com/TheurgicDuke771/DataQ
