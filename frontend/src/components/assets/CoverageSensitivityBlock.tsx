@@ -83,7 +83,12 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
             </Flex>
           ),
           children: (
-            <div ref={fallbackRef} tabIndex={-1}>
+            <div
+              ref={fallbackRef}
+              tabIndex={-1}
+              role="group"
+              aria-label="Sensitivity of this table’s automatic checks"
+            >
               <CoverageSettingsForm
                 key={JSON.stringify(asset.override)}
                 stored={asset.override}

@@ -45,7 +45,14 @@ export function CoveragePanel() {
         />
       )}
       {current && (
-        <Flex vertical gap={12} ref={fallbackRef} tabIndex={-1}>
+        <Flex
+          vertical
+          gap={12}
+          ref={fallbackRef}
+          tabIndex={-1}
+          role="group"
+          aria-label="Sensitivity of automatic checks"
+        >
           <Flex align="center" gap={12} wrap>
             <Typography.Text strong>Sensitivity of automatic checks</Typography.Text>
             <Tag color={current.is_default ? 'default' : 'blue'}>

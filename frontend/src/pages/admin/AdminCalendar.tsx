@@ -43,8 +43,10 @@ export function AdminCalendar() {
   const { state, reload } = useAsyncData(listSeasonalPeriods);
   const [modal, setModal] = useState<{ period?: SeasonalPeriod } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [opens, setOpens] = useState(0);
   const openModal = (period?: SeasonalPeriod) => {
     setModal({ period });
+    setOpens((n) => n + 1);
     setModalOpen(true);
   };
   const [blocked, setBlocked] = useState<{ name: string; checks: AttachedCheck[] } | null>(null);
@@ -129,7 +131,7 @@ export function AdminCalendar() {
       </Flex>
       {modal !== null && (
         <PeriodFormModal
-          key={modal.period?.id ?? 'new'}
+          key={opens}
           period={modal.period}
           open={modalOpen}
           onClose={() => setModalOpen(false)}

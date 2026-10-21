@@ -1,4 +1,5 @@
 import { Descriptions } from 'antd';
+import { useId } from 'react';
 
 import { yearlyReasonLabel } from '../checks/seasonalTrendData';
 
@@ -19,6 +20,7 @@ function fmt(v: number | null): string {
  * the verdict. Renders nothing for any other result.
  */
 export function SeasonalResultSummary({ observed }: { observed: unknown }) {
+  const titleId = useId();
   const v = obj(observed);
   const period = obj(v?.period);
   if (!v || !period) return null;
@@ -89,12 +91,12 @@ export function SeasonalResultSummary({ observed }: { observed: unknown }) {
   }
 
   return (
-    <div role="group" aria-label="How this period was judged">
+    <div role="group" aria-labelledby={titleId}>
       <Descriptions
         size="small"
         column={1}
         bordered
-        title="How this period was judged"
+        title={<span id={titleId}>How this period was judged</span>}
         items={items}
         data-testid="seasonal-result-summary"
       />

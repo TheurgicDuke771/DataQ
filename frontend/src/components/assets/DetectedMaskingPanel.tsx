@@ -32,16 +32,23 @@ export function DetectedMaskingPanel({
   const { run, loading } = useAsyncAction('Could not update the detection');
   const { message } = App.useApp();
   const panelRef = useRef<HTMLDivElement>(null);
-  // The reload swaps the row's button (Dismiss / Restore masking); focus the new one.
-  const refocusColumn = useRef<string | null>(null);
+  // The row's button is disabled while saving and swapped (Dismiss / Restore masking) by the
+  // reload, so focus is put back on that row's button once both are done, else on the panel.
+  const refocus = useRef<{
+    column: string;
+    entries: DetectedClassification[] | null | undefined;
+    saved: boolean;
+  } | null>(null);
   useEffect(() => {
-    const column = refocusColumn.current;
-    if (column === null) return;
-    refocusColumn.current = null;
-    panelRef.current
-      ?.querySelector<HTMLElement>(`[data-detection-action="${CSS.escape(column)}"]`)
-      ?.focus();
-  }, [entries]);
+    const pending = refocus.current;
+    if (pending === null || loading) return;
+    if (pending.saved && entries === pending.entries) return;
+    refocus.current = null;
+    const target = [
+      ...(panelRef.current?.querySelectorAll<HTMLElement>('[data-detection-action]') ?? []),
+    ].find((el) => el.dataset.detectionAction === pending.column);
+    (target ?? panelRef.current)?.focus();
+  }, [entries, loading]);
 
   // Absent (an older API) says nothing, so render nothing.
   if (entries === undefined) return null;
@@ -58,13 +65,16 @@ export function DetectedMaskingPanel({
   // Never profiled and nothing found: there is nothing to explain yet.
   if (entries.length === 0 && !refreshedAt) return null;
 
-  const setDismissed = (column: string, dismissed: boolean) =>
+  const setDismissed = (column: string, dismissed: boolean) => {
+    const pending = { column, entries, saved: false };
+    refocus.current = pending;
     void run(async () => {
       await setAssetClassificationDismissed(assetId, column, dismissed);
       message.success(dismissed ? `${column}: detection dismissed` : `${column}: masked again`);
-      refocusColumn.current = column;
+      pending.saved = true;
       onChanged();
     });
+  };
 
   const columns: ColumnsType<DetectedClassification> = [
     {
@@ -159,6 +169,9 @@ export function DetectedMaskingPanel({
   return (
     <Card
       ref={panelRef}
+      tabIndex={-1}
+      role="group"
+      aria-label="Detected personal data"
       size="small"
       title="Detected personal data"
       data-testid="detected-masking-panel"

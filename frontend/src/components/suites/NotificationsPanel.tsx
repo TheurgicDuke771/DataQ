@@ -50,18 +50,19 @@ export function NotificationsPanel({
     (state.data.has_webhook || state.data.has_slack_webhook || !!state.data.email_recipients);
   const [promoting, setPromoting] = useState<{ destination: LegacyDestination; label: string }>();
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [opens, setOpens] = useState(0);
   // A promote removes the row (often the whole card) its button sat in.
   const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
   const refocusAfterReload = useRef(false);
   useEffect(() => {
-    if (refocusAfterReload.current && state.status === 'ok') {
+    if (refocusAfterReload.current) {
       refocusAfterReload.current = false;
       restoreFocus();
     }
   }, [state, restoreFocus]);
 
   return (
-    <Flex vertical gap={16} ref={fallbackRef} tabIndex={-1}>
+    <Flex vertical gap={16} ref={fallbackRef} tabIndex={-1} role="group" aria-label="Alerting">
       <Card
         size="small"
         title={
@@ -106,12 +107,14 @@ export function NotificationsPanel({
           onChanged={reload}
           onPromote={(destination, label) => {
             setPromoting({ destination, label });
+            setOpens((n) => n + 1);
             setPromoteOpen(true);
           }}
         />
       )}
       {promoting && (
         <PromoteModal
+          key={opens}
           open={promoteOpen}
           suiteId={suiteId}
           destination={promoting.destination}

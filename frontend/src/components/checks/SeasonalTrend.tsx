@@ -227,6 +227,7 @@ export function DetectedPeriodsList({
   const isAdmin = useIsWorkspaceAdmin();
   const [promoting, setPromoting] = useState<DetectedPeriod | null>(null);
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [opens, setOpens] = useState(0);
   const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
   const ratio = detected.thresholds.ratio;
 
@@ -240,7 +241,15 @@ export function DetectedPeriodsList({
   }
 
   return (
-    <Flex vertical gap={4} data-testid="detected-periods" ref={fallbackRef} tabIndex={-1}>
+    <Flex
+      vertical
+      gap={4}
+      data-testid="detected-periods"
+      ref={fallbackRef}
+      tabIndex={-1}
+      role="group"
+      aria-label="Detected periods"
+    >
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Detected periods (outlined on the chart): runs of periods at {ratio}× the level or more in
         this check’s own history. They change no verdict unless an admin adds one to the calendar
@@ -260,6 +269,7 @@ export function DetectedPeriodsList({
                       aria-label={`Promote to calendar: ${spanText(p)}`}
                       onClick={() => {
                         setPromoting(p);
+                        setOpens((n) => n + 1);
                         setPromoteOpen(true);
                       }}
                     >
@@ -288,6 +298,7 @@ export function DetectedPeriodsList({
       />
       {promoting && (
         <PromoteModal
+          key={opens}
           period={promoting}
           open={promoteOpen}
           suiteId={suiteId}
