@@ -13,11 +13,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.flatfile import (
-    MissingCredentialError,
-    file_stat,
-    resolve_flatfile_secret,
-)
+from backend.app.datasources.flatfile import file_stat
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
     ROW_DELETES_PRESENT,
@@ -28,8 +24,13 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
     row_delete_reason,
 )
+from backend.app.datasources.registry import (
+    MissingCredentialError,
+    missing_credential,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.sampling import enforce_byte_cap
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import (
     TSQL_CTE_IN_DERIVED_TABLE,
@@ -103,9 +104,7 @@ def _sql_read(
 ) -> Any:
     import pandas as pd
 
-    if not connection.secret_ref and not authenticates_without_secret(
-        connection.type, connection.config
-    ):
+    if missing_credential(connection.type, connection.config, connection.secret_ref):
         # Pre-check so a credential-less connection is the same clean 422 the
         # flat-file path gives, not `_open_connection`'s bare ValueError 500.
         raise DatasetReadUnsupportedError(
