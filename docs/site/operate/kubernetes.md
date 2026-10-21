@@ -160,9 +160,9 @@ installs the chart on a throwaway [kind](https://kind.sigs.k8s.io/) cluster with
 PostgreSQL, Redis, OpenBao and a mail catcher, then checks: the migration ran, every pod is
 non-root on a read-only root filesystem, an emailed-code sign-in works through the frontend, a
 suite run against a sample warehouse succeeds, the NetworkPolicy keeps other pods off the api,
-an upgrade rolls, and a failing migration blocks the roll. It takes about ten minutes, most of
-it pulling images, so it is a manual check rather than a CI job; CI lints and renders the chart
-on every change.
+an upgrade rolls, and a failing migration blocks the roll. It takes under three minutes once the
+images are on your machine, plus the first pull of the 1.4 GB backend image, so it is a manual
+check rather than a CI job; CI lints and renders the chart on every change.
 
 ```bash
 deploy/helm/kind-smoke/smoke.sh          # KEEP=1 keeps the cluster afterwards
