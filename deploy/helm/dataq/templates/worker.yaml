@@ -23,9 +23,9 @@ spec:
           # Both queues, or llm tasks are never consumed. No -B: beat is its own Deployment.
           command: ["celery", "-A", "backend.app.worker.celery_app", "worker", "-Q", "celery,llm", "--loglevel=INFO"]
           envFrom:
+            {{- include "dataq.backendEnvFrom" . | nindent 12 }}
             - configMapRef:
                 name: {{ include "dataq.fullname" . }}-config
-            {{- include "dataq.backendEnvFrom" . | nindent 12 }}
           {{- with .Values.worker.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -35,6 +35,6 @@ spec:
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
           volumeMounts:
-            {{- include "dataq.backendVolumeMounts" . | nindent 12 }}
+            {{- include "dataq.backendVolumeMounts" (dict "ctx" . "telemetry" true) | nindent 12 }}
       volumes:
-        {{- include "dataq.backendVolumes" . | nindent 8 }}
+        {{- include "dataq.backendVolumes" (dict "ctx" . "telemetry" true) | nindent 8 }}

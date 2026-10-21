@@ -36,6 +36,7 @@ def _pod(*containers: dict[str, Any]) -> dict[str, Any]:
             "template": {
                 "spec": {
                     "securityContext": {"runAsNonRoot": True, "runAsUser": 10001},
+                    "enableServiceLinks": False,
                     "containers": list(containers),
                 }
             }
@@ -175,6 +176,10 @@ def _privileged(docs: list[dict[str, Any]]) -> None:
     _container(_find(docs, "Deployment", "api"))["securityContext"]["privileged"] = True
 
 
+def _service_links(docs: list[dict[str, Any]]) -> None:
+    del _find(docs, "Job", "migrate")["spec"]["template"]["spec"]["enableServiceLinks"]
+
+
 def _two_beats(docs: list[dict[str, Any]]) -> None:
     _find(docs, "Deployment", "beat")["spec"]["replicas"] = 2
 
@@ -216,6 +221,7 @@ def _no_worker(docs: list[dict[str, Any]]) -> None:
         (_root_container, "must run as a non-root uid"),
         (_escalation, "allowPrivilegeEscalation must be false"),
         (_privileged, "must not be privileged"),
+        (_service_links, "enableServiceLinks must be false"),
         (_two_beats, "exactly one replica"),
         (_beat_rolls, "Recreate"),
         (_no_beat, "no beat Deployment"),
@@ -270,9 +276,11 @@ def test_every_ci_values_file_renders_clean() -> None:
 
 
 @needs_helm
-@pytest.mark.parametrize(("description", "extra"), hc.MUST_FAIL)
-def test_the_chart_refuses_bad_values(description: str, extra: list[str]) -> None:
-    assert hc.render(_MINIMAL, extra).returncode != 0, description
+@pytest.mark.parametrize(("description", "extra", "phrase"), hc.MUST_FAIL)
+def test_the_chart_refuses_bad_values(description: str, extra: list[str], phrase: str) -> None:
+    refused = hc.render(_MINIMAL, extra)
+    assert refused.returncode != 0, description
+    assert phrase in refused.stderr, refused.stderr
 
 
 def _broken_chart(tmp_path: Path, template: str, old: str, new: str) -> Path:
@@ -332,3 +340,8 @@ def test_a_root_backend_fails(tmp_path: Path) -> None:
     rendered = hc.render(_MINIMAL, chart=chart)
     assert rendered.returncode == 0, rendered.stderr
     assert any("non-root uid" in v for v in hc.violations(hc.parse(rendered.stdout)))
+
+
+def test_the_chart_and_the_checker_share_one_credential_pattern() -> None:
+    helpers = (hc.CHART / "templates" / "_helpers.tpl").read_text()
+    assert f'regexMatch "{hc.CREDENTIAL_NAME.pattern}"' in helpers

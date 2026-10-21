@@ -28,20 +28,58 @@ CREDENTIAL_NAME = re.compile(
 )
 WORKLOAD_KINDS = {"Deployment", "Job"}
 
-# Values the chart must refuse at install time: (description, extra helm args).
-MUST_FAIL: tuple[tuple[str, list[str]], ...] = (
-    ("no existingSecret", ["--set", "existingSecret="]),
-    ("dev bypass without the opt-in", ["--set", "auth.mode=bypass"]),
+# Values the chart must refuse at install time: (description, extra helm args, a phrase the
+# refusal must contain, so a case cannot pass by failing for some other reason).
+MUST_FAIL: tuple[tuple[str, list[str], str], ...] = (
+    ("no existingSecret", ["--set", "existingSecret="], "existingSecret is required"),
+    ("dev bypass without the opt-in", ["--set", "auth.mode=bypass"], "auth.allowDevBypass=true"),
     (
         "dev bypass outside ENVIRONMENT=dev",
         ["--set", "auth.mode=bypass,auth.allowDevBypass=true"],
+        "needs config.environment=dev",
     ),
-    ("a credential in config.extraEnv", ["--set", "config.extraEnv.OPENBAO_TOKEN=x"]),
-    ("the moving latest tag", ["--set", "image.backend.tag=latest"]),
-    ("a root pod", ["--set", "backendSecurityContext.pod.runAsNonRoot=false"]),
-    ("an unknown auth mode", ["--set", "auth.mode=saml"]),
-    ("a telemetry file with nowhere to write it", ["--set", "config.telemetry.sink=file"]),
-    ("an unknown top-level key", ["--set", "apii.replicas=2"]),
+    (
+        "a credential in config.extraEnv",
+        ["--set", "config.extraEnv.OPENBAO_TOKEN=x"],
+        "looks like a credential",
+    ),
+    ("the moving latest tag", ["--set", "image.backend.tag=latest"], "/image/backend/tag"),
+    (
+        "a root pod",
+        ["--set", "backendSecurityContext.pod.runAsNonRoot=false"],
+        "/backendSecurityContext/pod/runAsNonRoot",
+    ),
+    ("an unknown auth mode", ["--set", "auth.mode=saml"], "/auth/mode"),
+    (
+        "config.extraEnv overriding a chart setting",
+        ["--set", "config.extraEnv.AUTH_DEV_BYPASS=true"],
+        "is set by the chart",
+    ),
+    (
+        "a number in config.extraEnv",
+        ["--set", "config.extraEnv.RUN_MAX_SCAN_ROWS=3000000"],
+        "/config/extraEnv/RUN_MAX_SCAN_ROWS",
+    ),
+    (
+        "OIDC with no signup allowlist",
+        [
+            "--set",
+            "auth.mode=oidc,auth.oidc.issuer=https://idp.example.com,"
+            "auth.oidc.audience=a,auth.oidc.clientId=c",
+        ],
+        "auth.oidc.openSignup=true",
+    ),
+    (
+        "telemetry on a backend image without it",
+        ["--set", "config.telemetry.sink=otlp,image.backend.tag=v1.2.0"],
+        "needs a backend image from v1.3.0",
+    ),
+    (
+        "a telemetry file with nowhere to write it",
+        ["--set", "config.telemetry.sink=file,image.backend.tag=v1.3.0"],
+        "needs config.telemetry.existingClaim",
+    ),
+    ("an unknown top-level key", ["--set", "apii.replicas=2"], "apii"),
 )
 
 
@@ -141,6 +179,8 @@ def _workload_violations(doc: dict[str, Any]) -> list[str]:
     found: list[str] = []
     pod = _pod_spec(doc)
     pod_ctx = pod.get("securityContext") or {}
+    if pod.get("enableServiceLinks") is not False:
+        found.append(f"{_name(doc)}: enableServiceLinks must be false")
     for container in _containers(pod):
         where = f"{_name(doc)} container {container['name']}"
         ctx = container.get("securityContext") or {}
@@ -220,9 +260,13 @@ def main() -> int:
             print(f"ok   {label}")
 
     baseline = values_files[0]
-    for description, extra in MUST_FAIL:
-        if render(baseline, extra).returncode == 0:
+    for description, extra, phrase in MUST_FAIL:
+        refused = render(baseline, extra)
+        if refused.returncode == 0:
             print(f"FAIL the chart accepted {description}")
+            failed = True
+        elif phrase not in refused.stderr:
+            print(f"FAIL {description} was refused for another reason:\n{refused.stderr}")
             failed = True
         else:
             print(f"ok   refuses {description}")

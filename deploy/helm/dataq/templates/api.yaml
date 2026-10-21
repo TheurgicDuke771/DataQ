@@ -37,9 +37,9 @@ spec:
             - name: http
               containerPort: 8000
           envFrom:
+            {{- include "dataq.backendEnvFrom" . | nindent 12 }}
             - configMapRef:
                 name: {{ include "dataq.fullname" . }}-config
-            {{- include "dataq.backendEnvFrom" . | nindent 12 }}
           {{- with .Values.api.livenessProbe }}
           livenessProbe:
             {{- include "dataq.probe" (dict "probe" . "tls" $tls) | nindent 12 }}
@@ -53,14 +53,14 @@ spec:
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           volumeMounts:
-            {{- include "dataq.backendVolumeMounts" . | nindent 12 }}
+            {{- include "dataq.backendVolumeMounts" (dict "ctx" . "telemetry" true) | nindent 12 }}
             {{- if $tls }}
             - name: api-tls
               mountPath: /etc/dataq/api-tls
               readOnly: true
             {{- end }}
       volumes:
-        {{- include "dataq.backendVolumes" . | nindent 8 }}
+        {{- include "dataq.backendVolumes" (dict "ctx" . "telemetry" true) | nindent 8 }}
         {{- if $tls }}
         - name: api-tls
           secret:

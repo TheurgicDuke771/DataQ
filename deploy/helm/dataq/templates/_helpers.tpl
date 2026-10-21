@@ -61,7 +61,12 @@ app.kubernetes.io/component: {{ .component }}
 {{- if .Values.config.publicBaseUrl -}}
 {{- .Values.config.publicBaseUrl -}}
 {{- else if and .Values.ingress.enabled .Values.ingress.hosts -}}
-{{- printf "https://%s" (index .Values.ingress.hosts 0).host -}}
+{{- $host := (index .Values.ingress.hosts 0).host -}}
+{{- range .Values.ingress.tls -}}
+{{- if has $host (default list .hosts) -}}
+{{- printf "https://%s" $host -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
@@ -94,6 +99,9 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- if not (and $o.issuer $o.audience $o.clientId) -}}
 {{- fail "auth.mode=oidc needs auth.oidc.issuer, audience and clientId" -}}
 {{- end -}}
+{{- if not (or $o.allowedEmails $o.allowedDomains $o.openSignup) -}}
+{{- fail "auth.mode=oidc needs auth.oidc.allowedEmails or allowedDomains; without one, anyone your identity provider lets register gets in. Set auth.oidc.openSignup=true if the provider itself is the gate" -}}
+{{- end -}}
 {{- end -}}
 {{- $store := .Values.secretStore.backend -}}
 {{- if and (eq $store "openbao") (not .Values.secretStore.openbao.addr) -}}
@@ -106,16 +114,24 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- if and (eq $tel.sink "file") (not $tel.existingClaim) -}}
 {{- fail "config.telemetry.sink=file needs config.telemetry.existingClaim: the root filesystem is read-only, so the events file needs a volume" -}}
 {{- end -}}
+{{- $tag := default .Chart.AppVersion .Values.image.backend.tag -}}
+{{- if and (ne $tel.sink "off") (regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+$" $tag) (semverCompare "<1.3.0-0" $tag) -}}
+{{- fail (printf "config.telemetry.sink=%s needs a backend image from v1.3.0 on; %s ignores the setting and records nothing" $tel.sink $tag) -}}
+{{- end -}}
+{{- $managed := include "dataq.chartEnv" . | fromYaml -}}
 {{- range $name, $_ := .Values.config.extraEnv -}}
 {{- $upper := upper $name -}}
 {{- if and (regexMatch "PASSWORD|TOKEN|(^|_)SECRET(_ID)?$|^KV_SECRET_|_KEY$|CONNECTION_STRING|^DATABASE_URL$|^REDIS_URL$" $upper) (not (hasSuffix "_NAME" $upper)) -}}
 {{- fail (printf "config.extraEnv.%s looks like a credential; put it in the existingSecret instead" $name) -}}
 {{- end -}}
+{{- if or (hasKey $managed $upper) (has $upper (list "ENVIRONMENT" "AUTH_DEV_BYPASS" "SECRET_STORE" "TELEMETRY_SINK" "TELEMETRY_FILE_PATH")) (regexMatch "^(AUTH_EMAIL_|AUTH_OTP_|AUTH_OIDC_|OIDC_|OPENBAO_)" $upper) -}}
+{{- fail (printf "config.extraEnv.%s is set by the chart from its own values; use those instead" $name) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
-{{/* Non-secret backend environment, NAME: value. One source for the ConfigMap and the migrate hook. */}}
-{{- define "dataq.backendEnv" -}}
+{{/* The settings the chart derives from its own values, NAME: value. */}}
+{{- define "dataq.chartEnv" -}}
 {{- $v := .Values -}}
 {{- $env := dict
   "ENVIRONMENT" $v.config.environment
@@ -131,7 +147,7 @@ depends on it, so `helm template` fails as well as `helm install`.
 -}}
 {{- with $v.config.deploymentRegion }}{{ $_ := set $env "DEPLOYMENT_REGION" . }}{{ end -}}
 {{- with $v.config.otlpEndpoint }}{{ $_ := set $env "OTEL_EXPORTER_OTLP_ENDPOINT" . }}{{ end -}}
-{{- $_ := set $env "TELEMETRY_SINK" $v.config.telemetry.sink -}}
+{{- if ne $v.config.telemetry.sink "off" }}{{ $_ := set $env "TELEMETRY_SINK" $v.config.telemetry.sink }}{{ end -}}
 {{- if eq $v.config.telemetry.sink "file" }}{{ $_ := set $env "TELEMETRY_FILE_PATH" "/var/lib/dataq/usage-events.jsonl" }}{{ end -}}
 {{- if eq $v.secretStore.backend "openbao" -}}
 {{- $_ := set $env "OPENBAO_ADDR" $v.secretStore.openbao.addr -}}
@@ -163,12 +179,19 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- $_ := set $env "OIDC_ALLOWED_DOMAINS" $o.allowedDomains -}}
 {{- $_ := set $env "AUTH_OIDC_DEFAULT_ROLE" $o.defaultRole -}}
 {{- end -}}
-{{- range $k, $val := $v.config.extraEnv -}}
+{{- toYaml $env -}}
+{{- end -}}
+
+{{/* Non-secret backend environment, NAME: value. One source for the ConfigMap and the migrate hook. */}}
+{{- define "dataq.backendEnv" -}}
+{{- $env := include "dataq.chartEnv" . | fromYaml -}}
+{{- range $k, $val := .Values.config.extraEnv -}}
 {{- $_ := set $env $k (toString $val) -}}
 {{- end -}}
 {{- toYaml $env -}}
 {{- end -}}
 
+{{/* Listed before the chart's ConfigMap: a later source wins, so the chart's settings beat a same-named Secret key. */}}
 {{- define "dataq.backendEnvFrom" -}}
 - secretRef:
     name: {{ .Values.existingSecret }}
@@ -178,34 +201,37 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- end }}
 {{- end -}}
 
+{{/* (dict "ctx" $ "telemetry" true) — the migrate hook passes false: it writes no events. */}}
 {{- define "dataq.backendVolumes" -}}
+{{- $v := .ctx.Values -}}
 - name: tmp
   emptyDir: {}
 - name: home
   emptyDir: {}
-{{- with .Values.trustedCA.existingConfigMap }}
+{{- with $v.trustedCA.existingConfigMap }}
 - name: trusted-ca
   configMap:
     name: {{ . }}
 {{- end }}
-{{- if eq .Values.config.telemetry.sink "file" }}
+{{- if and .telemetry (eq $v.config.telemetry.sink "file") }}
 - name: telemetry
   persistentVolumeClaim:
-    claimName: {{ .Values.config.telemetry.existingClaim }}
+    claimName: {{ $v.config.telemetry.existingClaim }}
 {{- end }}
 {{- end -}}
 
 {{- define "dataq.backendVolumeMounts" -}}
+{{- $v := .ctx.Values -}}
 - name: tmp
   mountPath: /tmp
 - name: home
   mountPath: /home/dataq
-{{- if .Values.trustedCA.existingConfigMap }}
+{{- if $v.trustedCA.existingConfigMap }}
 - name: trusted-ca
   mountPath: /etc/dataq/ca
   readOnly: true
 {{- end }}
-{{- if eq .Values.config.telemetry.sink "file" }}
+{{- if and .telemetry (eq $v.config.telemetry.sink "file") }}
 - name: telemetry
   mountPath: /var/lib/dataq
 {{- end }}
@@ -216,6 +242,8 @@ depends on it, so `helm template` fails as well as `helm install`.
 {{- $v := .ctx.Values -}}
 serviceAccountName: {{ include "dataq.serviceAccountName" .ctx }}
 automountServiceAccountToken: false
+# Service-link variables (<SERVICE>_PORT=tcp://...) would land on settings of the same name.
+enableServiceLinks: false
 {{- with $v.imagePullSecrets }}
 imagePullSecrets:
   {{- toYaml . | nindent 2 }}

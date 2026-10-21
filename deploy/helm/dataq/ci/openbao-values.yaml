@@ -1,6 +1,9 @@
 # OpenBao over TLS with a private CA, OTP sign-in through a relay with its own CA.
 existingSecret: dataq-env
 extraEnvFromSecrets: [dataq-extra]
+image:
+  backend:
+    tag: v1.3.0
 auth:
   otp:
     smtpHost: smtp.internal.example.com

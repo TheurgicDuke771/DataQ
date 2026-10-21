@@ -99,6 +99,7 @@
             "allowedEmails": {"$ref": "#/definitions/emailList"},
             "allowedDomains": {"type": "string"},
             "defaultRole": {"$ref": "#/definitions/role"},
+            "openSignup": {"type": "boolean"},
             "authority": {"type": "string", "pattern": "^(https?://.+)?$"},
             "clientId": {"type": "string"},
             "apiScope": {"type": "string"},
@@ -161,7 +162,7 @@
         "extraEnv": {
           "type": "object",
           "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
-          "additionalProperties": {"type": ["string", "number", "boolean"]}
+          "additionalProperties": {"type": ["string", "boolean"]}
         }
       }
     },

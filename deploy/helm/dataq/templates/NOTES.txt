@@ -8,5 +8,9 @@ The frontend is the only way in; the api has no external address.
   then open http://localhost:8080
 {{- end }}
 
+{{- if not (include "dataq.publicBaseUrl" .) }}
+PUBLIC_BASE_URL is not set, so alert links have no origin. Set
+config.publicBaseUrl to the address people open.
+{{ end }}
 Check it: GET /healthz through the frontend returns 200, you can sign in, and one suite run
 completes.

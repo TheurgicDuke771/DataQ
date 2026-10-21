@@ -101,13 +101,13 @@ completes.
 | Value | What it does |
 |---|---|
 | `existingSecret` | **Required.** The Secret above. |
-| `auth.mode` | `otp` (emailed codes; needs `auth.otp.*` and an allowlist), `oidc` (needs `issuer`, `audience`, `clientId`) or `bypass`. The chart sets both the api and the frontend from this one value. |
+| `auth.mode` | `otp` (emailed codes; needs `auth.otp.*` and an allowlist), `oidc` (needs `issuer`, `audience`, `clientId`, and `allowedEmails` or `allowedDomains` — or `openSignup: true` when your identity provider itself limits who can sign in) or `bypass`. The chart sets both the api and the frontend from this one value. |
 | `auth.allowDevBypass` | `bypass` signs everyone in as an admin with no credential. The chart refuses it unless this is `true` and `config.environment` is `dev`. |
 | `secretStore.backend` | `openbao`, `azure_key_vault`, `aws_secrets_manager` or `env`. |
-| `config.publicBaseUrl` | The browser-facing origin. Taken from the first ingress host when empty. |
+| `config.publicBaseUrl` | The browser-facing origin, used in alert links and the webhook URLs the admin pages show. When empty it is `https://` plus the first ingress host if `ingress.tls` covers that host, and otherwise unset — set it if TLS ends at a load balancer in front of the ingress. |
 | `config.rateLimitXffTrustedHops` | Proxies in front of the api that append `X-Forwarded-For`. The default works out 2 with the ingress on (controller and frontend) and 1 without. Count again if a load balancer or CDN adds its own. |
-| `config.telemetry.sink` | Usage telemetry: `off` (default), `otlp` (through `config.otlpEndpoint`) or `file`. Nothing is recorded until a workspace admin also opts in. `file` needs `config.telemetry.existingClaim`, a PersistentVolumeClaim mounted at `/var/lib/dataq`, because the root filesystem is read-only. |
-| `config.extraEnv` | Any other setting from the [environment reference](deployment.md), by name — for example the `TAMPER_ANCHOR_*` audit-anchor settings. A name that looks like a credential is refused: the anchor's webhook secret goes in `existingSecret`, while `TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID` and the `*_SECRET_NAME` lookups are plain values. |
+| `config.telemetry.sink` | Usage telemetry, from backend v1.3.0 (the chart refuses it with an older image tag): `off` (default), `otlp` (through `config.otlpEndpoint`) or `file`. Nothing is recorded until a workspace admin also opts in. `file` needs `config.telemetry.existingClaim`, a PersistentVolumeClaim mounted at `/var/lib/dataq`, because the root filesystem is read-only. |
+| `config.extraEnv` | Any other setting from the [environment reference](deployment.md), by name — for example the `TAMPER_ANCHOR_*` audit-anchor settings (backend v1.3.0 for the object-lock ones). Quote every value (`"4"`, not `4`). A setting the chart already derives from its own values is refused, and so is a name that looks like a credential: the anchor's webhook secret goes in `existingSecret`, while `TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID` and the `*_SECRET_NAME` lookups are plain values. |
 | `api.tls.existingSecret` | TLS on the frontend-to-api hop: a `kubernetes.io/tls` Secret with `ca.crt`, whose certificate names `<release>-api.<namespace>.svc.<clusterDomain>`. Only `ca.crt` reaches the frontend pods. |
 | `networkPolicy.enabled` | Restricts the api to the frontend. Needs a CNI that enforces NetworkPolicy. |
 

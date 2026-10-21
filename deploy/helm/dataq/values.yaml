@@ -64,6 +64,9 @@ auth:
     allowedEmails: ""
     allowedDomains: ""
     defaultRole: member
+    # An allowlist above is required. true admits anyone the identity provider signs in: only
+    # when the provider itself restricts who can (e.g. a single-tenant directory).
+    openSignup: false
     # Frontend sign-in. authority defaults to issuer.
     authority: ""
     clientId: ""
@@ -101,15 +104,16 @@ config:
   rateLimitXffTrustedHops: 0
   warehouseLineageEnabled: false
   otlpEndpoint: ""
-  # Usage telemetry: off | file | otlp. Nothing is recorded until a workspace admin also opts in.
+  # Usage telemetry (backend v1.3.0 on): off | file | otlp. Nothing is recorded until a
+  # workspace admin also opts in.
   # otlp needs otlpEndpoint (or an App Insights connection string in existingSecret).
   telemetry:
     sink: "off"
     # file sink: a PersistentVolumeClaim you own, mounted at /var/lib/dataq on the api, worker
     # and beat; events go to usage-events.jsonl in it. ReadWriteMany if those pods span nodes.
     existingClaim: ""
-  # Further NON-secret settings, NAME: value. A name that looks like a credential is refused;
-  # put those in existingSecret.
+  # Further NON-secret settings, NAME: "value" (quote numbers). Refused: a name that looks like
+  # a credential (put those in existingSecret) or one the chart sets from the values above.
   extraEnv: {}
 
 # A ConfigMap of CA certificates (yours, created beforehand) mounted read-only on every backend
