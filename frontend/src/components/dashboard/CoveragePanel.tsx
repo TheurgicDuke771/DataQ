@@ -103,6 +103,7 @@ function Breakdown({
     <Table<FalsePositiveGroup>
       size="small"
       title={() => <Typography.Text strong>{title}</Typography.Text>}
+      components={{ table: (props: object) => <table {...props} aria-label={title} /> }}
       rowKey="key"
       pagination={false}
       dataSource={groups}

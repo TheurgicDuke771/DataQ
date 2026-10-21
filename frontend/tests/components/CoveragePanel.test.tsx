@@ -122,6 +122,10 @@ describe('CoveragePanel', () => {
     renderAs('admin');
 
     const profile = (await screen.findByText('Column profile')).closest('tr') as HTMLElement;
+    expect(
+      within(screen.getByRole('table', { name: 'By automatic check' })).getByText('Column profile'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'By connection' })).toBeInTheDocument();
     expect(within(profile).getByText('1 of 3')).toBeInTheDocument();
     expect(within(profile).getByText('33.3%')).toBeInTheDocument();
     const prod = screen.getByText('warehouse (prod)').closest('tr') as HTMLElement;

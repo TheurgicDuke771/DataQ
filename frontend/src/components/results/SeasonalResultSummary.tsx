@@ -89,13 +89,15 @@ export function SeasonalResultSummary({ observed }: { observed: unknown }) {
   }
 
   return (
-    <Descriptions
-      size="small"
-      column={1}
-      bordered
-      title="How this period was judged"
-      items={items}
-      data-testid="seasonal-result-summary"
-    />
+    <div role="group" aria-label="How this period was judged">
+      <Descriptions
+        size="small"
+        column={1}
+        bordered
+        title="How this period was judged"
+        items={items}
+        data-testid="seasonal-result-summary"
+      />
+    </div>
   );
 }
