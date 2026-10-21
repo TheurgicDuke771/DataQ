@@ -106,7 +106,8 @@ completes.
 | `secretStore.backend` | `openbao`, `azure_key_vault`, `aws_secrets_manager` or `env`. |
 | `config.publicBaseUrl` | The browser-facing origin. Taken from the first ingress host when empty. |
 | `config.rateLimitXffTrustedHops` | Proxies in front of the api that append `X-Forwarded-For`. The default works out 2 with the ingress on (controller and frontend) and 1 without. Count again if a load balancer or CDN adds its own. |
-| `config.extraEnv` | Any other setting from the [environment reference](deployment.md), by name. A name that looks like a credential is refused. |
+| `config.telemetry.sink` | Usage telemetry: `off` (default), `otlp` (through `config.otlpEndpoint`) or `file`. Nothing is recorded until a workspace admin also opts in. `file` needs `config.telemetry.existingClaim`, a PersistentVolumeClaim mounted at `/var/lib/dataq`, because the root filesystem is read-only. |
+| `config.extraEnv` | Any other setting from the [environment reference](deployment.md), by name — for example the `TAMPER_ANCHOR_*` audit-anchor settings. A name that looks like a credential is refused: the anchor's webhook secret goes in `existingSecret`, while `TAMPER_ANCHOR_OBJECT_LOCK_ACCESS_KEY_ID` and the `*_SECRET_NAME` lookups are plain values. |
 | `api.tls.existingSecret` | TLS on the frontend-to-api hop: a `kubernetes.io/tls` Secret with `ca.crt`, whose certificate names `<release>-api.<namespace>.svc.<clusterDomain>`. Only `ca.crt` reaches the frontend pods. |
 | `networkPolicy.enabled` | Restricts the api to the frontend. Needs a CNI that enforces NetworkPolicy. |
 
