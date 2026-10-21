@@ -1,5 +1,5 @@
 import { Alert, App, Card, Collapse, Flex, Switch, Table, Tag, Typography } from 'antd';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   getTelemetrySettings,
@@ -33,12 +33,22 @@ export function TelemetryPanel() {
   const { message } = App.useApp();
   // The switch is disabled while it saves, which drops focus; put it back once it is enabled.
   const switchRef = useRef<HTMLButtonElement>(null);
-  const onToggle = (next: boolean) =>
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!loading && refocus.current) {
+      refocus.current = false;
+      switchRef.current?.focus();
+    }
+  }, [loading]);
+  const onToggle = (next: boolean) => {
+    refocus.current = document.activeElement === switchRef.current;
+
     void run(async () => {
       setLocal(await putTelemetrySettings(next));
       resetTelemetryStatus();
       message.success(next ? 'Usage telemetry turned on' : 'Usage telemetry turned off');
-    }).then(() => requestAnimationFrame(() => switchRef.current?.focus()));
+    });
+  };
 
   return (
     <Card title="Usage telemetry" size="small">
