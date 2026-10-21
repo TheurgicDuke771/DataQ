@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "851494958242",
+  "strategy": "manual-commit",
+  "branch": "docs/new-code-meets-standards",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/85/1494958242/0/metadata.json",
+      "transcript": "/85/1494958242/0/full.jsonl",
+      "compact_transcript": "/85/1494958242/0/transcript.jsonl",
+      "content_hash": "/85/1494958242/0/content_hash.txt",
+      "prompt": "/85/1494958242/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 19543,
+    "cache_read_tokens": 10626948,
+    "output_tokens": 10321,
+    "api_call_count": 18
+  }
+}
