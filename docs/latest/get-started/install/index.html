@@ -2784,7 +2784,8 @@ curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
   history before it scores. No new orders arrive while the stack runs, so the freshness
   check warns after a day and fails after three, which is the monitor doing its job;
   restarting the stack makes the data current again. The sample warehouse has no host
-  port and is reachable only inside the compose network.
+  port and is reachable only inside the compose network. The project site has a
+  <a href="https://theurgicduke771.github.io/DataQ/#walkthrough">walkthrough of these screens</a>.
 - <strong>Pin a release</strong> instead of the moving stable tags:
   <code>DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up</code>.
   Take the compose file from the same release (replace <code>main</code> with <code>vX.Y.Z</code> in the
