@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.5",
+  "checkpoint_id": "45b8d76b29cc",
+  "strategy": "manual-commit",
+  "branch": "docs/new-code-meets-standards",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/45/b8d76b29cc/0/metadata.json",
+      "transcript": "/45/b8d76b29cc/0/full.jsonl",
+      "compact_transcript": "/45/b8d76b29cc/0/transcript.jsonl",
+      "content_hash": "/45/b8d76b29cc/0/content_hash.txt",
+      "prompt": "/45/b8d76b29cc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 8113,
+    "cache_read_tokens": 4729496,
+    "output_tokens": 5152,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 527860,
+      "cache_read_tokens": 956169,
+      "output_tokens": 1495,
+      "api_call_count": 10
+    }
+  }
+}
