@@ -942,7 +942,7 @@ describe('CheckEdit — per-period anomaly with the seasonal calendar', () => {
     await user.type(fail, '4');
 
     await user.click(screen.getByRole('button', { name: /Trend/ }));
-    await user.click(await screen.findByRole('button', { name: 'Promote to calendar' }));
+    await user.click(await screen.findByRole('button', { name: /^Promote to calendar/ }));
     const dialog = (await screen.findByText('Add this period to the calendar')).closest(
       '.ant-modal',
     ) as HTMLElement;

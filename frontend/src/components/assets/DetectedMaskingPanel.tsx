@@ -1,5 +1,6 @@
-import { Alert, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useEffect, useRef } from 'react';
 
 import { type DetectedClassification, setAssetClassificationDismissed } from '../../api/assets';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -29,6 +30,25 @@ export function DetectedMaskingPanel({
   onChanged: () => void;
 }) {
   const { run, loading } = useAsyncAction('Could not update the detection');
+  const { message } = App.useApp();
+  const panelRef = useRef<HTMLDivElement>(null);
+  // The row's button is disabled while saving and swapped (Dismiss / Restore masking) by the
+  // reload, so focus is put back on that row's button once both are done, else on the panel.
+  const refocus = useRef<{
+    column: string;
+    entries: DetectedClassification[] | null | undefined;
+    saved: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const pending = refocus.current;
+    if (pending === null || loading) return;
+    if (pending.saved && entries === pending.entries) return;
+    refocus.current = null;
+    const target = [
+      ...(panelRef.current?.querySelectorAll<HTMLElement>('[data-detection-action]') ?? []),
+    ].find((el) => el.dataset.detectionAction === pending.column);
+    (target ?? panelRef.current)?.focus();
+  }, [entries, loading]);
 
   // Absent (an older API) says nothing, so render nothing.
   if (entries === undefined) return null;
@@ -45,11 +65,16 @@ export function DetectedMaskingPanel({
   // Never profiled and nothing found: there is nothing to explain yet.
   if (entries.length === 0 && !refreshedAt) return null;
 
-  const setDismissed = (column: string, dismissed: boolean) =>
+  const setDismissed = (column: string, dismissed: boolean) => {
+    const pending = { column, entries, saved: false };
+    refocus.current = pending;
     void run(async () => {
       await setAssetClassificationDismissed(assetId, column, dismissed);
+      message.success(dismissed ? `${column}: detection dismissed` : `${column}: masked again`);
+      pending.saved = true;
       onChanged();
     });
+  };
 
   const columns: ColumnsType<DetectedClassification> = [
     {
@@ -85,8 +110,13 @@ export function DetectedMaskingPanel({
         }
         if (row.effect === 'overridden_by_tag') {
           return (
-            <Tooltip title="This column carries its own warehouse tag, which decides instead; the detection changes nothing.">
-              <Tag data-testid={`detection-${row.column}-overridden`}>warehouse tag decides</Tag>
+            <Tooltip
+              trigger={['hover', 'focus']}
+              title="This column carries its own warehouse tag, which decides instead; the detection changes nothing."
+            >
+              <Tag tabIndex={0} data-testid={`detection-${row.column}-overridden`}>
+                warehouse tag decides
+              </Tag>
             </Tooltip>
           );
         }
@@ -100,13 +130,15 @@ export function DetectedMaskingPanel({
     ...(canDismiss
       ? [
           {
-            title: '',
+            title: <span className="dq-sr-only">Actions</span>,
             key: 'actions',
             render: (_: unknown, row: DetectedClassification) =>
               row.dismissed ? (
                 <Button
                   size="small"
                   disabled={loading}
+                  data-detection-action={row.column}
+                  aria-label={`Restore masking: ${row.column}`}
                   onClick={() => setDismissed(row.column, false)}
                 >
                   Restore masking
@@ -118,7 +150,13 @@ export function DetectedMaskingPanel({
                   okText="Dismiss"
                   onConfirm={() => setDismissed(row.column, true)}
                 >
-                  <Button size="small" danger disabled={loading}>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={loading}
+                    data-detection-action={row.column}
+                    aria-label={`Dismiss: ${row.column}`}
+                  >
                     Dismiss
                   </Button>
                 </Popconfirm>
@@ -129,7 +167,15 @@ export function DetectedMaskingPanel({
   ];
 
   return (
-    <Card size="small" title="Detected personal data" data-testid="detected-masking-panel">
+    <Card
+      ref={panelRef}
+      tabIndex={-1}
+      role="group"
+      aria-label="Detected personal data"
+      size="small"
+      title="Detected personal data"
+      data-testid="detected-masking-panel"
+    >
       <Typography.Paragraph type="secondary">
         The profiler found values shaped like personal data in these columns, so failing samples
         mask them even though nobody classified them. A warehouse tag or a suite’s identifier column

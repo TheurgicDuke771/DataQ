@@ -22,7 +22,7 @@ from backend.app.datasources.base import (
     SampleSpec,
     TargetShapeError,
 )
-from backend.app.datasources.flatfile import build_flatfile_runner
+from backend.app.datasources.flatfile import FlatFileCheckRunner
 from backend.app.datasources.gcs import GcsConnectionAdapter
 from backend.app.datasources.generic_sql import (
     GenericSqlConnectionAdapter,
@@ -100,6 +100,50 @@ def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool
         return False
     requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
     return callable(requires) and not requires()
+
+
+class MissingCredentialError(ValueError):
+    """The connection stores no credential and its auth mode needs one."""
+
+
+def missing_credential(conn_type: str, config: dict[str, Any], secret_ref: str | None) -> bool:
+    """The connection stores no credential and its auth mode needs one: the one rule every
+    caller, flat-file or SQL, checks before it reaches the store. It and the flat-file secret
+    helpers below live here, not in ``flatfile``, because the rule is the adapters' to answer
+    and ``flatfile`` importing the registry would be an import cycle."""
+    return not secret_ref and not authenticates_without_secret(conn_type, config)
+
+
+def resolve_flatfile_secret(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret_ref: str | None,
+    secret_store: SecretStore,
+) -> str | None:
+    """The credential every flat-file read presents, or ``None`` for an anonymous connection."""
+    if missing_credential(conn_type, config, secret_ref):
+        raise MissingCredentialError("flat-file connection requires secret_ref for the credential")
+    return secret_store.get(secret_ref) if secret_ref else None
+
+
+def build_flatfile_runner(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret_ref: str | None,
+    secret_store: SecretStore,
+    sampling: SampleSpec | None = None,
+) -> FlatFileCheckRunner:
+    """Build a runner from a flat-file `Connection`'s primitives (secret resolved
+    eagerly; raw config, not the ORM model). ``sampling=None`` = whole-object read.
+    """
+    if conn_type not in FLAT_FILE_TYPES:
+        raise ValueError(f"{conn_type!r} is not a flat-file datasource")
+    secret = resolve_flatfile_secret(
+        conn_type=conn_type, config=config, secret_ref=secret_ref, secret_store=secret_store
+    )
+    return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
 
 
 def credential_expiry(

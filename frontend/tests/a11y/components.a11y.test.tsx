@@ -11,7 +11,7 @@
 // item 1 also runs axe in the Playwright lane against a rendered page.
 import { App as AntApp } from 'antd';
 import axe from 'axe-core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -47,6 +47,15 @@ import { CheckNew } from '../../src/pages/CheckNew';
 import { Results } from '../../src/pages/Results';
 import { listRuns, listPipelineRuns } from '../../src/api/runs';
 import { listSuites } from '../../src/api/suites';
+import { listSeasonalPeriods, type SeasonalPeriod } from '../../src/api/seasonalPeriods';
+import { getTelemetrySettings } from '../../src/api/telemetry';
+import { DetectedMaskingPanel } from '../../src/components/assets/DetectedMaskingPanel';
+import { DetectedPeriodsList } from '../../src/components/checks/SeasonalTrend';
+import { CoverageSettingsForm } from '../../src/components/coverage-settings/CoverageSettingsForm';
+import { SeasonalResultSummary } from '../../src/components/results/SeasonalResultSummary';
+import { AdminCalendar } from '../../src/pages/admin/AdminCalendar';
+import { TelemetryPanel } from '../../src/pages/admin/TelemetryPanel';
+import { WithMe } from '../support/me';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/connections')>();
@@ -92,6 +101,16 @@ vi.mock('../../src/api/notificationChannels', () => ({
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
   return { ...actual, listRuns: vi.fn(), listPipelineRuns: vi.fn() };
+});
+
+vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/seasonalPeriods')>();
+  return { ...actual, listSeasonalPeriods: vi.fn() };
+});
+
+vi.mock('../../src/api/telemetry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/telemetry')>();
+  return { ...actual, getTelemetrySettings: vi.fn() };
 });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -310,5 +329,201 @@ describe('component a11y floor (#1670)', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: /Browse folders/ }));
     await screen.findByRole('button', { name: /raw\// });
     await checkA11y('component:FileBrowser', document.body);
+  });
+});
+
+/** Every column header and button in `root` has an accessible name (axe's empty-header rule is
+ *  minor, so the ratchet would not catch an unnamed actions column). */
+function expectNamedControls(root: HTMLElement) {
+  const blank = { name: (name: string) => name.trim() === '' };
+  const unnamed = [
+    ...within(root).queryAllByRole('columnheader', blank),
+    ...within(root).queryAllByRole('button', blank),
+    ...within(root).queryAllByRole('spinbutton', blank),
+    ...within(root).queryAllByRole('switch', blank),
+  ];
+  expect(unnamed.map((el) => el.outerHTML.slice(0, 80))).toEqual([]);
+}
+
+const ENTRY: SeasonalPeriod = {
+  id: 'p1',
+  name: 'Black Friday',
+  kind: 'recurring',
+  start_month: 11,
+  start_day: 27,
+  end_month: 11,
+  end_day: 30,
+  start_date: null,
+  end_date: null,
+  series: null,
+  note: null,
+  attached_checks: 0,
+  created_at: '2026-10-01T00:00:00Z',
+  updated_at: '2026-10-01T00:00:00Z',
+};
+
+const EFFECTIVE = {
+  sensitivity: {
+    volume: { warn: 3, fail: 4, critical: 6, source: 'default' as const },
+    freshness: { warn: 3, fail: 4, critical: 6, source: 'default' as const },
+    profile: { warn: 3, fail: 4, critical: 6, source: 'default' as const },
+  },
+  baseline: {
+    window: 30,
+    min_points: 7,
+    seasonality: false,
+    yearly: false,
+    source: 'default' as const,
+  },
+};
+
+describe('component a11y floor — v1.3 surfaces (CONTRIBUTING rule 44)', () => {
+  it('Admin → Calendar and its entry dialog name every control', async () => {
+    vi.mocked(listSeasonalPeriods).mockResolvedValue([ENTRY]);
+    render(
+      <MemoryRouter>
+        <AntApp>
+          <AdminCalendar />
+        </AntApp>
+      </MemoryRouter>,
+    );
+    await screen.findByText('Black Friday');
+    expectNamedControls(document.body);
+    await userEvent.setup().click(screen.getByRole('button', { name: /New entry/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'New calendar entry' });
+    expect(within(dialog).getByRole('radiogroup', { name: 'Repeats' })).toBeInTheDocument();
+    await checkA11y('component:AdminCalendar', document.body);
+  });
+
+  it('the detected-personal-data panel names its actions column and each row action', async () => {
+    const { container } = render(
+      <AntApp>
+        <DetectedMaskingPanel
+          assetId="a1"
+          entries={[
+            {
+              column: 'contact',
+              detector: 'email',
+              effect: 'masks',
+              first_detected_at: '2026-10-19T08:00:00Z',
+              last_detected_at: '2026-10-20T08:00:00Z',
+              dismissed: false,
+              dismissed_at: null,
+            },
+          ]}
+          refreshedAt="2026-10-20T08:00:00Z"
+          canDismiss
+          onChanged={vi.fn()}
+        />
+      </AntApp>,
+    );
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dismiss: contact' })).toBeInTheDocument();
+    expectNamedControls(container);
+    await checkA11y('component:DetectedMaskingPanel', container);
+  });
+
+  it('each detected period has its own promote action name', async () => {
+    const occurrence = (start: string, end: string) => ({
+      kind: 'seen_once' as const,
+      start,
+      end,
+      peak_ratio: 5,
+      years_seen: 1,
+      range: null,
+      occurrences: [{ year: 2026, start, end, peak_ratio: 5, periods: 3, backfilled_periods: 0 }],
+      declared: [],
+    });
+    const { container } = render(
+      <WithMe>
+        <AntApp>
+          <DetectedPeriodsList
+            detected={{
+              reason: null,
+              periods: [
+                occurrence('2026-07-01', '2026-07-03'),
+                occurrence('2026-11-27', '2026-11-30'),
+              ],
+              thresholds: { ratio: 1.5, min_consecutive: 2, same_time_days: 7, level: 'median' },
+              history: {
+                unit: 'day',
+                points: 200,
+                backfilled: 0,
+                evaluated: 200,
+                first: '2026-01-01',
+                last: '2026-12-01',
+                years: 0,
+              },
+            }}
+            suiteId="s1"
+            checkId="c1"
+            yearly
+            onPromoted={vi.fn()}
+          />
+        </AntApp>
+      </WithMe>,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Promote to calendar: 2026-07-01 – 2026-07-03' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Promote to calendar: 2026-11-27 – 2026-11-30' }),
+    ).toBeInTheDocument();
+    await checkA11y('component:DetectedPeriodsList', container);
+  });
+
+  it('the coverage settings form names every control', async () => {
+    const { container } = render(
+      <AntApp>
+        <CoverageSettingsForm
+          stored={null}
+          below={EFFECTIVE}
+          current={EFFECTIVE}
+          scope="Set for the workspace"
+          clearLabel="Reset to defaults"
+          saving={false}
+          onSave={vi.fn()}
+          onClear={vi.fn()}
+        />
+      </AntApp>,
+    );
+    expectNamedControls(container);
+    await checkA11y('component:CoverageSettingsForm', container);
+  });
+
+  it('the usage-telemetry panel has no new serious/critical violations', async () => {
+    vi.mocked(getTelemetrySettings).mockResolvedValue({
+      enabled: false,
+      stored: true,
+      sink: 'off',
+      sink_ready: false,
+      events: [{ name: 'page_view', attributes: { route: ['dashboard'] } }],
+      updated_by: null,
+      updated_at: null,
+    });
+    const { container } = render(
+      <AntApp>
+        <TelemetryPanel />
+      </AntApp>,
+    );
+    await screen.findByRole('switch', { name: 'Usage telemetry' });
+    expectNamedControls(container);
+    await checkA11y('component:TelemetryPanel', container);
+  });
+
+  it('"How this period was judged" has no new serious/critical violations', async () => {
+    const { container } = render(
+      <SeasonalResultSummary
+        observed={{
+          period: { start: '2026-11-27', end: '2026-11-27', unit: 'day' },
+          z_score: 0.4,
+          mean: 5050,
+          stddev: 125,
+          yearly: { applied: false, reason: 'no_earlier_year' },
+          declared: { inside: null, verdict_changed: false, missing: [] },
+        }}
+      />,
+    );
+    await checkA11y('component:SeasonalResultSummary', container);
   });
 });

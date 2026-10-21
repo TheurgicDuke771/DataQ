@@ -8,7 +8,11 @@ from typing import Any
 
 from backend.app.core.errors import DataQError
 
-REPORT_FORMATS = ("csv", "xlsx")
+REPORT_MEDIA_TYPES: dict[str, str] = {
+    "csv": "text/csv",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+REPORT_FORMATS = tuple(REPORT_MEDIA_TYPES)
 
 # Bucket order is stable so two downloads of the same result are identical.
 _BUCKETS = ("mismatched", "additional_in_source", "additional_in_target")
@@ -127,12 +131,9 @@ def build_report(
 ) -> tuple[bytes, str]:
     """(payload bytes, media type) for ``fmt`` — 422 on an unknown format."""
     if fmt == "csv":
-        return build_csv(sample, observed), "text/csv"
+        return build_csv(sample, observed), REPORT_MEDIA_TYPES["csv"]
     if fmt == "xlsx":
-        return (
-            build_xlsx(sample, observed),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        return build_xlsx(sample, observed), REPORT_MEDIA_TYPES["xlsx"]
     raise ComparisonReportInvalidError(
         f"unsupported report format {fmt!r}", detail={"supported": list(REPORT_FORMATS)}
     )

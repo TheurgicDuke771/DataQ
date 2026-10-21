@@ -28,10 +28,14 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources import flatfile, generic_sql
 from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.generic_sql import SqlEngineSpec
+from backend.app.datasources.registry import (
+    authenticates_without_secret,
+    missing_credential,
+    resolve_flatfile_secret,
+)
 from backend.app.datasources.sql import is_sql_identifier, object_type
 from backend.app.datasources.sql_engines import (
     GENERIC_SQL_TYPES,
-    authenticates_without_secret,
     sql_engine,
 )
 from backend.app.db.models import Connection
@@ -330,7 +334,7 @@ def browse_files(
         )
     prefix = validate_prefix(prefix)
     config = dict(connection.config)
-    if flatfile.missing_credential(connection.type, config, connection.secret_ref):
+    if missing_credential(connection.type, config, connection.secret_ref):
         _require_credential(connection)
     root_key = "container" if connection.type == "adls_gen2" else "bucket"
     root = str(config.get(root_key) or "")
@@ -341,7 +345,7 @@ def browse_files(
                 conn_type=connection.type,
                 config=config,
                 prefix=prefix,
-                secret=flatfile.resolve_flatfile_secret(
+                secret=resolve_flatfile_secret(
                     conn_type=connection.type,
                     config=config,
                     secret_ref=connection.secret_ref,

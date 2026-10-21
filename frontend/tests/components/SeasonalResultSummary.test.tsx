@@ -37,6 +37,9 @@ describe('SeasonalResultSummary', () => {
       />,
     );
     const summary = screen.getByTestId('seasonal-result-summary');
+    expect(screen.getByRole('group', { name: 'How this period was judged' })).toContainElement(
+      summary,
+    );
     expect(summary).toHaveTextContent('Period judged2026-11-27');
     expect(summary).toHaveTextContent('expected 5000 (level 1000 × index 5, from 2 earlier years)');
     expect(summary).toHaveTextContent('inside Black Friday (2026-11-27 – 2026-11-30)');

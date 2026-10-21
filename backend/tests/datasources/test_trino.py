@@ -27,11 +27,11 @@ from backend.app.datasources.generic_sql import (
     build_generic_sql_runner,
 )
 from backend.app.datasources.postgres import POSTGRES
+from backend.app.datasources.registry import authenticates_without_secret
 from backend.app.datasources.sql_engines import (
     GENERIC_SQL_TYPES,
     SQL_BATCH_CONNECTION_TYPES,
     SQL_ENGINES,
-    authenticates_without_secret,
     default_schema,
 )
 from backend.app.datasources.trino import TRINO, TrinoConfig, _column_caps

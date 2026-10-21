@@ -116,7 +116,7 @@ test.describe('Suites page', () => {
     for (const row of rows) await expect(row.getByText('Disabled', { exact: true })).toBeVisible();
     await expect(seeded.getByText('Disabled', { exact: true })).toHaveCount(0);
     // Re-enable one from its own row; the other stays off.
-    await rows[0].getByRole('button', { name: 'Enable', exact: true }).click();
+    await rows[0].getByRole('button', { name: /^Enable / }).click();
     await expect(rows[0].getByText('Disabled', { exact: true })).toHaveCount(0);
     await expect(rows[1].getByText('Disabled', { exact: true })).toBeVisible();
 

@@ -16,7 +16,6 @@ from backend.app.datasources.flatfile import (
     RangeReader,
     json_schema,
     read_csv_head,
-    resolve_flatfile_secret,
 )
 from backend.app.datasources.iceberg import (
     IcebergConfig,
@@ -28,6 +27,7 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     monitor_outcome,
 )
+from backend.app.datasources.registry import resolve_flatfile_secret
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, SQL_ENGINES
 from backend.app.db.models import Check, Connection, Run
 from backend.app.services.coverage_settings_service import SuiteCoverage
@@ -46,7 +46,6 @@ log = get_logger(__name__)
 ColumnSpec = dict[str, str]
 
 _SQL_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
-_FILE_TYPES = FLAT_FILE_TYPES
 # How many CSV rows the dtype inference samples — a header-only read types every column `object`,
 # which would report a phantom type change on the first run after baselining from a sampled read.
 _CSV_TYPE_SAMPLE_ROWS = 1000
@@ -225,7 +224,7 @@ def introspect_columns(
             )
         if connection.type == "iceberg":
             return _iceberg_columns(connection, identifier=table, secret_store=secret_store)
-        if connection.type in _FILE_TYPES:
+        if connection.type in FLAT_FILE_TYPES:
             return _file_columns(
                 connection, path=table, file_format=None, secret_store=secret_store
             )

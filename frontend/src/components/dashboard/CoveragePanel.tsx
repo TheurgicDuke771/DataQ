@@ -1,4 +1,5 @@
 import { Card, Col, Row, Spin, Statistic, Table, Typography } from 'antd';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 import { type FalsePositiveGroup, getCoverageFigures } from '../../api/dashboard';
@@ -98,11 +99,16 @@ function Breakdown({
   column: string;
   groups: FalsePositiveGroup[];
 }) {
+  const components = useMemo(
+    () => ({ table: (props: object) => <table {...props} aria-label={title} /> }),
+    [title],
+  );
   if (groups.length === 0) return null;
   return (
     <Table<FalsePositiveGroup>
       size="small"
       title={() => <Typography.Text strong>{title}</Typography.Text>}
+      components={components}
       rowKey="key"
       pagination={false}
       dataSource={groups}

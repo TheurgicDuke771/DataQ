@@ -1,4 +1,4 @@
-import { Alert, Collapse, Flex, Tag, Typography } from 'antd';
+import { Alert, App, Collapse, Flex, Tag, Typography } from 'antd';
 import { useState } from 'react';
 
 import { updateAsset } from '../../api/assets';
@@ -9,6 +9,7 @@ import {
 } from '../../api/coverage';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { useFocusFallback } from '../../hooks/useFocusFallback';
 import { fetchFailure } from '../../utils/errors';
 import { CoverageSettingsForm } from '../coverage-settings/CoverageSettingsForm';
 
@@ -26,6 +27,8 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
   });
   const [saved, setSaved] = useState<AssetCoverageSettings | null>(null);
   const { run, loading } = useAsyncAction('Could not save this table’s sensitivity');
+  const { message } = App.useApp();
+  const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
 
   if (state.status === 'loading') return null;
   if (state.status === 'error') {
@@ -50,6 +53,9 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
   const save = (config: AssetCoverageSettings['override']) =>
     void run(async () => {
       await updateAsset(assetId, { auto_coverage_config: config });
+      message.success(
+        config === null ? 'This table now follows the workspace setting' : 'Saved for this table',
+      );
       try {
         setSaved(await getAssetCoverageSettings(assetId));
       } catch {
@@ -58,6 +64,7 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
         setSaved(null);
         reload();
       }
+      restoreFocus();
     });
 
   return (
@@ -76,17 +83,24 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
             </Flex>
           ),
           children: (
-            <CoverageSettingsForm
-              key={JSON.stringify(asset.override)}
-              stored={asset.override}
-              below={state.data.workspace.effective}
-              current={asset.effective}
-              scope="Set for this table"
-              clearLabel="Use the workspace setting"
-              saving={loading}
-              onSave={save}
-              onClear={() => save(null)}
-            />
+            <div
+              ref={fallbackRef}
+              tabIndex={-1}
+              role="group"
+              aria-label="Sensitivity of this table’s automatic checks"
+            >
+              <CoverageSettingsForm
+                key={JSON.stringify(asset.override)}
+                stored={asset.override}
+                below={state.data.workspace.effective}
+                current={asset.effective}
+                scope="Set for this table"
+                clearLabel="Use the workspace setting"
+                saving={loading}
+                onSave={save}
+                onClear={() => save(null)}
+              />
+            </div>
           ),
         },
       ]}

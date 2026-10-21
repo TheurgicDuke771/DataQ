@@ -18,7 +18,7 @@ from backend.app.datasources.gcs import (
     GcsKeyInvalidError,
     parse_service_account_key,
 )
-from backend.app.datasources.sql_engines import authenticates_without_secret
+from backend.app.datasources.registry import authenticates_without_secret
 
 _CONFIG = {"bucket": "dataq-landing", "auth_type": "service_account_key"}
 
