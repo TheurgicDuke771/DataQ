@@ -110,7 +110,7 @@ MONITOR_CAPABLE_TYPES = frozenset({*SQL_QUERYABLE_TYPES, "iceberg", *FILE_TYPES}
 
 # schema_drift (#592) introspects the target's column shape through the baseline-diff executor
 # (`services/schema_drift.py`) — not the runner.
-SCHEMA_DRIFT_CAPABLE_TYPES = frozenset({*MONITOR_CAPABLE_TYPES, *FILE_TYPES})
+SCHEMA_DRIFT_CAPABLE_TYPES = MONITOR_CAPABLE_TYPES
 
 # anomaly (#593) is stateful like schema_drift, but it does not reach the runner EITHER.
 ANOMALY_CAPABLE_TYPES = frozenset(SQL_QUERYABLE_TYPES)

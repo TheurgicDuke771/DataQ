@@ -46,7 +46,6 @@ log = get_logger(__name__)
 ColumnSpec = dict[str, str]
 
 _SQL_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
-_FILE_TYPES = FLAT_FILE_TYPES
 # How many CSV rows the dtype inference samples — a header-only read types every column `object`,
 # which would report a phantom type change on the first run after baselining from a sampled read.
 _CSV_TYPE_SAMPLE_ROWS = 1000
@@ -225,7 +224,7 @@ def introspect_columns(
             )
         if connection.type == "iceberg":
             return _iceberg_columns(connection, identifier=table, secret_store=secret_store)
-        if connection.type in _FILE_TYPES:
+        if connection.type in FLAT_FILE_TYPES:
             return _file_columns(
                 connection, path=table, file_format=None, secret_store=secret_store
             )
