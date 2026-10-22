@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_013YvMEGMYSs22eW7MqN3LmW",
+  "agent_id": "a60c31c5e454f813b",
+  "subagent_type": "general-purpose",
+  "task_description": "Rule-44 audit of v1.3 UI",
+  "token_usage": {
+    "input_tokens": 408,
+    "cache_creation_tokens": 2025572,
+    "cache_read_tokens": 58804656,
+    "output_tokens": 5175,
+    "api_call_count": 204
+  },
+  "started_at": "2026-10-21T09:30:40.049234+05:30",
+  "completed_at": "2026-10-21T12:59:49.584071+05:30"
+}

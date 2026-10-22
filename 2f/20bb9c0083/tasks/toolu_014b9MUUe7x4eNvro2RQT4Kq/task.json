@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_014b9MUUe7x4eNvro2RQT4Kq",
+  "agent_id": "a8075fde318744016",
+  "subagent_type": "general-purpose",
+  "task_description": "#2310 object-lock tamper anchor",
+  "token_usage": {
+    "input_tokens": 4890,
+    "cache_creation_tokens": 1508999,
+    "cache_read_tokens": 55856546,
+    "output_tokens": 41890,
+    "api_call_count": 223
+  },
+  "started_at": "2026-10-20T06:48:02.379139+05:30",
+  "completed_at": "2026-10-21T12:59:48.395739+05:30"
+}

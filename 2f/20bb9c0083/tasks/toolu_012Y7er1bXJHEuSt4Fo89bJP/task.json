@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_012Y7er1bXJHEuSt4Fo89bJP",
+  "agent_id": "ac1e0d170bb529f30",
+  "subagent_type": "general-purpose",
+  "task_description": "#1681 BigQuery adapter",
+  "token_usage": {
+    "input_tokens": 556,
+    "cache_creation_tokens": 3363912,
+    "cache_read_tokens": 95291591,
+    "output_tokens": 28942,
+    "api_call_count": 278
+  },
+  "started_at": "2026-10-20T17:23:35.093102+05:30",
+  "completed_at": "2026-10-21T12:59:49.053058+05:30"
+}

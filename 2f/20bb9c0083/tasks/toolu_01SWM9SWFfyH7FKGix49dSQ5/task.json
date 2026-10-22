@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01SWM9SWFfyH7FKGix49dSQ5",
+  "agent_id": "a56ea09739631b229",
+  "subagent_type": "general-purpose",
+  "task_description": "#2440 phase 7 whole-table yearly",
+  "token_usage": {
+    "input_tokens": 396,
+    "cache_creation_tokens": 2183900,
+    "cache_read_tokens": 56152768,
+    "output_tokens": 13124,
+    "api_call_count": 198
+  },
+  "started_at": "2026-10-20T18:01:39.045342+05:30",
+  "completed_at": "2026-10-21T12:59:49.351817+05:30"
+}

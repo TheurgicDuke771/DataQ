@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01A8WNv5j4MZvZHjA6vs8WFr",
+  "agent_id": "a8244bc2f174c69e1",
+  "subagent_type": "general-purpose",
+  "task_description": "#2388 Helm chart",
+  "token_usage": {
+    "input_tokens": 380,
+    "cache_creation_tokens": 3750155,
+    "cache_read_tokens": 47808971,
+    "output_tokens": 52105,
+    "api_call_count": 187
+  },
+  "started_at": "2026-10-20T22:15:57.882085+05:30",
+  "completed_at": "2026-10-21T12:59:49.482649+05:30"
+}

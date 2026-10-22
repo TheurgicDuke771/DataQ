@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01XuszcaQqZV6Xoo5BcSe1ss",
+  "agent_id": "a46f5bb9a677eddc4",
+  "subagent_type": "general-purpose",
+  "task_description": "#2395 changelog fragments",
+  "token_usage": {
+    "input_tokens": 2860,
+    "cache_creation_tokens": 1483045,
+    "cache_read_tokens": 14828714,
+    "output_tokens": 20156,
+    "api_call_count": 95
+  },
+  "started_at": "2026-10-19T16:03:05.473284+05:30",
+  "completed_at": "2026-10-21T12:59:48.088859+05:30"
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01UPRgr9K31xXgMTikmSp4fA",
+  "agent_id": "a2f1e5d33ab565cec",
+  "subagent_type": "general-purpose",
+  "task_description": "#1707 usage telemetry seam",
+  "token_usage": {
+    "input_tokens": 5892,
+    "cache_creation_tokens": 1495587,
+    "cache_read_tokens": 112945419,
+    "output_tokens": 86640,
+    "api_call_count": 353
+  },
+  "started_at": "2026-10-20T06:48:02.388941+05:30",
+  "completed_at": "2026-10-21T12:59:48.5965+05:30"
+}

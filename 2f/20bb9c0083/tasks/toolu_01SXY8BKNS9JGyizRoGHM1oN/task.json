@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01SXY8BKNS9JGyizRoGHM1oN",
+  "agent_id": "a4a3ac6de983af28c",
+  "subagent_type": "general-purpose",
+  "task_description": "#1704 backup/restore + upgrade gate",
+  "token_usage": {
+    "input_tokens": 2656,
+    "cache_creation_tokens": 2411274,
+    "cache_read_tokens": 15435470,
+    "output_tokens": 31781,
+    "api_call_count": 94
+  },
+  "started_at": "2026-10-19T16:03:05.476704+05:30",
+  "completed_at": "2026-10-21T12:59:48.162469+05:30"
+}
