@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "45fa53c4c88e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2531-audit-advisories",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "changelog.d/2531.security.md",
+    "docs/progress.md",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "packages/dataq-client/requirements-dev.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/45/fa53c4c88e/0/metadata.json",
+      "transcript": "/45/fa53c4c88e/0/full.jsonl",
+      "compact_transcript": "/45/fa53c4c88e/0/transcript.jsonl",
+      "content_hash": "/45/fa53c4c88e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 256,
+    "cache_creation_tokens": 17429,
+    "cache_read_tokens": 1306054,
+    "output_tokens": 9150,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 290,
+      "cache_creation_tokens": 139064,
+      "cache_read_tokens": 1130259,
+      "output_tokens": 12736,
+      "api_call_count": 10
+    }
+  }
+}
