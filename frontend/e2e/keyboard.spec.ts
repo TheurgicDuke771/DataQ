@@ -46,7 +46,8 @@ test.describe('Keyboard navigation', () => {
     const trigger = page.getByRole('button', { name: 'Compare with another run of this suite' });
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const item = page.getByRole('menuitem').first();
+    // Scoped to the dropdown — the sidebar nav is a menu of menuitems too.
+    const item = page.locator('.ant-dropdown').getByRole('menuitem').first();
     await expect(item).toBeVisible();
     await item.focus();
     await page.keyboard.press('Enter');
