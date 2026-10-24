@@ -15,7 +15,7 @@ without losing your place. `/admin` on its own lands on **Overview**.
 | Overview | `/admin/overview` | Workspace counts — members, suites, open incidents, runs today — plus a "needs attention" feed and a workspace-health checklist, each row linking to the thing that needs fixing. |
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
-| Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone. |
+| Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the deployment's sign-in allowlists and retention clocks (read-only), the health-score weights, automatic coverage, usage telemetry, the secret-store notice, and where each destructive action lives. |
 | Calendar | `/admin/calendar` | The workspace's seasonal calendar: named sale and holiday periods that per-period anomaly checks can attach. |
 | Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture. |
 | Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses. |
@@ -381,6 +381,54 @@ environment the toggle is shown pinned and can only be turned *on* from here, ne
 that is deliberate, so an operator's floor cannot be undone by a click. Every change is
 audited with who made it and when. Samples stored before the switch are not deleted by it;
 the retention sweep removes them on its schedule.
+
+## Settings — notification channels
+
+Reusable Teams, Slack, email and webhook **channels** are created here and linked from each
+suite's own panel, which also sets the suite's threshold. Workspace-wide default
+destinations are not set in the app: they come from the deployment's configuration
+(`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*`), and every suite
+alerts through them **in addition to** its linked channels. The card above the channel list
+says so and names the variables; the [notifications guide](notifications.md#channels) has
+the detail.
+
+## Settings — sign-in access (read-only)
+
+The **Sign-in access** card shows the deployment's allowlists exactly as configured — the
+values of `OIDC_ALLOWED_EMAILS`, `OIDC_ALLOWED_DOMAINS`, `AUTH_OTP_ALLOWED_EMAILS`,
+`AUTH_OTP_ALLOWED_DOMAINS` and `WORKSPACE_ADMIN_EMAILS` — with a worded status per row:
+
+- **Read at sign-in** — a sign-in door on this deployment reads the list.
+- **Not read — sign-in mode not configured** — the list has values but its mode is not the
+  one this deployment uses, so it admits nobody. Values set for the wrong mode are a
+  common reason an expected sign-in is refused; this row makes that visible.
+- **Grants the Admin role** — `WORKSPACE_ADMIN_EMAILS`, which never admits anyone by itself
+  but grants Admin to whoever it names (see [seed and emergency access](#seed-and-emergency-access)).
+
+Below the table are the roles a first sign-in lands on for each mode. Everything on the
+card is read-only: these values change only when the deployment's configuration is edited
+and the app restarted, and they are identifiers, never secrets. On a local stack signing in
+through the developer bypass the card says so, because no allowlist gates anything there.
+Day-to-day admission is the [Members](#members) tab.
+
+## Settings — data retention (read-only)
+
+The **Data retention** card lists each retention clock with the variable that sets it and
+what the daily sweep removes when it runs out: failing-row samples and captured cell values
+inside stored results (`SAMPLE_FAILURES_RETENTION_DAYS`), audit events
+(`AUDIT_RETENTION_DAYS`) and spent sign-in codes (`OTP_CODES_RETENTION_HOURS`). Run and
+result rows are never deleted by retention — only the samples inside them — so metric
+trends survive. Shortening a clock takes effect at the next sweep; lengthening one cannot
+bring back what an earlier sweep removed.
+
+## Settings — destructive actions
+
+There is no workspace-level delete: the workspace is the deployment. The last card on the
+page points each destructive action at where it lives — deleting or transferring any suite
+under [Suites](#suites), deleting a connection from Connections, removing or
+[offboarding](#offboarding) a member, and erasing a person's values under
+[Compliance](#data-subject-rights). Run history is never purged by hand; the retention
+clocks above do that on schedule.
 
 ## Settings — scoring
 
