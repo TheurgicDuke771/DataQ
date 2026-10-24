@@ -368,7 +368,8 @@ def test_compare_records_one_access_event_per_run(client: TestClient, db_session
     _result(db_session, target, check, "pass")
     db_session.commit()
     _as(owner)
-    assert _compare(client, base, target).status_code == 200
+    resp = _compare(client, base, target)
+    assert resp.status_code == 200, resp.text
     db_session.expire_all()
     events = list(
         db_session.scalars(
@@ -428,8 +429,10 @@ def test_unknown_run_in_either_position_is_404(client: TestClient, db_session: A
     run = _run(db_session, _suite(db_session, owner), at=_T0)
     db_session.commit()
     _as(owner)
-    assert client.get(f"/api/v1/runs/{uuid.uuid4()}/compare/{run.id}").status_code == 404
-    assert client.get(f"/api/v1/runs/{run.id}/compare/{uuid.uuid4()}").status_code == 404
+    unknown_base = client.get(f"/api/v1/runs/{uuid.uuid4()}/compare/{run.id}")
+    unknown_other = client.get(f"/api/v1/runs/{run.id}/compare/{uuid.uuid4()}")
+    assert unknown_base.status_code == 404
+    assert unknown_other.status_code == 404
 
 
 def test_an_unshared_suites_run_is_404_in_both_positions(
@@ -446,11 +449,15 @@ def test_an_unshared_suites_run_is_404_in_both_positions(
     db_session.commit()
 
     _as(stranger)
-    assert _compare(client, my_run, their_run).status_code == 404
-    assert _compare(client, their_run, my_run).status_code == 404
+    as_other = _compare(client, my_run, their_run)
+    as_base = _compare(client, their_run, my_run)
+    assert as_other.status_code == 404
+    assert as_base.status_code == 404
     # A `view` share on the other suite lifts the 404 — the pair is then refused for the
     # honest reason (different suites), proving it was the gate and not the pairing rule.
     db_session.add(Share(suite_id=theirs.id, user_id=stranger.id, permission="view"))
     db_session.commit()
-    assert _compare(client, my_run, their_run).status_code == 422
-    assert _compare(client, their_run, my_run).status_code == 422
+    shared_other = _compare(client, my_run, their_run)
+    shared_base = _compare(client, their_run, my_run)
+    assert shared_other.status_code == 422
+    assert shared_base.status_code == 422

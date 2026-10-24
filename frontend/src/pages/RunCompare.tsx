@@ -95,7 +95,7 @@ function RunCompareLoader({ runId, otherRunId }: { runId?: string; otherRunId?: 
 
   return (
     <div data-testid="rc-screen">
-      <Page width={1100} gap={16}>
+      <Page gap={16}>
         <div>
           <Button
             type="text"
