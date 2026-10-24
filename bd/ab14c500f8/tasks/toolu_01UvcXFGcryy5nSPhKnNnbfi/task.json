@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01UvcXFGcryy5nSPhKnNnbfi",
+  "agent_id": "a9f7a667739e50078",
+  "subagent_type": "general-purpose",
+  "task_description": "Fix #2494 demo-capture CI flake",
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 934669,
+    "cache_read_tokens": 7316734,
+    "output_tokens": 23824,
+    "api_call_count": 59
+  },
+  "started_at": "2026-10-24T13:04:58.712872+05:30",
+  "completed_at": "2026-10-24T14:32:25.418058+05:30"
+}
