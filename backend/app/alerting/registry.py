@@ -7,6 +7,7 @@ import threading
 from backend.app.alerting.base import AlertPublisher, HealthPublisher, ResultPublisher
 from backend.app.alerting.composite import CompositePublisher
 from backend.app.alerting.email import EmailPublisher
+from backend.app.alerting.inapp import InAppPublisher
 from backend.app.alerting.slack import SlackPublisher
 from backend.app.alerting.teams import TeamsPublisher
 from backend.app.alerting.webhook import WebhookPublisher
@@ -26,7 +27,7 @@ def _split_csv(raw: str) -> tuple[str, ...]:
 
 
 def _build_publisher() -> AlertPublisher:
-    """A composite over every channel (Teams · Slack · email · generic webhook).
+    """A composite over every channel (Teams · Slack · email · generic webhook · in-app feed).
     Each child resolves its secret + per-suite policy per run (so rotation is
     picked up) and stays a quiet no-op until configured; the registry only
     wires the store + names, never reads a secret.
@@ -56,6 +57,9 @@ def _build_publisher() -> AlertPublisher:
             # No workspace-level config — a generic webhook only ever exists as
             # a suite-linked channel (#1514/#1662), never a single default.
             WebhookPublisher(secret_store=store),
+            # The in-app feed (#1687): no secret, no config — every run outcome that passes
+            # the suite's policy reaches everyone who can see the suite.
+            InAppPublisher(),
         ]
     )
 
