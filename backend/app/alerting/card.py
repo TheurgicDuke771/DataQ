@@ -11,6 +11,7 @@ from backend.app.alerting.base import (
     ConnectionHealthReport,
     RunReport,
     WorkspaceSignalReport,
+    unverified_checks,
 )
 from backend.app.alerting.routing import QUIET, Route
 
@@ -142,6 +143,12 @@ def _title_block(report: RunReport, route: Route) -> dict[str, Any]:
 
 def _subtitle_block(report: RunReport) -> dict[str, Any]:
     if report.success:
+        unverified = len(unverified_checks(report))
+        if unverified:
+            return _text(
+                f"{unverified} of {report.total_checks} checks could not be verified",
+                is_subtle=True,
+            )
         return _text(f"All {report.total_checks} checks passed", is_subtle=True)
     # An operational run failure (adapter raised) has no result rows to tally.
     if report.run_status == "failed" and not report.checks:

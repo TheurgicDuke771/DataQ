@@ -232,6 +232,36 @@ describe('NotificationBell', () => {
     expect(screen.getByRole('button', { name: 'Notifications, 3 unread' })).toBeInTheDocument();
   });
 
+  it('enables "Mark all read" from the loaded page while the count poll has not succeeded', async () => {
+    mockUnread.mockRejectedValue(Object.assign(new Error('throttled'), { status: 429 }));
+    const user = userEvent.setup();
+    renderBell();
+    await user.click(await screen.findByRole('button', { name: 'Notifications' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    await within(dialog).findByText(UNREAD.title);
+    expect(within(dialog).getByRole('button', { name: 'Mark all read' })).toBeEnabled();
+  });
+
+  it('runs one poll at a time when a visibility change lands while the timer is armed', async () => {
+    vi.useFakeTimers();
+    renderBell();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockUnread).toHaveBeenCalledTimes(1);
+    // Shown again while the interval timer is still armed: the visibility tick replaces it.
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    expect(mockUnread).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOTIFICATION_POLL_MS);
+    });
+    // One more from the rescheduled timer, not two (the original timer was cleared).
+    expect(mockUnread).toHaveBeenCalledTimes(3);
+  });
+
   it('does not poll while the tab is hidden and catches up when it is shown again', async () => {
     vi.useFakeTimers();
     renderBell();

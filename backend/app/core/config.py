@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     # OTP-code retention sweep (#1136) — hygiene.
     otp_codes_retention_hours: int = 24
 
+    # In-app notification feed retention (#1687): one row per recipient per alerted run, read
+    # or not; the run and incident rows stay the record. Non-positive = never purge.
+    notifications_retention_days: int = 90
+
     # Stuck-run reaper (#309).
     stuck_run_threshold_minutes: int = 60
 

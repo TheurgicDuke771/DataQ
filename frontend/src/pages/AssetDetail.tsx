@@ -89,8 +89,15 @@ function AssetDetailBody({
   const { summary } = asset;
   const navigate = useNavigate();
   // `?incident=<id>` — the notification feed's deep link — opens that incident's evidence.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialIncidentId = searchParams.get('incident');
+  // Closing the drawer drops the param, or Back / refresh would reopen it.
+  const onEvidenceClosed = () => {
+    if (!searchParams.has('incident')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('incident');
+    setSearchParams(next, { replace: true });
+  };
   // Asset-metadata mutation is workspace-Admin-only (ADR 0034 §4; backend 403s everyone else) — the
   // edit affordance renders only for admins.
   const isAdmin = useIsWorkspaceAdmin();
@@ -178,6 +185,7 @@ function AssetDetailBody({
       <IncidentsPanel
         assetId={summary.id}
         initialIncidentId={initialIncidentId}
+        onEvidenceClosed={onEvidenceClosed}
         permissionBySuite={Object.fromEntries(
           asset.suites.map((s) => [s.suite_id, s.my_permission]),
         )}

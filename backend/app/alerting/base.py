@@ -178,6 +178,17 @@ class RunReport:
         )
 
 
+#: Statuses that produced no verdict: the check ran into an error, or was skipped.
+UNVERIFIED_STATUSES = frozenset({"error", "skip"})
+
+
+def unverified_checks(report: RunReport) -> list[CheckReport]:
+    """Checks that neither passed nor breached — ``report.success`` is True over them, so a
+    renderer saying "all N checks passed" must consult this first.
+    """
+    return [c for c in report.checks if c.status in UNVERIFIED_STATUSES]
+
+
 @dataclass(frozen=True)
 class ConnectionHealthReport:
     """A connection's poll-health transition — the unit a ``HealthPublisher`` sends."""

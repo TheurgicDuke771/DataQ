@@ -47,6 +47,7 @@ from backend.app.services import (
     incident_service,
     llm_kinds,  # noqa: F401 — registers every LLM feature kind in the worker
     llm_service,
+    notification_feed_service,
     orchestration_service,
     otp_service,
     profile_service,
@@ -865,6 +866,22 @@ def purge_otp_codes() -> int:
     try:
         retention_hours = get_settings().otp_codes_retention_hours
         return otp_service.purge_expired_codes(session, older_than_hours=retention_hours)
+    finally:
+        session.close()
+
+
+# ───────────────── In-app notification feed retention (#1687) ───────────────
+
+
+@celery_app.task(name="purge_notifications")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def purge_notifications() -> int:
+    """Daily feed retention sweep: a row per recipient per alerted run accrues without
+    bound otherwise. Returns the count deleted; ``<= 0`` no-ops inside the service.
+    """
+    session = get_session()
+    try:
+        retention_days = get_settings().notifications_retention_days
+        return notification_feed_service.purge_expired(session, older_than_days=retention_days)
     finally:
         session.close()
 

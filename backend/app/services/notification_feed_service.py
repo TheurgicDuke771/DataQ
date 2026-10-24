@@ -5,18 +5,21 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import ColumnElement, func, or_, select, update
+from sqlalchemy import ColumnElement, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import FAILING_TIERS, RunReport
+from backend.app.alerting.base import FAILING_TIERS, RunReport, unverified_checks
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
+from backend.app.core.logging import get_logger
 from backend.app.db.models import ADMIN_ROLE, Incident, Notification, Share, Suite, User
+
+log = get_logger(__name__)
 
 #: Failing check names listed in a body before "… and N more".
 _BODY_CHECK_NAMES = 5
@@ -62,7 +65,11 @@ class FeedEntry:
 def _severity(report: RunReport) -> str:
     if report.run_status == "failed":
         return "error"
-    return report.worst_severity or "pass"
+    if report.worst_severity:
+        return report.worst_severity
+    # Nothing breached, but a check that errored or was skipped verified nothing: "all N
+    # checks passed" would be a confident wrong answer (the #1444 class), so it is `error`.
+    return "error" if unverified_checks(report) else "pass"
 
 
 def compose_entry(report: RunReport) -> FeedEntry:
@@ -71,9 +78,19 @@ def compose_entry(report: RunReport) -> FeedEntry:
     reach the feed (the #1772 rule holds at the build step, not by later filtering).
     """
     severity = _severity(report)
-    if severity == "error":
+    unverified = unverified_checks(report)
+    if report.run_status == "failed":
         title = f"{report.suite_name}: run failed to execute"
         body = f"The run on {report.target_label} did not complete. Open it for the reason."
+    elif severity == "error":
+        title = (
+            f"{report.suite_name}: {len(unverified)} of {report.total_checks} checks "
+            "could not be verified"
+        )
+        names = [f"{c.check_name} ({c.status})" for c in unverified[:_BODY_CHECK_NAMES]]
+        more = len(unverified) - len(names)
+        listed = ", ".join(names) + (f" and {more} more" if more > 0 else "")
+        body = f"{report.target_label}: nothing breached, but {listed} did not run to a verdict."
     elif severity == "pass":
         title = f"{report.suite_name}: all {report.total_checks} checks passed"
         body = f"{report.target_label} — nothing breached."
@@ -87,7 +104,10 @@ def compose_entry(report: RunReport) -> FeedEntry:
         more = len(breaching) - len(names)
         listed = ", ".join(names) + (f" and {more} more" if more > 0 else "")
         body = f"{report.target_label}" + (f" ({report.env})" if report.env else "") + f": {listed}"
-    incident_id = report.incidents[0].incident_id if report.incidents else None
+    # One link only when there is exactly one incident: with several, pointing at whichever
+    # sorted first would hide the rest behind a label that reads as "the incident". The run
+    # page lists them all.
+    incident_id = report.incidents[0].incident_id if len(report.incidents) == 1 else None
     return FeedEntry(
         severity=severity,
         title=title[:_TITLE_MAX],
@@ -200,6 +220,24 @@ def mark_read(
     return notification, asset_id
 
 
+def purge_expired(session: Session, *, older_than_days: int) -> int:
+    """Delete feed entries older than ``older_than_days`` — read or not; the feed is a
+    recent-alerts surface, the run and incident rows remain the record. ``<= 0`` no-ops.
+    """
+    if older_than_days <= 0:
+        return 0
+    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
+    result = cast(
+        CursorResult[Any],
+        session.execute(delete(Notification).where(Notification.created_at < cutoff)),
+    )
+    session.commit()
+    deleted = max(result.rowcount or 0, 0)
+    if deleted:
+        log.info("notifications_purged", deleted=deleted, older_than_days=older_than_days)
+    return deleted
+
+
 def mark_all_read(session: Session, *, user_id: uuid.UUID) -> int:
     """Mark every unread entry of the caller's own feed read; return how many changed."""
     result = cast(
@@ -222,6 +260,7 @@ __all__ = [
     "list_feed",
     "mark_all_read",
     "mark_read",
+    "purge_expired",
     "recipients_for_suite",
     "record_run_alert",
     "unread_count",

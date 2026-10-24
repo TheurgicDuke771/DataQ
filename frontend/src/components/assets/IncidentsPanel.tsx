@@ -1,6 +1,6 @@
 import { App, Button, Card, Empty, Flex, Popconfirm, Select, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   INCIDENT_RESOLUTION_LABELS,
@@ -79,6 +79,7 @@ export function IncidentsPanel({
   permissionBySuite,
   restrictedSuiteCount = 0,
   initialIncidentId = null,
+  onEvidenceClosed,
 }: {
   assetId: string;
   permissionBySuite: Record<string, string>;
@@ -86,9 +87,20 @@ export function IncidentsPanel({
   /** An incident to open in the evidence drawer straight away — the notification feed's
    *  `?incident=` deep link lands here. */
   initialIncidentId?: string | null;
+  /** Fired when the evidence drawer closes, so the owner of `?incident=` can drop it. */
+  onEvidenceClosed?: () => void;
 }) {
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
   const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(initialIncidentId);
+  // A second deep link while this panel is mounted (following another feed entry for the same
+  // asset) changes the prop, not the mount — so it has to be tracked, not read once.
+  useEffect(() => {
+    if (initialIncidentId) setEvidenceIncidentId(initialIncidentId);
+  }, [initialIncidentId]);
+  const closeEvidence = () => {
+    setEvidenceIncidentId(null);
+    onEvidenceClosed?.();
+  };
   return (
     <Card size="small" title="Incidents">
       <AsyncBody
@@ -117,10 +129,7 @@ export function IncidentsPanel({
           </>
         )}
       </AsyncBody>
-      <IncidentEvidenceDrawer
-        incidentId={evidenceIncidentId}
-        onClose={() => setEvidenceIncidentId(null)}
-      />
+      <IncidentEvidenceDrawer incidentId={evidenceIncidentId} onClose={closeEvidence} />
     </Card>
   );
 }

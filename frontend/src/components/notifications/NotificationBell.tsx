@@ -72,6 +72,10 @@ export function NotificationBell() {
     const tick = async () => {
       if (cancelled) return;
       if (document.visibilityState === 'hidden') return; // resumes on visibilitychange
+      // One poll at a time: a visibilitychange tick while the interval timer is still armed
+      // would otherwise run two, and orphan the first controller.
+      window.clearTimeout(timer);
+      controller?.abort();
       controller = new AbortController();
       try {
         const count = await getUnreadCount(controller.signal);
@@ -198,7 +202,12 @@ export function NotificationBell() {
     navigate(href);
   };
 
-  const hasUnread = (unread ?? 0) > 0;
+  // While the count poll has not yet succeeded, the loaded page is the next best truth —
+  // a 429'd first poll must not disable "Mark all read" over a drawer full of unread items.
+  const hasUnread =
+    unread !== null
+      ? unread > 0
+      : phase.kind === 'ok' && phase.items.some((item) => item.read_at === null);
 
   return (
     <>
