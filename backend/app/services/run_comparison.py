@@ -6,6 +6,7 @@ check WAS at that run's time.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
@@ -14,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
-from backend.app.db.models import SEVERITY_RANK, Check, Result, Run, Suite
+from backend.app.db.models import RESULT_SEVERITY_TIERS, SEVERITY_RANK, Check, Result, Run, Suite
 from backend.app.services import audit_service
 from backend.app.services import run_service as svc
 
@@ -28,9 +29,13 @@ class RunsNotComparableError(DataQError):
     code = "runs_not_comparable"
 
 
-# `pass` ranks below every failing tier; `skip`/`error` have no rank — an operational status is
-# not a data-quality verdict, so a transition through one is `changed`, never improved or regressed.
-_STATUS_RANK: dict[str, int] = {"pass": 0, **SEVERITY_RANK}
+# The severity tiers in rank order (`pass` = 0, then `SEVERITY_RANK`); `skip`/`error` have no
+# rank — an operational status is not a data-quality verdict, so a transition through one is
+# `changed`, never improved or regressed.
+_STATUS_RANK: dict[str, int] = {tier: rank for rank, tier in enumerate(RESULT_SEVERITY_TIERS)}
+assert _STATUS_RANK[RESULT_SEVERITY_TIERS[0]] == 0 and all(  # nosec B101 — import-time invariant
+    _STATUS_RANK[tier] == rank for tier, rank in SEVERITY_RANK.items()
+)
 
 
 def status_change(base: str | None, target: str | None) -> StatusChange:
@@ -80,6 +85,10 @@ class ResultSide:
 
 @dataclass(frozen=True)
 class Delta:
+    """`metric_changed` is True whenever the two sides' metrics differ — INCLUDING when only one
+    side carries one, where `metric_delta`/`metric_delta_pct` stay None because no difference
+    can be stated. A row with both sides, `metric_changed` and no delta is that case."""
+
     status_change: StatusChange
     metric_delta: float | None
     metric_delta_pct: float | None
@@ -104,11 +113,13 @@ class RunComparison:
 
 
 def _sides(
-    db: Session, run: Run, suite: Suite, checks: dict[uuid.UUID, Check]
+    db: Session,
+    run: Run,
+    suite: Suite,
+    results: list[Result],
+    as_of: Mapping[uuid.UUID, svc.CheckAsOf],
 ) -> dict[uuid.UUID, ResultSide]:
     """One redacted side per check for a run — the LAST result wins when a check has several."""
-    results: list[Result] = svc.list_results(db, run.id)
-    as_of = svc.historical_check_snapshots(db, results, checks)
     policy = suite.column_policy
     tags = svc.asset_column_tags(db, suite, run)
     sides: dict[uuid.UUID, ResultSide] = {}
@@ -176,8 +187,12 @@ def compare_runs(db: Session, *, base: Run, target: Run, suite: Suite, actor: An
             detail={"base_suite_id": str(base.suite_id), "target_suite_id": str(target.suite_id)},
         )
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == suite.id))}
-    base_sides = _sides(db, base, suite, checks)
-    target_sides = _sides(db, target, suite, checks)
+    base_results = svc.list_results(db, base.id)
+    target_results = svc.list_results(db, target.id)
+    # One `check_versions` read for both runs — they share the suite's check-id set.
+    as_of = svc.historical_check_snapshots(db, base_results + target_results, checks)
+    base_sides = _sides(db, base, suite, base_results, as_of)
+    target_sides = _sides(db, target, suite, target_results, as_of)
     _record_access(db, actor, base, base_sides)
     _record_access(db, actor, target, target_sides)
 

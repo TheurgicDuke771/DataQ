@@ -1171,19 +1171,6 @@ def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str
     return effective_column_tags(session, resolve_asset(session, suite, run))
 
 
-def historical_check_context(
-    session: Session,
-    results: Sequence[Result],
-    checks: Mapping[uuid.UUID, Check],
-) -> dict[uuid.UUID, tuple[str | None, str | None]]:
-    """Per-**result** `(tested_column, expectation_type)`, resolved as of WHEN that
-    result was written — not the check's CURRENT state (#1489).
-    """
-    return historical_check_context_at(
-        session, {r.id: (r.check_id, r.created_at) for r in results}, checks
-    )
-
-
 def _versions_by_check(
     session: Session, check_ids: set[uuid.UUID]
 ) -> dict[uuid.UUID, list[CheckVersion]]:
@@ -1212,90 +1199,12 @@ def _effective_version(versions: list[CheckVersion] | None, at: datetime) -> Che
     return effective
 
 
-def historical_check_context_at[K: Hashable](
-    session: Session,
-    subjects: Mapping[K, tuple[uuid.UUID | None, datetime]],
-    checks: Mapping[uuid.UUID, Check],
-) -> dict[K, tuple[str | None, str | None]]:
-    """`(tested_column, expectation_type)` per subject key, each resolved as of its
-    own `(check_id, at)` — the `CheckVersion` rule `historical_check_context` applies
-    to results, shared here for stored snapshots that keep no `Result` row, e.g. an
-    incident's evidence at its `last_seen_at` (#1809).
-    """
-    check_ids = {check_id for check_id, _at in subjects.values() if check_id is not None}
-    versions_by_check = _versions_by_check(session, check_ids)
-
-    def _resolve(check_id: uuid.UUID | None, at: datetime) -> tuple[str | None, str | None]:
-        check = checks.get(check_id) if check_id is not None else None
-        effective = _effective_version(
-            versions_by_check.get(check_id) if check_id is not None else None, at
-        )
-        if effective is None:
-            return (
-                (check.config.get("column") if check else None),
-                (check.expectation_type if check else None),
-            )
-        return effective.config.get("column"), effective.expectation_type
-
-    return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
-
-
-def historical_check_engine(
-    session: Session,
-    results: Sequence[Result],
-    checks: Mapping[uuid.UUID, Check],
-) -> dict[uuid.UUID, str]:
-    """Per-**result** `engine` (ADR 0036), resolved as of WHEN that result was
-    written — a check re-pointed gx<->dmf after a run must not have its old
-    results' `engine` reported as the check's current one (#1869 review).
-    """
-    check_ids = {r.check_id for r in results if r.check_id is not None}
-    versions_by_check = _versions_by_check(session, check_ids)
-
-    def _resolve(check_id: uuid.UUID | None, at: datetime) -> str:
-        check = checks.get(check_id) if check_id is not None else None
-        effective = _effective_version(
-            versions_by_check.get(check_id) if check_id is not None else None, at
-        )
-        if effective is not None:
-            return effective.engine or GX_ENGINE
-        return (check.engine or GX_ENGINE) if check else GX_ENGINE
-
-    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
-
-
-def historical_check_kind(
-    session: Session,
-    results: Sequence[Result],
-    checks: Mapping[uuid.UUID, Check],
-) -> dict[uuid.UUID, str | None]:
-    """Per-**result** `kind`, resolved as of WHEN that result was written.
-
-    `CheckVersion.kind` is immutable in today's editor but is snapshotted anyway
-    (see the model) specifically so a stale result is never re-labeled by a later
-    edit; using the check's LIVE `kind` here would repeat the exact #1489 mistake
-    `historical_check_context` exists to avoid (#1880 review — `zero_sample_suppressed`
-    needs this to classify old results correctly if `kind` ever becomes editable).
-    """
-    check_ids = {r.check_id for r in results if r.check_id is not None}
-    versions_by_check = _versions_by_check(session, check_ids)
-
-    def _resolve(check_id: uuid.UUID | None, at: datetime) -> str | None:
-        check = checks.get(check_id) if check_id is not None else None
-        effective = _effective_version(
-            versions_by_check.get(check_id) if check_id is not None else None, at
-        )
-        if effective is not None:
-            return effective.kind
-        return check.kind if check else None
-
-    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
-
-
 @dataclass(frozen=True)
 class CheckAsOf:
     """A check's editable identity as it WAS at one instant — every field a
-    `CheckVersion` snapshots, so a result is never relabelled by a later edit.
+    `CheckVersion` snapshots, so a result is never relabelled by a later edit
+    (#1489). Resolved from `check_versions`; a check with no version row (or none
+    at all) falls back to its live state.
     """
 
     name: str | None
@@ -1305,27 +1214,37 @@ class CheckAsOf:
     dimension: str | None
     column: str | None
 
+    @property
+    def context(self) -> tuple[str | None, str | None]:
+        """The `(tested_column, expectation_type)` pair the redactors take."""
+        return self.column, self.expectation_type
 
-def historical_check_snapshots(
+
+_UNKNOWN_CHECK = CheckAsOf(None, None, GX_ENGINE, None, None, None)
+
+
+def historical_check_snapshots_at[K: Hashable](
     session: Session,
-    results: Sequence[Result],
+    subjects: Mapping[K, tuple[uuid.UUID | None, datetime]],
     checks: Mapping[uuid.UUID, Check],
-) -> dict[uuid.UUID, CheckAsOf]:
-    """Per-**result** `CheckAsOf`, each resolved as of WHEN that result was written —
-    the `historical_check_context` rule widened to the whole snapshot (name, kind,
-    engine, dimension) for a surface that renders two instants side by side.
+) -> dict[K, CheckAsOf]:
+    """`CheckAsOf` per subject key, each resolved as of its own `(check_id, at)` — the
+    ONE as-of resolver; every narrower reading (column + type, engine, kind) projects
+    from it. Keyed generically so stored snapshots that keep no `Result` row, e.g. an
+    incident's evidence at its `last_seen_at` (#1809), resolve the same way.
     """
-    check_ids = {r.check_id for r in results if r.check_id is not None}
+    check_ids = {check_id for check_id, _at in subjects.values() if check_id is not None}
     versions_by_check = _versions_by_check(session, check_ids)
 
     def _resolve(check_id: uuid.UUID | None, at: datetime) -> CheckAsOf:
-        check = checks.get(check_id) if check_id is not None else None
-        effective = _effective_version(
-            versions_by_check.get(check_id) if check_id is not None else None, at
+        if check_id is None:
+            return _UNKNOWN_CHECK
+        effective = _effective_version(versions_by_check.get(check_id), at)
+        source: CheckVersion | Check | None = (
+            effective if effective is not None else checks.get(check_id)
         )
-        source: CheckVersion | Check | None = effective if effective is not None else check
         if source is None:
-            return CheckAsOf(None, None, GX_ENGINE, None, None, None)
+            return _UNKNOWN_CHECK
         return CheckAsOf(
             name=source.name,
             kind=source.kind,
@@ -1335,7 +1254,68 @@ def historical_check_snapshots(
             column=source.config.get("column"),
         )
 
-    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
+    return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
+
+
+def historical_check_snapshots(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, CheckAsOf]:
+    """Per-**result** `CheckAsOf`, each as of WHEN that result was written."""
+    return historical_check_snapshots_at(
+        session, {r.id: (r.check_id, r.created_at) for r in results}, checks
+    )
+
+
+def historical_check_context_at[K: Hashable](
+    session: Session,
+    subjects: Mapping[K, tuple[uuid.UUID | None, datetime]],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[K, tuple[str | None, str | None]]:
+    """`(tested_column, expectation_type)` per subject key — a projection of
+    `historical_check_snapshots_at`.
+    """
+    snapshots = historical_check_snapshots_at(session, subjects, checks)
+    return {key: snap.context for key, snap in snapshots.items()}
+
+
+def historical_check_context(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, tuple[str | None, str | None]]:
+    """Per-**result** `(tested_column, expectation_type)`, resolved as of WHEN that
+    result was written — not the check's CURRENT state (#1489).
+    """
+    snapshots = historical_check_snapshots(session, results, checks)
+    return {r_id: snap.context for r_id, snap in snapshots.items()}
+
+
+def historical_check_engine(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, str]:
+    """Per-**result** `engine` (ADR 0036) as of WHEN that result was written — a check
+    re-pointed gx<->dmf after a run must not have its old results' `engine` reported
+    as the check's current one (#1869 review).
+    """
+    snapshots = historical_check_snapshots(session, results, checks)
+    return {r_id: snap.engine for r_id, snap in snapshots.items()}
+
+
+def historical_check_kind(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, str | None]:
+    """Per-**result** `kind` as of WHEN that result was written. `CheckVersion.kind`
+    is immutable in today's editor but snapshotted anyway (see the model) so a stale
+    result is never re-labeled by a later edit (#1880 review).
+    """
+    snapshots = historical_check_snapshots(session, results, checks)
+    return {r_id: snap.kind for r_id, snap in snapshots.items()}
 
 
 # Expectation types whose scalar `observed_value` is a literal cell, not a computed statistic

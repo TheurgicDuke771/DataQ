@@ -204,7 +204,9 @@ class ComparisonDeltaRead(ApiModel):
     `changed` is a transition through `skip`/`error`, which carry no rank;
     `added`/`removed` mean the check has a result on only one side. `metric_delta`
     is target minus base, `metric_delta_pct` relative to a non-zero base; both null
-    when either side has no metric.
+    when either side has no metric. `metric_changed` is true whenever the two
+    metrics differ — including when only ONE side has one, in which case the deltas
+    are null because no difference can be stated.
     """
 
     status_change: run_comparison.StatusChange
@@ -450,15 +452,15 @@ def get_run(
     checks = {c.id: c for c in db.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     policy = suite.column_policy
     tags = _asset_column_tags(db, suite, run)
-    # Per-RESULT (tested_column, expectation_type) as of when each result was written (#1489) — not
-    # the check's current state.
-    context = svc.historical_check_context(db, results, checks)
-    # Same rule for `kind`/`engine` (#1880 review): `CheckVersion` snapshots both
-    # specifically so a stale result is never re-labeled by a later edit, and
-    # `zero_sample_suppressed` needs the engine as of THIS result — a `dmf`-engine
-    # check never had a row-level sample regardless of the privacy setting.
-    kind_by_result = svc.historical_check_kind(db, results, checks)
-    engine_by_result = svc.historical_check_engine(db, results, checks)
+    # Per-RESULT check identity as of when each result was written (#1489) — not the check's
+    # current state. `kind`/`engine` follow the same rule (#1880 review): `CheckVersion`
+    # snapshots both so a stale result is never re-labeled by a later edit, and
+    # `zero_sample_suppressed` needs the engine as of THIS result — a `dmf`-engine check never
+    # had a row-level sample regardless of the privacy setting. One `check_versions` read.
+    as_of = svc.historical_check_snapshots(db, results, checks)
+    context = {r_id: snap.context for r_id, snap in as_of.items()}
+    kind_by_result = {r_id: snap.kind for r_id, snap in as_of.items()}
+    engine_by_result = {r_id: snap.engine for r_id, snap in as_of.items()}
     # Resolved once per request (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(db)
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
