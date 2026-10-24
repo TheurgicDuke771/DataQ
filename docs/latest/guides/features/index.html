@@ -914,6 +914,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#running-checks" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2648,6 +2659,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#running-checks" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2909,6 +2931,30 @@ schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
   folder scopes). See <a href="#access-auth">access &amp; auth</a>.</li>
 <li><strong>Export / import</strong> — move a suite's definition between environments (author on DEV,
   import against PROD) instead of re-clicking checks.</li>
+<li><strong>Tags</strong> — workspace-shared labels on suites, assets, connections and checks; the Suites
+  and Assets lists filter by them (all of the chosen tags). See <a href="#tags">Tags</a>.</li>
+</ul>
+<h2 id="tags">Tags<a class="headerlink" href="#tags" title="Permanent link">¶</a></h2>
+<p>A <strong>tag</strong> is a short workspace-shared label — <code>finance</code>, <code>team:core-data</code>, <code>tier-1</code> — that
+can sit on a suite, an asset, a connection or a check. The vocabulary is one list for the
+whole workspace; assigning a tag to something you can edit is enough to create it, and a name
+is stored lower-case, trimmed and single-spaced, so <code>Finance</code> and <code>finance</code> are one tag.</p>
+<ul>
+<li><strong>Where they show.</strong> As chips on the Suites, Assets and Connections lists and on a suite's
+  check rows; the Suites and Assets lists have a <strong>Tags (all of)</strong> filter, which keeps only the
+  rows carrying every chosen tag (the API's repeatable <code>tag=</code> query parameter, AND semantics).</li>
+<li><strong>Who can assign.</strong> The same people who can edit the thing: a suite's or check's tags need
+  edit on the suite, a connection's or an asset's tags need the workspace Admin role. Everyone
+  who can see an entity sees its tags; nobody can list a suite's tags they could not open.</li>
+<li><strong>A tag pins an asset.</strong> The orphan-asset sweep never removes an asset that carries a tag,
+  even when no suite, run or lineage edge references it any more — a label is a decision
+  someone made, and the Assets list is where it is kept.</li>
+<li><strong>Deleting.</strong> Deleting a suite, asset, connection or check drops its assignments with it.
+  Deleting a tag (Admin, <code>DELETE /tags/{id}</code>) detaches it everywhere at once; <code>GET /tags</code>
+  lists the vocabulary with a usage count per entity kind, so an unused tag is easy to find.</li>
+<li><strong>Not a classification.</strong> Tags are user labels. A column's PII classification comes from the
+  column policy and from warehouse-native tags (<a href="#data-protection">data protection</a>), never
+  from a DataQ tag.</li>
 </ul>
 <h2 id="running-checks">Running checks<a class="headerlink" href="#running-checks" title="Permanent link">¶</a></h2>
 <p>Four ways a suite runs (all the same authz — <a href="../../reference/feature-matrix/#ways-a-suite-runs">feature matrix</a>):</p>

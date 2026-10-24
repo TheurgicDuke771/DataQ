@@ -1222,6 +1222,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tag-by-domain-and-criticality-not-by-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag by domain and criticality, not by state
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#severity-make-the-tiers-mean-something" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2582,6 +2593,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tag-by-domain-and-criticality-not-by-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag by domain and criticality, not by state
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#severity-make-the-tiers-mean-something" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2717,6 +2739,15 @@ incident makes them obvious.</p>
 <li>Share suites with <strong>view</strong> by default; reserve <strong>edit</strong> for the owning team
   (suite-level sharing is the access model <strong>for suites</strong>; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).</li>
 </ul>
+<h2 id="tag-by-domain-and-criticality-not-by-state">Tag by domain and criticality, not by state<a class="headerlink" href="#tag-by-domain-and-criticality-not-by-state" title="Permanent link">¶</a></h2>
+<p>Tags are cheap and shared, so decide the two or three axes they answer before anyone types
+one: the owning domain or team (<code>finance</code>, <code>team:core-data</code>), the criticality (<code>tier-1</code>) and
+perhaps the consumer (<code>exec-dashboard</code>). Keep a <code>key:value</code> shape for anything that will have
+more than a handful of values. Do not encode state that the app already tracks — a suite's
+environment, its health, whether it is scheduled — a tag goes stale the moment the fact
+changes, and the lists already filter by the real thing. Names are normalised (lower-case,
+trimmed), so agree spellings once; <code>GET /tags</code> shows the vocabulary with usage counts when it
+is time to prune.</p>
 <h2 id="severity-make-the-tiers-mean-something">Severity: make the tiers mean something<a class="headerlink" href="#severity-make-the-tiers-mean-something" title="Permanent link">¶</a></h2>
 <p>Thresholds band the observed <strong>unexpected-%</strong> (higher = worse; ADR 0005/0016):</p>
 <ul>

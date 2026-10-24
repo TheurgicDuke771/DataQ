@@ -170,6 +170,13 @@ section below.
   a noisy column profile can be told apart from a noisy row count before any threshold is
   changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
   breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
+- **Tags on suites, assets, connections and checks.** A workspace-shared vocabulary of short
+  labels, assigned from each entity's edit form (or the asset page) by whoever can edit it, shown
+  as chips on the lists and check rows, and filterable on the Suites and Assets lists by "all
+  of" the chosen tags. Over the API: `tags` on the four read models, assignment through the
+  existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
+  `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
+  assignments; deleting a tag detaches it everywhere.
 
 ### Changed
 

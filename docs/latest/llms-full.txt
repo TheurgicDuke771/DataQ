@@ -1995,6 +1995,17 @@ Two things the scorecard deliberately will not do, and you should read them the 
 - Share suites with **view** by default; reserve **edit** for the owning team
   (suite-level sharing is the access model **for suites**; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).
 
+## Tag by domain and criticality, not by state
+
+Tags are cheap and shared, so decide the two or three axes they answer before anyone types
+one: the owning domain or team (`finance`, `team:core-data`), the criticality (`tier-1`) and
+perhaps the consumer (`exec-dashboard`). Keep a `key:value` shape for anything that will have
+more than a handful of values. Do not encode state that the app already tracks — a suite's
+environment, its health, whether it is scheduled — a tag goes stale the moment the fact
+changes, and the lists already filter by the real thing. Names are normalised (lower-case,
+trimmed), so agree spellings once; `GET /tags` shows the vocabulary with usage counts when it
+is time to prune.
+
 ## Severity: make the tiers mean something
 
 Thresholds band the observed **unexpected-%** (higher = worse; ADR 0005/0016):
@@ -3812,6 +3823,31 @@ A **suite** is a named set of checks bound to one connection + target
   folder scopes). See [access & auth](#access-auth).
 - **Export / import** — move a suite's definition between environments (author on DEV,
   import against PROD) instead of re-clicking checks.
+- **Tags** — workspace-shared labels on suites, assets, connections and checks; the Suites
+  and Assets lists filter by them (all of the chosen tags). See [Tags](#tags).
+
+## Tags
+
+A **tag** is a short workspace-shared label — `finance`, `team:core-data`, `tier-1` — that
+can sit on a suite, an asset, a connection or a check. The vocabulary is one list for the
+whole workspace; assigning a tag to something you can edit is enough to create it, and a name
+is stored lower-case, trimmed and single-spaced, so `Finance` and `finance` are one tag.
+
+- **Where they show.** As chips on the Suites, Assets and Connections lists and on a suite's
+  check rows; the Suites and Assets lists have a **Tags (all of)** filter, which keeps only the
+  rows carrying every chosen tag (the API's repeatable `tag=` query parameter, AND semantics).
+- **Who can assign.** The same people who can edit the thing: a suite's or check's tags need
+  edit on the suite, a connection's or an asset's tags need the workspace Admin role. Everyone
+  who can see an entity sees its tags; nobody can list a suite's tags they could not open.
+- **A tag pins an asset.** The orphan-asset sweep never removes an asset that carries a tag,
+  even when no suite, run or lineage edge references it any more — a label is a decision
+  someone made, and the Assets list is where it is kept.
+- **Deleting.** Deleting a suite, asset, connection or check drops its assignments with it.
+  Deleting a tag (Admin, `DELETE /tags/{id}`) detaches it everywhere at once; `GET /tags`
+  lists the vocabulary with a usage count per entity kind, so an unused tag is easy to find.
+- **Not a classification.** Tags are user labels. A column's PII classification comes from the
+  column policy and from warehouse-native tags ([data protection](#data-protection)), never
+  from a DataQ tag.
 
 ## Running checks
 
@@ -5428,6 +5464,13 @@ section below.
   a noisy column profile can be told apart from a noisy row count before any threshold is
   changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
   breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
+- **Tags on suites, assets, connections and checks.** A workspace-shared vocabulary of short
+  labels, assigned from each entity's edit form (or the asset page) by whoever can edit it, shown
+  as chips on the lists and check rows, and filterable on the Suites and Assets lists by "all
+  of" the chosen tags. Over the API: `tags` on the four read models, assignment through the
+  existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
+  `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
+  assignments; deleting a tag detaches it everywhere.
 
 ### Changed
 
@@ -7445,7 +7488,7 @@ connection mutation, and a credential must never transit an LLM.
 | `trigger_suite_run` | `edit` on the suite | Trigger an asynchronous run of a suite's checks; returns a run id to poll. |
 | `update_check` | `edit` on the suite | Change an existing check's definition, or switch it off or on — a partial update. |
 | `update_schedule` | `edit` on the suite | Change a suite's cron schedule — its cadence, its timezone, or pause/resume it. |
-| `update_suite` | `edit` on the suite | Change a suite's name, description, or **what it runs against**. |
+| `update_suite` | `edit` on the suite | Change a suite's name, description, tags, or **what it runs against**. |
 | `update_trigger_binding` | `edit` on the suite | Enable or disable an orchestration trigger without deleting it. |
 
 ## Live probe (persists nothing, opens a datasource — gated like a write)
@@ -8671,6 +8714,26 @@ erDiagram
         uuid user_id FK
         string permission "view / edit (admin schema-legal, never granted)"
     }
+    tags {
+        uuid id PK
+        string name "unique; normalized lower-case label (a key:value form fits inside it)"
+    }
+    suite_tags {
+        uuid suite_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    asset_tags {
+        uuid asset_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    connection_tags {
+        uuid connection_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    check_tags {
+        uuid check_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
     pipeline_runs {
         uuid id PK
         string provider "adf / airflow / dbt"
@@ -8855,6 +8918,14 @@ erDiagram
     checks |o--o{ check_suggestions : "created on accept (SET NULL)"
     users |o--o{ check_suggestions : "decided_by (SET NULL)"
     checks ||--o{ check_versions : "config history (CASCADE)"
+    suites ||--o{ suite_tags : "labelled (CASCADE)"
+    assets ||--o{ asset_tags : "labelled (CASCADE)"
+    connections ||--o{ connection_tags : "labelled (CASCADE)"
+    checks ||--o{ check_tags : "labelled (CASCADE)"
+    tags ||--o{ suite_tags : "assigned to (CASCADE)"
+    tags ||--o{ asset_tags : "assigned to (CASCADE)"
+    tags ||--o{ connection_tags : "assigned to (CASCADE)"
+    tags ||--o{ check_tags : "assigned to (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
     runs ||--o{ results : "produces (CASCADE)"
 
