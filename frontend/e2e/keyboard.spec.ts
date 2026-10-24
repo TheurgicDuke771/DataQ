@@ -335,4 +335,38 @@ test.describe('Keyboard: dialogs and saves keep focus', () => {
       await request.delete(`/api/v1/suites/${suite.id}/checks/${check.id}`);
     }
   });
+
+  test('the command palette opens on Ctrl/⌘+K, moves by arrow keys and opens a suite on Enter', async ({
+    page,
+  }) => {
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Monitoring Dashboard' })).toBeVisible();
+    const trigger = page.getByRole('button', { name: /^Search/ });
+    await trigger.focus();
+    await page.keyboard.press('ControlOrMeta+k');
+    const input = page.getByRole('combobox', { name: 'Search DataQ' });
+    await expect(input).toBeFocused();
+    await input.fill('Orders quality');
+    const option = page.getByRole('option', { name: /Orders quality/ }).first();
+    await expect(option).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
+    await expect(option).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('Escape closes the command palette and returns focus to the button that opened it', async ({
+    page,
+  }) => {
+    await page.goto('/dashboard');
+    const trigger = page.getByRole('button', { name: /^Search/ });
+    await trigger.click();
+    const input = page.getByRole('combobox', { name: 'Search DataQ' });
+    await expect(input).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
 });
