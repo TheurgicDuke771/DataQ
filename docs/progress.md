@@ -121,6 +121,8 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ⬜ | [#2240](https://github.com/TheurgicDuke771/DataQ/issues/2240) security: mask an aggregate min/max metric_value on policy-sensitive columns at read time |
 | ⬜ | [#2111](https://github.com/TheurgicDuke771/DataQ/issues/2111) fix(dispatch): send_task from the API subscribes to the Redis result backend per run — extra round-trips and a GC re-entrancy deadlock |
 | ⬜ | [#2260](https://github.com/TheurgicDuke771/DataQ/issues/2260) deps: oauthlib 3.3.1 carries CVE-2026-49265/49264 (server-side only); databricks-sql-connector pins oauthlib<4.0.0 |
+| ⬜ | [#2530](https://github.com/TheurgicDuke771/DataQ/issues/2530) deps: filelock 3.32.x carries CVE-2026-112940/112913/112907 (ReadWriteLock + Windows-only paths, unused); snowflake-connector-python 4.x caps filelock<4 — ignored in CI until the connector 5.x bump |
+| ✅ | [#2531](https://github.com/TheurgicDuke771/DataQ/issues/2531) deps: fastmcp / black / dompurify / zod advisories failed the audit gate on every open PR — filed and fixed 2026-10-24, [PR #2532](https://github.com/TheurgicDuke771/DataQ/pull/2532) |
 | ⬜ | [#2374](https://github.com/TheurgicDuke771/DataQ/issues/2374) checks: a volume check with only min_rows is refused with 'needs integer min_rows/max_rows' although the value given is an integer |
 | ⬜ | [#2243](https://github.com/TheurgicDuke771/DataQ/issues/2243) fix(flatfile): a suite target's file_format is ignored by the run path (profiler-only) |
 | ⬜ | [#2133](https://github.com/TheurgicDuke771/DataQ/issues/2133) Redirect guard: an omitted field and its explicit default compare as 'moved' (Trino auth_type/sslmode) |
