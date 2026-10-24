@@ -603,7 +603,9 @@ def list_suites() -> list[dict[str, Any]]:
     it has (``check_count``),
     how many of those are switched on and so actually run (``enabled_check_count`` —
     quote this one for "how many checks run on orders"; ``list_checks`` says which are
-    off), and the status + time of its most recent run
+    off), its ``tags`` (workspace labels people attached, lower-case free text — an
+    empty list means nobody has tagged it, not that it belongs to no team or domain),
+    and the status + time of its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
 
@@ -669,6 +671,8 @@ def list_suites() -> list[dict[str, Any]]:
                     "check_count": int(check_count or 0),
                     # How many of those a run actually executes.
                     "enabled_check_count": int(enabled_counts.get(s.id, 0)),
+                    # Loaded with the suites (selectinload), not one query per row.
+                    "tags": s.tag_names,
                     "last_run": (
                         {
                             "status": last_run.status,

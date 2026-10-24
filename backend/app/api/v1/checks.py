@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, ApiRequestModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel, TagNames
+from backend.app.api.v1.suites import _TAGS_WRITE_DESCRIPTION, TagNamesIn
 from backend.app.core.auth import get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -26,6 +27,7 @@ from backend.app.services import (
     monitor_baseline,
     run_service,
     seasonal_detection_service,
+    tag_service,
 )
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
@@ -57,6 +59,11 @@ class CheckCreate(ApiRequestModel):
     critical_threshold: Decimal | None = None
     # False creates the check switched off: saved, but left out of every run.
     enabled: bool = True
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=_TAGS_WRITE_DESCRIPTION,
+    )
 
 
 class CheckUpdate(ApiRequestModel):
@@ -80,6 +87,11 @@ class CheckUpdate(ApiRequestModel):
     # False leaves the check, its history and its baseline in place but out of every
     # run; true puts it back. PATCH convention: None = not provided.
     enabled: bool | None = None
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=_TAGS_WRITE_DESCRIPTION,
+    )
 
     def threshold(self, name: str) -> Decimal | svc._Keep | None:
         """What to hand the service: the value the client sent, or KEEP when it sent none."""
@@ -130,6 +142,8 @@ class CheckRead(ApiModel):
     # they change when an Admin changes the workspace setting or this table's override.
     # Editing any of them gives the check its own values and makes this null.
     inherited: InheritedFrom | None = None
+    #: Workspace labels (#888), sorted by name; not part of the check's versioned definition.
+    tags: TagNames = Field(default_factory=list)
 
 
 def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
@@ -185,6 +199,7 @@ def create_check(
         dimension=payload.dimension,
         engine=payload.engine,
         enabled=payload.enabled,
+        tags=payload.tags,
         actor_id=current_user.id,
     )
     return _read(db, check)
@@ -246,6 +261,7 @@ def update_check(
         dimension=payload.dimension,
         engine=payload.engine,
         enabled=payload.enabled,
+        tags=payload.tags,
         actor_id=current_user.id,
     )
     return _read(db, check)

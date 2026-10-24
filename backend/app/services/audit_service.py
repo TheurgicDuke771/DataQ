@@ -157,6 +157,7 @@ _CHECK_FIELDS: Final[tuple[str, ...]] = (
     # alerting on a failing check — so the field it writes is in the payload.
     "alert_snoozed_until",
     "enabled",
+    "tag_names",
 )
 
 # `config` is deliberately ABSENT.
@@ -167,6 +168,7 @@ _CONNECTION_FIELDS: Final[tuple[str, ...]] = (
     "env",
     # The credential POINTER, never the credential.
     "secret_ref",
+    "tag_names",
 )
 
 _SUITE_FIELDS: Final[tuple[str, ...]] = (
@@ -179,6 +181,7 @@ _SUITE_FIELDS: Final[tuple[str, ...]] = (
     "column_policy",
     "asset_id",
     "origin",
+    "tag_names",
 )
 
 _SCHEDULE_FIELDS: Final[tuple[str, ...]] = (
@@ -300,7 +303,11 @@ _ASSET_FIELDS: Final[tuple[str, ...]] = (
     "auto_coverage_excluded",
     # This table's own sensitivity for its automatic baselines: numbers and flags only.
     "auto_coverage_config",
+    "tag_names",
 )
+
+#: The vocabulary entry itself; the assignments it loses on delete ride in the event's `after`.
+_TAG_FIELDS: Final[tuple[str, ...]] = ("id", "name")
 
 # `evidence` is deliberately ABSENT: it is derived from a failing run and can
 # carry warehouse values — the standing "no warehouse data in a payload" rule.
@@ -338,6 +345,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "coverage_setting": _COVERAGE_SETTING_FIELDS,
     "telemetry_setting": _TELEMETRY_SETTING_FIELDS,
     "seasonal_period": _SEASONAL_PERIOD_FIELDS,
+    "tag": _TAG_FIELDS,
 }
 
 

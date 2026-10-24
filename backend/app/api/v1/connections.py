@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, ApiRequestModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel, TagNames
+from backend.app.api.v1.suites import _TAGS_WRITE_DESCRIPTION, TagNamesIn
 from backend.app.core.auth import AdminUser, MemberUser, get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -22,6 +23,7 @@ from backend.app.services import (
     credential_health,
     rollup,
     scoring_settings_service,
+    tag_service,
 )
 from backend.app.services import connection_service as svc
 from backend.app.services.check_service import config_refused_expectation_types
@@ -74,6 +76,11 @@ class ConnectionUpdate(ApiRequestModel):
             "cannot reach at authoring time. Recorded on the audit event."
         ),
     )
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=_TAGS_WRITE_DESCRIPTION,
+    )
 
 
 class CredentialHealthRead(ApiModel):
@@ -121,6 +128,8 @@ class ConnectionRead(ApiModel):
     #: `None` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
     #: #1319).
     created_by: uuid.UUID | None
+    #: Workspace labels (#888), sorted by name.
+    tags: TagNames = Field(default_factory=list)
 
     # Poll health (#828) — orchestration connections only; NULL/0 elsewhere.
     last_polled_at: datetime | None = None
@@ -188,6 +197,7 @@ class ConnectionRead(ApiModel):
             config=redact_config_uris(conn.config),
             has_secret=conn.secret_ref is not None,
             created_by=conn.created_by,
+            tags=conn.tag_names,
             last_polled_at=conn.last_polled_at,
             last_poll_error=conn.last_poll_error,
             consecutive_poll_failures=conn.consecutive_poll_failures or 0,
@@ -357,6 +367,7 @@ def update_connection(
         actor_id=current_user.id,
         catalog_secret=payload.catalog_secret,
         skip_test=payload.skip_test,
+        tags=payload.tags,
     )
     return ConnectionRead.from_model(conn)
 

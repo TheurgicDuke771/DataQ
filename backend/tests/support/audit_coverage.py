@@ -93,6 +93,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── Asset metadata (owner/description only — the inventory-sync columns are
     # machine writes and are not audited).
     ("PATCH", "/api/v1/assets/{asset_id}"): "asset.update",
+    # ── Tags (#888). Assignment rides on the entity's own update event (`tag_names` is in each
+    # allow-list); deleting a vocabulary entry detaches it everywhere, so it is its own event.
+    ("DELETE", "/api/v1/tags/{tag_id}"): "tag.delete",
     # ── Dismissing / restoring a profiler-detected classification (ADR 0049): the one act that
     # clears a detection, so it loosens masking and is recorded with the column and both states.
     ("PATCH", "/api/v1/assets/{asset_id}/classifications"): "asset.classification_update",

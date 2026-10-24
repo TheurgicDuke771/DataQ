@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import ColumnElement, Float, Select, and_, case, cast, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
@@ -24,6 +24,7 @@ from backend.app.db.models import (
     Run,
     Suite,
     User,
+    asset_tags,
     worst_severity,
 )
 from backend.app.lineage import columns as lineage_columns
@@ -38,6 +39,7 @@ from backend.app.services import (
     column_tags,
     coverage_settings_service,
     scoring_settings_service,
+    tag_service,
 )
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
@@ -134,6 +136,8 @@ class AssetSummary:
     has_skip: bool = False
     #: Left out of its connection's automatic coverage (ADR 0047).
     auto_coverage_excluded: bool = False
+    #: Workspace labels (#888), sorted by name.
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -486,6 +490,7 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome], weights: Weights) -
         owner_user_id=asset.owner_user_id,
         last_seen=asset.last_seen,
         auto_coverage_excluded=asset.auto_coverage_excluded,
+        tags=asset.tag_names,
         suite_count=len(suite_outcomes),
         worst_severity=worst_severity(statuses),
         checks_total=checks_total,
@@ -503,13 +508,16 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome], weights: Weights) -
 # ── public API ───────────────────────────────────────────────────────────────
 
 
-def count_assets(session: Session) -> int:
+def count_assets(session: Session, *, tags: Sequence[str] | None = None) -> int:
     """Total assets over the same population `list_visible_assets` pages through
-    (#925) — unfiltered (ADR 0037: identity is workspace knowledge, not
-    grant-scoped), so the count a client divides its `limit`/`offset` paging
-    against always matches what the list endpoint can actually return.
+    (#925) — not grant-scoped (ADR 0037: identity is workspace knowledge), narrowed
+    only by the same ``tags`` filter, so the count a client divides its `limit`/`offset`
+    paging against always matches what the list endpoint can actually return.
     """
-    return session.scalar(select(func.count()).select_from(Asset)) or 0
+    stmt = select(func.count()).select_from(Asset)
+    if tags:
+        stmt = tag_service.filter_by_tags(stmt, asset_tags, Asset.id, tags)
+    return session.scalar(stmt) or 0
 
 
 def _asset_scores(weights: Weights) -> Any:
@@ -545,6 +553,7 @@ def list_visible_assets(
     limit: int = 200,
     offset: int = 0,
     sort: str = "name",
+    tags: Sequence[str] | None = None,
 ) -> list[AssetSummary]:
     """Every asset, fully identified, paginated with ``limit``/``offset`` — identical
     output for every caller (ADR 0037), which is why this takes no user: identity is
@@ -555,7 +564,10 @@ def list_visible_assets(
     over the WHOLE population (not just the page), unscored assets last.
     """
     weights = scoring_settings_service.weights(session)
-    stmt = select(Asset)
+    stmt = select(Asset).options(selectinload(Asset.tags))
+    if tags:
+        # Inside the same population the count above narrows (#888): AND over every name.
+        stmt = tag_service.filter_by_tags(stmt, asset_tags, Asset.id, tags)
     if sort == "health_score":
         scores = _asset_scores(weights)
         stmt = stmt.outerjoin(scores, scores.c.asset_id == Asset.id).order_by(
@@ -1068,9 +1080,11 @@ def update_asset_metadata(
     auto_coverage_excluded: bool | None = None,
     auto_coverage_config: dict[str, Any] | None = None,
     set_auto_coverage_config: bool = False,
+    tags: Sequence[str] | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Asset:
-    """Set an asset's owner and/or description (workspace-Admin-only; gated at API)."""
+    """Set an asset's owner / description / coverage settings / tags (workspace-Admin-only;
+    gated at API)."""
     asset = get_asset(session, asset_id)
     audit_before = audit_service.snapshot("asset", asset)
     # Both refusals come before anything is assigned, so a refused request leaves the
@@ -1093,6 +1107,8 @@ def update_asset_metadata(
     if set_auto_coverage_config:
         # An override that sets no group is no override: stored as NULL, not `{}`.
         asset.auto_coverage_config = override or None
+    if tags is not None:
+        tag_service.set_tags(session, asset, tags)
     # Metadata mutation only (ADR 0041 §2.5). The inventory-sync column family and
     # `first_seen`/`last_seen` are machine writes and never reach a payload.
     audit_service.record_entity_change(

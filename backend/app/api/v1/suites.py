@@ -10,14 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, ApiRequestModel
+from backend.app.api.v1._base import ApiModel, ApiRequestModel, TagNames
 from backend.app.api.v1.runs import RunRead, run_reads
 from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
-from backend.app.db.models import Connection, Suite, User
+from backend.app.db.models import TAG_NAME_MAX_LENGTH, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import (
     credential_health,
@@ -26,6 +26,7 @@ from backend.app.services import (
     run_dispatch,
     run_service,
     run_target,
+    tag_service,
 )
 from backend.app.services import profile_service as profile
 from backend.app.services import suite_document_yaml as suite_yaml
@@ -84,17 +85,42 @@ class SuiteTarget(ApiRequestModel):
         return self.model_dump(by_alias=True, exclude_none=True)
 
 
+#: Tag names on a write (#888): free text, normalized by the service (lower-case, trimmed,
+#: single-spaced; a name nobody has used yet is created). The whole list replaces the entity's tags.
+TagNamesIn = list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]]
+
+_TAGS_WRITE_DESCRIPTION = (
+    "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name "
+    "creates the tag; `[]` clears them. Omit to leave the tags as they are."
+)
+_TAG_FILTER_DESCRIPTION = (
+    "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): "
+    "`?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag "
+    "has matches nothing, so an empty result is 'nothing carries all of these', not an error."
+)
+
+
 class SuiteCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     connection_id: uuid.UUID
     target: SuiteTarget | None = None
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=_TAGS_WRITE_DESCRIPTION,
+    )
 
 
 class SuiteUpdate(ApiRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
     target: SuiteTarget | None = None
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=_TAGS_WRITE_DESCRIPTION,
+    )
 
 
 class SuiteRead(ApiModel):
@@ -118,6 +144,8 @@ class SuiteRead(ApiModel):
     # The caller's effective level on this suite (`owner`/`admin`/`edit`/`view`) so the UI can gate
     # per-suite actions — manage shares, delete.
     my_permission: str | None = None
+    #: Workspace labels (#888), sorted by name. Read with the suite, so gated as the suite is.
+    tags: TagNames = Field(default_factory=list)
 
     @classmethod
     def of(cls, suite: Suite, my_permission: str | None) -> SuiteRead:
@@ -144,6 +172,7 @@ def create_suite(
         connection_id=payload.connection_id,
         created_by=current_user.id,
         target=payload.target.to_storage() if payload.target is not None else None,
+        tags=payload.tags,
     )
     # Best-effort: auto-derive the failing-sample redaction policy for the new suite's target so
     # samples have a locator without manual setup (#634).
@@ -158,6 +187,10 @@ def list_suites(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     connection_id: uuid.UUID | None = None,
+    tag: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]] | None,
+        Query(description=_TAG_FILTER_DESCRIPTION),
+    ] = None,
 ) -> list[SuiteRead]:
     # Scoped to suites the user owns or has a share on — or every suite for a
     # workspace-admin (ADR 0027). effective_permissions then stamps each as admin.
@@ -166,6 +199,7 @@ def list_suites(
         user_id=current_user.id,
         connection_id=connection_id,
         include_all=is_workspace_admin(current_user),
+        tags=tag,
     )
     levels = effective_permissions(db, suites, current_user.id)
     return [SuiteRead.of(s, levels[s.id]) for s in suites]
@@ -200,6 +234,7 @@ def update_suite(
         name=payload.name,
         description=payload.description,
         target=new_target,
+        tags=payload.tags,
         actor_id=current_user.id,
     )
     # A target-setting update on a policy-less suite gets the same best-effort auto-classify as
