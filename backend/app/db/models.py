@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Column,
     Date,
     DateTime,
     ForeignKey,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -306,7 +308,68 @@ class OtpCode(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
-class Asset(Base):
+#: Longest tag name. A later `key:value` form fits inside it (the column is plain text with a
+#: unique index, so widening the grammar is a validator change, not a migration).
+TAG_NAME_MAX_LENGTH = 64
+
+
+class Tag(Base):
+    """A workspace-shared label (#888). Flat names in v1, stored normalized (lower-case,
+    single-spaced) so `Finance` and `finance` are one tag. Assignments live in one join table per
+    entity — real FKs, CASCADE both ways — never a polymorphic `(entity_type, entity_id)` row.
+    """
+
+    __tablename__ = "tags"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(String(TAG_NAME_MAX_LENGTH), nullable=False, unique=True)
+    created_at: Mapped[datetime] = _created_at()
+
+
+def _tag_join_table(name: str, entity_table: str, entity_column: str) -> Table:
+    """`<entity>_tags(<entity>_id, tag_id)`: deleting the entity or the tag deletes the row."""
+    return Table(
+        name,
+        Base.metadata,
+        Column(
+            entity_column,
+            UUID(as_uuid=True),
+            ForeignKey(f"{entity_table}.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        Column(
+            "tag_id",
+            UUID(as_uuid=True),
+            ForeignKey("tags.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        Index(f"ix_{name}_tag_id", "tag_id"),
+    )
+
+
+suite_tags = _tag_join_table("suite_tags", "suites", "suite_id")
+asset_tags = _tag_join_table("asset_tags", "assets", "asset_id")
+connection_tags = _tag_join_table("connection_tags", "connections", "connection_id")
+check_tags = _tag_join_table("check_tags", "checks", "check_id")
+
+
+def _tags_relationship(secondary: Table) -> Mapped[list[Tag]]:
+    # `passive_deletes`: the FK cascade removes the rows, so the ORM never has to load them to
+    # delete an entity. Sorted by name so every read surface lists tags in one order.
+    return relationship(Tag, secondary=secondary, order_by=Tag.name, passive_deletes=True)
+
+
+class TaggedMixin:
+    """`tag_names` for the audit allow-lists and the read models (#888)."""
+
+    tags: Mapped[list[Tag]]
+
+    @property
+    def tag_names(self) -> list[str]:
+        return [tag.name for tag in self.tags]
+
+
+class Asset(TaggedMixin, Base):
     """A first-class data asset (ADR 0034): the browse/reason grain; suites stay the
     execution/authz grain. Identity = the OpenLineage dataset naming spec, adopted
     verbatim — (namespace, name) unique; DEV/QA accounts are DISTINCT assets by design.
@@ -359,8 +422,10 @@ class Asset(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    tags: Mapped[list[Tag]] = _tags_relationship(asset_tags)
 
-class Connection(Base):
+
+class Connection(TaggedMixin, Base):
     __tablename__ = "connections"
     __table_args__ = (
         _in_check("type", CONNECTION_TYPES, "type_valid"),
@@ -467,6 +532,8 @@ class Connection(Base):
     # Set when the count drops N>0 → 0, untouched while it stays 0, cleared when >0.
     inventory_sync_zero_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    tags: Mapped[list[Tag]] = _tags_relationship(connection_tags)
+
 
 class ConnectionVersion(Base):
     """Immutable snapshot of a connection's editable, NON-secret state, written on
@@ -506,7 +573,7 @@ class ConnectionVersion(Base):
         return (self.author.display_name or self.author.email) if self.author else None
 
 
-class Suite(Base):
+class Suite(TaggedMixin, Base):
     __tablename__ = "suites"
     __table_args__ = (
         Index("ix_suites_connection_id", "connection_id"),
@@ -553,9 +620,10 @@ class Suite(Base):
     checks: Mapped[list["Check"]] = relationship(
         back_populates="suite", cascade="all, delete-orphan"
     )
+    tags: Mapped[list[Tag]] = _tags_relationship(suite_tags)
 
 
-class Check(Base):
+class Check(TaggedMixin, Base):
     __tablename__ = "checks"
     __table_args__ = (
         _in_check("kind", CHECK_KINDS, "kind_valid"),
@@ -612,6 +680,7 @@ class Check(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
     suite: Mapped["Suite"] = relationship(back_populates="checks")
+    tags: Mapped[list[Tag]] = _tags_relationship(check_tags)
 
 
 class MonitorBaseline(Base):
