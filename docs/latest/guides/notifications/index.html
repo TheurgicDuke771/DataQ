@@ -1021,6 +1021,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#in-app-notification-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-app notification feed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#per-suite-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2594,6 +2605,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#in-app-notification-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-app notification feed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#per-suite-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2719,9 +2741,10 @@
 
 <h1 id="notifications-alerting">Notifications &amp; alerting<a class="headerlink" href="#notifications-alerting" title="Permanent link">¶</a></h1>
 <p>DataQ alerts on run outcomes over <strong>Microsoft Teams</strong>, <strong>Slack</strong>, <strong>email</strong> and generic
-HMAC-signed <strong>webhooks</strong> — all
-behind one <code>ResultPublisher</code> seam, so every channel gets the same severity-aware
-behaviour. Alerts fire from the worker as soon as a run reaches a terminal state.</p>
+HMAC-signed <strong>webhooks</strong>, and in the app itself through the <strong>notification feed</strong> behind
+the header bell — all behind one <code>ResultPublisher</code> seam, so every channel gets the same
+severity-aware behaviour. Alerts fire from the worker as soon as a run reaches a terminal
+state.</p>
 <h2 id="channels">Channels<a class="headerlink" href="#channels" title="Permanent link">¶</a></h2>
 <p>Alert destinations are <strong>channels</strong>: a Teams webhook, a Slack webhook, an email recipient
 list or a generic HMAC-signed webhook, each defined <strong>once by a workspace Admin</strong> under
@@ -2765,6 +2788,47 @@ lineage source behind that last fact is failing, the email says the list may be
 incomplete rather than presenting it as the full picture. The raw expected/observed detail
 engineers want stays underneath in small print. Numbers are rounded to two decimals
 everywhere, in Slack and Teams too.</p>
+<h2 id="in-app-notification-feed">In-app notification feed<a class="headerlink" href="#in-app-notification-feed" title="Permanent link">¶</a></h2>
+<p>The bell in the app header is a destination like any other, with two differences: it needs no
+configuration, and it is scoped per person. When a run's outcome passes a suite's alert
+threshold, the same entry is written to the feed of <strong>everyone who can see that suite</strong> — its
+owner, each user it is shared with (at any level, including view-only), and the workspace
+admins. Someone with no access to a suite never sees its alerts; someone granted access later
+sees alerts from that point on, not the history.</p>
+<ul>
+<li><strong>Badge and feed.</strong> The bell's count is your unread entries, refreshed about once a minute
+  while the tab is visible. Open it for the feed, newest first: each entry names the suite,
+  how many checks breached and the worst tier (or that the run failed to execute), lists the
+  breaching checks by name, and links to the run — and, when an incident is open for it, to
+  the incident on its asset page.</li>
+<li><strong>Read state is yours.</strong> Mark an entry read from the feed, or follow its link (which marks
+  it read on the way); <strong>Mark all read</strong> clears the badge. Nobody else's badge changes, and an
+  admin cannot read or clear another person's feed.</li>
+<li><strong>Same rules as the outbound channels.</strong> The per-suite threshold, severity routing, dedup and
+  snooze below apply to the feed exactly as to Teams, Slack, email and webhooks. A suite with
+  alerting disabled writes nothing to anyone's feed.</li>
+<li><strong>Only check names, never values.</strong> Feed entries are built from the same redacted report the
+  other channels send and carry counts and check names only; no observed value or sample row
+  ever reaches the feed, whatever the suite's masking policy.</li>
+<li><strong>An entry can outlive its run — but not the retention clock.</strong> If the run it points at is
+  later deleted with its suite, the entry stays and says <em>Run no longer available</em> instead of
+  offering a dead link. Entries older than <code>NOTIFICATIONS_RETENTION_DAYS</code> (default 90) are
+  deleted by the daily sweep whether or not they were read; the runs and incidents remain.</li>
+<li><strong>Checks that did not run are not "passed".</strong> A run in which nothing breached but a check
+  errored or was skipped is filed as <em>N of M checks could not be verified</em>, never as all
+  passed — the same wording the Teams, Slack and email renderers now use.</li>
+<li><strong>One incident link, or none.</strong> The entry links to the incident only when the run opened or
+  touched exactly one; with several, the run page lists them all and the entry says nothing
+  that would read as "the incident".</li>
+<li><strong>Keyboard and screen reader.</strong> The bell's name carries the unread count; the feed is a
+  dialog whose entries are ordinary links and buttons; a rise in the count while the feed is
+  closed is announced.</li>
+</ul>
+<p>The feed is also readable over the API — <code>GET /notifications</code> (paged, <code>unread_only=</code>, with
+<code>X-Total-Count</code>), <code>GET /notifications/unread_count</code>, <code>POST /notifications/{id}/read</code> and
+<code>POST /notifications/read_all</code> — always for the caller's own entries only. Connection
+poll-health and pipeline-overdue signals go to the outbound channels only; they have no suite
+to scope a feed by.</p>
 <h2 id="per-suite-configuration">Per-suite configuration<a class="headerlink" href="#per-suite-configuration" title="Permanent link">¶</a></h2>
 <p>Open a suite → <strong>Notifications</strong> panel:</p>
 <ul>

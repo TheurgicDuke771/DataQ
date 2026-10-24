@@ -425,6 +425,18 @@ erDiagram
         string error
         int input_tokens "+ output_tokens, duration_ms - the cost record"
     }
+    notifications {
+        uuid id PK
+        uuid user_id FK "CASCADE — the recipient's own feed state dies with the recipient"
+        uuid suite_id FK "CASCADE — feed entries die with the suite, like its runs"
+        uuid run_id FK "SET NULL — the entry outlives the run; the API then withholds the link"
+        uuid incident_id FK "SET NULL"
+        string severity "pass / warn / fail / critical / error (the run's worst tier)"
+        string title
+        text body "built from the redacted RunReport — check names only, never an observed value"
+        string deep_link "/results/<run_id>"
+        timestamptz read_at "NULL = unread; per user"
+    }
     incidents {
         uuid id PK
         uuid asset_id FK "CASCADE (ADR 0034)"
@@ -494,6 +506,10 @@ erDiagram
     checks ||--o{ incidents : "anchored to (CASCADE)"
     suites ||--o{ incidents : "authz + routing (CASCADE)"
     incidents |o--o| incidents : "reopen chain — prior_incident_id (SET NULL)"
+    users ||--o{ notifications : "recipient (CASCADE)"
+    suites ||--o{ notifications : "scope (CASCADE)"
+    runs |o--o{ notifications : "deep-link anchor (SET NULL)"
+    incidents |o--o{ notifications : "deep-link anchor (SET NULL)"
 
     pipeline_runs ||..o{ runs : "triggered_by marker (no FK)"
     trigger_bindings }o..o{ pipeline_runs : "(provider, pipeline, env) match (no FK)"

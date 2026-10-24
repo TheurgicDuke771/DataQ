@@ -1512,7 +1512,8 @@ Day-to-day admission is the [Members](#members) tab.
 The **Data retention** card lists each retention clock with the variable that sets it and
 what the daily sweep removes when it runs out: failing-row samples and captured cell values
 inside stored results (`SAMPLE_FAILURES_RETENTION_DAYS`), audit events
-(`AUDIT_RETENTION_DAYS`), spent sign-in codes (`OTP_CODES_RETENTION_HOURS`) and asset rows
+(`AUDIT_RETENTION_DAYS`), spent sign-in codes (`OTP_CODES_RETENTION_HOURS`), in-app
+notification feed entries, read or not (`NOTIFICATIONS_RETENTION_DAYS`) and asset rows
 nothing references any more (`ASSET_ORPHAN_RETENTION_DAYS` — the one clock that deletes a
 catalog entry, so an asset that vanished from Assets is explained here). Run and
 result rows are never deleted by retention — only the samples inside them — so metric
@@ -3934,6 +3935,8 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 - **Channels** — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
   admin and linked per suite, with deep links + expected-vs-observed context.
+- **In-app feed** — a bell in the header with an unread count; every alert also lands in the
+  feed of each user who can see the suite, with read-acks and links to the run and incident.
 - **Threshold** — per suite: fail-only / warn-and-worse (default) / always.
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
@@ -4156,9 +4159,10 @@ The tools split three ways, not two:
 # Notifications & alerting
 
 DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, **email** and generic
-HMAC-signed **webhooks** — all
-behind one `ResultPublisher` seam, so every channel gets the same severity-aware
-behaviour. Alerts fire from the worker as soon as a run reaches a terminal state.
+HMAC-signed **webhooks**, and in the app itself through the **notification feed** behind
+the header bell — all behind one `ResultPublisher` seam, so every channel gets the same
+severity-aware behaviour. Alerts fire from the worker as soon as a run reaches a terminal
+state.
 
 ## Channels
 
@@ -4208,6 +4212,49 @@ lineage source behind that last fact is failing, the email says the list may be
 incomplete rather than presenting it as the full picture. The raw expected/observed detail
 engineers want stays underneath in small print. Numbers are rounded to two decimals
 everywhere, in Slack and Teams too.
+
+## In-app notification feed
+
+The bell in the app header is a destination like any other, with two differences: it needs no
+configuration, and it is scoped per person. When a run's outcome passes a suite's alert
+threshold, the same entry is written to the feed of **everyone who can see that suite** — its
+owner, each user it is shared with (at any level, including view-only), and the workspace
+admins. Someone with no access to a suite never sees its alerts; someone granted access later
+sees alerts from that point on, not the history.
+
+- **Badge and feed.** The bell's count is your unread entries, refreshed about once a minute
+  while the tab is visible. Open it for the feed, newest first: each entry names the suite,
+  how many checks breached and the worst tier (or that the run failed to execute), lists the
+  breaching checks by name, and links to the run — and, when an incident is open for it, to
+  the incident on its asset page.
+- **Read state is yours.** Mark an entry read from the feed, or follow its link (which marks
+  it read on the way); **Mark all read** clears the badge. Nobody else's badge changes, and an
+  admin cannot read or clear another person's feed.
+- **Same rules as the outbound channels.** The per-suite threshold, severity routing, dedup and
+  snooze below apply to the feed exactly as to Teams, Slack, email and webhooks. A suite with
+  alerting disabled writes nothing to anyone's feed.
+- **Only check names, never values.** Feed entries are built from the same redacted report the
+  other channels send and carry counts and check names only; no observed value or sample row
+  ever reaches the feed, whatever the suite's masking policy.
+- **An entry can outlive its run — but not the retention clock.** If the run it points at is
+  later deleted with its suite, the entry stays and says *Run no longer available* instead of
+  offering a dead link. Entries older than `NOTIFICATIONS_RETENTION_DAYS` (default 90) are
+  deleted by the daily sweep whether or not they were read; the runs and incidents remain.
+- **Checks that did not run are not "passed".** A run in which nothing breached but a check
+  errored or was skipped is filed as *N of M checks could not be verified*, never as all
+  passed — the same wording the Teams, Slack and email renderers now use.
+- **One incident link, or none.** The entry links to the incident only when the run opened or
+  touched exactly one; with several, the run page lists them all and the entry says nothing
+  that would read as "the incident".
+- **Keyboard and screen reader.** The bell's name carries the unread count; the feed is a
+  dialog whose entries are ordinary links and buttons; a rise in the count while the feed is
+  closed is announced.
+
+The feed is also readable over the API — `GET /notifications` (paged, `unread_only=`, with
+`X-Total-Count`), `GET /notifications/unread_count`, `POST /notifications/{id}/read` and
+`POST /notifications/read_all` — always for the caller's own entries only. Connection
+poll-health and pipeline-overdue signals go to the outbound channels only; they have no suite
+to scope a feed by.
 
 ## Per-suite configuration
 
@@ -5298,6 +5345,17 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Alerts now have an in-app home.** A bell in the header shows how many alerts you have not
+  read; its feed lists every run outcome the alerting layer published for a suite you can see,
+  newest first, each a link to the run and, when one is open, to the incident. Mark an entry
+  read, or all of them. Entries follow suite access (owner, people the suite is shared with,
+  workspace admins) and read state is yours alone; the same per-suite threshold, routing,
+  dedup and snooze rules apply as for Teams, Slack, email and webhooks. The feed is readable
+  over `GET /notifications`, `GET /notifications/unread_count`, `POST /notifications/{id}/read`
+  and `POST /notifications/read_all`. Entries are kept for `NOTIFICATIONS_RETENTION_DAYS`
+  (default 90). A run in which nothing breached but a check errored or was skipped now reads
+  *N of M checks could not be verified* on every channel — feed, Teams, Slack and email — where
+  it used to read as all passed.
 - **Run comparison.** From a run's page, **Compare with…** opens any other run of the same
   suite diffed check by check: each check's status on both sides and whether it regressed,
   improved, stayed the same or moved through `skip`/`error`; the metric delta, absolute and
@@ -8723,6 +8781,18 @@ erDiagram
         string error
         int input_tokens "+ output_tokens, duration_ms - the cost record"
     }
+    notifications {
+        uuid id PK
+        uuid user_id FK "CASCADE — the recipient's own feed state dies with the recipient"
+        uuid suite_id FK "CASCADE — feed entries die with the suite, like its runs"
+        uuid run_id FK "SET NULL — the entry outlives the run; the API then withholds the link"
+        uuid incident_id FK "SET NULL"
+        string severity "pass / warn / fail / critical / error (the run's worst tier)"
+        string title
+        text body "built from the redacted RunReport — check names only, never an observed value"
+        string deep_link "/results/<run_id>"
+        timestamptz read_at "NULL = unread; per user"
+    }
     incidents {
         uuid id PK
         uuid asset_id FK "CASCADE (ADR 0034)"
@@ -8792,6 +8862,10 @@ erDiagram
     checks ||--o{ incidents : "anchored to (CASCADE)"
     suites ||--o{ incidents : "authz + routing (CASCADE)"
     incidents |o--o| incidents : "reopen chain — prior_incident_id (SET NULL)"
+    users ||--o{ notifications : "recipient (CASCADE)"
+    suites ||--o{ notifications : "scope (CASCADE)"
+    runs |o--o{ notifications : "deep-link anchor (SET NULL)"
+    incidents |o--o{ notifications : "deep-link anchor (SET NULL)"
 
     pipeline_runs ||..o{ runs : "triggered_by marker (no FK)"
     trigger_bindings }o..o{ pipeline_runs : "(provider, pipeline, env) match (no FK)"
@@ -19745,7 +19819,7 @@ constraints are non-negotiable:
 | `connection_created` | a connection is saved | `type` |
 | `mcp_tool_called` | an MCP tool is called (a call naming no registered tool is not counted) | `tool` (a registered tool name), `outcome`: `ok` · `error` · `cancelled` |
 | `llm_feature_used` | an LLM feature is invoked | `feature`: `sql_generation` · `check_suggestion` · `rca_narrative` |
-| `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` |
+| `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` · `in_app` (the in-app feed; one event per run, not per recipient) |
 | `coverage_auto_check_created` | automatic coverage adds a check | `kind` |
 
 The authoritative list, with every allowed value, is the one the Admin settings page shows

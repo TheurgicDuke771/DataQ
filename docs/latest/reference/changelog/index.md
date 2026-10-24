@@ -87,6 +87,17 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Alerts now have an in-app home.** A bell in the header shows how many alerts you have not
+  read; its feed lists every run outcome the alerting layer published for a suite you can see,
+  newest first, each a link to the run and, when one is open, to the incident. Mark an entry
+  read, or all of them. Entries follow suite access (owner, people the suite is shared with,
+  workspace admins) and read state is yours alone; the same per-suite threshold, routing,
+  dedup and snooze rules apply as for Teams, Slack, email and webhooks. The feed is readable
+  over `GET /notifications`, `GET /notifications/unread_count`, `POST /notifications/{id}/read`
+  and `POST /notifications/read_all`. Entries are kept for `NOTIFICATIONS_RETENTION_DAYS`
+  (default 90). A run in which nothing breached but a check errored or was skipped now reads
+  *N of M checks could not be verified* on every channel — feed, Teams, Slack and email — where
+  it used to read as all passed.
 - **Run comparison.** From a run's page, **Compare with…** opens any other run of the same
   suite diffed check by check: each check's status on both sides and whether it regressed,
   improved, stayed the same or moved through `skip`/`error`; the metric delta, absolute and
