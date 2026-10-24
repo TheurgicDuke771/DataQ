@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **96** open repo-wide (2026-10-24, live re-count): Week 4 4, Week 5 6, Week 6 24, Week 7 27, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–3 are closed; Week 4 has shipped #1667 and #1686 (2026-10-24). |
-| **Open PRs** | **0 open** (2026-10-24), apart from the one carrying this update. |
+| **Open issues** | **94** open repo-wide (2026-10-25, live re-count): Week 4 1, Week 5 6, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–3 are closed; Week 4 has shipped #1667, #1686 (2026-10-24) and #1516/#1840, #1687, #888 (2026-10-25) — #244 (suite-on-suite triggers, ADR 0051) is the last item and is in review. |
+| **Open PRs** | **0 open** (2026-10-25) apart from the one carrying this update and the #244 PR. |
 
 ---
 
@@ -94,11 +94,11 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 
 | Status | Task |
 |---|---|
-| ⬜ | [#1687](https://github.com/TheurgicDuke771/DataQ/issues/1687) feat(ui): in-app notification center — bell/feed with read-ack + deep links |
+| ✅ | [#1687](https://github.com/TheurgicDuke771/DataQ/issues/1687) feat(ui): in-app notification center — bell/feed with read-ack + deep links — [PR #2538](https://github.com/TheurgicDuke771/DataQ/pull/2538), merged 2026-10-25 (`notifications` table + migration `c38847820d74`, in-app `ResultPublisher`, `/notifications` API, header bell + drawer, `NOTIFICATIONS_RETENTION_DAYS` purge; review also fixed the "all N checks passed" overclaim on errored/skipped checks across feed, Teams, Slack and email) |
 | ✅ | [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) feat(ui): global search / command palette (⌘K) — jump to any suite/check/connection/run by name — [PR #2525](https://github.com/TheurgicDuke771/DataQ/pull/2525), merged 2026-10-24 |
 | ✅ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) feat(results): run comparison — diff two runs of a suite — [PR #2527](https://github.com/TheurgicDuke771/DataQ/pull/2527) (`GET /runs/{id}/compare/{other}`, the compare page + "Compare with…" control; each side as the check was at that run via `check_versions`) |
-| ⬜ | [#888](https://github.com/TheurgicDuke771/DataQ/issues/888) feat: tagging for suites / assets / connections / checks (workspace labels + list filters) |
-| ⬜ | [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) feat(ui): Profile / Workspace-Settings IA pickup — replace the labelled placeholders (deferred-by-design) |
+| ✅ | [#888](https://github.com/TheurgicDuke771/DataQ/issues/888) feat: tagging for suites / assets / connections / checks (workspace labels + list filters) — [PR #2539](https://github.com/TheurgicDuke771/DataQ/pull/2539), merged 2026-10-25 (`tags` + four join tables, migration `e27cb7be87cd` chained after `c38847820d74`; `tag=` AND filters on `/suites` and `/assets`; `GET /tags` / `DELETE /tags/{id}`; chips, pickers and filters in the UI; a tagged asset pins against the orphan sweep; MCP reads and updates carry tags) |
+| ✅ | [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) feat(ui): Profile / Workspace-Settings IA pickup — replace the labelled placeholders — [PR #2535](https://github.com/TheurgicDuke771/DataQ/pull/2535), merged 2026-10-25 (also closes #1840; `GET /admin/workspace-config` read-only retention + sign-in readout with `sign_in_mode` / `idp_decides_signup`; Profile access summary; follow-up [#2537](https://github.com/TheurgicDuke771/DataQ/issues/2537) filed, Week 7) |
 | ⬜ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering (run a suite when another suite completes) |
 
 ### v1.3 Week 5 — integrations & governance (due 2026-11-08)
@@ -128,7 +128,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ⬜ | [#2133](https://github.com/TheurgicDuke771/DataQ/issues/2133) Redirect guard: an omitted field and its explicit default compare as 'moved' (Trino auth_type/sslmode) |
 | ⬜ | [#2068](https://github.com/TheurgicDuke771/DataQ/issues/2068) bug (latent): RunDetail does not refetch when :runId changes on the same mounted instance |
 | ⬜ | [#1824](https://github.com/TheurgicDuke771/DataQ/issues/1824) otp: a broker outage on the code-request path burns the caller's per-email quota with no email sent |
-| ⬜ | [#1840](https://github.com/TheurgicDuke771/DataQ/issues/1840) Settings → Notifications tab says a workspace-wide default channel is 'a post-v1 follow-up', but workspace channels exist |
+| ✅ | [#1840](https://github.com/TheurgicDuke771/DataQ/issues/1840) Settings → Notifications tab says a workspace-wide default channel is 'a post-v1 follow-up', but workspace channels exist — fixed with #1516 in [PR #2535](https://github.com/TheurgicDuke771/DataQ/pull/2535) |
 | ⬜ | [#2311](https://github.com/TheurgicDuke771/DataQ/issues/2311) security(adf): enforce webhook replay/freshness on ADF alerts (firedDateTime) |
 | ⬜ | [#2392](https://github.com/TheurgicDuke771/DataQ/issues/2392) Docs workflow: a release tag's Pages deploy omits the version it just published, and one stuck deploy blocked every publish for four days |
 | ⬜ | [#2136](https://github.com/TheurgicDuke771/DataQ/issues/2136) Flaky test: test_revoke_all_for_user_is_attributed_to_the_actor orders audit events by a tied timestamp |
