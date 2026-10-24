@@ -34,6 +34,7 @@ import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
 import { SHELL } from './theme';
 import { PageTitle } from './components/shared/PageTitle';
+import { DOCS_URL } from './utils/docs';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
@@ -84,9 +85,8 @@ const NAV_ITEMS = [
 const ADMIN_FOOTER_ITEMS = [
   { key: '/admin', icon: <SafetyOutlined />, label: <Link to="/admin">Admin</Link> },
 ];
-// Published docs site (MkDocs Material → GitHub Pages). External link, opens in
-// a new tab; never a "selected" nav key since it leaves the app.
-const DOCS_URL = 'https://theurgicduke771.github.io/DataQ/docs/latest/';
+// Published docs site. External link, opens in a new tab; never a "selected" nav key since it
+// leaves the app.
 const DOC_ITEM = {
   key: 'documentation',
   icon: <ReadOutlined />,

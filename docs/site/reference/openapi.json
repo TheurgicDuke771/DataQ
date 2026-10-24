@@ -9088,6 +9088,39 @@
         "title": "ResultRead",
         "type": "object"
       },
+      "RetentionSettingRead": {
+        "description": "One retention clock, as the deployment configured it.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "hours"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "value",
+          "unit",
+          "detail"
+        ],
+        "title": "RetentionSettingRead",
+        "type": "object"
+      },
       "RunComparisonRead": {
         "description": "Two runs of one suite diffed check by check: `base` is the run in the path,\n`target` the other. Rows are ordered by label.",
         "properties": {
@@ -10761,6 +10794,51 @@
           "permission"
         ],
         "title": "ShareUpdate",
+        "type": "object"
+      },
+      "SignupAllowlistRead": {
+        "description": "One deployment allowlist, as configured \u2014 identifiers only, never a secret.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "grants": {
+            "enum": [
+              "sign_in",
+              "sign_in_and_admin_role"
+            ],
+            "title": "Grants",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "emails",
+              "domains"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "kind",
+          "values",
+          "active",
+          "grants"
+        ],
+        "title": "SignupAllowlistRead",
         "type": "object"
       },
       "SourceConnectionRef": {
@@ -12501,6 +12579,71 @@
           "inbound_url"
         ],
         "title": "WebhookRegenerateResponse",
+        "type": "object"
+      },
+      "WorkspaceConfigRead": {
+        "description": "Deployment-set values an admin can read in the app but only change by\nediting the deployment's configuration and restarting.",
+        "properties": {
+          "dev_bypass_active": {
+            "title": "Dev Bypass Active",
+            "type": "boolean"
+          },
+          "idp_decides_signup": {
+            "title": "Idp Decides Signup",
+            "type": "boolean"
+          },
+          "oidc_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
+            "title": "Oidc Default Role",
+            "type": "string"
+          },
+          "otp_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
+            "title": "Otp Default Role",
+            "type": "string"
+          },
+          "retention": {
+            "items": {
+              "$ref": "#/components/schemas/RetentionSettingRead"
+            },
+            "title": "Retention",
+            "type": "array"
+          },
+          "sign_in_mode": {
+            "enum": [
+              "azure_ad",
+              "oidc",
+              "otp",
+              "dev_bypass",
+              "none"
+            ],
+            "title": "Sign In Mode",
+            "type": "string"
+          },
+          "signup_allowlists": {
+            "items": {
+              "$ref": "#/components/schemas/SignupAllowlistRead"
+            },
+            "title": "Signup Allowlists",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retention",
+          "signup_allowlists",
+          "oidc_default_role",
+          "otp_default_role",
+          "sign_in_mode",
+          "idp_decides_signup",
+          "dev_bypass_active"
+        ],
+        "title": "WorkspaceConfigRead",
         "type": "object"
       }
     }
@@ -14317,6 +14460,28 @@
           }
         },
         "summary": "Change a user's workspace role (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/workspace-config": {
+      "get": {
+        "description": "Read-only: these values come from the environment, not the database.",
+        "operationId": "get_workspace_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceConfigRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retention clocks and sign-in allowlists as deployed (workspace-admin only)",
         "tags": [
           "admin"
         ]

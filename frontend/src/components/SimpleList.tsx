@@ -18,6 +18,8 @@ export interface SimpleListProps<T> {
   size?: ListSize;
   className?: string;
   style?: CSSProperties;
+  /** Accessible name of the list, when no visible heading labels it. */
+  'aria-label'?: string;
 }
 
 function SimpleListRoot<T>({
@@ -27,6 +29,7 @@ function SimpleListRoot<T>({
   size = 'default',
   className,
   style,
+  'aria-label': ariaLabel,
 }: SimpleListProps<T>) {
   const { token } = theme.useToken();
 
@@ -38,7 +41,7 @@ function SimpleListRoot<T>({
 
   return (
     <SizeContext.Provider value={size}>
-      <div className={className} style={style} role="list">
+      <div className={className} style={style} role="list" aria-label={ariaLabel}>
         {dataSource.map((item, index) => (
           <div
             key={keyFor(item, index)}

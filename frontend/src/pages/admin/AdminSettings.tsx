@@ -10,10 +10,13 @@ import { CoveragePanel } from './CoveragePanel';
 import { PrivacyPanel } from './PrivacyPanel';
 import { ScoringPanel } from './ScoringPanel';
 import { TelemetryPanel } from './TelemetryPanel';
+import { WorkspaceConfigPanels } from './WorkspaceConfigPanels';
+import { docsUrl } from '../../utils/docs';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 
 /** Workspace settings: general facts + SMTP pre-flight, notification channels, LLM provider,
- *  the privacy, scoring, automatic-coverage and usage-telemetry settings, the secret-store notice and the danger zone. */
+ *  the privacy, scoring, automatic-coverage and usage-telemetry settings, the read-only sign-in
+ *  and retention configuration, the secret-store notice and where destructive actions live. */
 export function AdminSettings() {
   return (
     <Flex vertical gap={16}>
@@ -21,11 +24,12 @@ export function AdminSettings() {
       <NotificationsCard />
       <LlmSettingsPanel />
       <PrivacyPanel />
+      <WorkspaceConfigPanels />
       <ScoringPanel />
       <CoveragePanel />
       <TelemetryPanel />
       <SecretsCard />
-      <DangerCard />
+      <DestructiveActionsCard />
     </Flex>
   );
 }
@@ -114,13 +118,28 @@ function NotificationsCard() {
       <Alert
         type="info"
         showIcon
-        title="Alerts are configured per suite"
+        title="Channels here, thresholds per suite, workspace defaults in the deployment"
         description={
           <span>
-            Destinations are defined once here as channels; each suite then picks which of them it
-            alerts through and at what threshold (fail / warn / always), falling back to the
-            workspace-wide default configured for the deployment when a suite links none. Open a
-            suite from <Link to="/suites">Suites</Link> to set its threshold and link channels.
+            Destinations are defined once below as channels; each suite then picks which of them it
+            alerts through and at what threshold (fail / warn / always) — open a suite from{' '}
+            <Link to="/suites" className="dq-text-link">
+              Suites
+            </Link>{' '}
+            to do that. Workspace-wide default destinations are set by the deployment&apos;s
+            configuration (<Typography.Text code>TEAMS_WEBHOOK_SECRET_NAME</Typography.Text>,{' '}
+            <Typography.Text code>SLACK_WEBHOOK_SECRET_NAME</Typography.Text>,{' '}
+            <Typography.Text code>EMAIL_*</Typography.Text>), not here; every suite alerts through
+            them in addition to its linked channels. See the{' '}
+            <a
+              href={docsUrl('guides/notifications/#channels')}
+              target="_blank"
+              rel="noreferrer"
+              className="dq-text-link"
+            >
+              notifications guide
+            </a>{' '}
+            for the variables.
           </span>
         }
       />
@@ -140,13 +159,49 @@ function SecretsCard() {
   );
 }
 
-function DangerCard() {
+/** Nothing destroys the workspace as a whole — it is the deployment — so each destructive action
+ *  sits next to the thing it destroys. This card says where. */
+function DestructiveActionsCard() {
   return (
-    <Alert
-      type="warning"
-      showIcon
-      title="No destructive workspace actions in v1"
-      description="Workspace-level danger-zone actions (transfer ownership, purge run history, delete workspace) aren't available yet. Per-entity delete lives on each connection / suite."
-    />
+    <Card title="Destructive actions" size="small">
+      <Flex vertical gap={8}>
+        <Typography.Text type="secondary">
+          There is no workspace-level delete: the workspace is the deployment itself. Each
+          destructive action lives next to what it removes, and every one is audited.
+        </Typography.Text>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li>
+            <Link to="/admin/suites" className="dq-text-link">
+              Suites (admin)
+            </Link>{' '}
+            — delete any suite, with its runs and results, or transfer its ownership.
+          </li>
+          <li>
+            <Link to="/connections" className="dq-text-link">
+              Connections
+            </Link>{' '}
+            — delete a connection once no suite depends on it; rotate its credential with
+            Re-authenticate.
+          </li>
+          <li>
+            <Link to="/admin/members" className="dq-text-link">
+              Members
+            </Link>{' '}
+            — remove or offboard a member; their keys and sessions stop working on their next
+            request.
+          </li>
+          <li>
+            <Link to="/admin/compliance" className="dq-text-link">
+              Compliance
+            </Link>{' '}
+            — erase one person&apos;s values from stored results and incident evidence.
+          </li>
+          <li>
+            Run history is never purged by hand: the retention clocks above remove failing-row
+            samples on schedule and keep the rows.
+          </li>
+        </ul>
+      </Flex>
+    </Card>
   );
 }

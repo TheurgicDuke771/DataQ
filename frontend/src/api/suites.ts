@@ -100,8 +100,11 @@ export interface SuiteUpdate {
   target?: RunTarget | null;
 }
 
-export async function listSuites(params?: { connection_id?: string }): Promise<Suite[]> {
-  const { data } = await api.get<Suite[]>('/suites', { params });
+export async function listSuites(
+  params?: { connection_id?: string },
+  signal?: AbortSignal,
+): Promise<Suite[]> {
+  const { data } = await api.get<Suite[]>('/suites', { params, signal });
   return data;
 }
 

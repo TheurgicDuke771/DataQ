@@ -886,6 +886,147 @@ def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainSta
     )
 
 
+# ──────────────── workspace configuration readout (#1516) ───────────────────
+
+
+class RetentionSettingRead(ApiModel):
+    """One retention clock, as the deployment configured it."""
+
+    #: The environment variable that sets it.
+    variable: str
+    value: int
+    unit: Literal["days", "hours"]
+    #: What the sweep removes once the clock runs out.
+    detail: str
+
+
+class SignupAllowlistRead(ApiModel):
+    """One deployment allowlist, as configured — identifiers only, never a secret."""
+
+    variable: str
+    kind: Literal["emails", "domains"]
+    values: list[str]
+    #: Whether this deployment signs people in through the mode that reads this list. False
+    #: means the mode is not in use, so the values are shown but inert. True with an empty
+    #: list on an OIDC deployment is the open posture `idp_decides_signup` names.
+    active: bool
+    #: `sign_in` admits the address; `sign_in_and_admin_role` admits it AND grants Admin
+    #: regardless of the stored role (`WORKSPACE_ADMIN_EMAILS` does both — ADR 0033 decision 6).
+    grants: Literal["sign_in", "sign_in_and_admin_role"]
+
+
+class WorkspaceConfigRead(ApiModel):
+    """Deployment-set values an admin can read in the app but only change by
+    editing the deployment's configuration and restarting.
+    """
+
+    retention: list[RetentionSettingRead]
+    signup_allowlists: list[SignupAllowlistRead]
+    #: Role a user provisioned at first sign-in lands on, per mode (ADR 0033 decision 8).
+    oidc_default_role: Literal["member", "viewer"]
+    otp_default_role: Literal["member", "viewer"]
+    #: The authenticator this deployment signs people in with (ADR 0032 ladder).
+    sign_in_mode: Literal["azure_ad", "oidc", "otp", "dev_bypass", "none"]
+    #: True when the identity provider alone decides who may sign in: Azure AD (the tenant is
+    #: the gate, there is no app-side allowlist) or generic OIDC with no `OIDC_ALLOWED_*` set
+    #: (the open-pool posture #1386 fixed). An admin must see this, not infer it from empty rows.
+    idp_decides_signup: bool
+    #: True on a local stack signing in through the developer bypass: no allowlist gates it.
+    dev_bypass_active: bool
+
+
+def _sign_in_mode(s: Settings) -> Literal["azure_ad", "oidc", "otp", "dev_bypass", "none"]:
+    if s.azure_auth_configured:
+        return "azure_ad"
+    if s.generic_oidc_configured:
+        return "oidc"
+    if s.otp_auth_configured:
+        return "otp"
+    if s.dev_bypass_active:
+        return "dev_bypass"
+    return "none"
+
+
+@router.get(
+    "/workspace-config",
+    response_model=WorkspaceConfigRead,
+    summary="Retention clocks and sign-in allowlists as deployed (workspace-admin only)",
+)
+def get_workspace_config() -> WorkspaceConfigRead:
+    """Read-only: these values come from the environment, not the database."""
+    settings = get_settings()
+    active_vars: set[str] = set()
+    if settings.generic_oidc_configured:
+        active_vars |= {"OIDC_ALLOWED_EMAILS", "OIDC_ALLOWED_DOMAINS"}
+    if settings.otp_auth_configured:
+        active_vars |= {"AUTH_OTP_ALLOWED_EMAILS", "AUTH_OTP_ALLOWED_DOMAINS"}
+
+    def _allowlist(
+        variable: str, kind: Literal["emails", "domains"], values: frozenset[str]
+    ) -> SignupAllowlistRead:
+        return SignupAllowlistRead(
+            variable=variable,
+            kind=kind,
+            values=sorted(values),
+            active=variable in active_vars,
+            grants="sign_in",
+        )
+
+    return WorkspaceConfigRead(
+        retention=[
+            RetentionSettingRead(
+                variable="SAMPLE_FAILURES_RETENTION_DAYS",
+                value=settings.sample_failures_retention_days,
+                unit="days",
+                detail=(
+                    "Failing-row samples and captured cell values are removed from stored "
+                    "results; the result row and its metric value stay."
+                ),
+            ),
+            RetentionSettingRead(
+                variable="AUDIT_RETENTION_DAYS",
+                value=settings.audit_retention_days,
+                unit="days",
+                detail="Audit events older than this are deleted by the daily sweep.",
+            ),
+            RetentionSettingRead(
+                variable="OTP_CODES_RETENTION_HOURS",
+                value=settings.otp_codes_retention_hours,
+                unit="hours",
+                detail="Spent and expired sign-in codes are deleted.",
+            ),
+            RetentionSettingRead(
+                variable="ASSET_ORPHAN_RETENTION_DAYS",
+                value=settings.asset_orphan_retention_days,
+                unit="days",
+                detail=(
+                    "Asset rows no suite, run or lineage edge references any more are deleted "
+                    "once they have been unreferenced this long."
+                ),
+            ),
+        ],
+        signup_allowlists=[
+            _allowlist("OIDC_ALLOWED_EMAILS", "emails", settings.oidc_allowed_email_set),
+            _allowlist("OIDC_ALLOWED_DOMAINS", "domains", settings.oidc_allowed_domain_set),
+            _allowlist("AUTH_OTP_ALLOWED_EMAILS", "emails", settings.auth_otp_allowed_email_set),
+            _allowlist("AUTH_OTP_ALLOWED_DOMAINS", "domains", settings.auth_otp_allowed_domain_set),
+            SignupAllowlistRead(
+                variable="WORKSPACE_ADMIN_EMAILS",
+                kind="emails",
+                values=sorted(settings.workspace_admin_email_set),
+                active=True,
+                grants="sign_in_and_admin_role",
+            ),
+        ],
+        oidc_default_role=settings.auth_oidc_default_role,
+        otp_default_role=settings.auth_otp_default_role,
+        sign_in_mode=_sign_in_mode(settings),
+        idp_decides_signup=settings.azure_auth_configured
+        or (settings.generic_oidc_configured and not settings.oidc_allowlist_configured),
+        dev_bypass_active=settings.dev_bypass_active,
+    )
+
+
 # ───────────────────── deployment posture (G4 / #434) ──────────────────────
 
 

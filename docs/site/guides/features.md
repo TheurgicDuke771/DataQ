@@ -257,6 +257,9 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
   authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).
 - **Suite sharing** — per-suite view / edit grants, capped by workspace role (below).
+- **Profile** — your identity (the display name is editable), your effective role in plain
+  words, your suites counted by access level, the suites you own as links, and your
+  [API keys](api-keys.md). A Viewer sees the same page read-only.
 - **Workspace roles — Admin / Member / Viewer** — a stored, in-app-managed role per user
   (ADR 0033), not just an env allowlist. Admin has workspace-wide visibility over every
   suite/result/schedule and is the only role that can create, edit, delete, re-auth, or

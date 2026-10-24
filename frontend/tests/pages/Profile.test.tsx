@@ -1,10 +1,11 @@
 import { App as AntApp } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MeResponse } from '../../src/api/me';
+import { listSuites, type Suite } from '../../src/api/suites';
 import { authMethodLabel } from '../../src/auth/config';
 import { MeContext } from '../../src/auth/meContext';
 import { useSaveDisplayName } from '../../src/auth/useSaveDisplayName';
@@ -20,6 +21,30 @@ vi.mock('../../src/api/apiKeys', () => ({
   PAT_DEFAULT_EXPIRY_DAYS: 90,
   PAT_MAX_EXPIRY_DAYS: 365,
 }));
+
+// The access summary + owned-suites list read the caller-scoped suite list.
+vi.mock('../../src/api/suites', () => ({ listSuites: vi.fn() }));
+const mockListSuites = vi.mocked(listSuites);
+
+function suite(id: string, name: string, my_permission: Suite['my_permission']): Suite {
+  return {
+    id,
+    name,
+    description: id === 's-owned-2' ? 'Nightly orders checks' : null,
+    connection_id: 'c-1',
+    target: null,
+    created_by: 'u-1',
+    my_permission,
+  };
+}
+
+const SUITES: Suite[] = [
+  suite('s-owned-2', 'Zulu orders', 'owner'),
+  suite('s-owned-1', 'Alpha customers', 'owner'),
+  suite('s-edit', 'Shared edit', 'edit'),
+  suite('s-view-1', 'Shared view 1', 'view'),
+  suite('s-view-2', 'Shared view 2', 'view'),
+];
 
 // The name-edit affordance (#1139) goes through the shared save hook; stubbed here so this file can
 // assert the interaction without a real PATCH.
@@ -42,6 +67,8 @@ const me: AsyncState<MeResponse> = {
 beforeEach(() => {
   saveDisplayName.mockReset();
   vi.mocked(useSaveDisplayName).mockReturnValue(saveDisplayName);
+  mockListSuites.mockReset();
+  mockListSuites.mockResolvedValue(SUITES);
 });
 
 function renderProfile(state: AsyncState<MeResponse>) {
@@ -70,9 +97,84 @@ describe('Profile', () => {
     expect(screen.getAllByText('Member').length).toBeGreaterThan(0);
   });
 
-  it('tags a workspace admin', () => {
-    renderProfile({ ...me, data: { ...me.data, is_workspace_admin: true } });
+  it('tags a workspace admin from the effective role the server resolved', () => {
+    // `role` is the effective role (a break-glass allowlist admin reads `admin`); the page must
+    // not re-derive it from `is_workspace_admin`.
+    renderProfile({ ...me, data: { ...me.data, role: 'admin', is_workspace_admin: true } });
     expect(screen.getAllByText('Workspace admin').length).toBeGreaterThan(0);
+  });
+
+  it('labels a viewer as read-only, never as a member', () => {
+    renderProfile({ ...me, data: { ...me.data, role: 'viewer' } });
+    expect(screen.getAllByText('Viewer').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Member')).toBeNull();
+    expect(
+      screen.getByText(/Read-only: you can open the suites shared with you/),
+    ).toBeInTheDocument();
+  });
+
+  describe('your access and your suites', () => {
+    it('lists the suites the caller owns, alphabetically, as links to each suite', async () => {
+      renderProfile(me);
+      const list = await screen.findByRole('list', { name: 'Suites you own' });
+      const links = within(list).getAllByRole('link');
+      expect(links.map((l) => l.textContent)).toEqual(['Alpha customers', 'Zulu orders']);
+      expect(links[1]).toHaveAttribute('href', '/suites/s-owned-2');
+      expect(screen.getByText('Nightly orders checks')).toBeInTheDocument();
+      // Shared suites are not "yours".
+      expect(within(list).queryByText('Shared edit')).toBeNull();
+    });
+
+    it("counts the caller's suites by access level", async () => {
+      renderProfile(me);
+      await screen.findByRole('list', { name: 'Suites you own' });
+      const summary = screen.getByLabelText('Suites by access level');
+      const row = (label: string) =>
+        within(summary).getByText(label).closest('.ant-descriptions-item')?.textContent;
+      expect(row('Owned by you')).toMatch(/2$/);
+      expect(row('Shared with you as admin')).toMatch(/0$/);
+      expect(row('Shared with you to edit')).toMatch(/1$/);
+      expect(row('Shared with you to view')).toMatch(/2$/);
+    });
+
+    it('explains an empty owned list instead of showing nothing', async () => {
+      mockListSuites.mockResolvedValue(SUITES.filter((s) => s.my_permission !== 'owner'));
+      renderProfile(me);
+      expect(await screen.findByText(/You don't own any suites/)).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: 'Suites you own' })).toBeNull();
+    });
+
+    it('never shows an admin per-share counts, since every suite reads as admin for them', async () => {
+      // GET /suites stamps every non-owned suite `admin` for a workspace admin (ADR 0033), so a
+      // "Shared with you as admin" row would count suites nobody shared.
+      mockListSuites.mockResolvedValue(
+        SUITES.map((s) => (s.my_permission === 'owner' ? s : { ...s, my_permission: 'admin' })),
+      );
+      renderProfile({ ...me, data: { ...me.data, role: 'admin', is_workspace_admin: true } });
+      const summary = await screen.findByLabelText('Suites by access level');
+      const row = (label: string) =>
+        within(summary).getByText(label).closest('.ant-descriptions-item')?.textContent;
+      expect(row('Owned by you')).toMatch(/2$/);
+      expect(row('All other suites in the workspace')).toMatch(/3$/);
+      expect(within(summary).queryByText('Shared with you as admin')).toBeNull();
+      expect(
+        screen.getByText(/you can act on every suite whether or not it was shared with you/),
+      ).toBeInTheDocument();
+    });
+
+    it('does not fetch suites until /me has resolved', () => {
+      renderProfile({ status: 'loading' });
+      expect(mockListSuites).not.toHaveBeenCalled();
+    });
+
+    it('shows the failure with a retry when the suite list cannot load', async () => {
+      mockListSuites.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(SUITES);
+      renderProfile(me);
+      expect(await screen.findByText('Could not load your suites')).toBeInTheDocument();
+      expect(screen.getByText('Could not load your suite access')).toBeInTheDocument();
+      // The identity card and API keys are unaffected by a suites outage.
+      expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    });
   });
 
   it('shows an error state when /me fails', () => {

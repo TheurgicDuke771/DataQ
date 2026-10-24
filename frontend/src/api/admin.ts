@@ -709,3 +709,57 @@ export async function resetScoringWeights(): Promise<ScoringWeights> {
   const { data } = await api.delete<ScoringWeights>('/admin/scoring');
   return data;
 }
+
+/** One retention clock, as the deployment configured it. */
+export interface RetentionSetting {
+  /** The environment variable that sets it. */
+  variable: string;
+  value: number;
+  unit: 'days' | 'hours';
+  /** What the sweep removes once the clock runs out. */
+  detail: string;
+}
+
+/** One deployment allowlist, as configured — identifiers only, never a secret. */
+export interface SignupAllowlist {
+  variable: string;
+  kind: 'emails' | 'domains';
+  values: string[];
+  /**
+   * Whether this deployment signs people in through the mode that reads this list. False means
+   * the mode is not in use, so the values are shown but inert. True with an empty list on an OIDC
+   * deployment is the open posture `idp_decides_signup` names.
+   */
+  active: boolean;
+  /**
+   * `sign_in` admits the address; `sign_in_and_admin_role` admits it AND grants Admin regardless
+   * of the stored role (`WORKSPACE_ADMIN_EMAILS` does both — ADR 0033 decision 6).
+   */
+  grants: 'sign_in' | 'sign_in_and_admin_role';
+}
+
+/** The authenticator this deployment signs people in with (ADR 0032 ladder). */
+export type SignInMode = 'azure_ad' | 'oidc' | 'otp' | 'dev_bypass' | 'none';
+
+/** Deployment-set values readable in the app but changed only in the deployment configuration. */
+export interface WorkspaceConfig {
+  retention: RetentionSetting[];
+  signup_allowlists: SignupAllowlist[];
+  /** Role a user provisioned at first sign-in lands on, per mode (ADR 0033 decision 8). */
+  oidc_default_role: 'member' | 'viewer';
+  otp_default_role: 'member' | 'viewer';
+  sign_in_mode: SignInMode;
+  /**
+   * True when the identity provider alone decides who may sign in: Azure AD (the tenant is the
+   * gate) or generic OIDC with no `OIDC_ALLOWED_*` set — the open pool #1386 fixed. Shown
+   * explicitly; an admin must never have to infer it from empty rows.
+   */
+  idp_decides_signup: boolean;
+  /** True on a local stack signing in through the developer bypass: no allowlist gates it. */
+  dev_bypass_active: boolean;
+}
+
+export async function getWorkspaceConfig(signal?: AbortSignal): Promise<WorkspaceConfig> {
+  const { data } = await api.get<WorkspaceConfig>('/admin/workspace-config', { signal });
+  return data;
+}
