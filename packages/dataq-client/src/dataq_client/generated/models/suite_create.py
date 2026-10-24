@@ -23,12 +23,15 @@ class SuiteCreate:
         connection_id (UUID):
         name (str):
         description (None | str | Unset):
+        tags (list[str] | None | Unset): Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a
+            new name creates the tag; `[]` clears them. Omit to leave the tags as they are.
         target (None | SuiteTarget | Unset):
     """
 
     connection_id: UUID
     name: str
     description: None | str | Unset = UNSET
+    tags: list[str] | None | Unset = UNSET
     target: None | SuiteTarget | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -43,6 +46,15 @@ class SuiteCreate:
             description = UNSET
         else:
             description = self.description
+
+        tags: list[str] | None | Unset
+        if isinstance(self.tags, Unset):
+            tags = UNSET
+        elif isinstance(self.tags, list):
+            tags = self.tags
+
+        else:
+            tags = self.tags
 
         target: dict[str, Any] | None | Unset
         if isinstance(self.target, Unset):
@@ -62,6 +74,8 @@ class SuiteCreate:
         )
         if description is not UNSET:
             field_dict["description"] = description
+        if tags is not UNSET:
+            field_dict["tags"] = tags
         if target is not UNSET:
             field_dict["target"] = target
 
@@ -85,6 +99,23 @@ class SuiteCreate:
 
         description = _parse_description(d.pop("description", UNSET))
 
+        def _parse_tags(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                tags_type_0 = cast(list[str], data)
+
+                return tags_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        tags = _parse_tags(d.pop("tags", UNSET))
+
         def _parse_target(data: object) -> None | SuiteTarget | Unset:
             if data is None:
                 return data
@@ -106,6 +137,7 @@ class SuiteCreate:
             connection_id=connection_id,
             name=name,
             description=description,
+            tags=tags,
             target=target,
         )
 

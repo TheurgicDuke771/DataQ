@@ -27,6 +27,8 @@ import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { RowLink } from '../components/shared/RowLink';
+import { TagChips } from '../components/shared/TagChips';
+import { TagFilter } from '../components/shared/TagFilter';
 
 /**
  * Assets list (`/assets`, ADR 0034 gap G-d phase 2, #760; hierarchical browse #802; server-side
@@ -39,6 +41,13 @@ export function Assets() {
   // The completed tree walk (#1107), held by the parent so it survives the tree view
   // unmounting/remounting on every Segmented toggle.
   const treeCache = useRef<AssetListPage | null>(null);
+  // Server-side AND filter, shared by both views; a cached tree walk describes the previous
+  // filter, so it is dropped with the change.
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const onTagFilterChange = (next: string[]) => {
+    treeCache.current = null;
+    setTagFilter(next);
+  };
 
   return (
     <Page>
@@ -50,19 +59,27 @@ export function Assets() {
         the asset.
       </Typography.Paragraph>
       <Flex vertical gap={16} align="stretch">
-        <Segmented<'tree' | 'table'>
-          value={view}
-          onChange={setView}
-          style={{ alignSelf: 'flex-start' }}
-          options={[
-            { label: 'By source', value: 'tree' },
-            { label: 'All assets', value: 'table' },
-          ]}
-        />
+        <Flex gap={16} align="flex-end" wrap>
+          <Segmented<'tree' | 'table'>
+            value={view}
+            onChange={setView}
+            style={{ alignSelf: 'flex-end' }}
+            options={[
+              { label: 'By source', value: 'tree' },
+              { label: 'All assets', value: 'table' },
+            ]}
+          />
+          <TagFilter value={tagFilter} onChange={onTagFilterChange} />
+        </Flex>
         {view === 'tree' ? (
-          <AssetsTreeView onOpen={onOpen} cacheRef={treeCache} />
+          <AssetsTreeView
+            key={tagFilter.join('\u0000')}
+            onOpen={onOpen}
+            cacheRef={treeCache}
+            tags={tagFilter}
+          />
         ) : (
-          <AssetsTableView onOpen={onOpen} />
+          <AssetsTableView key={tagFilter.join('\u0000')} onOpen={onOpen} tags={tagFilter} />
         )}
       </Flex>
     </Page>
@@ -90,7 +107,10 @@ const TREE_PAGE_SIZE = 200;
  * Walk `/assets` pages until every asset is fetched, `TREE_HARD_BOUND` is hit, or the server stops
  * returning rows — whichever comes first.
  */
-async function fetchAllAssetsForTree(signal: AbortSignal): Promise<AssetListPage> {
+async function fetchAllAssetsForTree(
+  signal: AbortSignal,
+  tags: string[] = [],
+): Promise<AssetListPage> {
   // Offset paging over a live population races concurrent writes (review finding): a delete below
   // the cursor shifts later rows down (one is skipped), an insert shifts them up (one repeats).
   const byId = new Map<string, AssetSummary>();
@@ -98,7 +118,10 @@ async function fetchAllAssetsForTree(signal: AbortSignal): Promise<AssetListPage
   let offset = 0;
   while (byId.size < TREE_HARD_BOUND) {
     if (signal.aborted) break;
-    const page = await listAssets({ limit: TREE_PAGE_SIZE, offset }, signal);
+    const page = await listAssets(
+      { limit: TREE_PAGE_SIZE, offset, ...(tags.length > 0 ? { tag: tags } : {}) },
+      signal,
+    );
     total = total ?? page.total;
     for (const item of page.items) byId.set(item.id, item);
     if (page.items.length === 0) break;
@@ -114,16 +137,19 @@ async function fetchAllAssetsForTree(signal: AbortSignal): Promise<AssetListPage
 function AssetsTreeView({
   onOpen,
   cacheRef,
+  tags = [],
 }: {
   onOpen: (id: string) => void;
   /** Held by the parent (`Assets`) — see its comment. */
   cacheRef: RefObject<AssetListPage | null>;
+  /** Active tag filter (AND); the parent remounts this view when it changes. */
+  tags?: string[];
 }) {
   const { state, reload } = useAsyncData<AssetListPage>((signal) => {
     // A complete walk from an earlier mount of this view (a prior toggle to "By source" in this
     // same page visit) is still good.
     if (cacheRef.current) return Promise.resolve(cacheRef.current);
-    return fetchAllAssetsForTree(signal).then((data) => {
+    return fetchAllAssetsForTree(signal, tags).then((data) => {
       cacheRef.current = data;
       return data;
     });
@@ -164,13 +190,28 @@ function AssetsTreeView({
 
 const TABLE_PAGE_SIZE = 50;
 
-function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
+function AssetsTableView({
+  onOpen,
+  tags = [],
+}: {
+  onOpen: (id: string) => void;
+  /** Active tag filter (AND); the parent remounts this view when it changes. */
+  tags?: string[];
+}) {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<AssetSort>('name');
   // Forward the abort signal (#1107 review) so switching pages quickly — or toggling away from the
   // table entirely — cancels the superseded request at the network layer.
   const { state, reload } = useAsyncData((signal) =>
-    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE, sort }, signal),
+    listAssets(
+      {
+        limit: TABLE_PAGE_SIZE,
+        offset: (page - 1) * TABLE_PAGE_SIZE,
+        sort,
+        ...(tags.length > 0 ? { tag: tags } : {}),
+      },
+      signal,
+    ),
   );
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the fetcher
   // identity — see its doc), so a page change must bump it explicitly.
@@ -195,7 +236,14 @@ function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
     >
       {({ items, total }) =>
         total === 0 ? (
-          EMPTY
+          tags.length > 0 ? (
+            <EmptyState
+              title="No assets carry all of those tags"
+              description="Clear a tag from the filter to widen the list."
+            />
+          ) : (
+            EMPTY
+          )
         ) : (
           <Flex vertical gap={12}>
             <Flex align="center" gap={8}>
@@ -350,6 +398,17 @@ function AssetsTable({
       width: 90,
       render: (env: string | null) =>
         env ? <Tag>{env}</Tag> : <Typography.Text type="secondary">—</Typography.Text>,
+    },
+    {
+      title: 'Tags',
+      dataIndex: 'tags',
+      width: 220,
+      render: (tags: string[] | undefined, asset) =>
+        tags && tags.length > 0 ? (
+          <TagChips tags={tags} label={`${asset.name} tags`} size="small" />
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
     },
     {
       title: 'Suites',

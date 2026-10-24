@@ -37,6 +37,7 @@ import {
   targetSampling,
 } from './suiteTarget';
 import { CatalogBrowserButton, FileBrowserButton } from './DatasourceBrowser';
+import { TagPicker } from '../shared/TagPicker';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError, detailNames } from '../../utils/fieldErrors';
@@ -45,6 +46,7 @@ interface SuiteFormValues extends TargetFormValues {
   name: string;
   description?: string;
   connection_id: string;
+  tags?: string[];
 }
 
 /**
@@ -88,6 +90,7 @@ export function SuiteForm({
         name: suite.name,
         description: suite.description ?? undefined,
         connection_id: suite.connection_id,
+        tags: suite.tags ?? [],
         target_table: targetString(suite.target, 'table'),
         target_schema: targetString(suite.target, 'schema'),
         target_catalog: targetString(suite.target, 'catalog'),
@@ -138,17 +141,26 @@ export function SuiteForm({
     }
     await run(async () => {
       try {
+        // Tags ride along only when this form changed them: re-sending the loaded list would
+        // undo a tag someone else added in the meantime (the same rule CheckEdit applies to
+        // `enabled`).
+        const tags = values.tags ?? [];
+        const tagsChanged = isEdit
+          ? tags.join('\u0000') !== (suite.tags ?? []).join('\u0000')
+          : tags.length > 0;
         const saved = isEdit
           ? await updateSuite(suite.id, {
               name: values.name,
               description: values.description ?? null,
               target,
+              ...(tagsChanged ? { tags } : {}),
             })
           : await createSuite({
               name: values.name,
               description: values.description ?? null,
               connection_id: values.connection_id,
               target,
+              ...(tagsChanged ? { tags } : {}),
             });
         message.success(`${values.name}: ${isEdit ? 'saved' : 'created'}`);
         onSaved(saved);
@@ -477,6 +489,13 @@ function SamplingFields() {
           )}
         </>
       )}
+      <Form.Item
+        name="tags"
+        label="Tags (optional)"
+        extra="Workspace labels — pick existing ones or type a new name. Lists filter by them."
+      >
+        <TagPicker />
+      </Form.Item>
     </>
   );
 }

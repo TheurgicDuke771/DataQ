@@ -95,6 +95,28 @@ A **suite** is a named set of checks bound to one connection + target
   folder scopes). See [access & auth](#access-auth).
 - **Export / import** — move a suite's definition between environments (author on DEV,
   import against PROD) instead of re-clicking checks.
+- **Tags** — workspace-shared labels on suites, assets, connections and checks; the Suites
+  and Assets lists filter by them (all of the chosen tags). See [Tags](#tags).
+
+## Tags
+
+A **tag** is a short workspace-shared label — `finance`, `team:core-data`, `tier-1` — that
+can sit on a suite, an asset, a connection or a check. The vocabulary is one list for the
+whole workspace; assigning a tag to something you can edit is enough to create it, and a name
+is stored lower-case, trimmed and single-spaced, so `Finance` and `finance` are one tag.
+
+- **Where they show.** As chips on the Suites, Assets and Connections lists and on a suite's
+  check rows; the Suites and Assets lists have a **Tags (all of)** filter, which keeps only the
+  rows carrying every chosen tag (the API's repeatable `tag=` query parameter, AND semantics).
+- **Who can assign.** The same people who can edit the thing: a suite's or check's tags need
+  edit on the suite, a connection's or an asset's tags need the workspace Admin role. Everyone
+  who can see an entity sees its tags; nobody can list a suite's tags they could not open.
+- **Deleting.** Deleting a suite, asset, connection or check drops its assignments with it.
+  Deleting a tag (Admin, `DELETE /tags/{id}`) detaches it everywhere at once; `GET /tags`
+  lists the vocabulary with a usage count per entity kind, so an unused tag is easy to find.
+- **Not a classification.** Tags are user labels. A column's PII classification comes from the
+  column policy and from warehouse-native tags ([data protection](#data-protection)), never
+  from a DataQ tag.
 
 ## Running checks
 

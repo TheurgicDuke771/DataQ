@@ -39,6 +39,7 @@ import {
 } from '../components/checks/expectationCatalog';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
+import { TagPicker } from '../components/shared/TagPicker';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -172,6 +173,7 @@ function CheckEditForm({
       fail_threshold: check.fail_threshold ?? undefined,
       critical_threshold: check.critical_threshold ?? undefined,
       enabled: check.enabled ?? true,
+      tags: check.tags ?? [],
     });
   }, [check, form]);
 
@@ -213,6 +215,9 @@ function CheckEditForm({
             delete u.kind;
             return u;
           })();
+      // Same rule for tags: sent only when this page changed them.
+      const tags = (values.tags as string[] | undefined) ?? [];
+      const tagsChanged = tags.join('\u0000') !== (check.tags ?? []).join('\u0000');
       try {
         await updateCheck(suiteId, check.id, {
           ...update,
@@ -221,6 +226,7 @@ function CheckEditForm({
           ...(typeof values.enabled === 'boolean' && values.enabled !== (check.enabled ?? true)
             ? { enabled: values.enabled }
             : {}),
+          ...(tagsChanged ? { tags } : {}),
         });
       } catch (err) {
         // The backend names the field it refused on (e.g. the sampling to row-count conflict, #1333
@@ -266,6 +272,13 @@ function CheckEditForm({
       <Form form={form} layout="vertical" onFinish={onSubmit}>
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="e.g. order_id not null" />
+        </Form.Item>
+        <Form.Item
+          name="tags"
+          label="Tags (optional)"
+          extra="Workspace labels — pick existing ones or type a new name."
+        >
+          <TagPicker />
         </Form.Item>
         <Form.Item
           name="expectation_type"

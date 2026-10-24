@@ -16,6 +16,7 @@ def _get_kwargs(
     limit: int | Unset = 200,
     offset: int | Unset = 0,
     sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
+    tag: list[str] | None | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -29,6 +30,16 @@ def _get_kwargs(
         json_sort = sort.value
 
     params["sort"] = json_sort
+
+    json_tag: list[str] | None | Unset
+    if isinstance(tag, Unset):
+        json_tag = UNSET
+    elif isinstance(tag, list):
+        json_tag = tag
+
+    else:
+        json_tag = tag
+    params["tag"] = json_tag
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -82,6 +93,7 @@ def sync_detailed(
     limit: int | Unset = 200,
     offset: int | Unset = 0,
     sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
+    tag: list[str] | None | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[AssetSummaryRead]]:
     """List assets
 
@@ -91,6 +103,10 @@ def sync_detailed(
         sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
             the whole population lowest score first, assets with no score last. Default:
             ListAssetsSort.NAME.
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -104,6 +120,7 @@ def sync_detailed(
         limit=limit,
         offset=offset,
         sort=sort,
+        tag=tag,
     )
 
     response = client.get_httpx_client().request(
@@ -119,6 +136,7 @@ def sync(
     limit: int | Unset = 200,
     offset: int | Unset = 0,
     sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
+    tag: list[str] | None | Unset = UNSET,
 ) -> HTTPValidationError | list[AssetSummaryRead] | None:
     """List assets
 
@@ -128,6 +146,10 @@ def sync(
         sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
             the whole population lowest score first, assets with no score last. Default:
             ListAssetsSort.NAME.
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -142,6 +164,7 @@ def sync(
         limit=limit,
         offset=offset,
         sort=sort,
+        tag=tag,
     ).parsed
 
 
@@ -151,6 +174,7 @@ async def asyncio_detailed(
     limit: int | Unset = 200,
     offset: int | Unset = 0,
     sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
+    tag: list[str] | None | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[AssetSummaryRead]]:
     """List assets
 
@@ -160,6 +184,10 @@ async def asyncio_detailed(
         sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
             the whole population lowest score first, assets with no score last. Default:
             ListAssetsSort.NAME.
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -173,6 +201,7 @@ async def asyncio_detailed(
         limit=limit,
         offset=offset,
         sort=sort,
+        tag=tag,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -186,6 +215,7 @@ async def asyncio(
     limit: int | Unset = 200,
     offset: int | Unset = 0,
     sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
+    tag: list[str] | None | Unset = UNSET,
 ) -> HTTPValidationError | list[AssetSummaryRead] | None:
     """List assets
 
@@ -195,6 +225,10 @@ async def asyncio(
         sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
             the whole population lowest score first, assets with no score last. Default:
             ListAssetsSort.NAME.
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -210,5 +244,6 @@ async def asyncio(
             limit=limit,
             offset=offset,
             sort=sort,
+            tag=tag,
         )
     ).parsed

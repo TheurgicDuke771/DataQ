@@ -321,6 +321,8 @@ from .suite_update import SuiteUpdate
 from .suite_validate_request import SuiteValidateRequest
 from .suite_validate_request_document_type_0 import SuiteValidateRequestDocumentType0
 from .suite_validation_read import SuiteValidationRead
+from .tag_read import TagRead
+from .tag_usage_read import TagUsageRead
 from .telemetry_event_read import TelemetryEventRead
 from .telemetry_event_read_attributes import TelemetryEventReadAttributes
 from .telemetry_settings_read import TelemetrySettingsRead
@@ -661,6 +663,8 @@ __all__ = (
     "SuiteValidateRequest",
     "SuiteValidateRequestDocumentType0",
     "SuiteValidationRead",
+    "TagRead",
+    "TagUsageRead",
     "TelemetryEventRead",
     "TelemetryEventReadAttributes",
     "TelemetrySettingsRead",

@@ -39,6 +39,17 @@ Two things the scorecard deliberately will not do, and you should read them the 
 - Share suites with **view** by default; reserve **edit** for the owning team
   (suite-level sharing is the access model **for suites**; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).
 
+## Tag by domain and criticality, not by state
+
+Tags are cheap and shared, so decide the two or three axes they answer before anyone types
+one: the owning domain or team (`finance`, `team:core-data`), the criticality (`tier-1`) and
+perhaps the consumer (`exec-dashboard`). Keep a `key:value` shape for anything that will have
+more than a handful of values. Do not encode state that the app already tracks — a suite's
+environment, its health, whether it is scheduled — a tag goes stale the moment the fact
+changes, and the lists already filter by the real thing. Names are normalised (lower-case,
+trimmed), so agree spellings once; `GET /tags` shows the vocabulary with usage counts when it
+is time to prune.
+
 ## Severity: make the tiers mean something
 
 Thresholds band the observed **unexpected-%** (higher = worse; ADR 0005/0016):
