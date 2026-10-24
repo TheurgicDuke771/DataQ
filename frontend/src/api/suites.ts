@@ -24,6 +24,8 @@ export interface Suite {
   /** The caller's effective level — gates per-suite actions (share, delete).
    *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */
   my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
+  /** Workspace labels, sorted by name; absent on older payloads. */
+  tags?: string[];
 }
 
 /** Owner/admin — may manage shares + delete the suite. */
@@ -91,16 +93,24 @@ export interface SuiteCreate {
   description?: string | null;
   connection_id: string;
   target?: RunTarget | null;
+  /** Tag names; the server normalizes (lower-case, trimmed) and creates new ones. */
+  tags?: string[];
 }
 
-/** Mirrors `SuiteUpdate` — name/description/target are mutable (connection isn't). */
+/** Mirrors `SuiteUpdate` — name/description/target/tags are mutable (connection isn't). */
 export interface SuiteUpdate {
   name?: string;
   description?: string | null;
   target?: RunTarget | null;
+  /** Replaces the suite's tags; `[]` clears them, omit to leave them. */
+  tags?: string[];
 }
 
-export async function listSuites(params?: { connection_id?: string }): Promise<Suite[]> {
+/** `tag` repeats (`tag=a&tag=b`) and means every named tag — AND, not OR. */
+export async function listSuites(params?: {
+  connection_id?: string;
+  tag?: string[];
+}): Promise<Suite[]> {
   const { data } = await api.get<Suite[]>('/suites', { params });
   return data;
 }
@@ -169,6 +179,8 @@ export interface Check {
   /** `false` = switched off: kept with its history, left out of every run. Optional so
    *  older fixtures need no change; absent means switched on. */
   enabled?: boolean;
+  /** Workspace labels, sorted by name; absent on older payloads. */
+  tags?: string[];
 }
 
 export async function listChecks(suiteId: string): Promise<Check[]> {
@@ -218,6 +230,8 @@ export interface CheckUpdate {
   critical_threshold?: number | null;
   /** Switch the check off (`false`) or back on (`true`); omit to leave it. */
   enabled?: boolean;
+  /** Replaces the check's tags; `[]` clears them, omit to leave them. */
+  tags?: string[];
 }
 
 export async function createCheck(suiteId: string, payload: CheckCreate): Promise<Check> {

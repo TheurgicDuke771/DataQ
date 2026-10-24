@@ -59,6 +59,8 @@ export interface AssetSummary {
   has_skip: boolean;
   /** Any composing suite's latest run was `cancelled`. */
   has_cancelled_run: boolean;
+  /** Workspace labels, sorted by name; absent on older payloads. */
+  tags?: string[];
 }
 
 /** A lineage neighbour — mirrors `LineageNodeRead`. Render-only (no run data).
@@ -252,6 +254,8 @@ export interface AssetMetadataUpdate {
   auto_coverage_excluded?: boolean;
   /** This table's own sensitivity for its automatic baselines; `null` removes the override. */
   auto_coverage_config?: CoverageDocument | null;
+  /** Replaces the asset's tags; `[]` clears them, omit to leave them. */
+  tags?: string[];
 }
 
 /**
@@ -264,7 +268,8 @@ export type AssetListPage = ListPage<AssetSummary>;
 export type AssetSort = 'name' | 'health_score';
 
 export async function listAssets(
-  params?: { limit?: number; offset?: number; sort?: AssetSort },
+  // `tag` repeats (`tag=a&tag=b`) and means every named tag — AND, not OR; the `total` follows it.
+  params?: { limit?: number; offset?: number; sort?: AssetSort; tag?: string[] },
   // #1107: threaded through by the tree view's multi-page walk so an abort (unmount/toggle-away)
   // cancels the in-flight request too, not just the ones the walk loop hasn't issued yet.
   signal?: AbortSignal,

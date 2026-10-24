@@ -219,6 +219,8 @@ export interface Connection {
    * #1319).
    */
   created_by: string | null;
+  /** Workspace labels, sorted by name; absent on older payloads. */
+  tags?: string[];
   /** Poll health (#828) — orchestration connections only. */
   last_polled_at?: string | null;
   last_poll_error?: string | null;
@@ -376,6 +378,9 @@ export interface ConnectionUpdate {
   catalog_secret?: string;
   /** See `ConnectionCreate.skip_test` — only a config/credential change is tested at all. */
   skip_test?: boolean;
+  /** Replaces the connection's tags; `[]` clears them, omit to leave them. A tags-only
+   *  change is not tested against the datasource. */
+  tags?: string[];
 }
 
 export async function updateConnection(id: string, payload: ConnectionUpdate): Promise<Connection> {
