@@ -78,8 +78,16 @@ sees alerts from that point on, not the history.
 - **Only check names, never values.** Feed entries are built from the same redacted report the
   other channels send and carry counts and check names only; no observed value or sample row
   ever reaches the feed, whatever the suite's masking policy.
-- **An entry can outlive its run.** If the run it points at is later deleted with its suite,
-  the entry stays and says *Run no longer available* instead of offering a dead link.
+- **An entry can outlive its run — but not the retention clock.** If the run it points at is
+  later deleted with its suite, the entry stays and says *Run no longer available* instead of
+  offering a dead link. Entries older than `NOTIFICATIONS_RETENTION_DAYS` (default 90) are
+  deleted by the daily sweep whether or not they were read; the runs and incidents remain.
+- **Checks that did not run are not "passed".** A run in which nothing breached but a check
+  errored or was skipped is filed as *N of M checks could not be verified*, never as all
+  passed — the same wording the Teams, Slack and email renderers now use.
+- **One incident link, or none.** The entry links to the incident only when the run opened or
+  touched exactly one; with several, the run page lists them all and the entry says nothing
+  that would read as "the incident".
 - **Keyboard and screen reader.** The bell's name carries the unread count; the feed is a
   dialog whose entries are ordinary links and buttons; a rise in the count while the feed is
   closed is announced.

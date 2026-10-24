@@ -1,6 +1,6 @@
 import { App, Button, Card, Empty, Flex, Popconfirm, Select, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
   INCIDENT_RESOLUTION_LABELS,
@@ -93,10 +93,13 @@ export function IncidentsPanel({
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
   const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(initialIncidentId);
   // A second deep link while this panel is mounted (following another feed entry for the same
-  // asset) changes the prop, not the mount — so it has to be tracked, not read once.
-  useEffect(() => {
+  // asset) changes the prop, not the mount — so a changed prop re-opens the drawer (React's
+  // adjust-state-during-render pattern, not an effect).
+  const [seenDeepLink, setSeenDeepLink] = useState(initialIncidentId);
+  if (initialIncidentId !== seenDeepLink) {
+    setSeenDeepLink(initialIncidentId);
     if (initialIncidentId) setEvidenceIncidentId(initialIncidentId);
-  }, [initialIncidentId]);
+  }
   const closeEvidence = () => {
     setEvidenceIncidentId(null);
     onEvidenceClosed?.();

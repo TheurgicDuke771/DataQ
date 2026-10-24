@@ -179,9 +179,25 @@ def test_entry_for_an_operational_failure_and_a_clean_run(db_session: Any) -> No
     assert clean.title == "orders: all 2 checks passed"
 
 
-def test_entry_carries_the_first_incident(db_session: Any) -> None:
+def test_entry_never_calls_unverified_checks_passed(db_session: Any) -> None:
+    # Nothing breached, but one check errored and one was skipped: `worst_severity` is None,
+    # so a naive verdict reads "all 3 checks passed" about a run that verified one check.
     suite = _suite(db_session, _user(db_session))
-    card = IncidentCard(
+    entry = svc.compose_entry(
+        _report(
+            suite,
+            db=db_session,
+            checks=[_check("a", "pass"), _check("b", "error"), _check("c", "skip")],
+        )
+    )
+    assert entry.severity == "error"
+    assert entry.title == "orders: 2 of 3 checks could not be verified"
+    assert "b (error)" in entry.body and "c (skip)" in entry.body
+    assert "passed" not in entry.title
+
+
+def _card() -> IncidentCard:
+    return IncidentCard(
         incident_id=uuid.uuid4(),
         check_id=uuid.uuid4(),
         check_name="id not null",
@@ -190,9 +206,18 @@ def test_entry_carries_the_first_incident(db_session: Any) -> None:
         is_new=True,
         evidence=None,
     )
+
+
+def test_entry_links_the_incident_only_when_there_is_exactly_one(db_session: Any) -> None:
+    suite = _suite(db_session, _user(db_session))
+    one = _card()
+    assert svc.compose_entry(_report(suite, db=db_session, incidents=[one])).incident_id == (
+        one.incident_id
+    )
+    # Several: linking whichever sorted first would hide the rest behind "Open incident".
     assert (
-        svc.compose_entry(_report(suite, db=db_session, incidents=[card])).incident_id
-        == card.incident_id
+        svc.compose_entry(_report(suite, db=db_session, incidents=[one, _card()])).incident_id
+        is None
     )
 
 
@@ -346,3 +371,26 @@ def test_registry_composite_includes_the_in_app_publisher() -> None:
     publisher = registry.get_result_publisher()
     assert isinstance(publisher, CompositePublisher)
     assert any(isinstance(p, InAppPublisher) for p in publisher._publishers)
+
+
+# ── retention ─────────────────────────────────────────────────────────────────
+
+
+def test_purge_removes_only_entries_older_than_the_clock(db_session: Any) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    report = _report(suite, db=db_session, checks=[_check("a", "fail")])
+    svc.record_run_alert(db_session, report)
+    old = _report(suite, db=db_session, checks=[_check("a", "fail")])
+    svc.record_run_alert(db_session, old)
+    db_session.flush()
+    (stale,) = [n for n in _feed(db_session, user) if n.run_id == old.run_id]
+    stale.created_at = datetime.now(UTC) - timedelta(days=100)
+    stale.read_at = datetime.now(UTC) - timedelta(days=99)  # read rows go too
+    db_session.flush()
+
+    assert svc.purge_expired(db_session, older_than_days=0) == 0  # non-positive = never
+    assert svc.purge_expired(db_session, older_than_days=90) == 1
+    assert [n.run_id for n in _feed(db_session, user)] == [report.run_id]

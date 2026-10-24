@@ -114,6 +114,11 @@ def test_beat_schedule_registers_poll_and_gap_recovery() -> None:
     assert schedule["recover-orchestration-gaps"]["schedule"] == 1800.0
 
 
+def test_beat_schedule_registers_the_notification_feed_purge() -> None:
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["purge-notifications"]["task"] == "purge_notifications"
+
+
 def test_beat_schedule_registers_stuck_run_reaper() -> None:
     """The stuck-run reaper (#309) — the whole-schedule iterators below only
     inspect entries that EXIST, so a dropped/renamed entry key passes CI

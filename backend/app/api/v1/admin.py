@@ -996,6 +996,15 @@ def get_workspace_config() -> WorkspaceConfigRead:
                 detail="Spent and expired sign-in codes are deleted.",
             ),
             RetentionSettingRead(
+                variable="NOTIFICATIONS_RETENTION_DAYS",
+                value=settings.notifications_retention_days,
+                unit="days",
+                detail=(
+                    "In-app notification feed entries older than this are deleted, read or "
+                    "not; the runs and incidents they pointed at stay."
+                ),
+            ),
+            RetentionSettingRead(
                 variable="ASSET_ORPHAN_RETENTION_DAYS",
                 value=settings.asset_orphan_retention_days,
                 unit="days",
