@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from backend.app.db.models import Connection, Suite, TriggerBinding, User
 from backend.app.db.session import get_db
@@ -370,3 +370,38 @@ def test_suite_binding_needs_view_on_the_upstream(
     )
     assert resp.status_code == 404  # hidden, not 403: no enumeration of suite ids
     assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 0
+
+
+def test_suite_binding_stores_the_canonical_upstream_id(
+    client: TestClient, db_session: Any
+) -> None:
+    # Any spelling uuid.UUID() accepts must land as str(uuid): firing, the cycle walk and the UI
+    # all compare against that form, so an upper-case input must not create a row that never fires.
+    upstream = _suite_on(db_session, client, env="dev")
+    downstream = _suite_on(db_session, client, env="dev")
+    spelled = "{" + upstream.upper() + "}"
+    resp = client.post("/api/v1/trigger-bindings", json=_suite_payload(spelled, downstream))
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["pipeline_or_dag_id"] == upstream
+
+
+def test_suite_binding_create_serialises_on_an_advisory_lock(
+    client: TestClient, db_session: Any
+) -> None:
+    # Two concurrent creates (A→B and B→A) would both pass the cycle walk; the lock makes the
+    # second wait for the first's commit and then see its row. The test session's outer
+    # transaction keeps the xact lock visible after the service "commits" (a savepoint here).
+    from backend.app.services.trigger_binding_service import SUITE_BINDING_LOCK_KEY
+
+    upstream = _suite_on(db_session, client, env="dev")
+    downstream = _suite_on(db_session, client, env="dev")
+    created = client.post("/api/v1/trigger-bindings", json=_suite_payload(upstream, downstream))
+    assert created.status_code == 201
+    held = db_session.execute(
+        text(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted "
+            "AND ((classid::bigint << 32) | objid::bigint) = :key"
+        ),
+        {"key": SUITE_BINDING_LOCK_KEY},
+    ).scalar_one()
+    assert held == 1

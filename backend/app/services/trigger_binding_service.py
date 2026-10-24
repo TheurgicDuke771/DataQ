@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -95,10 +95,15 @@ def suite_chain_path(
     return None
 
 
+#: One transaction-scoped advisory lock serialises every suite-binding create, so two
+#: concurrent creates (A→B and B→A) cannot both pass the cycle check and commit a loop.
+SUITE_BINDING_LOCK_KEY = 0x0051_5515  # ADR 0051, "suite"
+
+
 def _resolve_suite_binding(
     session: Session, *, pipeline_or_dag_id: str, suite_id: uuid.UUID, user_id: uuid.UUID
-) -> str:
-    """Validate a ``provider='suite'`` binding and return the env it must carry."""
+) -> tuple[str, str]:
+    """Validate a ``provider='suite'`` binding; return ``(canonical upstream id, env)``."""
     upstream_id = _upstream_suite_id(pipeline_or_dag_id)
     if upstream_id == suite_id:
         raise TriggerBindingInvalidError(
@@ -106,6 +111,8 @@ def _resolve_suite_binding(
         )
     # `view` on the upstream: you cannot chain onto a suite you cannot see (404 when hidden).
     upstream = require_permission(session, upstream_id, user_id, minimum="view")
+    # Held until this transaction commits (the insert below is in it).
+    session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": SUITE_BINDING_LOCK_KEY})
     path = suite_chain_path(session, downstream_suite_id=suite_id, upstream_suite_id=upstream_id)
     if path is not None:
         raise TriggerBindingInvalidError(
@@ -114,7 +121,9 @@ def _resolve_suite_binding(
         )
     connection = session.get(Connection, upstream.connection_id)
     assert connection is not None
-    return str(connection.env)
+    # Stored canonical (`str(uuid)`): firing, the cycle walk and the UI all compare to that
+    # spelling, so an upper-case or braced input must not create a row that never fires.
+    return str(upstream_id), str(connection.env)
 
 
 @dataclass(frozen=True)
@@ -194,7 +203,7 @@ def create_binding(
     # Proves the suite exists (404) and the caller may automate it (403).
     require_permission(session, suite_id, user_id, minimum="edit")
     if provider == SUITE_TRIGGER_PROVIDER:
-        env = _resolve_suite_binding(
+        pipeline_or_dag_id, env = _resolve_suite_binding(
             session, pipeline_or_dag_id=pipeline_or_dag_id, suite_id=suite_id, user_id=user_id
         )
     assert env is not None

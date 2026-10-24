@@ -192,7 +192,8 @@ function TriggerRow({
   const { message } = App.useApp();
   const [busy, setBusy] = useState(false);
   // A suite binding's key is a suite id: show the name; fall back to the id only when the
-  // upstream is outside the user's access (it still fires — they just cannot open it).
+  // upstream is outside the user's access (it still fires — they just cannot open it; a
+  // deleted upstream takes its bindings with it, so a bare id never means "gone").
   const shown =
     binding.provider === SUITE_TRIGGER_PROVIDER
       ? (upstreamName ?? binding.pipeline_or_dag_id)

@@ -73,10 +73,20 @@ def test_suite_marker_names_the_upstream_suite(db_session: Any) -> None:
     marker = f"suite:{suite.id}:{uuid.uuid4()}"
     gone = f"suite:{uuid.uuid4()}:{uuid.uuid4()}"
 
-    assert trigger_labels(db_session, [marker, gone]) == {
+    # The owner (or a workspace admin) sees the name; a viewer with no grant on the upstream,
+    # and a call with no viewer at all, get the kind only — the name must not leak.
+    assert trigger_labels(db_session, [marker, gone], viewer_id=owner.id) == {
         marker: "Suite — orders upstream",
         gone: "Suite",
     }
+    stranger = User(aad_object_id=uuid.uuid4().hex, email=f"s-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(stranger)
+    db_session.commit()
+    assert trigger_labels(db_session, [marker], viewer_id=stranger.id) == {marker: "Suite"}
+    assert trigger_labels(db_session, [marker], viewer_id=stranger.id, include_all=True) == {
+        marker: "Suite — orders upstream"
+    }
+    assert trigger_labels(db_session, [marker]) == {marker: "Suite"}
 
 
 def test_every_registered_provider_has_a_label() -> None:

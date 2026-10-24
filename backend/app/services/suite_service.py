@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, any_, func, or_, select, true
+from sqlalchemy import ColumnElement, Select, any_, delete, func, or_, select, true
 from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 
 from backend.app.core.errors import DataQError
@@ -17,6 +17,7 @@ from backend.app.datasources.sampling import (
 )
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
+    SUITE_TRIGGER_PROVIDER,
     Check,
     Connection,
     Result,
@@ -348,6 +349,14 @@ def delete_suite(
     """
     suite = get_suite(session, suite_id)
     audit_before = audit_service.snapshot("suite", suite)
+    # Suite-on-suite bindings key on this suite's id as TEXT (ADR 0051), so no FK cascades them;
+    # left behind they would be enabled rows that can never fire.
+    session.execute(
+        delete(TriggerBinding).where(
+            TriggerBinding.provider == SUITE_TRIGGER_PROVIDER,
+            TriggerBinding.pipeline_or_dag_id == str(suite_id),
+        )
+    )
     session.delete(suite)
     audit_service.record(
         session,

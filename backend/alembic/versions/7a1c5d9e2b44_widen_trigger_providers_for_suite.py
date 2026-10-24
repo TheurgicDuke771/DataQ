@@ -36,12 +36,28 @@ def _set_provider_check(values: str) -> None:
     )
 
 
-def _set_trigger_dedup_index(predicate: str) -> None:
-    op.execute("DROP INDEX IF EXISTS uq_runs_suite_triggered_by")
-    op.execute(
-        "CREATE UNIQUE INDEX uq_runs_suite_triggered_by "
-        f"ON runs (suite_id, triggered_by) WHERE {predicate}"
+def _index_statements(predicate: str) -> tuple[str, str, str]:
+    """(create-next CONCURRENTLY, drop-old CONCURRENTLY, rename) — exposed so the test can run
+    them with CONCURRENTLY stripped inside its transaction."""
+    return (
+        "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_runs_suite_triggered_by_next "
+        f"ON runs (suite_id, triggered_by) WHERE {predicate}",
+        "DROP INDEX CONCURRENTLY IF EXISTS uq_runs_suite_triggered_by",
+        "ALTER INDEX uq_runs_suite_triggered_by_next RENAME TO uq_runs_suite_triggered_by",
     )
+
+
+def _set_trigger_dedup_index(predicate: str) -> None:
+    """Rebuild the partial unique index without holding `runs` locked for the build: create the
+    widened one CONCURRENTLY under a scratch name (outside alembic's transaction — Postgres
+    refuses CONCURRENTLY inside one), drop the old one CONCURRENTLY, then rename. Each step is
+    idempotent for a partial retry.
+    """
+    create, drop, rename = _index_statements(predicate)
+    with op.get_context().autocommit_block():
+        op.execute(create)
+        op.execute(drop)
+    op.execute(rename)
 
 
 def upgrade() -> None:

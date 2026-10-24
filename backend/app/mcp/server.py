@@ -3222,8 +3222,8 @@ def create_trigger_binding(
     # Same bound as the REST twin: the column is String(256) NOT NULL, and an
     # empty value would create a binding that can never match a pipeline.
     pipeline_or_dag_id: Annotated[str, Field(min_length=1, max_length=256)],
+    suite_id: str,
     env: str | None = None,
-    suite_id: str = "",
     enabled: bool = True,
 ) -> dict[str, Any]:
     """Run a suite automatically whenever an orchestrator pipeline — or another

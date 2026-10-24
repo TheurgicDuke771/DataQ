@@ -12,11 +12,10 @@ from backend.app.core.logging import get_logger
 from backend.app.db.models import (
     SUITE_TRIGGER_MAX_DEPTH,
     SUITE_TRIGGER_PROVIDER,
-    Connection,
     Run,
-    Suite,
     TriggerBinding,
 )
+from backend.app.orchestration.markers import parse_suite_marker, suite_marker
 from backend.app.services import run_dispatch
 from backend.app.services.orchestration_service import insert_triggered_run
 from backend.app.services.run_service import check_outcome_counts
@@ -28,21 +27,13 @@ _BLOCKING_TIERS = frozenset({"fail", "critical"})
 
 
 def marker_for(run: Run) -> str:
-    return f"{SUITE_TRIGGER_PROVIDER}:{run.suite_id}:{run.id}"
+    return suite_marker(run.suite_id, run.id)
 
 
 def upstream_run_id(marker: str | None) -> uuid.UUID | None:
     """The upstream run a ``suite:`` marker names, or ``None`` for any other marker."""
-    if not marker:
-        return None
-    provider, _, rest = marker.partition(":")
-    if provider != SUITE_TRIGGER_PROVIDER:
-        return None
-    _, _, run_text = rest.partition(":")
-    try:
-        return uuid.UUID(run_text)
-    except ValueError:
-        return None
+    parsed = parse_suite_marker(marker)
+    return parsed[1] if parsed else None
 
 
 def chain_depth(session: Session, run: Run) -> int:
@@ -76,16 +67,13 @@ def fire_for_run(session: Session, *, run_id: uuid.UUID) -> list[Run]:
     run = session.get(Run, run_id)
     if run is None or not passed(session, run):
         return []
-    suite = session.get(Suite, run.suite_id)
-    connection = session.get(Connection, suite.connection_id) if suite is not None else None
-    if suite is None or connection is None:
-        return []
+    # No env predicate: a suite binding's env is derived from the upstream's connection at
+    # creation and both are immutable, so it could never exclude a row the API wrote.
     bindings = list(
         session.scalars(
             select(TriggerBinding).where(
                 TriggerBinding.provider == SUITE_TRIGGER_PROVIDER,
                 TriggerBinding.pipeline_or_dag_id == str(run.suite_id),
-                TriggerBinding.env == connection.env,
                 TriggerBinding.enabled.is_(True),
             )
         )

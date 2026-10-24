@@ -151,16 +151,27 @@ def test_errored_and_skipped_checks_do_not_block(
     assert len(_downstream_runs(db_session, downstream)) == 1
 
 
-def test_disabled_binding_and_env_mismatch_fire_nothing(db_session: Any) -> None:
+def test_disabled_binding_fires_nothing(db_session: Any) -> None:
     owner = _user(db_session)
     upstream = _suite(db_session, owner, _connection(db_session, owner, env="qa"))
     off = _suite(db_session, owner, _connection(db_session, owner, env="qa"))
-    wrong_env = _suite(db_session, owner, _connection(db_session, owner, env="qa"))
     _bind(db_session, upstream=upstream, downstream=off, env="qa", enabled=False)
-    _bind(db_session, upstream=upstream, downstream=wrong_env, env="dev")
     db_session.commit()
     run = _run(db_session, upstream, "pass")
     assert svc.fire_for_run(db_session, run_id=run.id) == []
+
+
+def test_deleting_the_upstream_suite_removes_the_bindings_keyed_on_it(
+    db_session: Any, chain: tuple[Suite, Suite]
+) -> None:
+    # The key is TEXT, not an FK: without this the row would survive, enabled, and never fire.
+    from backend.app.services import suite_service
+
+    upstream, downstream = chain
+    assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 1
+    suite_service.delete_suite(db_session, upstream.id)
+    assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 0
+    assert db_session.get(Suite, downstream.id) is not None
 
 
 def test_chain_depth_is_read_back_through_the_markers(db_session: Any) -> None:

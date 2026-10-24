@@ -323,7 +323,7 @@ def trigger_suite_run(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="failed to dispatch run",
         )
-    return run_reads(db, [run])[0]
+    return run_reads(db, [run], viewer=current_user)[0]
 
 
 # ───────────────────────── export / import (portable documents) ─────

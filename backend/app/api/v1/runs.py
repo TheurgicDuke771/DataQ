@@ -265,11 +265,19 @@ def run_reads(
     db: Session,
     runs: Sequence[Run],
     outcomes: Mapping[uuid.UUID, tuple[int, int, str | None]] | None = None,
+    *,
+    viewer: User | None = None,
 ) -> list[RunRead]:
     """`RunRead`s with the trigger label grafted, plus the data-quality outcome when
-    ``outcomes`` is given (a just-queued or just-cancelled run reports none).
+    ``outcomes`` is given (a just-queued or just-cancelled run reports none). ``viewer``
+    scopes which upstream-suite names a suite-trigger label may show (ADR 0051).
     """
-    labels = trigger_labels.trigger_labels(db, [r.triggered_by for r in runs])
+    labels = trigger_labels.trigger_labels(
+        db,
+        [r.triggered_by for r in runs],
+        viewer_id=viewer.id if viewer else None,
+        include_all=is_workspace_admin(viewer) if viewer else False,
+    )
     reads = []
     for run in runs:
         update: dict[str, object] = {"triggered_by_label": labels.get(run.triggered_by or "")}
@@ -341,7 +349,7 @@ def list_runs(
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
     outcomes = svc.check_outcome_counts(db, [r.id for r in runs])
-    return run_reads(db, runs, outcomes)
+    return run_reads(db, runs, outcomes, viewer=current_user)
 
 
 def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
@@ -485,7 +493,7 @@ def get_run(
         db, current_user, run=run, results=reads, expectation_types=expectation_types
     )
     return RunDetailRead(
-        **run_reads(db, [run], outcomes)[0].model_dump(),
+        **run_reads(db, [run], outcomes, viewer=current_user)[0].model_dump(),
         results=reads,
     )
 
@@ -521,7 +529,7 @@ def compare_runs(
         db, base=base, target=target, suite=suite, actor=current_user
     )
     outcomes = svc.check_outcome_counts(db, [base.id, target.id])
-    base_read, target_read = run_reads(db, [base, target], outcomes)
+    base_read, target_read = run_reads(db, [base, target], outcomes, viewer=current_user)
     return RunComparisonRead(
         base=ComparisonRunRead(**base_read.model_dump(), results_final=diff.base_results_final),
         target=ComparisonRunRead(
@@ -592,7 +600,7 @@ def cancel_run(
     if not svc.cancel_run(db, run):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is already finished")
     run_dispatch.revoke_run(run.celery_task_id)
-    return run_reads(db, [run])[0]
+    return run_reads(db, [run], viewer=current_user)[0]
 
 
 @router.get(
