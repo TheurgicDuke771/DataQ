@@ -46,6 +46,8 @@ import { createCheck, getSuite, type Suite } from '../../src/api/suites';
 import { CheckNew } from '../../src/pages/CheckNew';
 import { Results } from '../../src/pages/Results';
 import { listRuns, listPipelineRuns } from '../../src/api/runs';
+import { search } from '../../src/api/search';
+import { CommandPalette } from '../../src/components/shared/CommandPalette';
 import { listSuites } from '../../src/api/suites';
 import { listSeasonalPeriods, type SeasonalPeriod } from '../../src/api/seasonalPeriods';
 import { getTelemetrySettings } from '../../src/api/telemetry';
@@ -101,6 +103,11 @@ vi.mock('../../src/api/notificationChannels', () => ({
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
   return { ...actual, listRuns: vi.fn(), listPipelineRuns: vi.fn() };
+});
+
+vi.mock('../../src/api/search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/search')>();
+  return { ...actual, search: vi.fn() };
 });
 
 vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
@@ -329,6 +336,41 @@ describe('component a11y floor (#1670)', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: /Browse folders/ }));
     await screen.findByRole('button', { name: /raw\// });
     await checkA11y('component:FileBrowser', document.body);
+  });
+
+  it('the command palette, open with results, has no new serious/critical violations', async () => {
+    vi.mocked(search).mockResolvedValue({
+      query: 'orders',
+      groups: {
+        suites: [{ id: 's1', label: 'Orders quality', sublabel: null, href: '/suites/s1' }],
+        checks: [
+          { id: 'c1', label: 'orders id not null', sublabel: 'Orders quality', href: '/suites/s1' },
+        ],
+        connections: [
+          { id: 'k1', label: 'warehouse', sublabel: 'postgres · dev', href: '/connections' },
+        ],
+        runs: [
+          {
+            id: 'r1',
+            label: 'Orders quality',
+            sublabel: 'succeeded',
+            href: '/results/r1',
+            when: '2026-10-24T10:00:00Z',
+          },
+        ],
+      },
+      truncated_groups: ['checks'],
+    });
+    render(
+      <MemoryRouter>
+        <CommandPalette />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Search/ }));
+    await user.type(screen.getByRole('combobox', { name: 'Search DataQ' }), 'orders');
+    await screen.findAllByRole('option');
+    await checkA11y('component:CommandPalette', document.body);
   });
 });
 

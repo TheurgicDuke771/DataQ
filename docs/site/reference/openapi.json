@@ -9289,6 +9289,119 @@
         "title": "ScoringWeightsWrite",
         "type": "object"
       },
+      "SearchGroupsRead": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitRead"
+            },
+            "title": "Connections",
+            "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitRead"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHitRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          }
+        },
+        "title": "SearchGroupsRead",
+        "type": "object"
+      },
+      "SearchHitRead": {
+        "description": "One match. `label` is the entity's name (a run is labelled by its suite); `href` is the\nSPA path that opens it for THIS caller \u2014 a check the caller may only view opens its suite,\na connection opens its own page only for a workspace admin. `when` is set on a run (when it\nstarted, or was queued if it never started).",
+        "properties": {
+          "href": {
+            "title": "Href",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "sublabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sublabel"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "href"
+        ],
+        "title": "SearchHitRead",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "description": "Matches grouped by entity, each group capped at `limit`. `truncated_groups` names the\ngroups with more matches than returned (from the real count \u2014 a full group is not by itself\ntruncated). Every group is scoped like its own list endpoint: a suite the caller cannot see\nis absent, and so are its checks and runs.",
+        "properties": {
+          "groups": {
+            "$ref": "#/components/schemas/SearchGroupsRead"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "truncated_groups": {
+            "items": {
+              "enum": [
+                "suites",
+                "checks",
+                "connections",
+                "runs"
+              ],
+              "type": "string"
+            },
+            "title": "Truncated Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "groups"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      },
       "SeasonalPeriodPatch": {
         "additionalProperties": false,
         "description": "Any field left out keeps its value; the result is validated whole, so a kind change\nmust send the new kind's fields.",
@@ -16573,6 +16686,64 @@
         "summary": "Update a schedule (cron / timezone / enabled)",
         "tags": [
           "schedules"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "search",
+        "parameters": [
+          {
+            "description": "Case-insensitive substring; prefix matches rank first. A run matches on its suite's name or on a prefix of its id.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Case-insensitive substring; prefix matches rank first. A run matches on its suite's name or on a prefix of its id.",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 8,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search suites, checks, connections and runs by name",
+        "tags": [
+          "search"
         ]
       }
     },
