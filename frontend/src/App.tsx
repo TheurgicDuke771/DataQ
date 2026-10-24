@@ -27,6 +27,7 @@ import { BrandMark } from './components/BrandMark';
 import { PageViewReporter } from './components/PageViewReporter';
 import { IS_DEMO } from './demo/flag';
 import { ThemeToggle } from './components/ThemeToggle';
+import { CommandPalette } from './components/shared/CommandPalette';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
 import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
@@ -185,6 +186,7 @@ export function App() {
               <DemoBadge compact={narrow} />
             </Suspense>
           )}
+          <CommandPalette compact={narrow} />
           <ThemeToggle />
           <UserMenu />
         </Header>

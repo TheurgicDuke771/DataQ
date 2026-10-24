@@ -38,6 +38,7 @@ from backend.app.api.v1 import orchestration as orchestration_router
 from backend.app.api.v1 import probe as probe_router
 from backend.app.api.v1 import runs as runs_router
 from backend.app.api.v1 import schedules as schedules_router
+from backend.app.api.v1 import search as search_router
 from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suggestions as suggestions_router
 from backend.app.api.v1 import suites as suites_router
@@ -247,6 +248,7 @@ app.include_router(notification_channels_router.router, prefix="/api/v1")
 app.include_router(runs_router.router, prefix="/api/v1")
 app.include_router(dashboard_router.router, prefix="/api/v1")
 app.include_router(schedules_router.router, prefix="/api/v1")
+app.include_router(search_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")
