@@ -128,6 +128,9 @@ NOTIFICATION_CHANNEL_TYPES = ("teams", "slack", "email", "webhook")
 # Incident lifecycle (ADR 0034 decision 4, #761): open → acknowledged → resolved; a resolved row
 # never reopens (a new incident links via `prior_incident_id`).
 INCIDENT_STATUSES = ("open", "acknowledged", "resolved")
+# In-app notification severities: the run's worst result tier, or `error` for a run that
+# failed to execute at all (an operational failure has no result tier).
+NOTIFICATION_SEVERITIES = (*RESULT_SEVERITY_TIERS, "error")
 INCIDENT_ACTIVE_STATUSES = ("open", "acknowledged")
 # Why an incident was resolved (ADR 0047 §8); NULL = not said. `false_positive` feeds the
 # false-positive rate shown beside coverage.
@@ -884,6 +887,64 @@ class Share(Base):
     # Default-lazy on purpose: the hot authz path (`effective_permission`) must not pay a users
     # join; `list_shares` selectinloads it.
     user: Mapped["User"] = relationship()
+
+
+class Notification(Base):
+    """One user's copy of an in-app alert: the run outcome the alerting layer
+    published, fanned out to everyone who could see the suite at the time (owner,
+    grantees, workspace admins). `read_at` is that user's own state. The body is
+    built from the already-redacted ``RunReport`` and never carries an observed
+    value or a sample row.
+    """
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        _in_check("severity", NOTIFICATION_SEVERITIES, "notification_severity_valid"),
+        # The feed read and the unread badge: both newest-first per user.
+        Index("ix_notifications_user_created", "user_id", text("created_at DESC"), text("id DESC")),
+        Index(
+            "ix_notifications_user_unread",
+            "user_id",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("read_at IS NULL"),
+        ),
+        Index("ix_notifications_suite_id", "suite_id"),
+        Index("ix_notifications_incident_id", "incident_id"),
+        # One row per user per run: a re-published outcome (worker retry) is a no-op, not a
+        # duplicate entry (INSERT … ON CONFLICT DO NOTHING targets this).
+        Index(
+            "uq_notifications_user_run",
+            "user_id",
+            "run_id",
+            unique=True,
+            postgresql_where=text("run_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    # The recipient's own feed state dies with the recipient (GDPR Art 17).
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Feed entries die with the suite, like its runs and results (#540 posture).
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    # The anchors a deep link resolves to. SET NULL: the entry outlives the row it pointed at
+    # and the API then withholds the link instead of serving a dead one.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL")
+    )
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="SET NULL")
+    )
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    deep_link: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PipelineRun(Base):
