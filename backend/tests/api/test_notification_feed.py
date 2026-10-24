@@ -133,8 +133,9 @@ def test_list_pages_honestly_and_filters_unread(client: TestClient, db_session: 
     unread = client.get("/api/v1/notifications", params={"unread_only": "true", "limit": 1})
     assert len(unread.json()) == 1
     assert unread.headers["X-Total-Count"] == "2"
-    assert client.get("/api/v1/notifications", params={"limit": 0}).status_code == 422
-    assert client.get("/api/v1/notifications", params={"limit": 201}).status_code == 422
+    too_small = client.get("/api/v1/notifications", params={"limit": 0})
+    too_large = client.get("/api/v1/notifications", params={"limit": 201})
+    assert (too_small.status_code, too_large.status_code) == (422, 422)
 
 
 def test_unread_count_is_mine_only(client: TestClient, db_session: Any) -> None:
@@ -144,7 +145,8 @@ def test_unread_count_is_mine_only(client: TestClient, db_session: Any) -> None:
     _entry(db_session, me, suite, run=_run(db_session, suite), read=True)
     _entry(db_session, other, suite, run=_run(db_session, suite))
     _as(me)
-    assert client.get("/api/v1/notifications/unread_count").json() == {"unread": 1}
+    count = client.get("/api/v1/notifications/unread_count")
+    assert count.json() == {"unread": 1}
 
 
 def test_read_one_is_idempotent(client: TestClient, db_session: Any) -> None:
@@ -159,7 +161,8 @@ def test_read_one_is_idempotent(client: TestClient, db_session: Any) -> None:
     assert stamped is not None
     second = client.post(f"/api/v1/notifications/{row.id}/read")
     assert second.json()["read_at"] == stamped
-    assert client.get("/api/v1/notifications/unread_count").json() == {"unread": 0}
+    count = client.get("/api/v1/notifications/unread_count")
+    assert count.json() == {"unread": 0}
 
 
 def test_another_users_entry_is_404_not_403(client: TestClient, db_session: Any) -> None:
@@ -188,8 +191,10 @@ def test_read_all_marks_only_mine_and_reports_the_count(
     theirs = _entry(db_session, other, suite, run=_run(db_session, suite))
     _as(me)
 
-    assert client.post("/api/v1/notifications/read_all").json() == {"marked": 2}
-    assert client.post("/api/v1/notifications/read_all").json() == {"marked": 0}
+    first = client.post("/api/v1/notifications/read_all")
+    assert first.json() == {"marked": 2}
+    again = client.post("/api/v1/notifications/read_all")
+    assert again.json() == {"marked": 0}
     db_session.refresh(theirs)
     assert theirs.read_at is None
 
@@ -201,9 +206,10 @@ def test_a_viewer_reads_and_acks_their_own_feed(client: TestClient, db_session: 
     row = _entry(db_session, viewer, suite, run=_run(db_session, suite))
     _as(viewer)
 
-    assert client.get("/api/v1/notifications").status_code == 200
-    assert client.post(f"/api/v1/notifications/{row.id}/read").status_code == 200
-    assert client.post("/api/v1/notifications/read_all").status_code == 200
+    listed = client.get("/api/v1/notifications")
+    acked = client.post(f"/api/v1/notifications/{row.id}/read")
+    all_acked = client.post("/api/v1/notifications/read_all")
+    assert (listed.status_code, acked.status_code, all_acked.status_code) == (200, 200, 200)
 
 
 def test_deep_link_is_withheld_once_the_run_is_gone(client: TestClient, db_session: Any) -> None:
