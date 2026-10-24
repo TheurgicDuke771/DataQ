@@ -92,7 +92,7 @@ def _join_rows(db: Any, table: Any) -> int:
         ("Finance", "finance"),
         ("  Core  Data ", "core data"),
         ("team:Core-Data", "team:core-data"),
-        ("Straße", "strasse"),
+        ("Straße", "straße"),  # lower(), not casefold(): the picker previews with toLowerCase
     ],
 )
 def test_names_are_normalized(raw: str, stored: str) -> None:
@@ -459,3 +459,43 @@ def test_mcp_list_suites_carries_tags(
     monkeypatch.setattr(server, "resolve_current_user", lambda _session: member)
     listed = server.list_suites()
     assert [s["tags"] for s in listed if s["id"] == str(suite.id)] == [["mcp-tag"]]
+
+
+def test_mcp_update_tools_set_tags_and_check_reads_carry_them(
+    client: TestClient, db_session: Any, as_role: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The field `list_suites` gained must not age its neighbours (#888 review): the check reads
+    # show tags and both update tools can set them, replacing the whole list.
+    from backend.app.mcp import server
+
+    member, headers = as_role("member")
+    suite = _suite(db_session, member, _connection(db_session, member))
+    created = client.post(
+        f"/api/v1/suites/{suite.id}/checks",
+        headers=headers,
+        json={
+            "name": "id not null",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "id"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    check_id = created.json()["id"]
+    monkeypatch.setattr(server, "get_session", lambda: db_session)
+    # Re-read per call: each tool commits, which expires the `member` instance.
+    member_id = member.id
+    monkeypatch.setattr(
+        server, "resolve_current_user", lambda _session: db_session.get(User, member_id)
+    )
+
+    assert server.update_suite(str(suite.id), tags=["Finance", "daily"])["tags"] == [
+        "daily",
+        "finance",
+    ]
+    assert server.update_check(str(suite.id), check_id, tags=["PII"])["tags"] == ["pii"]
+    assert server.get_check(str(suite.id), check_id)["tags"] == ["pii"]
+    listed = server.list_checks(str(suite.id))
+    assert [c["tags"] for c in listed["checks"] if c["id"] == check_id] == [["pii"]]
+    # Omitting `tags` leaves them; `[]` clears them.
+    assert server.update_check(str(suite.id), check_id, name="renamed")["tags"] == ["pii"]
+    assert server.update_check(str(suite.id), check_id, tags=[])["tags"] == []

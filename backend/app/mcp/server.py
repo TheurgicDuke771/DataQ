@@ -956,6 +956,8 @@ def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict
         # that has stopped being checked.
         "enabled": check.enabled,
         "dimension": check.dimension,
+        # Workspace labels (#888), as on `list_suites`; `[]` means untagged, not unknown.
+        "tags": check.tag_names,
         # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
         # equivalence): the baseline connection the suite's dataset is diffed
         # against (ADR 0015). Without it an LLM can describe a comparison check's
@@ -2607,11 +2609,17 @@ def update_check(
     engine: str | None = None,
     clear_thresholds: list[Literal["warn", "fail", "critical"]] | None = None,
     enabled: bool | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Change an existing check's definition, or switch it off or on — a partial update.
 
     Use this for 'loosen the null check on email to warn at 2%' or 'rename that
     check'. Omitted **arguments** are left as they were.
+
+    ``tags`` **replaces** the check's workspace labels (names are lower-cased and
+    trimmed; a new name creates the tag; ``[]`` clears them). To add one, send the
+    current list from ``get_check`` plus the new name — sending only the new name
+    drops the others.
 
     **To stop a check running without deleting it, pass ``enabled=false``**; pass
     ``enabled=true`` to switch it back on. A disabled check keeps its results,
@@ -2731,6 +2739,7 @@ def update_check(
             dimension=dimension,
             engine=engine,
             enabled=enabled,
+            tags=tags,
             actor_id=user.id,
         )
         return _check_summary(check, _one_inherited(session, check))
@@ -3681,8 +3690,13 @@ def update_suite(
     name: Annotated[str, Field(min_length=1, max_length=128)] | None = None,
     description: Annotated[str, Field(max_length=1024)] | None = None,
     target: dict[str, Any] | None = None,
+    tags: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Change a suite's name, description, or **what it runs against**.
+    """Change a suite's name, description, tags, or **what it runs against**.
+
+    ``tags`` **replaces** the suite's workspace labels (lower-cased, trimmed; a new
+    name creates the tag; ``[]`` clears them) — send the full list from
+    ``list_suites`` plus the new name to add one.
 
     Use this for 'point the orders suite at ANALYTICS.ORDERS_V2', 'rename it', or
     — most often — to give a newly imported suite a run target, since a suite
@@ -3722,7 +3736,13 @@ def update_suite(
         had_policy = suite.column_policy is not None
         old_target = dict(suite.target) if suite.target else None
         suite = suite_service.update_suite(
-            session, sid, name=name, description=description, target=parsed, actor_id=user.id
+            session,
+            sid,
+            name=name,
+            description=description,
+            target=parsed,
+            tags=tags,
+            actor_id=user.id,
         )
         # Parity with the REST route (#634): a target-setting update on a
         # policy-less suite gets the same best-effort auto-classify as create.
@@ -3749,6 +3769,7 @@ def update_suite(
             "description": suite.description,
             "connection_id": str(suite.connection_id),
             "target": suite.target,
+            "tags": suite.tag_names,
             # Whether the suite can actually run now — the question this tool is
             # usually called to fix, and one an LLM should confirm rather than
             # infer from the absence of an error. It is the ONE precondition

@@ -25,3 +25,9 @@ export async function deleteTag(id: string): Promise<void> {
 export function normalizeTagName(raw: string): string {
   return raw.normalize('NFC').toLowerCase().trim().split(/\s+/).filter(Boolean).join(' ');
 }
+
+/** The server refuses a name carrying a control or format character (422); the picker drops it
+ *  before the save rather than after. */
+export function isValidTagName(name: string): boolean {
+  return name.length > 0 && !/\p{C}/u.test(name);
+}

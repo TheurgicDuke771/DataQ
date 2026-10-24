@@ -1,7 +1,7 @@
 import { Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
-import { listTags, normalizeTagName } from '../../api/tags';
+import { isValidTagName, listTags, normalizeTagName } from '../../api/tags';
 
 /**
  * Pick tags for an entity: the workspace vocabulary as options plus free typing for a new name
@@ -71,7 +71,7 @@ export function TagPicker({
         const clean: string[] = [];
         for (const raw of next) {
           const name = normalizeTagName(raw);
-          if (name && !seen.has(name)) {
+          if (isValidTagName(name) && !seen.has(name)) {
             seen.add(name);
             clean.push(name);
           }

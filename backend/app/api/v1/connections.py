@@ -10,8 +10,13 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, ApiRequestModel, TagNames
-from backend.app.api.v1.suites import _TAGS_WRITE_DESCRIPTION, TagNamesIn
+from backend.app.api.v1._base import (
+    TAGS_WRITE_DESCRIPTION,
+    ApiModel,
+    ApiRequestModel,
+    TagNames,
+    TagNamesIn,
+)
 from backend.app.core.auth import AdminUser, MemberUser, get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.core.secrets import SecretStore, get_secret_store
@@ -79,7 +84,7 @@ class ConnectionUpdate(ApiRequestModel):
     tags: TagNamesIn | None = Field(
         default=None,
         max_length=tag_service.MAX_TAGS_PER_ENTITY,
-        description=_TAGS_WRITE_DESCRIPTION,
+        description=TAGS_WRITE_DESCRIPTION,
     )
 
 

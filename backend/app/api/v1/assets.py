@@ -11,10 +11,13 @@ from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import (
+    TAG_FILTER_DESCRIPTION,
+    TAGS_WRITE_DESCRIPTION,
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
     TagNames,
+    TagNamesIn,
     total_count_responses,
 )
 from backend.app.api.v1.admin_coverage import (
@@ -22,7 +25,6 @@ from backend.app.api.v1.admin_coverage import (
     EffectiveCoverageRead,
     effective_read,
 )
-from backend.app.api.v1.suites import _TAG_FILTER_DESCRIPTION, _TAGS_WRITE_DESCRIPTION, TagNamesIn
 from backend.app.core.auth import get_current_user, require_workspace_admin
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import TAG_NAME_MAX_LENGTH, User
@@ -385,7 +387,7 @@ class AssetMetadataUpdate(ApiRequestModel):
     tags: TagNamesIn | None = Field(
         default=None,
         max_length=tag_service.MAX_TAGS_PER_ENTITY,
-        description=_TAGS_WRITE_DESCRIPTION,
+        description=TAGS_WRITE_DESCRIPTION,
     )
 
 
@@ -431,7 +433,7 @@ def list_assets(
     ] = "name",
     tag: Annotated[
         list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]] | None,
-        Query(description=_TAG_FILTER_DESCRIPTION),
+        Query(description=TAG_FILTER_DESCRIPTION),
     ] = None,
 ) -> list[svc.AssetSummary]:
     # Workspace-true (ADR 0037): identical rows for every member — the service takes no user.

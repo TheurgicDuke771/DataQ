@@ -44,8 +44,13 @@ export function Assets() {
   // Server-side AND filter, shared by both views; a cached tree walk describes the previous
   // filter, so it is dropped with the change.
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // The table's sort and page live here too, so the remount a filter change forces (below)
+  // keeps the user's order; only the page resets, since the population changed.
+  const [sort, setSort] = useState<AssetSort>('name');
+  const [page, setPage] = useState(1);
   const onTagFilterChange = (next: string[]) => {
     treeCache.current = null;
+    setPage(1);
     setTagFilter(next);
   };
 
@@ -79,7 +84,15 @@ export function Assets() {
             tags={tagFilter}
           />
         ) : (
-          <AssetsTableView key={tagFilter.join('\u0000')} onOpen={onOpen} tags={tagFilter} />
+          <AssetsTableView
+            key={tagFilter.join('\u0000')}
+            onOpen={onOpen}
+            tags={tagFilter}
+            sort={sort}
+            onSort={setSort}
+            page={page}
+            onPage={setPage}
+          />
         )}
       </Flex>
     </Page>
@@ -193,13 +206,19 @@ const TABLE_PAGE_SIZE = 50;
 function AssetsTableView({
   onOpen,
   tags = [],
+  sort,
+  onSort,
+  page,
+  onPage,
 }: {
   onOpen: (id: string) => void;
   /** Active tag filter (AND); the parent remounts this view when it changes. */
   tags?: string[];
+  sort: AssetSort;
+  onSort: (sort: AssetSort) => void;
+  page: number;
+  onPage: (page: number) => void;
 }) {
-  const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<AssetSort>('name');
   // Forward the abort signal (#1107 review) so switching pages quickly — or toggling away from the
   // table entirely — cancels the superseded request at the network layer.
   const { state, reload } = useAsyncData((signal) =>
@@ -216,13 +235,13 @@ function AssetsTableView({
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the fetcher
   // identity — see its doc), so a page change must bump it explicitly.
   const onPageChange = (nextPage: number) => {
-    setPage(nextPage);
+    onPage(nextPage);
     reload();
   };
   // The server orders the whole population, so a new order starts again from its first page.
   const onSortChange = (nextSort: AssetSort) => {
-    setSort(nextSort);
-    setPage(1);
+    onSort(nextSort);
+    onPage(1);
     reload();
   };
 

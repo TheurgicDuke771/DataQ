@@ -10,7 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, ApiRequestModel, TagNames
+from backend.app.api.v1._base import (
+    TAG_FILTER_DESCRIPTION,
+    TAGS_WRITE_DESCRIPTION,
+    ApiModel,
+    ApiRequestModel,
+    TagNames,
+    TagNamesIn,
+)
 from backend.app.api.v1.runs import RunRead, run_reads
 from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.core.logging import get_logger
@@ -85,21 +92,6 @@ class SuiteTarget(ApiRequestModel):
         return self.model_dump(by_alias=True, exclude_none=True)
 
 
-#: Tag names on a write (#888): free text, normalized by the service (lower-case, trimmed,
-#: single-spaced; a name nobody has used yet is created). The whole list replaces the entity's tags.
-TagNamesIn = list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]]
-
-_TAGS_WRITE_DESCRIPTION = (
-    "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name "
-    "creates the tag; `[]` clears them. Omit to leave the tags as they are."
-)
-_TAG_FILTER_DESCRIPTION = (
-    "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): "
-    "`?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag "
-    "has matches nothing, so an empty result is 'nothing carries all of these', not an error."
-)
-
-
 class SuiteCreate(ApiRequestModel):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
@@ -108,7 +100,7 @@ class SuiteCreate(ApiRequestModel):
     tags: TagNamesIn | None = Field(
         default=None,
         max_length=tag_service.MAX_TAGS_PER_ENTITY,
-        description=_TAGS_WRITE_DESCRIPTION,
+        description=TAGS_WRITE_DESCRIPTION,
     )
 
 
@@ -119,7 +111,7 @@ class SuiteUpdate(ApiRequestModel):
     tags: TagNamesIn | None = Field(
         default=None,
         max_length=tag_service.MAX_TAGS_PER_ENTITY,
-        description=_TAGS_WRITE_DESCRIPTION,
+        description=TAGS_WRITE_DESCRIPTION,
     )
 
 
@@ -189,7 +181,7 @@ def list_suites(
     connection_id: uuid.UUID | None = None,
     tag: Annotated[
         list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]] | None,
-        Query(description=_TAG_FILTER_DESCRIPTION),
+        Query(description=TAG_FILTER_DESCRIPTION),
     ] = None,
 ) -> list[SuiteRead]:
     # Scoped to suites the user owns or has a share on — or every suite for a

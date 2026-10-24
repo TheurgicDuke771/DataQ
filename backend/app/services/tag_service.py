@@ -53,8 +53,9 @@ class TagNotFoundError(DataQError):
 def normalize_tag_name(raw: str) -> str:
     """The stored form of a tag name: NFC, lower-case, trimmed, runs of whitespace collapsed to one
     space. 422 on empty, over-long or control characters — ``key:value`` stays legal so the later
-    structured form is additive."""
-    name = " ".join(unicodedata.normalize("NFC", raw).casefold().split())
+    structured form is additive. ``lower()`` not ``casefold()``: the picker previews the stored
+    form with JavaScript's ``toLowerCase``, and the two must agree (``ß`` stays ``ß``)."""
+    name = " ".join(unicodedata.normalize("NFC", raw).lower().split())
     if not name:
         raise TagNameInvalidError("tag name is empty", detail={"name": raw})
     if len(name) > TAG_NAME_MAX_LENGTH:
@@ -101,7 +102,7 @@ def set_tags(
     """Replace the entity's tags with ``names`` (raw — normalized here). Does not commit; the
     caller's own audit + commit covers it. Returns whether anything changed."""
     wanted = normalize_tag_names(names)
-    if wanted == [t.name for t in entity.tags]:
+    if sorted(wanted) == sorted(t.name for t in entity.tags):
         return False
     entity.tags = ensure_tags(session, wanted)
     return True
@@ -148,20 +149,29 @@ def _count(join_table: Table) -> Any:
     )
 
 
+def _usage_select() -> Any:
+    return select(
+        Tag.id,
+        Tag.name,
+        Tag.created_at,
+        _count(suite_tags),
+        _count(asset_tags),
+        _count(connection_tags),
+        _count(check_tags),
+    )
+
+
 def list_tags(session: Session) -> list[TagUsage]:
     """Every tag, by name, with its usage counts."""
-    rows = session.execute(
-        select(
-            Tag.id,
-            Tag.name,
-            Tag.created_at,
-            _count(suite_tags),
-            _count(asset_tags),
-            _count(connection_tags),
-            _count(check_tags),
-        ).order_by(Tag.name)
-    ).all()
+    rows = session.execute(_usage_select().order_by(Tag.name)).all()
     return [TagUsage(*row) for row in rows]
+
+
+def tag_usage(session: Session, tag_id: uuid.UUID) -> TagUsage:
+    row = session.execute(_usage_select().where(Tag.id == tag_id)).one_or_none()
+    if row is None:
+        raise TagNotFoundError("tag not found", detail={"tag_id": str(tag_id)})
+    return TagUsage(*row)
 
 
 def get_tag(session: Session, tag_id: uuid.UUID) -> Tag:
@@ -174,7 +184,7 @@ def get_tag(session: Session, tag_id: uuid.UUID) -> Tag:
 def delete_tag(session: Session, tag_id: uuid.UUID, *, actor_id: uuid.UUID | None) -> None:
     """Remove a tag from the vocabulary; the FK cascade detaches it from every entity."""
     tag = get_tag(session, tag_id)
-    usage = next(u for u in list_tags(session) if u.id == tag.id)
+    usage = tag_usage(session, tag_id)
     before = audit_service.snapshot("tag", tag)
     session.delete(tag)
     audit_service.record(

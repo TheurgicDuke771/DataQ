@@ -405,6 +405,13 @@ export function TargetFields({
       )}
 
       {canSample && <SamplingFields />}
+      <Form.Item
+        name="tags"
+        label="Tags (optional)"
+        extra="Workspace labels — pick existing ones or type a new name. Lists filter by them."
+      >
+        <TagPicker />
+      </Form.Item>
     </>
   );
 }
@@ -489,13 +496,6 @@ function SamplingFields() {
           )}
         </>
       )}
-      <Form.Item
-        name="tags"
-        label="Tags (optional)"
-        extra="Workspace labels — pick existing ones or type a new name. Lists filter by them."
-      >
-        <TagPicker />
-      </Form.Item>
     </>
   );
 }
