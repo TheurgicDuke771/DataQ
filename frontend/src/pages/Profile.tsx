@@ -32,19 +32,9 @@ const ROLE_SUMMARIES: Record<WorkspaceRole, string> = {
     'Read-only: you can open the suites shared with you and read their results, but not change or run anything.',
 };
 
-/** The caller's effective role — the server resolves a break-glass allowlist admin as `admin`. */
-function effectiveRole(me: MeResponse): WorkspaceRole {
-  return me.is_workspace_admin ? 'admin' : me.role;
-}
-
 /** Profile (`/profile`, ADR 0022 ProfileScreen): identity, access summary, owned suites, API keys. */
 export function Profile() {
   const me = useMe();
-  const saveDisplayName = useSaveDisplayName();
-  const { message } = App.useApp();
-  const [savingName, setSavingName] = useState(false);
-  const suites = useAsyncData((signal) => listSuites(undefined, signal));
-
   if (me.status === 'loading') {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
@@ -58,9 +48,19 @@ export function Profile() {
       />
     );
   }
+  return <ProfileBody me={me.data} />;
+}
 
-  const { display_name, email, last_seen_at } = me.data;
-  const role = effectiveRole(me.data);
+/** Mounted only once `/me` has resolved, so the suites fetch never fires for a failed sign-in. */
+function ProfileBody({ me }: { me: MeResponse }) {
+  const saveDisplayName = useSaveDisplayName();
+  const { message } = App.useApp();
+  const [savingName, setSavingName] = useState(false);
+  const suites = useAsyncData((signal) => listSuites(undefined, signal));
+
+  // `role` is already the EFFECTIVE role — the server resolves a break-glass allowlist admin
+  // to `admin` here (api/me.ts), so nothing is re-derived client-side.
+  const { display_name, email, last_seen_at, role } = me;
   const name = display_name ?? email;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
@@ -166,10 +166,33 @@ const ACCESS_LEVELS = [
   ['view', 'Shared with you to view'],
 ] as const;
 
+/**
+ * A workspace admin's list is every suite in the workspace, each non-owned one stamped `admin`
+ * whether or not anyone shared it (ADR 0033) — the payload cannot tell a share from the role,
+ * so per-share counts would be false for them. They get the two numbers that are true.
+ */
 function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole }) {
   const counts = new Map<string, number>();
   for (const s of suites) {
     if (s.my_permission) counts.set(s.my_permission, (counts.get(s.my_permission) ?? 0) + 1);
+  }
+  const owned = counts.get('owner') ?? 0;
+  if (role === 'admin') {
+    return (
+      <Flex vertical gap={8}>
+        <Descriptions column={1} size="small" aria-label="Suites by access level">
+          <Descriptions.Item label="Owned by you">{owned}</Descriptions.Item>
+          <Descriptions.Item label="All other suites in the workspace">
+            {suites.length - owned}
+          </Descriptions.Item>
+        </Descriptions>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          As a workspace admin you can act on every suite whether or not it was shared with you, so
+          suites are not counted by share level here. Each suite&apos;s sharing is managed by its
+          owner from the suite itself.
+        </Typography.Text>
+      </Flex>
+    );
   }
   return (
     <Flex vertical gap={8}>
@@ -181,10 +204,8 @@ function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole 
         ))}
       </Descriptions>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {role === 'admin'
-          ? 'As a workspace admin you also see every suite nobody shared with you; those are not counted here.'
-          : 'Suites nobody has shared with you are not visible to you and are not counted here.'}{' '}
-        Each suite&apos;s sharing is managed by its owner from the suite itself.
+        Suites nobody has shared with you are not visible to you and are not counted here. Each
+        suite&apos;s sharing is managed by its owner from the suite itself.
       </Typography.Text>
     </Flex>
   );

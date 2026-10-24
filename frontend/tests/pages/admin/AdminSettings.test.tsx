@@ -82,11 +82,13 @@ const WORKSPACE_CONFIG: WorkspaceConfig = {
       kind: 'emails',
       values: [],
       active: true,
-      grants: 'admin_role',
+      grants: 'sign_in_and_admin_role',
     },
   ],
   oidc_default_role: 'member',
   otp_default_role: 'viewer',
+  sign_in_mode: 'otp',
+  idp_decides_signup: false,
   dev_bypass_active: false,
 };
 
@@ -147,9 +149,11 @@ describe('AdminSettings', () => {
       expect(screen.getByText('OIDC_ALLOWED_EMAILS')).toBeInTheDocument();
       expect(screen.getByText('ada@example.com')).toBeInTheDocument();
       // An allowlist for a mode the deployment does not use must not read as the gate.
-      expect(screen.getByText('Not read — sign-in mode not configured')).toBeInTheDocument();
+      expect(screen.getByText('Not read — not the sign-in mode in use')).toBeInTheDocument();
       expect(screen.getByText('Read at sign-in')).toBeInTheDocument();
-      expect(screen.getByText('Grants the Admin role')).toBeInTheDocument();
+      // WORKSPACE_ADMIN_EMAILS admits AND grants — never "grants only".
+      expect(screen.getByText('Admits and grants the Admin role')).toBeInTheDocument();
+      expect(screen.getByText('Email code')).toBeInTheDocument(); // the sign-in mode
       expect(screen.getByText('No addresses')).toBeInTheDocument();
       expect(screen.getByText('Viewer')).toBeInTheDocument(); // the OTP first-sign-in role
       // Sign-in access and Destructive actions both point at Members.
@@ -169,6 +173,42 @@ describe('AdminSettings', () => {
       expect(screen.getByText('SAMPLE_FAILURES_RETENTION_DAYS')).toBeInTheDocument();
       expect(screen.getByText('365 days')).toBeInTheDocument();
       expect(screen.getByText('Audit events older than this are deleted.')).toBeInTheDocument();
+    });
+
+    it('says the identity provider is the gate when OIDC runs with no allowlist', async () => {
+      // Mode configured, lists empty: the rows stay "read" and the card says what empty means.
+      mockWorkspaceConfig.mockResolvedValue({
+        ...WORKSPACE_CONFIG,
+        sign_in_mode: 'oidc',
+        idp_decides_signup: true,
+        signup_allowlists: WORKSPACE_CONFIG.signup_allowlists.map((row) =>
+          row.variable.startsWith('OIDC_')
+            ? { ...row, values: [], active: true }
+            : { ...row, active: row.variable === 'WORKSPACE_ADMIN_EMAILS' },
+        ),
+      });
+      renderSubPage(<AdminSettings />);
+      expect(
+        await screen.findByText('The identity provider decides who may sign in'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/every identity the issuer vouches for is admitted/),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('Read at sign-in — empty, so the identity provider decides'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Not read — sign-in mode not configured')).toBeNull();
+    });
+
+    it('names the tenant as the gate in Azure AD mode', async () => {
+      mockWorkspaceConfig.mockResolvedValue({
+        ...WORKSPACE_CONFIG,
+        sign_in_mode: 'azure_ad',
+        idp_decides_signup: true,
+      });
+      renderSubPage(<AdminSettings />);
+      expect(await screen.findByText(/every account in the tenant/)).toBeInTheDocument();
+      expect(screen.getByText('Microsoft Entra ID (Azure AD)')).toBeInTheDocument();
     });
 
     it('calls out the developer bypass when it is the active sign-in', async () => {

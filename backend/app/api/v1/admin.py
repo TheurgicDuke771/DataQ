@@ -38,7 +38,6 @@ from backend.app.services import (
     audit_service,
     data_subject_requests,
     llm_service,
-    membership_service,
     privacy_settings_service,
     run_dispatch,
     secret_sweep_service,
@@ -907,8 +906,9 @@ class SignupAllowlistRead(ApiModel):
     variable: str
     kind: Literal["emails", "domains"]
     values: list[str]
-    #: Whether a sign-in door on THIS deployment reads it. An allowlist for a mode the
-    #: deployment does not use admits nobody, so its values are shown but inert.
+    #: Whether this deployment signs people in through the mode that reads this list. False
+    #: means the mode is not in use, so the values are shown but inert. True with an empty
+    #: list on an OIDC deployment is the open posture `idp_decides_signup` names.
     active: bool
     #: `sign_in` admits the address; `sign_in_and_admin_role` admits it AND grants Admin
     #: regardless of the stored role (`WORKSPACE_ADMIN_EMAILS` does both — ADR 0033 decision 6).
@@ -955,11 +955,11 @@ def _sign_in_mode(s: Settings) -> Literal["azure_ad", "oidc", "otp", "dev_bypass
 def get_workspace_config() -> WorkspaceConfigRead:
     """Read-only: these values come from the environment, not the database."""
     settings = get_settings()
-    active_vars = {
-        var
-        for emails_var, domains_var, _, _ in membership_service.configured_allowlists(settings)
-        for var in (emails_var, domains_var)
-    }
+    active_vars: set[str] = set()
+    if settings.generic_oidc_configured:
+        active_vars |= {"OIDC_ALLOWED_EMAILS", "OIDC_ALLOWED_DOMAINS"}
+    if settings.otp_auth_configured:
+        active_vars |= {"AUTH_OTP_ALLOWED_EMAILS", "AUTH_OTP_ALLOWED_DOMAINS"}
 
     def _allowlist(
         variable: str, kind: Literal["emails", "domains"], values: frozenset[str]

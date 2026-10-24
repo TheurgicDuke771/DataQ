@@ -121,12 +121,43 @@ def test_allowlist_is_active_when_its_mode_gates_a_door(
 def test_oidc_without_an_allowlist_is_reported_as_the_idp_deciding(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The open-pool posture: OIDC in use, no app-side allowlist. The rows are empty and
-    # inactive, which alone would read as "mode not configured" — the opposite of the truth.
+    # The open-pool posture: OIDC in use, no app-side allowlist. The mode IS configured, so
+    # its rows stay active (an inactive row would read as "mode not configured" — the
+    # opposite of the truth) and the top-level flag names what an empty active list means.
     _set(monkeypatch, OIDC_ISSUER="https://issuer.example.com/", OIDC_AUDIENCE="dataq")
     body = client.get(URL).json()
     assert (body["sign_in_mode"], body["idp_decides_signup"]) == ("oidc", True)
-    assert _by_variable(body, "signup_allowlists")["OIDC_ALLOWED_EMAILS"]["active"] is False
+    lists = _by_variable(body, "signup_allowlists")
+    assert (lists["OIDC_ALLOWED_EMAILS"]["active"], lists["OIDC_ALLOWED_EMAILS"]["values"]) == (
+        True,
+        [],
+    )
+    assert lists["OIDC_ALLOWED_DOMAINS"]["active"] is True
+    assert lists["AUTH_OTP_ALLOWED_EMAILS"]["active"] is False
+
+
+def test_azure_ad_mode_reports_the_tenant_as_the_gate(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set(
+        monkeypatch,
+        AZURE_TENANT_ID="11111111-1111-1111-1111-111111111111",
+        AZURE_API_CLIENT_ID="22222222-2222-2222-2222-222222222222",
+        OIDC_ALLOWED_DOMAINS="example.com",
+    )
+    body = client.get(URL).json()
+    assert (body["sign_in_mode"], body["idp_decides_signup"]) == ("azure_ad", True)
+    lists = _by_variable(body, "signup_allowlists")
+    # No app-side allowlist is read in this mode: the OIDC values are shown but inert.
+    assert all(
+        lists[v]["active"] is False
+        for v in (
+            "OIDC_ALLOWED_EMAILS",
+            "OIDC_ALLOWED_DOMAINS",
+            "AUTH_OTP_ALLOWED_EMAILS",
+            "AUTH_OTP_ALLOWED_DOMAINS",
+        )
+    )
 
 
 def test_the_retention_readout_names_every_sweep_that_deletes(client: TestClient) -> None:

@@ -10688,7 +10688,7 @@
           "grants": {
             "enum": [
               "sign_in",
-              "admin_role"
+              "sign_in_and_admin_role"
             ],
             "title": "Grants",
             "type": "string"
@@ -12457,11 +12457,23 @@
             "title": "Dev Bypass Active",
             "type": "boolean"
           },
+          "idp_decides_signup": {
+            "title": "Idp Decides Signup",
+            "type": "boolean"
+          },
           "oidc_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
             "title": "Oidc Default Role",
             "type": "string"
           },
           "otp_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
             "title": "Otp Default Role",
             "type": "string"
           },
@@ -12471,6 +12483,17 @@
             },
             "title": "Retention",
             "type": "array"
+          },
+          "sign_in_mode": {
+            "enum": [
+              "azure_ad",
+              "oidc",
+              "otp",
+              "dev_bypass",
+              "none"
+            ],
+            "title": "Sign In Mode",
+            "type": "string"
           },
           "signup_allowlists": {
             "items": {
@@ -12485,6 +12508,8 @@
           "signup_allowlists",
           "oidc_default_role",
           "otp_default_role",
+          "sign_in_mode",
+          "idp_decides_signup",
           "dev_bypass_active"
         ],
         "title": "WorkspaceConfigRead",

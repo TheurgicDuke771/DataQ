@@ -97,8 +97,10 @@ describe('Profile', () => {
     expect(screen.getAllByText('Member').length).toBeGreaterThan(0);
   });
 
-  it('tags a workspace admin', () => {
-    renderProfile({ ...me, data: { ...me.data, is_workspace_admin: true } });
+  it('tags a workspace admin from the effective role the server resolved', () => {
+    // `role` is the effective role (a break-glass allowlist admin reads `admin`); the page must
+    // not re-derive it from `is_workspace_admin`.
+    renderProfile({ ...me, data: { ...me.data, role: 'admin', is_workspace_admin: true } });
     expect(screen.getAllByText('Workspace admin').length).toBeGreaterThan(0);
   });
 
@@ -142,11 +144,27 @@ describe('Profile', () => {
       expect(screen.queryByRole('list', { name: 'Suites you own' })).toBeNull();
     });
 
-    it('tells an admin the summary counts only suites they hold a grant on', async () => {
+    it('never shows an admin per-share counts, since every suite reads as admin for them', async () => {
+      // GET /suites stamps every non-owned suite `admin` for a workspace admin (ADR 0033), so a
+      // "Shared with you as admin" row would count suites nobody shared.
+      mockListSuites.mockResolvedValue(
+        SUITES.map((s) => (s.my_permission === 'owner' ? s : { ...s, my_permission: 'admin' })),
+      );
       renderProfile({ ...me, data: { ...me.data, role: 'admin', is_workspace_admin: true } });
+      const summary = await screen.findByLabelText('Suites by access level');
+      const row = (label: string) =>
+        within(summary).getByText(label).closest('.ant-descriptions-item')?.textContent;
+      expect(row('Owned by you')).toMatch(/2$/);
+      expect(row('All other suites in the workspace')).toMatch(/3$/);
+      expect(within(summary).queryByText('Shared with you as admin')).toBeNull();
       expect(
-        await screen.findByText(/you also see every suite nobody shared with you/),
+        screen.getByText(/you can act on every suite whether or not it was shared with you/),
       ).toBeInTheDocument();
+    });
+
+    it('does not fetch suites until /me has resolved', () => {
+      renderProfile({ status: 'loading' });
+      expect(mockListSuites).not.toHaveBeenCalled();
     });
 
     it('shows the failure with a retry when the suite list cannot load', async () => {

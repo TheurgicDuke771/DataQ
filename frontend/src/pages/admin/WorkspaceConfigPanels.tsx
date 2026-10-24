@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   getWorkspaceConfig,
   type RetentionSetting,
+  type SignInMode,
   type SignupAllowlist,
   type WorkspaceConfig,
 } from '../../api/admin';
@@ -11,7 +12,15 @@ import { AsyncBody } from '../../components/AsyncBody';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { docsUrl } from '../../utils/docs';
 
-const ROLE_LABELS = { admin: 'Admin', member: 'Member', viewer: 'Viewer' } as const;
+const ROLE_LABELS = { member: 'Member', viewer: 'Viewer' } as const;
+
+const SIGN_IN_MODE_LABELS: Record<SignInMode, string> = {
+  azure_ad: 'Microsoft Entra ID (Azure AD)',
+  oidc: 'Identity provider (OIDC)',
+  otp: 'Email code',
+  dev_bypass: 'Developer bypass',
+  none: 'Not configured',
+};
 
 /**
  * The deployment-set values an admin can read here but only change by editing the
@@ -46,9 +55,17 @@ export function WorkspaceConfigPanels() {
 }
 
 /** Plain-words status, so the row never relies on a colour to carry its meaning. */
-function allowlistStatus(row: SignupAllowlist): { text: string; color?: string } {
-  if (row.grants === 'admin_role') return { text: 'Grants the Admin role', color: 'gold' };
-  if (!row.active) return { text: 'Not read — sign-in mode not configured' };
+function allowlistStatus(
+  row: SignupAllowlist,
+  config: WorkspaceConfig,
+): { text: string; color?: string } {
+  if (row.grants === 'sign_in_and_admin_role') {
+    return { text: 'Admits and grants the Admin role', color: 'gold' };
+  }
+  if (!row.active) return { text: 'Not read — not the sign-in mode in use' };
+  if (config.idp_decides_signup && row.values.length === 0) {
+    return { text: 'Read at sign-in — empty, so the identity provider decides', color: 'orange' };
+  }
   return { text: 'Read at sign-in', color: 'green' };
 }
 
@@ -64,12 +81,29 @@ function SignInAccess({ config }: { config: WorkspaceConfig }) {
         ; an address an active list names signs in whether or not the member list has it, and can
         only be removed from the configuration.
       </Typography.Text>
+      <Descriptions column={1} size="small" aria-label="Sign-in mode">
+        <Descriptions.Item label="Sign-in mode">
+          {SIGN_IN_MODE_LABELS[config.sign_in_mode]}
+        </Descriptions.Item>
+      </Descriptions>
       {config.dev_bypass_active && (
         <Alert
           type="info"
           showIcon
           title="Developer bypass is the active sign-in"
           description="Nobody is gated by an allowlist on this stack: every request runs as the bypass identity. Production deployments sign in through an identity provider or email codes."
+        />
+      )}
+      {config.idp_decides_signup && (
+        <Alert
+          type="warning"
+          showIcon
+          title="The identity provider decides who may sign in"
+          description={
+            config.sign_in_mode === 'azure_ad'
+              ? 'No app-side allowlist is read in this mode: every account in the tenant that can obtain a token is admitted and provisioned on first sign-in. Membership is governed in the tenant.'
+              : 'OIDC_ALLOWED_EMAILS and OIDC_ALLOWED_DOMAINS are both empty, so every identity the issuer vouches for is admitted and provisioned on first sign-in. Set one of them to make this app, not the issuer, the gate.'
+          }
         />
       )}
       <Table<SignupAllowlist>
@@ -106,7 +140,7 @@ function SignInAccess({ config }: { config: WorkspaceConfig }) {
             title: 'Status',
             key: 'status',
             render: (_, row) => {
-              const { text, color } = allowlistStatus(row);
+              const { text, color } = allowlistStatus(row, config);
               return <Tag color={color}>{text}</Tag>;
             },
           },

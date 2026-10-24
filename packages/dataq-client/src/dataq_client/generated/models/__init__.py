@@ -348,6 +348,9 @@ from .warehouse_lineage_status_read import WarehouseLineageStatusRead
 from .webhook_regenerate_response import WebhookRegenerateResponse
 from .webhook_regenerate_response_auth_mode import WebhookRegenerateResponseAuthMode
 from .workspace_config_read import WorkspaceConfigRead
+from .workspace_config_read_oidc_default_role import WorkspaceConfigReadOidcDefaultRole
+from .workspace_config_read_otp_default_role import WorkspaceConfigReadOtpDefaultRole
+from .workspace_config_read_sign_in_mode import WorkspaceConfigReadSignInMode
 
 __all__ = (
     "AdditionalTableRef",
@@ -694,4 +697,7 @@ __all__ = (
     "WebhookRegenerateResponse",
     "WebhookRegenerateResponseAuthMode",
     "WorkspaceConfigRead",
+    "WorkspaceConfigReadOidcDefaultRole",
+    "WorkspaceConfigReadOtpDefaultRole",
+    "WorkspaceConfigReadSignInMode",
 )

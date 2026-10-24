@@ -293,7 +293,7 @@ Two deployment settings stay available and are deliberately grant-only, as break
 |---|---|
 | `OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS` | Admits addresses on an identity-provider deployment, whether or not the member list names them. |
 | `AUTH_OTP_ALLOWED_EMAILS` / `AUTH_OTP_ALLOWED_DOMAINS` | The same for email-code sign-in. Still required at boot in that mode, since the first admin has to come from somewhere. |
-| `WORKSPACE_ADMIN_EMAILS` | Grants the Admin role regardless of the stored one (see roles, below). |
+| `WORKSPACE_ADMIN_EMAILS` | Admits the address **and** grants it the Admin role regardless of the stored one (see roles, below). Removing someone from Members while this names them leaves them able to sign in as Admin. |
 
 If a membership change locks the workspace out, add the address to the matching setting and
 restart. That path exists precisely so a mistake in the app is recoverable outside it.
@@ -394,16 +394,25 @@ the detail.
 
 ## Settings — sign-in access (read-only)
 
-The **Sign-in access** card shows the deployment's allowlists exactly as configured — the
+The **Sign-in access** card names the sign-in mode this deployment uses (Entra ID, OIDC,
+email code or the developer bypass) and shows its allowlists exactly as configured — the
 values of `OIDC_ALLOWED_EMAILS`, `OIDC_ALLOWED_DOMAINS`, `AUTH_OTP_ALLOWED_EMAILS`,
 `AUTH_OTP_ALLOWED_DOMAINS` and `WORKSPACE_ADMIN_EMAILS` — with a worded status per row:
 
-- **Read at sign-in** — a sign-in door on this deployment reads the list.
-- **Not read — sign-in mode not configured** — the list has values but its mode is not the
-  one this deployment uses, so it admits nobody. Values set for the wrong mode are a
+- **Read at sign-in** — this deployment signs people in through the mode that reads the list.
+- **Read at sign-in — empty, so the identity provider decides** — OIDC is the mode and both
+  `OIDC_ALLOWED_*` lists are empty, so every identity the issuer vouches for is admitted and
+  provisioned on first sign-in. The card carries a warning saying so; set one of the two
+  lists to make the app, not the issuer, the gate.
+- **Not read — not the sign-in mode in use** — the list may have values but its mode is not
+  the one this deployment uses, so it admits nobody. Values set for the wrong mode are a
   common reason an expected sign-in is refused; this row makes that visible.
-- **Grants the Admin role** — `WORKSPACE_ADMIN_EMAILS`, which never admits anyone by itself
-  but grants Admin to whoever it names (see [seed and emergency access](#seed-and-emergency-access)).
+- **Admits and grants the Admin role** — `WORKSPACE_ADMIN_EMAILS`, which both signs its
+  addresses in and makes them Admin whatever their stored role (see
+  [seed and emergency access](#seed-and-emergency-access)).
+
+In Entra ID mode no app-side allowlist is read at all: the tenant decides who may sign in, and
+the card says so rather than leaving four "not read" rows to be puzzled over.
 
 Below the table are the roles a first sign-in lands on for each mode. Everything on the
 card is read-only: these values change only when the deployment's configuration is edited
@@ -416,7 +425,9 @@ Day-to-day admission is the [Members](#members) tab.
 The **Data retention** card lists each retention clock with the variable that sets it and
 what the daily sweep removes when it runs out: failing-row samples and captured cell values
 inside stored results (`SAMPLE_FAILURES_RETENTION_DAYS`), audit events
-(`AUDIT_RETENTION_DAYS`) and spent sign-in codes (`OTP_CODES_RETENTION_HOURS`). Run and
+(`AUDIT_RETENTION_DAYS`), spent sign-in codes (`OTP_CODES_RETENTION_HOURS`) and asset rows
+nothing references any more (`ASSET_ORPHAN_RETENTION_DAYS` — the one clock that deletes a
+catalog entry, so an asset that vanished from Assets is explained here). Run and
 result rows are never deleted by retention — only the samples inside them — so metric
 trends survive. Shortening a clock takes effect at the next sweep; lengthening one cannot
 bring back what an earlier sweep removed.
