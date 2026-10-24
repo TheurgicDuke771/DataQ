@@ -22,6 +22,7 @@ const ROUTES: [string, string][] = [
   [`/assets/${ID}`, 'Asset · DataQ'],
   ['/results', 'Results · DataQ'],
   [`/results/${ID}`, 'Run · DataQ'],
+  [`/results/${ID}/compare/${ID}`, 'Compare runs · DataQ'],
   ['/profile', 'Profile · DataQ'],
   ['/settings', 'Settings · DataQ'],
   ['/admin', 'Overview · Admin · DataQ'],
