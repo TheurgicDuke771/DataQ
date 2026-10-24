@@ -96,6 +96,14 @@ from .column_profile_request_file_format_type_0 import ColumnProfileRequestFileF
 from .column_trace_asset_read import ColumnTraceAssetRead
 from .column_trace_read import ColumnTraceRead
 from .columns_read import ColumnsRead
+from .comparison_check_read import ComparisonCheckRead
+from .comparison_delta_read import ComparisonDeltaRead
+from .comparison_delta_read_status_change import ComparisonDeltaReadStatusChange
+from .comparison_row_read import ComparisonRowRead
+from .comparison_run_read import ComparisonRunRead
+from .comparison_side_read import ComparisonSideRead
+from .comparison_side_read_observed_value_type_0 import ComparisonSideReadObservedValueType0
+from .comparison_summary_read import ComparisonSummaryRead
 from .composing_suite_read import ComposingSuiteRead
 from .connection_create import ConnectionCreate
 from .connection_create_config import ConnectionCreateConfig
@@ -247,6 +255,7 @@ from .result_read_observed_value_type_0 import ResultReadObservedValueType0
 from .result_read_redaction_type_0 import ResultReadRedactionType0
 from .result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
 from .result_read_sampling_type_0 import ResultReadSamplingType0
+from .run_comparison_read import RunComparisonRead
 from .run_detail_read import RunDetailRead
 from .run_outcome_read import RunOutcomeRead
 from .run_progress_read import RunProgressRead
@@ -425,6 +434,14 @@ __all__ = (
     "ColumnTraceAssetRead",
     "ColumnTraceRead",
     "ColumnsRead",
+    "ComparisonCheckRead",
+    "ComparisonDeltaRead",
+    "ComparisonDeltaReadStatusChange",
+    "ComparisonRowRead",
+    "ComparisonRunRead",
+    "ComparisonSideRead",
+    "ComparisonSideReadObservedValueType0",
+    "ComparisonSummaryRead",
     "ComposingSuiteRead",
     "ConnectionCreate",
     "ConnectionCreateConfig",
@@ -574,6 +591,7 @@ __all__ = (
     "ResultReadRedactionType0",
     "ResultReadSampleFailuresType0",
     "ResultReadSamplingType0",
+    "RunComparisonRead",
     "RunDetailRead",
     "RunOutcomeRead",
     "RunProgressRead",
