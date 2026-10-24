@@ -259,6 +259,10 @@ from .scorecard_read import ScorecardRead
 from .scoring_weights_read import ScoringWeightsRead
 from .scoring_weights_read_defaults import ScoringWeightsReadDefaults
 from .scoring_weights_write import ScoringWeightsWrite
+from .search_groups_read import SearchGroupsRead
+from .search_hit_read import SearchHitRead
+from .search_response import SearchResponse
+from .search_response_truncated_groups_item import SearchResponseTruncatedGroupsItem
 from .seasonal_period_patch import SeasonalPeriodPatch
 from .seasonal_period_patch_kind_type_0 import SeasonalPeriodPatchKindType0
 from .seasonal_period_promote import SeasonalPeriodPromote
@@ -586,6 +590,10 @@ __all__ = (
     "ScoringWeightsRead",
     "ScoringWeightsReadDefaults",
     "ScoringWeightsWrite",
+    "SearchGroupsRead",
+    "SearchHitRead",
+    "SearchResponse",
+    "SearchResponseTruncatedGroupsItem",
     "SeasonalPeriodPatch",
     "SeasonalPeriodPatchKindType0",
     "SeasonalPeriodPromote",
