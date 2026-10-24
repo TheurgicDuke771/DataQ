@@ -78,13 +78,17 @@ export function IncidentsPanel({
   assetId,
   permissionBySuite,
   restrictedSuiteCount = 0,
+  initialIncidentId = null,
 }: {
   assetId: string;
   permissionBySuite: Record<string, string>;
   restrictedSuiteCount?: number;
+  /** An incident to open in the evidence drawer straight away — the notification feed's
+   *  `?incident=` deep link lands here. */
+  initialIncidentId?: string | null;
 }) {
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
-  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
+  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(initialIncidentId);
   return (
     <Card size="small" title="Incidents">
       <AsyncBody

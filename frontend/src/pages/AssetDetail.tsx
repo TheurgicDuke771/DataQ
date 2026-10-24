@@ -2,7 +2,7 @@ import { ArrowLeftOutlined, EditOutlined, UserOutlined } from '@ant-design/icons
 import { App, Button, Card, Flex, Input, Select, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { type AdminUser, listAdminUsers } from '../api/admin';
 import {
@@ -88,6 +88,9 @@ function AssetDetailBody({
 }) {
   const { summary } = asset;
   const navigate = useNavigate();
+  // `?incident=<id>` — the notification feed's deep link — opens that incident's evidence.
+  const [searchParams] = useSearchParams();
+  const initialIncidentId = searchParams.get('incident');
   // Asset-metadata mutation is workspace-Admin-only (ADR 0034 §4; backend 403s everyone else) — the
   // edit affordance renders only for admins.
   const isAdmin = useIsWorkspaceAdmin();
@@ -174,6 +177,7 @@ function AssetDetailBody({
 
       <IncidentsPanel
         assetId={summary.id}
+        initialIncidentId={initialIncidentId}
         permissionBySuite={Object.fromEntries(
           asset.suites.map((s) => [s.suite_id, s.my_permission]),
         )}
