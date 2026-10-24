@@ -113,8 +113,6 @@ ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
 # know this value.
 SUITE_TRIGGER_PROVIDER = "suite"
 TRIGGER_PROVIDERS = (*ORCHESTRATION_PROVIDERS, SUITE_TRIGGER_PROVIDER)
-#: Depth cap on a chain of suite-triggered runs (ADR 0051 decision 5).
-SUITE_TRIGGER_MAX_DEPTH = 5
 PERMISSIONS = ("view", "edit", "admin")
 # Coarse workspace roles (ADR 0033) — orthogonal to per-suite PERMISSIONS; neither replaces the
 # other.

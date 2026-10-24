@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.db.models import (
-    SUITE_TRIGGER_MAX_DEPTH,
     SUITE_TRIGGER_PROVIDER,
     Run,
     TriggerBinding,
@@ -22,6 +21,8 @@ from backend.app.services.run_service import check_outcome_counts
 
 log = get_logger(__name__)
 
+#: Depth cap on a chain of suite-triggered runs (ADR 0051 decision 5).
+SUITE_TRIGGER_MAX_DEPTH = 5
 #: Tiers that stop a chain: the upstream said its data is bad, so the downstream is not run on it.
 _BLOCKING_TIERS = frozenset({"fail", "critical"})
 

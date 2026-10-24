@@ -10,7 +10,6 @@ import pytest
 from sqlalchemy import func, select
 
 from backend.app.db.models import (
-    SUITE_TRIGGER_MAX_DEPTH,
     Check,
     Connection,
     Result,
@@ -21,6 +20,7 @@ from backend.app.db.models import (
 )
 from backend.app.services import run_dispatch
 from backend.app.services import suite_trigger_service as svc
+from backend.app.services.suite_trigger_service import SUITE_TRIGGER_MAX_DEPTH
 
 
 def _user(db: Any) -> User:
