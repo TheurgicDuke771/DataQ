@@ -39,6 +39,7 @@ class CheckRead:
         inherited (InheritedFrom | None | Unset):
         origin (str | Unset):  Default: 'user'.
         source_connection_id (None | Unset | UUID):
+        tags (list[str] | Unset):
     """
 
     config: CheckReadConfig
@@ -57,6 +58,7 @@ class CheckRead:
     inherited: InheritedFrom | None | Unset = UNSET
     origin: str | Unset = "user"
     source_connection_id: None | Unset | UUID = UNSET
+    tags: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -119,6 +121,10 @@ class CheckRead:
         else:
             source_connection_id = self.source_connection_id
 
+        tags: list[str] | Unset = UNSET
+        if not isinstance(self.tags, Unset):
+            tags = self.tags
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -147,6 +153,8 @@ class CheckRead:
             field_dict["origin"] = origin
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
+        if tags is not UNSET:
+            field_dict["tags"] = tags
 
         return field_dict
 
@@ -255,6 +263,8 @@ class CheckRead:
 
         source_connection_id = _parse_source_connection_id(d.pop("source_connection_id", UNSET))
 
+        tags = cast(list[str], d.pop("tags", UNSET))
+
         check_read = cls(
             config=config,
             critical_threshold=critical_threshold,
@@ -272,6 +282,7 @@ class CheckRead:
             inherited=inherited,
             origin=origin,
             source_connection_id=source_connection_id,
+            tags=tags,
         )
 
         check_read.additional_properties = d

@@ -40,6 +40,7 @@ class AssetSummaryRead:
             worst_severity (None | str):
             auto_coverage_excluded (bool | Unset):  Default: False.
             health_score (float | None | Unset):
+            tags (list[str] | Unset):
     """
 
     checks_passed: int
@@ -61,6 +62,7 @@ class AssetSummaryRead:
     worst_severity: None | str
     auto_coverage_excluded: bool | Unset = False
     health_score: float | None | Unset = UNSET
+    tags: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +119,10 @@ class AssetSummaryRead:
         else:
             health_score = self.health_score
 
+        tags: list[str] | Unset = UNSET
+        if not isinstance(self.tags, Unset):
+            tags = self.tags
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -144,6 +150,8 @@ class AssetSummaryRead:
             field_dict["auto_coverage_excluded"] = auto_coverage_excluded
         if health_score is not UNSET:
             field_dict["health_score"] = health_score
+        if tags is not UNSET:
+            field_dict["tags"] = tags
 
         return field_dict
 
@@ -236,6 +244,8 @@ class AssetSummaryRead:
 
         health_score = _parse_health_score(d.pop("health_score", UNSET))
 
+        tags = cast(list[str], d.pop("tags", UNSET))
+
         asset_summary_read = cls(
             checks_passed=checks_passed,
             checks_total=checks_total,
@@ -256,6 +266,7 @@ class AssetSummaryRead:
             worst_severity=worst_severity,
             auto_coverage_excluded=auto_coverage_excluded,
             health_score=health_score,
+            tags=tags,
         )
 
         asset_summary_read.additional_properties = d

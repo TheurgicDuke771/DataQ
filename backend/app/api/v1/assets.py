@@ -11,9 +11,13 @@ from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import (
+    TAG_FILTER_DESCRIPTION,
+    TAGS_WRITE_DESCRIPTION,
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
+    TagNames,
+    TagNamesIn,
     total_count_responses,
 )
 from backend.app.api.v1.admin_coverage import (
@@ -23,11 +27,11 @@ from backend.app.api.v1.admin_coverage import (
 )
 from backend.app.core.auth import get_current_user, require_workspace_admin
 from backend.app.core.roles import is_workspace_admin
-from backend.app.db.models import User
+from backend.app.db.models import TAG_NAME_MAX_LENGTH, User
 from backend.app.db.session import get_db
 from backend.app.lineage.columns import DEFAULT_TRACE_DEPTH, MAX_TRACE_DEPTH, TraceDirection
 from backend.app.services import asset_view_service as svc
-from backend.app.services import coverage_settings_service
+from backend.app.services import coverage_settings_service, tag_service
 
 router = APIRouter(tags=["assets"])
 
@@ -92,6 +96,9 @@ class AssetSummaryRead(ApiModel):
     has_cancelled_run: bool
     has_operational_error: bool
     has_skip: bool
+    #: Workspace labels (#888), sorted by name. Set by a workspace Admin (the asset's metadata
+    #: axis), read by every member like the rest of the summary.
+    tags: TagNames = Field(default_factory=list)
 
 
 class LineageNodeRead(ApiModel):
@@ -377,6 +384,11 @@ class AssetMetadataUpdate(ApiRequestModel):
     # This table's own sensitivity for its automatic baselines (ADR 0047): the same document as
     # `PUT /admin/coverage`. `null` removes the override; omitted leaves it unchanged.
     auto_coverage_config: CoverageSettingsWrite | None = None
+    tags: TagNamesIn | None = Field(
+        default=None,
+        max_length=tag_service.MAX_TAGS_PER_ENTITY,
+        description=TAGS_WRITE_DESCRIPTION,
+    )
 
 
 class AssetCoverageSettingsRead(ApiModel):
@@ -399,8 +411,8 @@ _LIST_LIMIT_MAX = 200
     summary="List assets",
     responses=total_count_responses(
         "Total assets in the workspace (#925) — the same "
-        "unfiltered population this page's limit/offset slice "
-        "into. A page shorter than `limit` doesn't by itself "
+        "population this page's limit/offset slice into, after "
+        "any `tag` filter. A page shorter than `limit` doesn't by itself "
         "prove there's no more; compare against this header."
     ),
 )
@@ -419,10 +431,14 @@ def list_assets(
             )
         ),
     ] = "name",
+    tag: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]] | None,
+        Query(description=TAG_FILTER_DESCRIPTION),
+    ] = None,
 ) -> list[svc.AssetSummary]:
     # Workspace-true (ADR 0037): identical rows for every member — the service takes no user.
-    response.headers[TOTAL_COUNT_HEADER] = str(svc.count_assets(db))
-    return svc.list_visible_assets(db, limit=limit, offset=offset, sort=sort)
+    response.headers[TOTAL_COUNT_HEADER] = str(svc.count_assets(db, tags=tag))
+    return svc.list_visible_assets(db, limit=limit, offset=offset, sort=sort, tags=tag)
 
 
 @router.get("/assets/{asset_id}", response_model=AssetDetailRead, summary="Get an asset")
@@ -471,6 +487,7 @@ def update_asset(
             payload.auto_coverage_config.document() if payload.auto_coverage_config else None
         ),
         set_auto_coverage_config="auto_coverage_config" in fields,
+        tags=payload.tags,
         actor_id=admin.id,
     )
     # Return the refreshed workspace-true summary. Never 404s on an asset with no

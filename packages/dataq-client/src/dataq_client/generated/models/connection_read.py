@@ -50,6 +50,7 @@ class ConnectionRead:
         last_run_at (datetime.datetime | None | Unset):
         last_run_error (None | str | Unset):
         refused_expectation_types (list[str] | Unset):
+        tags (list[str] | Unset):
     """
 
     config: ConnectionReadConfig
@@ -76,6 +77,7 @@ class ConnectionRead:
     last_run_at: datetime.datetime | None | Unset = UNSET
     last_run_error: None | str | Unset = UNSET
     refused_expectation_types: list[str] | Unset = UNSET
+    tags: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -212,6 +214,10 @@ class ConnectionRead:
         if not isinstance(self.refused_expectation_types, Unset):
             refused_expectation_types = self.refused_expectation_types
 
+        tags: list[str] | Unset = UNSET
+        if not isinstance(self.tags, Unset):
+            tags = self.tags
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -259,6 +265,8 @@ class ConnectionRead:
             field_dict["last_run_error"] = last_run_error
         if refused_expectation_types is not UNSET:
             field_dict["refused_expectation_types"] = refused_expectation_types
+        if tags is not UNSET:
+            field_dict["tags"] = tags
 
         return field_dict
 
@@ -518,6 +526,8 @@ class ConnectionRead:
 
         refused_expectation_types = cast(list[str], d.pop("refused_expectation_types", UNSET))
 
+        tags = cast(list[str], d.pop("tags", UNSET))
+
         connection_read = cls(
             config=config,
             created_by=created_by,
@@ -543,6 +553,7 @@ class ConnectionRead:
             last_run_at=last_run_at,
             last_run_error=last_run_error,
             refused_expectation_types=refused_expectation_types,
+            tags=tags,
         )
 
         connection_read.additional_properties = d

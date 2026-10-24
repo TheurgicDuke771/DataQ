@@ -28,12 +28,15 @@ class AssetMetadataUpdate:
             auto_coverage_excluded (bool | None | Unset):
             description (None | str | Unset):
             owner_user_id (None | Unset | UUID):
+            tags (list[str] | None | Unset): Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a
+                new name creates the tag; `[]` clears them. Omit to leave the tags as they are.
     """
 
     auto_coverage_config: CoverageSettingsWrite | None | Unset = UNSET
     auto_coverage_excluded: bool | None | Unset = UNSET
     description: None | str | Unset = UNSET
     owner_user_id: None | Unset | UUID = UNSET
+    tags: list[str] | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.coverage_settings_write import CoverageSettingsWrite
@@ -66,6 +69,15 @@ class AssetMetadataUpdate:
         else:
             owner_user_id = self.owner_user_id
 
+        tags: list[str] | None | Unset
+        if isinstance(self.tags, Unset):
+            tags = UNSET
+        elif isinstance(self.tags, list):
+            tags = self.tags
+
+        else:
+            tags = self.tags
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
@@ -77,6 +89,8 @@ class AssetMetadataUpdate:
             field_dict["description"] = description
         if owner_user_id is not UNSET:
             field_dict["owner_user_id"] = owner_user_id
+        if tags is not UNSET:
+            field_dict["tags"] = tags
 
         return field_dict
 
@@ -140,11 +154,29 @@ class AssetMetadataUpdate:
 
         owner_user_id = _parse_owner_user_id(d.pop("owner_user_id", UNSET))
 
+        def _parse_tags(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                tags_type_0 = cast(list[str], data)
+
+                return tags_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        tags = _parse_tags(d.pop("tags", UNSET))
+
         asset_metadata_update = cls(
             auto_coverage_config=auto_coverage_config,
             auto_coverage_excluded=auto_coverage_excluded,
             description=description,
             owner_user_id=owner_user_id,
+            tags=tags,
         )
 
         return asset_metadata_update

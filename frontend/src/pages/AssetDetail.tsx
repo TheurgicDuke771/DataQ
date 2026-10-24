@@ -12,6 +12,7 @@ import {
   updateAsset,
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
+import { AssetTagsBlock } from '../components/assets/AssetTagsBlock';
 import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { CoverageBlock } from '../components/assets/CoverageBlock';
 import { CoverageSensitivityBlock } from '../components/assets/CoverageSensitivityBlock';
@@ -137,6 +138,12 @@ function AssetDetailBody({
       <DescriptionBlock
         assetId={summary.id}
         description={summary.description}
+        canEdit={isAdmin}
+        onChanged={onChanged}
+      />
+      <AssetTagsBlock
+        assetId={summary.id}
+        tags={summary.tags}
         canEdit={isAdmin}
         onChanged={onChanged}
       />

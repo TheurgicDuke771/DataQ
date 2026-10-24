@@ -43,6 +43,7 @@ from backend.app.api.v1 import search as search_router
 from backend.app.api.v1 import shares as shares_router
 from backend.app.api.v1 import suggestions as suggestions_router
 from backend.app.api.v1 import suites as suites_router
+from backend.app.api.v1 import tags as tags_router
 from backend.app.api.v1 import telemetry as telemetry_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
@@ -251,6 +252,7 @@ app.include_router(runs_router.router, prefix="/api/v1")
 app.include_router(dashboard_router.router, prefix="/api/v1")
 app.include_router(schedules_router.router, prefix="/api/v1")
 app.include_router(search_router.router, prefix="/api/v1")
+app.include_router(tags_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")

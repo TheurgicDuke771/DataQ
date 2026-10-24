@@ -10,6 +10,9 @@ import { notifySessionInvalidated } from '../auth/sessionEvents';
  */
 export const api = axios.create({
   baseURL: '/api/v1',
+  // A repeated query parameter is `tag=a&tag=b` (what FastAPI reads as a list), not axios's
+  // default `tag[]=a&tag[]=b`.
+  paramsSerializer: { indexes: null },
 });
 
 api.interceptors.request.use(attachBearerToken);

@@ -37,6 +37,7 @@ import { ReauthModal } from '../components/connections/ReauthModal';
 import { Page } from '../components/layout/Page';
 import { type AsyncState, useAsyncData } from '../hooks/useAsyncData';
 import { useConfirmDelete } from '../hooks/useConfirmDelete';
+import { TagChips } from '../components/shared/TagChips';
 import { PageError } from '../components/feedback/PageError';
 
 /** Live connectivity state for a card — the health-page badge. */
@@ -352,6 +353,7 @@ function ConnectionCard({
             {CONNECTION_TYPE_LABELS[connection.type]}
             {isOrchestration ? ' · Orchestration' : ''}
           </Typography.Text>
+          <TagChips tags={connection.tags} label={`${connection.name} tags`} size="small" />
         </Flex>
 
         {/* Footer: env + credential state on the left, Test on the right. */}
