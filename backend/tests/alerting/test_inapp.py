@@ -330,7 +330,7 @@ def test_a_failed_feed_write_does_not_block_the_next_channel(
 
     monkeypatch.setattr(svc, "record_run_alert", boom)
     spy = _Spy()
-    composite = CompositePublisher([InAppPublisher(), spy])  # type: ignore[list-item]
+    composite = CompositePublisher([InAppPublisher(), spy])
 
     with capture_logs() as logs:
         composite.publish(db_session, _report(suite, db=db_session))
