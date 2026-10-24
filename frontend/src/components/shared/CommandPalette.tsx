@@ -82,18 +82,22 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const requestSeq = useRef(0);
+  const lastTerm = useRef('');
 
   const openPalette = useCallback(() => {
     openerRef.current = document.activeElement as HTMLElement | null;
     setOpen(true);
   }, []);
 
-  const closePalette = useCallback(() => {
+  /** Close; focus goes back to the opener unless the caller is about to move it elsewhere. */
+  const closePalette = useCallback((restoreFocus = true) => {
     setOpen(false);
     requestSeq.current += 1;
+    lastTerm.current = '';
     setQuery('');
     setPhase({ kind: 'idle' });
     setActive(0);
+    if (!restoreFocus) return;
     const opener = openerRef.current;
     const target = opener && opener.isConnected && opener !== document.body ? opener : null;
     // After the dialog has let go of focus, not before.
@@ -102,29 +106,39 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        if (open) closePalette();
-        else openPalette();
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'k') {
+        return;
       }
+      // Leave the shortcut alone when something closer already owns it (Monaco uses ⌘K as a
+      // chord prefix), when another dialog is open, and on key auto-repeat.
+      if (event.defaultPrevented || event.repeat) return;
+      if (!open && event.target instanceof Element) {
+        if (event.target.closest('.monaco-editor, [role="dialog"]')) return;
+      }
+      event.preventDefault();
+      if (open) closePalette();
+      else openPalette();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, openPalette, closePalette]);
 
-  // The phase follows the keystroke; the request itself is debounced and abortable, and a late
-  // answer to an earlier query is dropped.
+  // The phase follows the search term (the trimmed text, so a trailing space changes nothing);
+  // the request itself is debounced and abortable, and a late answer to an earlier term is
+  // dropped.
   const onQueryChange = (value: string) => {
     setQuery(value);
-    requestSeq.current += 1;
     const term = value.trim();
+    if (term === lastTerm.current) return;
+    lastTerm.current = term;
+    requestSeq.current += 1;
     if (!term) setPhase({ kind: 'idle' });
     else if (IS_DEMO) setPhase({ kind: 'error', message: DEMO_SEARCH_MESSAGE });
     else setPhase({ kind: 'loading' });
   };
 
+  const term = query.trim();
   useEffect(() => {
-    const term = query.trim();
     if (!open || !term || IS_DEMO) return;
     const seq = requestSeq.current;
     const controller = new AbortController();
@@ -144,7 +158,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [open, query]);
+  }, [open, term]);
 
   const options = useMemo(
     () => (phase.kind === 'ok' ? flatten(phase.data, baseId) : []),
@@ -153,8 +167,13 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
   const activeOption = options[active];
 
   const choose = (option: Option) => {
-    closePalette();
+    // Focus belongs on the destination page, not on the button that opened the palette.
+    closePalette(false);
     navigate(option.hit.href);
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) document.getElementById('dq-main')?.focus();
+    });
   };
 
   const onInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -178,7 +197,11 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
     document.getElementById(activeOption.id)?.scrollIntoView?.({ block: 'nearest' });
   }, [activeOption]);
 
-  const status = statusText(phase, query, options.length);
+  const truncated = phase.kind === 'ok' ? phase.data.truncated_groups : [];
+  const moreMatches = truncated.length
+    ? `More ${truncated.map((g) => GROUP_LABELS[g].toLowerCase()).join(' and ')} match — keep typing to narrow it.`
+    : null;
+  const status = statusText(phase, term, options.length, moreMatches);
 
   return (
     <>
@@ -214,7 +237,7 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
       {open && (
         <Modal
           open
-          onCancel={closePalette}
+          onCancel={() => closePalette()}
           title={<span className="dq-sr-only">Search DataQ</span>}
           footer={null}
           closable={false}
@@ -310,18 +333,17 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
                         );
                       })}
                   </ul>
-                  {phase.data.truncated_groups.includes(group) && (
-                    <Typography.Text
-                      type="secondary"
-                      role="presentation"
-                      style={{ display: 'block', fontSize: 12, padding: '2px 10px 6px' }}
-                    >
-                      More {GROUP_LABELS[group].toLowerCase()} match — keep typing to narrow it.
-                    </Typography.Text>
-                  )}
                 </li>
               ))}
           </ul>
+          {moreMatches && (
+            <Typography.Text
+              type="secondary"
+              style={{ display: 'block', fontSize: 12, padding: '6px 10px 0' }}
+            >
+              {moreMatches}
+            </Typography.Text>
+          )}
           <div
             id={`${baseId}-status`}
             role="status"
@@ -338,17 +360,19 @@ export function CommandPalette({ compact = false }: { compact?: boolean }) {
 
 const listReset: CSSProperties = { listStyle: 'none', margin: 0, padding: 0 };
 
-function statusText(phase: Phase, query: string, count: number): string {
+function statusText(phase: Phase, term: string, count: number, moreMatches: string | null): string {
   switch (phase.kind) {
     case 'idle':
-      return query.trim() ? '' : 'Type to search. ↑↓ to move, Enter to open, Esc to close.';
+      return term ? '' : 'Type to search. ↑↓ to move, Enter to open, Esc to close.';
     case 'loading':
       return 'Searching…';
     case 'error':
       return phase.message;
-    case 'ok':
-      return count === 0
-        ? `No matches for “${phase.data.query}”.`
-        : `${count} ${count === 1 ? 'result' : 'results'}. ↑↓ to move, Enter to open.`;
+    case 'ok': {
+      if (count === 0) return `No matches for “${phase.data.query}”.`;
+      const shown = `${count} ${count === 1 ? 'result' : 'results'} shown.`;
+      // The live region carries the truncation too: a listbox exposes only its options.
+      return [shown, moreMatches, '↑↓ to move, Enter to open.'].filter(Boolean).join(' ');
+    }
   }
 }

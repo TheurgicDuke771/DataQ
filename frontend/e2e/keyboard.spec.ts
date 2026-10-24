@@ -355,6 +355,8 @@ test.describe('Keyboard: dialogs and saves keep focus', () => {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    // Focus moved to the destination page, not back to the header button.
+    await expect(page.locator('main#dq-main')).toBeFocused();
   });
 
   test('Escape closes the command palette and returns focus to the button that opened it', async ({

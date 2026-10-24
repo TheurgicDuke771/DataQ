@@ -55,9 +55,11 @@ function renderPalette(compact = false) {
     <MemoryRouter initialEntries={['/dashboard']}>
       <button type="button">elsewhere</button>
       <CommandPalette compact={compact} />
-      <Routes>
-        <Route path="*" element={<WhereAmI />} />
-      </Routes>
+      <main id="dq-main" tabIndex={-1}>
+        <Routes>
+          <Route path="*" element={<WhereAmI />} />
+        </Routes>
+      </main>
     </MemoryRouter>,
   );
 }
@@ -112,9 +114,12 @@ describe('CommandPalette', () => {
       expect.stringMatching(/^Orders qualitysucceeded · /),
     ]);
     expect(within(listbox).getByRole('group', { name: 'Checks' })).toBeInTheDocument();
-    expect(listbox).toHaveTextContent('More checks match');
+    // The truncation hint sits outside the listbox (a listbox exposes only its options) and is
+    // read out through the live region as well.
+    expect(listbox).not.toHaveTextContent('More checks match');
+    expect(screen.getAllByText(/More checks match/)).toHaveLength(2);
     expect(mockSearch).toHaveBeenLastCalledWith('orders', expect.any(AbortSignal));
-    expect(screen.getByRole('status')).toHaveTextContent('3 results');
+    expect(screen.getByRole('status')).toHaveTextContent('3 results shown. More checks match');
 
     // The first hit is highlighted; the arrow keys move the highlight, Enter opens it.
     expect(combobox()).toHaveAttribute('aria-activedescendant', options[0].id);
@@ -129,6 +134,54 @@ describe('CommandPalette', () => {
 
     expect(screen.getByTestId('where')).toHaveTextContent('/results/r1');
     await waitFor(() => expect(screen.queryByRole('combobox')).not.toBeInTheDocument());
+    // Focus lands on the destination page, not back on the button that opened the palette.
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+    expect(trigger()).not.toHaveFocus();
+  });
+
+  it('a trailing space or an unchanged term does not blank the results or search again', async () => {
+    const user = userEvent.setup();
+    mockSearch.mockResolvedValue(FOUND);
+    renderPalette();
+    await user.click(trigger());
+    await user.type(combobox(), 'orders');
+    await screen.findAllByRole('option');
+    await user.type(combobox(), ' ');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(mockSearch).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(screen.getByRole('status')).not.toHaveTextContent('Searching');
+  });
+
+  it('leaves Ctrl/⌘+K alone inside another dialog, when already handled, and on auto-repeat', () => {
+    render(
+      <MemoryRouter>
+        <div role="dialog" aria-label="Other">
+          <button type="button">in dialog</button>
+        </div>
+        <CommandPalette />
+      </MemoryRouter>,
+    );
+    const inDialog = screen.getByRole('button', { name: 'in dialog' });
+    inDialog.focus();
+    fireEvent.keyDown(inDialog, { key: 'k', ctrlKey: true });
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+
+    const handled = new KeyboardEvent('keydown', {
+      key: 'k',
+      ctrlKey: true,
+      cancelable: true,
+      bubbles: true,
+    });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true, repeat: true });
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(screen.getByRole('combobox', { name: 'Search DataQ' })).toBeInTheDocument();
   });
 
   it('clicking a hit opens it', async () => {
