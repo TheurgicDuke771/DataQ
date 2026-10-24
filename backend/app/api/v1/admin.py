@@ -910,8 +910,9 @@ class SignupAllowlistRead(ApiModel):
     #: Whether a sign-in door on THIS deployment reads it. An allowlist for a mode the
     #: deployment does not use admits nobody, so its values are shown but inert.
     active: bool
-    #: `sign_in` admits the address; `admin_role` grants Admin regardless of the stored role.
-    grants: Literal["sign_in", "admin_role"]
+    #: `sign_in` admits the address; `sign_in_and_admin_role` admits it AND grants Admin
+    #: regardless of the stored role (`WORKSPACE_ADMIN_EMAILS` does both — ADR 0033 decision 6).
+    grants: Literal["sign_in", "sign_in_and_admin_role"]
 
 
 class WorkspaceConfigRead(ApiModel):
@@ -922,10 +923,28 @@ class WorkspaceConfigRead(ApiModel):
     retention: list[RetentionSettingRead]
     signup_allowlists: list[SignupAllowlistRead]
     #: Role a user provisioned at first sign-in lands on, per mode (ADR 0033 decision 8).
-    oidc_default_role: str
-    otp_default_role: str
+    oidc_default_role: Literal["member", "viewer"]
+    otp_default_role: Literal["member", "viewer"]
+    #: The authenticator this deployment signs people in with (ADR 0032 ladder).
+    sign_in_mode: Literal["azure_ad", "oidc", "otp", "dev_bypass", "none"]
+    #: True when the identity provider alone decides who may sign in: Azure AD (the tenant is
+    #: the gate, there is no app-side allowlist) or generic OIDC with no `OIDC_ALLOWED_*` set
+    #: (the open-pool posture #1386 fixed). An admin must see this, not infer it from empty rows.
+    idp_decides_signup: bool
     #: True on a local stack signing in through the developer bypass: no allowlist gates it.
     dev_bypass_active: bool
+
+
+def _sign_in_mode(s: Settings) -> Literal["azure_ad", "oidc", "otp", "dev_bypass", "none"]:
+    if s.azure_auth_configured:
+        return "azure_ad"
+    if s.generic_oidc_configured:
+        return "oidc"
+    if s.otp_auth_configured:
+        return "otp"
+    if s.dev_bypass_active:
+        return "dev_bypass"
+    return "none"
 
 
 @router.get(
@@ -976,6 +995,15 @@ def get_workspace_config() -> WorkspaceConfigRead:
                 unit="hours",
                 detail="Spent and expired sign-in codes are deleted.",
             ),
+            RetentionSettingRead(
+                variable="ASSET_ORPHAN_RETENTION_DAYS",
+                value=settings.asset_orphan_retention_days,
+                unit="days",
+                detail=(
+                    "Asset rows no suite, run or lineage edge references any more are deleted "
+                    "once they have been unreferenced this long."
+                ),
+            ),
         ],
         signup_allowlists=[
             _allowlist("OIDC_ALLOWED_EMAILS", "emails", settings.oidc_allowed_email_set),
@@ -987,11 +1015,14 @@ def get_workspace_config() -> WorkspaceConfigRead:
                 kind="emails",
                 values=sorted(settings.workspace_admin_email_set),
                 active=True,
-                grants="admin_role",
+                grants="sign_in_and_admin_role",
             ),
         ],
         oidc_default_role=settings.auth_oidc_default_role,
         otp_default_role=settings.auth_otp_default_role,
+        sign_in_mode=_sign_in_mode(settings),
+        idp_decides_signup=settings.azure_auth_configured
+        or (settings.generic_oidc_configured and not settings.oidc_allowlist_configured),
         dev_bypass_active=settings.dev_bypass_active,
     )
 

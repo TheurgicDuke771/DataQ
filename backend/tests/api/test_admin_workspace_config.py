@@ -78,11 +78,15 @@ def test_allowlist_for_an_unused_mode_is_shown_but_inert(
     assert oidc["active"] is False
     assert lists["OIDC_ALLOWED_DOMAINS"]["values"] == ["example.org"]
     admin = lists["WORKSPACE_ADMIN_EMAILS"]
+    # It admits the address AND grants Admin — the guide must never call it role-only.
     assert (admin["values"], admin["active"], admin["grants"]) == (
         ["root@example.com"],
         True,
-        "admin_role",
+        "sign_in_and_admin_role",
     )
+    # The test stack signs in through the developer bypass, which an OIDC issuer would displace.
+    assert (body["sign_in_mode"], body["dev_bypass_active"]) == ("dev_bypass", True)
+    assert body["idp_decides_signup"] is False
     assert set(lists) == {
         "OIDC_ALLOWED_EMAILS",
         "OIDC_ALLOWED_DOMAINS",
@@ -110,7 +114,29 @@ def test_allowlist_is_active_when_its_mode_gates_a_door(
     assert lists["OIDC_ALLOWED_EMAILS"]["active"] is True  # same door, empty list
     assert lists["AUTH_OTP_ALLOWED_EMAILS"]["active"] is False
     assert body["dev_bypass_active"] is False
+    assert (body["sign_in_mode"], body["idp_decides_signup"]) == ("oidc", False)
     assert (body["oidc_default_role"], body["otp_default_role"]) == ("member", "member")
+
+
+def test_oidc_without_an_allowlist_is_reported_as_the_idp_deciding(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The open-pool posture: OIDC in use, no app-side allowlist. The rows are empty and
+    # inactive, which alone would read as "mode not configured" — the opposite of the truth.
+    _set(monkeypatch, OIDC_ISSUER="https://issuer.example.com/", OIDC_AUDIENCE="dataq")
+    body = client.get(URL).json()
+    assert (body["sign_in_mode"], body["idp_decides_signup"]) == ("oidc", True)
+    assert _by_variable(body, "signup_allowlists")["OIDC_ALLOWED_EMAILS"]["active"] is False
+
+
+def test_the_retention_readout_names_every_sweep_that_deletes(client: TestClient) -> None:
+    body = client.get(URL).json()
+    assert set(_by_variable(body, "retention")) == {
+        "SAMPLE_FAILURES_RETENTION_DAYS",
+        "AUDIT_RETENTION_DAYS",
+        "OTP_CODES_RETENTION_HOURS",
+        "ASSET_ORPHAN_RETENTION_DAYS",
+    }
 
 
 def test_the_readout_carries_no_secret_bearing_setting(client: TestClient) -> None:
