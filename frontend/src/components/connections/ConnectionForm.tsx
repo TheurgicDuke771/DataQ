@@ -224,15 +224,6 @@ export function ConnectionForm({
       <Form.Item name="name" label="Name" rules={[{ required: true }]}>
         <Input />
       </Form.Item>
-      {isEdit && (
-        <Form.Item
-          name="tags"
-          label="Tags (optional)"
-          extra="Workspace labels — pick existing ones or type a new name. Changing them does not re-test the connection."
-        >
-          <TagPicker />
-        </Form.Item>
-      )}
       {isEdit ? (
         // Type + env are fixed once a connection is created — show, don't edit.
         <>
@@ -269,6 +260,15 @@ export function ConnectionForm({
         form={form}
         showSecret={!isEdit || movedDestinations.length > 0}
       />
+      {isEdit && (
+        <Form.Item
+          name="tags"
+          label="Tags (optional)"
+          extra="Workspace labels — pick existing ones or type a new name. Changing them does not re-test the connection."
+        >
+          <TagPicker />
+        </Form.Item>
+      )}
       <Flex align="center" gap={8} style={{ marginBottom: 24 }}>
         <Button loading={testState === 'testing'} onClick={onTest}>
           {isEdit ? 'Test saved connection' : 'Test connection'}

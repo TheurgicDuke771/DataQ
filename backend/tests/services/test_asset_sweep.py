@@ -294,6 +294,21 @@ def test_referenced_by_incident_never_swept(db_session: Any) -> None:
     assert db_session.get(Asset, kept) is not None
 
 
+def test_a_tagged_asset_is_never_swept(db_session: Any) -> None:
+    """#888: a tag is a steward's label; the join row CASCADEs from the asset, so sweeping
+    would erase it silently."""
+    from backend.app.services import tag_service
+
+    kept = _asset(db_session, last_seen=_stale(), tag="tagged")
+    asset = db_session.get(Asset, kept)
+    assert asset is not None
+    tag_service.set_tags(db_session, asset, ["finance"])
+    db_session.commit()
+
+    assert _sweep(db_session) == 0
+    assert db_session.get(Asset, kept) is not None
+
+
 def test_referenced_by_a_profiler_classification_never_swept(db_session: Any) -> None:
     """ADR 0049: a classification — above all a DISMISSED one, a steward's decision — pins its
     asset; the FK is CASCADE, so sweeping would erase the decision without a trace."""

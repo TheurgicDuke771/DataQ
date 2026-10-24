@@ -111,6 +111,9 @@ is stored lower-case, trimmed and single-spaced, so `Finance` and `finance` are 
 - **Who can assign.** The same people who can edit the thing: a suite's or check's tags need
   edit on the suite, a connection's or an asset's tags need the workspace Admin role. Everyone
   who can see an entity sees its tags; nobody can list a suite's tags they could not open.
+- **A tag pins an asset.** The orphan-asset sweep never removes an asset that carries a tag,
+  even when no suite, run or lineage edge references it any more — a label is a decision
+  someone made, and the Assets list is where it is kept.
 - **Deleting.** Deleting a suite, asset, connection or check drops its assignments with it.
   Deleting a tag (Admin, `DELETE /tags/{id}`) detaches it everywhere at once; `GET /tags`
   lists the vocabulary with a usage count per entity kind, so an unused tag is easy to find.

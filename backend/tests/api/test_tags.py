@@ -136,23 +136,16 @@ def test_suite_patch_sets_normalized_deduped_tags_and_read_returns_them(
     )
     assert r.status_code == 200, r.text
     assert r.json()["tags"] == ["daily", "finance"]
-    assert client.get(f"/api/v1/suites/{suite.id}", headers=headers).json()["tags"] == [
-        "daily",
-        "finance",
-    ]
+    read_back = client.get(f"/api/v1/suites/{suite.id}", headers=headers)
+    assert read_back.json()["tags"] == ["daily", "finance"]
     listed = client.get("/api/v1/suites", headers=headers).json()
     assert [s["tags"] for s in listed if s["id"] == str(suite.id)] == [["daily", "finance"]]
 
     # Omitting `tags` leaves them; `[]` clears them.
-    assert client.patch(
-        f"/api/v1/suites/{suite.id}", headers=headers, json={"name": "renamed"}
-    ).json()["tags"] == ["daily", "finance"]
-    assert (
-        client.patch(f"/api/v1/suites/{suite.id}", headers=headers, json={"tags": []}).json()[
-            "tags"
-        ]
-        == []
-    )
+    renamed = client.patch(f"/api/v1/suites/{suite.id}", headers=headers, json={"name": "renamed"})
+    assert renamed.json()["tags"] == ["daily", "finance"]
+    cleared = client.patch(f"/api/v1/suites/{suite.id}", headers=headers, json={"tags": []})
+    assert cleared.json()["tags"] == []
 
 
 def test_suite_create_accepts_tags(client: TestClient, db_session: Any, as_role: Any) -> None:
@@ -175,7 +168,8 @@ def test_suite_patch_refuses_invalid_tag_names(
     suite = _suite(db_session, member, _connection(db_session, member))
     r = client.patch(f"/api/v1/suites/{suite.id}", headers=headers, json={"tags": bad})
     assert r.status_code == 422, r.text
-    assert client.get(f"/api/v1/suites/{suite.id}", headers=headers).json()["tags"] == []
+    unchanged = client.get(f"/api/v1/suites/{suite.id}", headers=headers)
+    assert unchanged.json()["tags"] == []
 
 
 def test_suite_tag_filter_is_and_and_case_insensitive(
@@ -192,17 +186,15 @@ def test_suite_tag_filter_is_and_and_case_insensitive(
     def names(r: Any) -> list[str]:
         return sorted(s["name"] for s in r.json())
 
-    assert names(client.get("/api/v1/suites", headers=headers, params={"tag": ["a"]})) == [
-        "both",
-        "only-a",
-    ]
-    assert names(client.get("/api/v1/suites", headers=headers, params={"tag": ["A", "b"]})) == [
-        "both"
-    ]
+    by_a = client.get("/api/v1/suites", headers=headers, params={"tag": ["a"]})
+    assert names(by_a) == ["both", "only-a"]
+    by_both = client.get("/api/v1/suites", headers=headers, params={"tag": ["A", "b"]})
+    assert names(by_both) == ["both"]
     # A name no tag has matches nothing — the honest answer, not an error.
     r = client.get("/api/v1/suites", headers=headers, params={"tag": ["zzz"]})
     assert r.status_code == 200 and r.json() == []
-    assert client.get("/api/v1/suites", headers=headers, params={"tag": [""]}).status_code == 422
+    blank = client.get("/api/v1/suites", headers=headers, params={"tag": [""]})
+    assert blank.status_code == 422
 
 
 def test_viewer_cannot_tag_but_can_read_tags(
@@ -212,20 +204,18 @@ def test_viewer_cannot_tag_but_can_read_tags(
     viewer, viewer_headers = as_role("viewer")
     suite = _suite(db_session, owner, _connection(db_session, owner))
     client.patch(f"/api/v1/suites/{suite.id}", headers=owner_headers, json={"tags": ["finance"]})
-    assert (
-        client.post(
-            f"/api/v1/suites/{suite.id}/shares",
-            headers=owner_headers,
-            json={"user_id": str(viewer.id), "permission": "view"},
-        ).status_code
-        == 201
+    resp_22 = client.post(
+        f"/api/v1/suites/{suite.id}/shares",
+        headers=owner_headers,
+        json={"user_id": str(viewer.id), "permission": "view"},
     )
-    assert client.get(f"/api/v1/suites/{suite.id}", headers=viewer_headers).json()["tags"] == [
-        "finance"
-    ]
+    assert resp_22.status_code == 201
+    resp_21 = client.get(f"/api/v1/suites/{suite.id}", headers=viewer_headers)
+    assert resp_21.json()["tags"] == ["finance"]
     r = client.patch(f"/api/v1/suites/{suite.id}", headers=viewer_headers, json={"tags": ["x"]})
     assert r.status_code == 403
-    assert client.get("/api/v1/tags", headers=viewer_headers).status_code == 200
+    resp_20 = client.get("/api/v1/tags", headers=viewer_headers)
+    assert resp_20.status_code == 200
 
 
 # ───────────────────────── authz: no enumeration without the suite ─────────────────────────
@@ -249,19 +239,15 @@ def test_user_without_access_cannot_enumerate_a_suites_tags_by_any_route(
     )
 
     # The suite itself, its checks, and the list — none reach the outsider.
-    assert client.get(f"/api/v1/suites/{hidden.id}", headers=outsider_headers).status_code == 404
-    assert (
-        client.get(f"/api/v1/suites/{hidden.id}/checks", headers=outsider_headers).status_code
-        == 404
-    )
-    assert client.get("/api/v1/suites", headers=outsider_headers).json() == []
+    resp_19 = client.get(f"/api/v1/suites/{hidden.id}", headers=outsider_headers)
+    assert resp_19.status_code == 404
+    resp_18 = client.get(f"/api/v1/suites/{hidden.id}/checks", headers=outsider_headers)
+    assert resp_18.status_code == 404
+    resp_17 = client.get("/api/v1/suites", headers=outsider_headers)
+    assert resp_17.json() == []
     # Filtering by the hidden suite's tag must not surface it either.
-    assert (
-        client.get(
-            "/api/v1/suites", headers=outsider_headers, params={"tag": ["secret-tag"]}
-        ).json()
-        == []
-    )
+    resp_16 = client.get("/api/v1/suites", headers=outsider_headers, params={"tag": ["secret-tag"]})
+    assert resp_16.json() == []
     # The vocabulary shows the NAME and workspace-wide counts (shared by design) but never an
     # entity id: nothing in the payload identifies the hidden suite or check.
     vocab = client.get("/api/v1/tags", headers=outsider_headers).json()
@@ -297,22 +283,19 @@ def test_delete_tag_is_admin_only_and_detaches_everywhere(
         if t["name"] == "shared"
     )
 
-    assert client.delete(f"/api/v1/tags/{tag_id}", headers=member_headers).status_code == 403
-    assert client.delete(f"/api/v1/tags/{tag_id}", headers=admin_headers).status_code == 204
-    assert client.delete(f"/api/v1/tags/{tag_id}", headers=admin_headers).status_code == 404
+    resp_15 = client.delete(f"/api/v1/tags/{tag_id}", headers=member_headers)
+    assert resp_15.status_code == 403
+    resp_14 = client.delete(f"/api/v1/tags/{tag_id}", headers=admin_headers)
+    assert resp_14.status_code == 204
+    resp_13 = client.delete(f"/api/v1/tags/{tag_id}", headers=admin_headers)
+    assert resp_13.status_code == 404
 
-    assert client.get(f"/api/v1/suites/{suite.id}", headers=member_headers).json()["tags"] == [
-        "keep"
-    ]
-    assert (
-        client.get(f"/api/v1/suites/{suite.id}/checks/{check.id}", headers=member_headers).json()[
-            "tags"
-        ]
-        == []
-    )
-    assert [t["name"] for t in client.get("/api/v1/tags", headers=member_headers).json()] == [
-        "keep"
-    ]
+    resp_12 = client.get(f"/api/v1/suites/{suite.id}", headers=member_headers)
+    assert resp_12.json()["tags"] == ["keep"]
+    resp_11 = client.get(f"/api/v1/suites/{suite.id}/checks/{check.id}", headers=member_headers)
+    assert resp_11.json()["tags"] == []
+    resp_10 = client.get("/api/v1/tags", headers=member_headers)
+    assert [t["name"] for t in resp_10.json()] == ["keep"]
     event = db_session.scalar(select(AuditEvent).where(AuditEvent.action == "tag.delete"))
     assert event is not None and str(event.entity_id) == tag_id
     assert event.after["detached"] == {"suites": 1, "assets": 0, "connections": 0, "checks": 1}
@@ -332,21 +315,22 @@ def test_deleting_an_entity_cascades_its_assignments(
     assert (_join_rows(db_session, suite_tags), _join_rows(db_session, check_tags)) == (1, 2)
 
     # Deleting the check removes its rows; the tag rows stay in the vocabulary.
-    assert (
-        client.delete(f"/api/v1/suites/{suite.id}/checks/{check.id}", headers=headers).status_code
-        == 204
-    )
+    resp_9 = client.delete(f"/api/v1/suites/{suite.id}/checks/{check.id}", headers=headers)
+    assert resp_9.status_code == 204
     assert _join_rows(db_session, check_tags) == 0
     # Deleting the suite removes its own rows (and would cascade its checks' too).
-    assert client.delete(f"/api/v1/suites/{suite.id}", headers=headers).status_code == 204
+    resp_8 = client.delete(f"/api/v1/suites/{suite.id}", headers=headers)
+    assert resp_8.status_code == 204
     assert _join_rows(db_session, suite_tags) == 0
-    assert sorted(t["name"] for t in client.get("/api/v1/tags", headers=headers).json()) == [
+    resp_7 = client.get("/api/v1/tags", headers=headers)
+    assert sorted(t["name"] for t in resp_7.json()) == [
         "a",
         "b",
     ]
+    resp_6 = client.get("/api/v1/tags", headers=headers)
     assert all(
         t["usage"] == {"suites": 0, "assets": 0, "connections": 0, "checks": 0}
-        for t in client.get("/api/v1/tags", headers=headers).json()
+        for t in resp_6.json()
     )
 
 
@@ -383,10 +367,8 @@ def test_check_tags_only_patch_mints_no_version_but_is_audited(
     assert r.status_code == 200, r.text
     assert r.json()["tags"] == ["critical", "pii"]
     # Labels are not part of the versioned definition.
-    assert (
-        len(client.get(f"/api/v1/suites/{suite.id}/checks/{cid}/versions", headers=headers).json())
-        == versions_before
-    )
+    resp_5 = client.get(f"/api/v1/suites/{suite.id}/checks/{cid}/versions", headers=headers)
+    assert len(resp_5.json()) == versions_before
     listed = client.get(f"/api/v1/suites/{suite.id}/checks", headers=headers).json()
     assert [c["tags"] for c in listed] == [["critical", "pii"]]
     audited = db_session.scalars(
@@ -413,12 +395,10 @@ def test_connection_tags_are_admin_only_and_a_tags_only_patch_runs_no_test(
         raise AssertionError("a tags-only PATCH must not test the connection")
 
     monkeypatch.setattr(connection_service, "_test_before_save", _boom)
-    assert (
-        client.patch(
-            f"/api/v1/connections/{conn.id}", headers=member_headers, json={"tags": ["x"]}
-        ).status_code
-        == 403
+    resp_4 = client.patch(
+        f"/api/v1/connections/{conn.id}", headers=member_headers, json={"tags": ["x"]}
     )
+    assert resp_4.status_code == 403
     r = client.patch(
         f"/api/v1/connections/{conn.id}", headers=admin_headers, json={"tags": ["Prod", "pg"]}
     )
@@ -426,7 +406,8 @@ def test_connection_tags_are_admin_only_and_a_tags_only_patch_runs_no_test(
     assert r.json()["tags"] == ["pg", "prod"]
     listed = client.get("/api/v1/connections", headers=member_headers).json()
     assert [c["tags"] for c in listed if c["id"] == str(conn.id)] == [["pg", "prod"]]
-    assert client.get(f"/api/v1/connections/{conn.id}", headers=member_headers).json()["tags"] == [
+    resp_3 = client.get(f"/api/v1/connections/{conn.id}", headers=member_headers)
+    assert resp_3.json()["tags"] == [
         "pg",
         "prod",
     ]
@@ -441,12 +422,8 @@ def test_asset_tags_admin_patch_list_filter_and_total_count(
     _admin, admin_headers = as_role("admin")
     _member, member_headers = as_role("member")
     a1, a2 = _asset(db_session), _asset(db_session)
-    assert (
-        client.patch(
-            f"/api/v1/assets/{a1.id}", headers=member_headers, json={"tags": ["x"]}
-        ).status_code
-        == 403
-    )
+    resp_2 = client.patch(f"/api/v1/assets/{a1.id}", headers=member_headers, json={"tags": ["x"]})
+    assert resp_2.status_code == 403
     r = client.patch(
         f"/api/v1/assets/{a1.id}", headers=admin_headers, json={"tags": ["Gold", "finance"]}
     )
@@ -460,9 +437,8 @@ def test_asset_tags_admin_patch_list_filter_and_total_count(
     page = client.get("/api/v1/assets", headers=member_headers, params={"tag": ["gold", "FINANCE"]})
     assert page.headers["X-Total-Count"] == "1"
     assert [a["id"] for a in page.json()] == [str(a1.id)]
-    assert client.get(f"/api/v1/assets/{a1.id}", headers=member_headers).json()["summary"][
-        "tags"
-    ] == [
+    resp_1 = client.get(f"/api/v1/assets/{a1.id}", headers=member_headers)
+    assert resp_1.json()["summary"]["tags"] == [
         "finance",
         "gold",
     ]
