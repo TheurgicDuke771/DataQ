@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01N4QiZku2sWxJ4MaYed7Zbn",
+  "agent_id": "add4c28645bcf1a42",
+  "subagent_type": "general-purpose",
+  "task_description": "#1687 notification center — build + PR",
+  "token_usage": {
+    "input_tokens": 4104,
+    "cache_creation_tokens": 332904,
+    "cache_read_tokens": 32314546,
+    "output_tokens": 101517,
+    "api_call_count": 133
+  },
+  "started_at": "2026-10-24T20:51:26.644659+05:30",
+  "completed_at": "2026-10-24T21:39:13.920763+05:30"
+}

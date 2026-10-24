@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01VmnXajvs1vyY2RiWzZm1N8",
+  "agent_id": "af4bafafe0a84291d",
+  "subagent_type": "general-purpose",
+  "task_description": "#1516 settings IA — build + PR",
+  "token_usage": {
+    "input_tokens": 2796,
+    "cache_creation_tokens": 465753,
+    "cache_read_tokens": 16805087,
+    "output_tokens": 70625,
+    "api_call_count": 92
+  },
+  "started_at": "2026-10-24T20:51:26.643403+05:30",
+  "completed_at": "2026-10-24T21:39:14.182068+05:30"
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01HrSSVSXdDkiwMk5wJS7mwy",
+  "agent_id": "a031e51263bd966c5",
+  "subagent_type": "general-purpose",
+  "task_description": "#888 tagging — build + PR",
+  "token_usage": {
+    "input_tokens": 4804,
+    "cache_creation_tokens": 371996,
+    "cache_read_tokens": 39000343,
+    "output_tokens": 130135,
+    "api_call_count": 153
+  },
+  "started_at": "2026-10-24T20:51:26.655823+05:30",
+  "completed_at": "2026-10-24T21:39:14.446638+05:30"
+}
