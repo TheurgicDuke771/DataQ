@@ -1,9 +1,10 @@
 # Notifications & alerting
 
 DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, **email** and generic
-HMAC-signed **webhooks** — all
-behind one `ResultPublisher` seam, so every channel gets the same severity-aware
-behaviour. Alerts fire from the worker as soon as a run reaches a terminal state.
+HMAC-signed **webhooks**, and in the app itself through the **notification feed** behind
+the header bell — all behind one `ResultPublisher` seam, so every channel gets the same
+severity-aware behaviour. Alerts fire from the worker as soon as a run reaches a terminal
+state.
 
 ## Channels
 
@@ -53,6 +54,41 @@ lineage source behind that last fact is failing, the email says the list may be
 incomplete rather than presenting it as the full picture. The raw expected/observed detail
 engineers want stays underneath in small print. Numbers are rounded to two decimals
 everywhere, in Slack and Teams too.
+
+## In-app notification feed
+
+The bell in the app header is a destination like any other, with two differences: it needs no
+configuration, and it is scoped per person. When a run's outcome passes a suite's alert
+threshold, the same entry is written to the feed of **everyone who can see that suite** — its
+owner, each user it is shared with (at any level, including view-only), and the workspace
+admins. Someone with no access to a suite never sees its alerts; someone granted access later
+sees alerts from that point on, not the history.
+
+- **Badge and feed.** The bell's count is your unread entries, refreshed about once a minute
+  while the tab is visible. Open it for the feed, newest first: each entry names the suite,
+  how many checks breached and the worst tier (or that the run failed to execute), lists the
+  breaching checks by name, and links to the run — and, when an incident is open for it, to
+  the incident on its asset page.
+- **Read state is yours.** Mark an entry read from the feed, or follow its link (which marks
+  it read on the way); **Mark all read** clears the badge. Nobody else's badge changes, and an
+  admin cannot read or clear another person's feed.
+- **Same rules as the outbound channels.** The per-suite threshold, severity routing, dedup and
+  snooze below apply to the feed exactly as to Teams, Slack, email and webhooks. A suite with
+  alerting disabled writes nothing to anyone's feed.
+- **Only check names, never values.** Feed entries are built from the same redacted report the
+  other channels send and carry counts and check names only; no observed value or sample row
+  ever reaches the feed, whatever the suite's masking policy.
+- **An entry can outlive its run.** If the run it points at is later deleted with its suite,
+  the entry stays and says *Run no longer available* instead of offering a dead link.
+- **Keyboard and screen reader.** The bell's name carries the unread count; the feed is a
+  dialog whose entries are ordinary links and buttons; a rise in the count while the feed is
+  closed is announced.
+
+The feed is also readable over the API — `GET /notifications` (paged, `unread_only=`, with
+`X-Total-Count`), `GET /notifications/unread_count`, `POST /notifications/{id}/read` and
+`POST /notifications/read_all` — always for the caller's own entries only. Connection
+poll-health and pipeline-overdue signals go to the outbound channels only; they have no suite
+to scope a feed by.
 
 ## Per-suite configuration
 
