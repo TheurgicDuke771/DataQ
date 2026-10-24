@@ -16,17 +16,19 @@ import SimpleList from '../SimpleList';
 import { useState } from 'react';
 
 import { CONNECTION_ENVS, type ConnectionEnv, ENV_COLORS, envLabel } from '../../api/connections';
+import { listSuites, type Suite } from '../../api/suites';
 import {
   createTriggerBinding,
   deleteTriggerBinding,
   listEnvNearMisses,
   listTriggerBindings,
-  ORCHESTRATION_PROVIDERS,
-  type OrchestrationProvider,
   PROVIDER_LABELS,
   setTriggerBindingEnabled,
+  SUITE_TRIGGER_PROVIDER,
   type TriggerBinding,
   type TriggerEnvNearMiss,
+  TRIGGER_PROVIDERS,
+  type TriggerProvider,
 } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
@@ -57,6 +59,9 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
     listEnvNearMisses(suiteId),
   );
   const nearMisses = nearMissState.status === 'ok' ? nearMissState.data : [];
+  // The suites the user can see: names for suite-on-suite rows and options for the picker.
+  const { state: suitesState } = useAsyncData((signal) => listSuites(undefined, signal));
+  const suites = suitesState.status === 'ok' ? suitesState.data : [];
 
   // Every mutation (add / enable-toggle / delete) invalidates BOTH reads: the near-miss candidate
   // set is re-derived server-side from the ENABLED bindings.
@@ -72,7 +77,8 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
         <Flex vertical gap={2}>
           <Typography.Text strong>Triggers</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-            Run this suite when an orchestrator pipeline / DAG completes successfully.
+            Run this suite when an orchestrator pipeline / DAG completes successfully, or when
+            another suite passes.
           </Typography.Text>
         </Flex>
       }
@@ -94,6 +100,7 @@ export function TriggersPanel({ suiteId, canManage }: { suiteId: string; canMana
           canManage={canManage}
           onChanged={onChanged}
           nearMisses={nearMisses}
+          suites={suites}
         />
       </Flex>
     </Card>
@@ -106,18 +113,27 @@ function TriggersBody({
   canManage,
   onChanged,
   nearMisses,
+  suites,
 }: {
   state: ReturnType<typeof useAsyncData<TriggerBinding[]>>['state'];
   suiteId: string;
   canManage: boolean;
   onChanged: () => void;
   nearMisses: TriggerEnvNearMiss[];
+  suites: Suite[];
 }) {
+  const suiteNames = new Map(suites.map((s) => [s.id, s.name]));
   return (
     <AsyncBody state={state} loadingText="Loading triggers…" errorTitle="Failed to load triggers">
       {(bindings) => (
         <Flex vertical gap={16}>
-          {canManage && <AddTrigger suiteId={suiteId} onAdded={onChanged} />}
+          {canManage && (
+            <AddTrigger
+              suiteId={suiteId}
+              onAdded={onChanged}
+              upstreamOptions={suites.filter((s) => s.id !== suiteId)}
+            />
+          )}
           {bindings.length === 0 ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -132,6 +148,11 @@ function TriggersBody({
                   binding={binding}
                   canManage={canManage}
                   onChanged={onChanged}
+                  upstreamName={
+                    binding.provider === SUITE_TRIGGER_PROVIDER
+                      ? suiteNames.get(binding.pipeline_or_dag_id)
+                      : undefined
+                  }
                   // `filter`, not `find` (#1199 review): one binding can have several
                   // simultaneously-current near-misses.
                   nearMisses={nearMisses.filter(
@@ -155,10 +176,13 @@ function TriggerRow({
   canManage,
   onChanged,
   nearMisses,
+  upstreamName,
 }: {
   binding: TriggerBinding;
   canManage: boolean;
   onChanged: () => void;
+  /** For a suite-on-suite binding: the upstream suite's name, when the user can see it. */
+  upstreamName?: string;
   /**
    * Every #1186 env near-miss currently observed for this exact binding (#1199) — runs keep
    * landing in each entry's `run_env`, not this binding's `env`.
@@ -167,12 +191,18 @@ function TriggerRow({
 }) {
   const { message } = App.useApp();
   const [busy, setBusy] = useState(false);
+  // A suite binding's key is a suite id: show the name; fall back to the id only when the
+  // upstream is outside the user's access (it still fires — they just cannot open it).
+  const shown =
+    binding.provider === SUITE_TRIGGER_PROVIDER
+      ? (upstreamName ?? binding.pipeline_or_dag_id)
+      : binding.pipeline_or_dag_id;
 
   const onToggle = async (enabled: boolean) => {
     setBusy(true);
     try {
       const updated = await setTriggerBindingEnabled(binding.id, enabled);
-      message.success(`${binding.pipeline_or_dag_id}: ${enabled ? 'enabled' : 'disabled'}`);
+      message.success(`${shown}: ${enabled ? 'enabled' : 'disabled'}`);
       warnAboutBinding(message, updated);
       onChanged();
     } catch (err) {
@@ -186,7 +216,7 @@ function TriggerRow({
     setBusy(true);
     try {
       await deleteTriggerBinding(binding.id);
-      message.success(`${binding.pipeline_or_dag_id}: removed`);
+      message.success(`${shown}: removed`);
       onChanged();
     } catch (err) {
       message.error(`Remove failed: ${errorMessage(err)}`);
@@ -206,7 +236,7 @@ function TriggerRow({
                 checked={binding.enabled}
                 loading={busy}
                 onChange={onToggle}
-                aria-label={`Enable ${binding.pipeline_or_dag_id}`}
+                aria-label={`Enable ${shown}`}
               />,
               <Button
                 key="remove"
@@ -216,7 +246,7 @@ function TriggerRow({
                 icon={<DeleteOutlined />}
                 loading={busy}
                 onClick={onRemove}
-                aria-label={`Remove ${binding.pipeline_or_dag_id}`}
+                aria-label={`Remove ${shown}`}
               />,
             ]
           : [<Tag key="state">{binding.enabled ? 'enabled' : 'disabled'}</Tag>]
@@ -227,8 +257,8 @@ function TriggerRow({
           {envLabel(binding.env as ConnectionEnv)}
         </Tag>
         <Flex vertical gap={2} style={{ minWidth: 0 }}>
-          <Typography.Text code ellipsis>
-            {binding.pipeline_or_dag_id}
+          <Typography.Text code={binding.provider !== SUITE_TRIGGER_PROVIDER} ellipsis>
+            {shown}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {PROVIDER_LABELS[binding.provider]}
@@ -255,29 +285,44 @@ function TriggerRow({
   );
 }
 
-function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void }) {
+function AddTrigger({
+  suiteId,
+  onAdded,
+  upstreamOptions,
+}: {
+  suiteId: string;
+  onAdded: () => void;
+  /** Suites the user can see, minus this one — the picker for "Another suite (on success)". */
+  upstreamOptions: Suite[];
+}) {
   const { message } = App.useApp();
-  const [provider, setProvider] = useState<OrchestrationProvider>();
+  const [provider, setProvider] = useState<TriggerProvider>();
   const [env, setEnv] = useState<ConnectionEnv>();
   const [pipelineId, setPipelineId] = useState('');
+  const [upstreamId, setUpstreamId] = useState<string>();
   const [adding, setAdding] = useState(false);
+  const isSuite = provider === SUITE_TRIGGER_PROVIDER;
+  const ready = isSuite ? Boolean(upstreamId) : Boolean(provider && env && pipelineId.trim());
 
   const onAdd = async () => {
-    const id = pipelineId.trim();
-    if (!provider || !env || !id) return;
+    if (!provider || !ready) return;
+    const id = isSuite ? (upstreamId ?? '') : pipelineId.trim();
     setAdding(true);
     try {
+      // A suite binding takes the upstream suite's env server-side; nothing to send.
       const created = await createTriggerBinding({
         provider,
-        env,
+        ...(isSuite ? {} : { env }),
         pipeline_or_dag_id: id,
         suite_id: suiteId,
       });
-      message.success(`${id}: trigger added`);
+      const named = isSuite ? (upstreamOptions.find((s) => s.id === id)?.name ?? id) : id;
+      message.success(`${named}: trigger added`);
       warnAboutBinding(message, created);
       setProvider(undefined);
       setEnv(undefined);
       setPipelineId('');
+      setUpstreamId(undefined);
       onAdded();
     } catch (err) {
       message.error(`Add failed: ${errorMessage(err)}`);
@@ -292,32 +337,42 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
         value={provider}
         onChange={setProvider}
         placeholder="Provider"
-        style={{ width: 170 }}
-        options={ORCHESTRATION_PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABELS[p] }))}
+        style={{ width: 210 }}
+        options={TRIGGER_PROVIDERS.map((p) => ({ value: p, label: PROVIDER_LABELS[p] }))}
         aria-label="Provider"
       />
-      <Input
-        value={pipelineId}
-        onChange={(e) => setPipelineId(e.target.value)}
-        placeholder="Pipeline / DAG id"
-        aria-label="Pipeline / DAG id"
-        style={{ flex: 1, minWidth: 160 }}
-        onPressEnter={onAdd}
-      />
-      <Select
-        value={env}
-        onChange={setEnv}
-        placeholder="Env"
-        style={{ width: 100 }}
-        options={CONNECTION_ENVS.map((e) => ({ value: e, label: envLabel(e) }))}
-        aria-label="Env"
-      />
-      <Button
-        type="primary"
-        loading={adding}
-        disabled={!provider || !env || !pipelineId.trim()}
-        onClick={onAdd}
-      >
+      {isSuite ? (
+        <Select
+          value={upstreamId}
+          onChange={setUpstreamId}
+          showSearch={{ optionFilterProp: 'label' }}
+          placeholder="Upstream suite"
+          aria-label="Upstream suite"
+          style={{ flex: 1, minWidth: 200 }}
+          options={upstreamOptions.map((s) => ({ value: s.id, label: s.name }))}
+          notFoundContent="No other suite you can see"
+        />
+      ) : (
+        <>
+          <Input
+            value={pipelineId}
+            onChange={(e) => setPipelineId(e.target.value)}
+            placeholder="Pipeline / DAG id"
+            aria-label="Pipeline / DAG id"
+            style={{ flex: 1, minWidth: 160 }}
+            onPressEnter={onAdd}
+          />
+          <Select
+            value={env}
+            onChange={setEnv}
+            placeholder="Env"
+            style={{ width: 100 }}
+            options={CONNECTION_ENVS.map((e) => ({ value: e, label: envLabel(e) }))}
+            aria-label="Env"
+          />
+        </>
+      )}
+      <Button type="primary" loading={adding} disabled={!ready} onClick={onAdd}>
         Add
       </Button>
     </Flex>

@@ -13,8 +13,26 @@ import {
   setTriggerBindingEnabled,
   type TriggerBinding,
 } from '../../src/api/triggerBindings';
+import { listSuites, type Suite } from '../../src/api/suites';
 import { TriggersPanel } from '../../src/components/suites/TriggersPanel';
 import { selectOption } from '../support/antd';
+
+vi.mock('../../src/api/suites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/suites')>();
+  return { ...actual, listSuites: vi.fn() };
+});
+const mockSuites = vi.mocked(listSuites);
+
+function suite(id: string, name: string): Suite {
+  return {
+    id,
+    name,
+    description: null,
+    connection_id: 'c1',
+    target: null,
+    created_by: 'u1',
+  };
+}
 
 vi.mock('../../src/api/triggerBindings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/triggerBindings')>();
@@ -56,7 +74,10 @@ afterEach(() => vi.clearAllMocks());
 
 // Every test gets an empty near-miss list by default (#1199) — only the dedicated describe block
 // below overrides it, so the pre-existing tests above don't have to know this fetch exists.
-beforeEach(() => mockNearMisses.mockResolvedValue([]));
+beforeEach(() => {
+  mockNearMisses.mockResolvedValue([]);
+  mockSuites.mockResolvedValue([suite('s1', 'this suite'), suite('s-up', 'orders upstream')]);
+});
 
 describe('TriggersPanel', () => {
   it('lists bindings with pipeline id, provider, and env', async () => {
@@ -367,4 +388,58 @@ describe('TriggersPanel — env near-miss badge (#1199)', () => {
   // passes reliably alone and fails only when another test in the same file also renders
   // `TriggersPanel`), unrelated to the component's actual behaviour, which the isolated file
   // proves out.
+});
+
+describe('TriggersPanel — suite-on-suite', () => {
+  it('offers "Another suite (on success)" with a picker of the other visible suites, no env', async () => {
+    mockList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({
+      ...BINDING,
+      id: 'b2',
+      provider: 'suite',
+      pipeline_or_dag_id: 's-up',
+      env: 'qa',
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText(/No triggers/);
+
+    await selectOption(user, 'Another suite (on success)', { index: 0, by: 'text' });
+    // The pipeline id box and the env select make way for the suite picker.
+    expect(screen.queryByPlaceholderText('Pipeline / DAG id')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Env' })).toBeNull();
+    await user.click(screen.getByRole('combobox', { name: 'Upstream suite' }));
+    // This suite itself is not offered — a suite cannot trigger itself.
+    expect(screen.queryByTitle('this suite')).toBeNull();
+    await user.click(await screen.findByTitle('orders upstream'));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() =>
+      expect(mockCreate).toHaveBeenCalledWith({
+        provider: 'suite',
+        pipeline_or_dag_id: 's-up',
+        suite_id: 's1',
+      }),
+    );
+  });
+
+  it('shows a suite binding by the upstream suite name and its derived env', async () => {
+    mockList.mockResolvedValue([
+      { ...BINDING, id: 'b2', provider: 'suite', pipeline_or_dag_id: 's-up', env: 'qa' },
+    ]);
+    renderPanel();
+    expect(await screen.findByText('orders upstream')).toBeInTheDocument();
+    expect(screen.getByText('Another suite (on success)')).toBeInTheDocument();
+    expect(screen.getByText('QA')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Enable orders upstream' })).toBeInTheDocument();
+  });
+
+  it("falls back to the suite id when the upstream is outside the user's access", async () => {
+    mockSuites.mockResolvedValue([suite('s1', 'this suite')]);
+    mockList.mockResolvedValue([
+      { ...BINDING, id: 'b2', provider: 'suite', pipeline_or_dag_id: 's-hidden', env: 'qa' },
+    ]);
+    renderPanel();
+    expect(await screen.findByText('s-hidden')).toBeInTheDocument();
+  });
 });
