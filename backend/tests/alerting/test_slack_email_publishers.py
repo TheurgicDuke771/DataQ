@@ -91,6 +91,23 @@ def test_email_subject_reflects_verdict() -> None:
     assert "all 3 checks passed" in render_subject(_report(worst=None))
 
 
+def _report_with_unverified() -> RunReport:
+    # Nothing breached, but a check errored: `success` is True and the old subject said
+    # "all 3 checks passed" about a run that verified two.
+    clean = _report(worst=None)
+    checks = list(clean.checks)
+    checks[1] = dataclasses.replace(checks[1], status="error")
+    return dataclasses.replace(clean, checks=checks, counts={"pass": 2, "error": 1})
+
+
+def test_unverified_checks_are_never_reported_as_passed() -> None:
+    report = _report_with_unverified()
+    assert "1/3 checks could not be verified" in render_subject(report)
+    assert "passed" not in render_subject(report)
+    slack = render_slack_message(report, route_for(report, "always"))
+    assert "1/3 checks could not be verified" in str(slack["text"])
+
+
 def test_email_html_escapes_and_lists_failures() -> None:
     html = email_mod.render_html_body(_report(worst="fail"))
     assert "order_total &gt;= 0" in html  # '>' escaped, check listed

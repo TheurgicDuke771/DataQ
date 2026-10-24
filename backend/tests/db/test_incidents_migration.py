@@ -10,6 +10,8 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import inspect
 
+from backend.tests.support.migrations import load_migration
+
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2] / "alembic" / "versions" / "c4e5a6b7d8f9_add_incidents.py"
 )
@@ -48,8 +50,12 @@ def test_revision_chain() -> None:
 def test_up_down_up(db_session: Any) -> None:
     """down (drop) → up (create) → down (drop). `create_all` (the fixture) already
     made the table + column, so the sequence starts by dropping them.
+
+    `notifications.incident_id` (#1687) references `incidents`, so — as a real downgrade
+    chain would — that later revision is stepped down first and back up at the end.
     """
     module = _load_migration()
+    notifications = load_migration("c38847820d74_add_notifications_feed.py")
     connection = db_session.connection()
     ctx = MigrationContext.configure(connection)
     with Operations.context(ctx):
@@ -57,6 +63,7 @@ def test_up_down_up(db_session: Any) -> None:
         assert _has_active_index(connection)
         assert _has_auto_resolve(connection)
 
+        notifications.downgrade()
         module.downgrade()
         assert not _has_incidents(connection)
         assert not _has_auto_resolve(connection)
@@ -68,4 +75,6 @@ def test_up_down_up(db_session: Any) -> None:
 
         module.downgrade()
         assert not _has_incidents(connection)
+        module.upgrade()
+        notifications.upgrade()
     db_session.rollback()  # keep the create_all schema intact for other tests

@@ -1,4 +1,4 @@
-import { expect, test, type Response } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +65,9 @@ test('record the seeded workspace', async ({ page }) => {
     return response.json();
   });
   for (const route of routes) await visit(page, route);
+  // The feed behind the header bell is fetched only when the drawer opens, which no route
+  // visit does; without this step the published demo's bell always errors.
+  await openNotificationFeed(page);
   await Promise.all(pending);
 
   expect(failures, 'the API answered 5xx while recording').toEqual([]);
@@ -73,3 +76,13 @@ test('record the seeded workspace', async ({ page }) => {
   writeFileSync(OUT, JSON.stringify(bundle));
   console.log(`recorded ${Object.keys(entries).length} responses over ${routes.length} routes`);
 });
+
+/** Open the bell's drawer on the dashboard so `GET /notifications` is recorded, then close it. */
+async function openNotificationFeed(page: Page): Promise<void> {
+  await visit(page, '/dashboard');
+  const bell = page.getByRole('button', { name: /^Notifications/ });
+  await bell.click();
+  await page.getByRole('dialog', { name: 'Notifications' }).waitFor();
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
+  await page.keyboard.press('Escape');
+}

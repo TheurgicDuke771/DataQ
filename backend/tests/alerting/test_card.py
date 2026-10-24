@@ -159,6 +159,17 @@ def test_clean_run_renders_as_a_success_card() -> None:
     assert not any("@channel" in t for t in _texts(content))
 
 
+def test_clean_run_with_an_errored_check_is_not_a_success_card() -> None:
+    checks = [
+        CheckReport("a", "expect_x", "error", None, None, None, None),
+        CheckReport("b", "expect_x", "pass", None, None, None, None),
+        CheckReport("c", "expect_x", "pass", None, None, None, None),
+    ]
+    content = _content(_report(worst=None, counts={"pass": 2, "error": 1}, checks=checks))
+    assert any("1 of 3 checks could not be verified" in t for t in _texts(content))
+    assert not any("checks passed" in t for t in _texts(content))
+
+
 def test_compact_handles_empty() -> None:
     assert card._compact(None) == "—"
     assert card._compact({}) == "—"

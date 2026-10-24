@@ -13,6 +13,7 @@ from backend.app.alerting.base import (
     ConnectionHealthReport,
     RunReport,
     WorkspaceSignalReport,
+    unverified_checks,
 )
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core import usage_telemetry
@@ -30,7 +31,13 @@ _SEVERITY_EMOJI = {CRITICAL: ":rotating_light:", "fail": ":x:", "warn": ":warnin
 
 def render_slack_message(report: RunReport, route: Route) -> dict[str, object]:
     """The Slack incoming-webhook payload (``text`` + Block Kit ``blocks``)."""
-    if report.success:
+    unverified = len(unverified_checks(report)) if report.success else 0
+    if report.success and unverified:
+        headline = (
+            f":grey_question: DataQ — {report.suite_name}: "
+            f"{unverified}/{report.total_checks} checks could not be verified"
+        )
+    elif report.success:
         headline = (
             f":white_check_mark: DataQ — {report.suite_name}: "
             f"all {report.total_checks} checks passed"

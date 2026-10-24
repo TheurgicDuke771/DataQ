@@ -228,6 +228,12 @@ def create_celery_app() -> Celery:
                 "task": "purge_otp_codes",
                 "schedule": crontab(hour="3", minute="37"),  # daily, 03:37 UTC
             },
+            # In-app notification feed retention (#1687): one row per recipient per
+            # alerted run; nothing else bounds the table.
+            "purge-notifications": {
+                "task": "purge_notifications",
+                "schedule": crontab(hour="3", minute="57"),  # daily, 03:57 UTC
+            },
         },
     )
     for entry in app.conf.beat_schedule.values():

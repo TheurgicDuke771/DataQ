@@ -27,6 +27,7 @@ import { BrandMark } from './components/BrandMark';
 import { PageViewReporter } from './components/PageViewReporter';
 import { IS_DEMO } from './demo/flag';
 import { ThemeToggle } from './components/ThemeToggle';
+import { NotificationBell } from './components/notifications/NotificationBell';
 import { CommandPalette } from './components/shared/CommandPalette';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
 import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
@@ -190,6 +191,7 @@ export function App() {
             </Suspense>
           )}
           <CommandPalette compact={narrow} />
+          <NotificationBell />
           <ThemeToggle />
           <UserMenu />
         </Header>

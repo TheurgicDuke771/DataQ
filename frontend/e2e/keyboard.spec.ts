@@ -59,7 +59,10 @@ test.describe('Keyboard navigation', () => {
     await all.focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('radio', { name: 'Changed' })).toBeChecked();
-    await expect(page.getByRole('status')).toContainText(/Showing \d+ of \d+ checks/);
+    // Scoped to the screen: the header bell carries its own live region on every page.
+    await expect(page.getByTestId('rc-screen').getByRole('status')).toContainText(
+      /Showing \d+ of \d+ checks/,
+    );
   });
 
   test('an asset is openable from the Assets table by keyboard', async ({ page }) => {

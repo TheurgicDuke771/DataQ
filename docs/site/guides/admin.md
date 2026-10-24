@@ -425,7 +425,8 @@ Day-to-day admission is the [Members](#members) tab.
 The **Data retention** card lists each retention clock with the variable that sets it and
 what the daily sweep removes when it runs out: failing-row samples and captured cell values
 inside stored results (`SAMPLE_FAILURES_RETENTION_DAYS`), audit events
-(`AUDIT_RETENTION_DAYS`), spent sign-in codes (`OTP_CODES_RETENTION_HOURS`) and asset rows
+(`AUDIT_RETENTION_DAYS`), spent sign-in codes (`OTP_CODES_RETENTION_HOURS`), in-app
+notification feed entries, read or not (`NOTIFICATIONS_RETENTION_DAYS`) and asset rows
 nothing references any more (`ASSET_ORPHAN_RETENTION_DAYS` — the one clock that deletes a
 catalog entry, so an asset that vanished from Assets is explained here). Run and
 result rows are never deleted by retention — only the samples inside them — so metric

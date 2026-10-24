@@ -108,7 +108,10 @@ describe('App shell', () => {
     mockUser.mockReturnValue(devUser);
     renderAt('/admin/members');
     expect(await screen.findByText(/403 . Forbidden/, undefined, LAZY)).toBeInTheDocument();
-    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+    // The header bell polls the caller's OWN feed on every route; the gated page itself
+    // must fetch nothing.
+    const fetched = vi.mocked(api.get).mock.calls.map(([url]) => String(url));
+    expect(fetched.filter((url) => !url.startsWith('/notifications'))).toEqual([]);
   });
 
   it('sends the retired /settings URL to the admin settings tab', async () => {

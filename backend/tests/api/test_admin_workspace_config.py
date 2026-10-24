@@ -167,6 +167,7 @@ def test_the_retention_readout_names_every_sweep_that_deletes(client: TestClient
         "AUDIT_RETENTION_DAYS",
         "OTP_CODES_RETENTION_HOURS",
         "ASSET_ORPHAN_RETENTION_DAYS",
+        "NOTIFICATIONS_RETENTION_DAYS",
     }
 
 

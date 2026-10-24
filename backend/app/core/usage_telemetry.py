@@ -123,7 +123,7 @@ TRIGGER_KINDS: Final[tuple[str, ...]] = (
     *ORCHESTRATION_PROVIDERS,
 )
 RUN_OUTCOMES: Final[tuple[str, ...]] = ("succeeded", "failed", "cancelled", "other")
-ALERT_CHANNELS: Final[tuple[str, ...]] = ("teams", "slack", "email", "webhook")
+ALERT_CHANNELS: Final[tuple[str, ...]] = ("teams", "slack", "email", "webhook", "in_app")
 LLM_FEATURES: Final[tuple[str, ...]] = tuple(k for k in LLM_INVOCATION_KINDS if k != "ping")
 
 COUNT = Vocabulary(integer=True)
