@@ -18,7 +18,9 @@ class ComparisonDeltaRead:
     `changed` is a transition through `skip`/`error`, which carry no rank;
     `added`/`removed` mean the check has a result on only one side. `metric_delta`
     is target minus base, `metric_delta_pct` relative to a non-zero base; both null
-    when either side has no metric.
+    when either side has no metric. `metric_changed` is true whenever the two
+    metrics differ — including when only ONE side has one, in which case the deltas
+    are null because no difference can be stated.
 
         Attributes:
             metric_changed (bool):

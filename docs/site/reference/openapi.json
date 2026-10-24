@@ -3883,7 +3883,7 @@
         "type": "object"
       },
       "ComparisonDeltaRead": {
-        "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric.",
+        "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric. `metric_changed` is true whenever the two\nmetrics differ \u2014 including when only ONE side has one, in which case the deltas\nare null because no difference can be stated.",
         "properties": {
           "metric_changed": {
             "title": "Metric Changed",
