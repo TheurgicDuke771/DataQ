@@ -125,4 +125,5 @@ def test_non_admins_are_refused(
     client: TestClient, as_role: Callable[..., tuple[Any, dict[str, str]]], role: str
 ) -> None:
     _, headers = as_role(role)
-    assert client.get(URL, headers=headers).status_code == 403
+    response = client.get(URL, headers=headers)
+    assert response.status_code == 403
