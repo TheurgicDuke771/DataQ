@@ -9,7 +9,7 @@
 # scripts/run-pinned-tool.py fails a hook whose env has drifted (#2080). So a
 # bump here (e.g. from Dependabot) is the only edit needed.
 
-black==26.5.1
+black==26.10.1
 ruff==0.17.0
 mypy==2.4.0
 bandit[toml]==1.9.4
