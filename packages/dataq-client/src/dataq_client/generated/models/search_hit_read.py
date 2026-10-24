@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast
 from uuid import UUID
@@ -17,19 +18,22 @@ T = TypeVar("T", bound="SearchHitRead")
 class SearchHitRead:
     """One match. `label` is the entity's name (a run is labelled by its suite); `href` is the
     SPA path that opens it for THIS caller — a check the caller may only view opens its suite,
-    a connection opens its own page only for a workspace admin.
+    a connection opens its own page only for a workspace admin. `when` is set on a run (when it
+    started, or was queued if it never started).
 
         Attributes:
             href (str):
             id (UUID):
             label (str):
             sublabel (None | str | Unset):
+            when (datetime.datetime | None | Unset):
     """
 
     href: str
     id: UUID
     label: str
     sublabel: None | str | Unset = UNSET
+    when: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,6 +49,14 @@ class SearchHitRead:
         else:
             sublabel = self.sublabel
 
+        when: None | str | Unset
+        if isinstance(self.when, Unset):
+            when = UNSET
+        elif isinstance(self.when, datetime.datetime):
+            when = self.when.isoformat()
+        else:
+            when = self.when
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -56,6 +68,8 @@ class SearchHitRead:
         )
         if sublabel is not UNSET:
             field_dict["sublabel"] = sublabel
+        if when is not UNSET:
+            field_dict["when"] = when
 
         return field_dict
 
@@ -77,11 +91,29 @@ class SearchHitRead:
 
         sublabel = _parse_sublabel(d.pop("sublabel", UNSET))
 
+        def _parse_when(data: object) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                when_type_0 = datetime.datetime.fromisoformat(data)
+
+                return when_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        when = _parse_when(d.pop("when", UNSET))
+
         search_hit_read = cls(
             href=href,
             id=id,
             label=label,
             sublabel=sublabel,
+            when=when,
         )
 
         search_hit_read.additional_properties = d

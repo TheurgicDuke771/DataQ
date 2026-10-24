@@ -118,7 +118,9 @@ def test_a_view_share_exposes_the_suite_its_checks_and_runs(
     assert [h["id"] for h in body["groups"]["runs"]] == [str(run.id)]
     assert body["groups"]["runs"][0]["label"] == "Orders quality"
     assert body["groups"]["runs"][0]["href"] == f"/results/{run.id}"
-    assert body["groups"]["runs"][0]["sublabel"].startswith("succeeded · ")
+    assert body["groups"]["runs"][0]["sublabel"] == "succeeded"
+    assert body["groups"]["runs"][0]["when"] is not None
+    assert body["groups"]["suites"][0]["when"] is None
 
 
 def test_an_edit_share_opens_the_check_editor(

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Final, Literal
 
 from sqlalchemy import ColumnElement, Row, Select, String, case, cast, func, or_, select
@@ -43,6 +44,7 @@ class SearchHit:
     label: str
     sublabel: str | None
     href: str
+    when: datetime | None = None
 
 
 @dataclass
@@ -192,7 +194,8 @@ def search(
         SearchHit(
             id=run.id,
             label=suite_name,
-            sublabel=_run_sublabel(run),
+            sublabel=run.status,
+            when=run.started_at or run.created_at,
             href=f"/results/{run.id}",
         )
         for run, suite_name in run_rows
@@ -204,8 +207,3 @@ def search(
 
 def _looks_like_uuid_prefix(term: str) -> bool:
     return all(ch in "0123456789abcdefABCDEF-" for ch in term)
-
-
-def _run_sublabel(run: Run) -> str:
-    when = run.started_at or run.created_at
-    return f"{run.status} · {when.isoformat(timespec='minutes')}"

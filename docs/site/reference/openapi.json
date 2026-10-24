@@ -9324,7 +9324,7 @@
         "type": "object"
       },
       "SearchHitRead": {
-        "description": "One match. `label` is the entity's name (a run is labelled by its suite); `href` is the\nSPA path that opens it for THIS caller \u2014 a check the caller may only view opens its suite,\na connection opens its own page only for a workspace admin.",
+        "description": "One match. `label` is the entity's name (a run is labelled by its suite); `href` is the\nSPA path that opens it for THIS caller \u2014 a check the caller may only view opens its suite,\na connection opens its own page only for a workspace admin. `when` is set on a run (when it\nstarted, or was queued if it never started).",
         "properties": {
           "href": {
             "title": "Href",
@@ -9349,6 +9349,18 @@
               }
             ],
             "title": "Sublabel"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
           }
         },
         "required": [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -22,12 +23,14 @@ router = APIRouter(tags=["search"])
 class SearchHitRead(ApiModel):
     """One match. `label` is the entity's name (a run is labelled by its suite); `href` is the
     SPA path that opens it for THIS caller — a check the caller may only view opens its suite,
-    a connection opens its own page only for a workspace admin."""
+    a connection opens its own page only for a workspace admin. `when` is set on a run (when it
+    started, or was queued if it never started)."""
 
     id: uuid.UUID
     label: str
     sublabel: str | None = None
     href: str
+    when: datetime | None = None
 
 
 class SearchGroupsRead(ApiModel):
@@ -49,7 +52,10 @@ class SearchResponse(ApiModel):
 
 
 def _hits(hits: list[svc.SearchHit]) -> list[SearchHitRead]:
-    return [SearchHitRead(id=h.id, label=h.label, sublabel=h.sublabel, href=h.href) for h in hits]
+    return [
+        SearchHitRead(id=h.id, label=h.label, sublabel=h.sublabel, href=h.href, when=h.when)
+        for h in hits
+    ]
 
 
 @router.get(
