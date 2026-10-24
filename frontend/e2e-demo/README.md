@@ -27,7 +27,9 @@ gate (`settle`) to pass. A polling endpoint or a hung asset therefore costs 1.5 
 a plain idle wait used to take on every page and tab. Requests still open after the grace are
 logged by method and path (`[capture] <route>: network busy past the grace`). Each route has a
 hard budget (`ROUTE_BUDGET_MS`); one that exceeds it fails the test naming the route and the
-requests still open, instead of running into the test-wide ceiling.
+requests still open, instead of running into the test-wide ceiling. Reading a response body is
+bounded the same way (10 s, logged by path): a body the page abandoned mid-flight never settles,
+and without the bound it held the end of the capture until the test-wide timeout.
 
 ## What keeps it from drifting
 
