@@ -121,6 +121,13 @@ def _named_gates(s: Settings) -> list[_NamedGate]:
     return gates
 
 
+def configured_allowlists(settings: Settings | None = None) -> list[_NamedGate]:
+    """The sign-in allowlists a door on THIS deployment reads, each with the env
+    vars it came from — the read-only readout Workspace Settings shows.
+    """
+    return _named_gates(settings or get_settings())
+
+
 def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]]]:
     return [(emails, domains) for _, _, emails, domains in _named_gates(s)]
 

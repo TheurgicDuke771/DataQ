@@ -255,6 +255,8 @@ from .result_read_observed_value_type_0 import ResultReadObservedValueType0
 from .result_read_redaction_type_0 import ResultReadRedactionType0
 from .result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
 from .result_read_sampling_type_0 import ResultReadSamplingType0
+from .retention_setting_read import RetentionSettingRead
+from .retention_setting_read_unit import RetentionSettingReadUnit
 from .run_comparison_read import RunComparisonRead
 from .run_detail_read import RunDetailRead
 from .run_outcome_read import RunOutcomeRead
@@ -290,6 +292,9 @@ from .share_create_permission import ShareCreatePermission
 from .share_read import ShareRead
 from .share_update import ShareUpdate
 from .share_update_permission import ShareUpdatePermission
+from .signup_allowlist_read import SignupAllowlistRead
+from .signup_allowlist_read_grants import SignupAllowlistReadGrants
+from .signup_allowlist_read_kind import SignupAllowlistReadKind
 from .source_connection_ref import SourceConnectionRef
 from .source_connection_ref_in import SourceConnectionRefIn
 from .sql_generation_request import SqlGenerationRequest
@@ -342,6 +347,7 @@ from .validation_error_context import ValidationErrorContext
 from .warehouse_lineage_status_read import WarehouseLineageStatusRead
 from .webhook_regenerate_response import WebhookRegenerateResponse
 from .webhook_regenerate_response_auth_mode import WebhookRegenerateResponseAuthMode
+from .workspace_config_read import WorkspaceConfigRead
 
 __all__ = (
     "AdditionalTableRef",
@@ -595,6 +601,8 @@ __all__ = (
     "ResultReadRedactionType0",
     "ResultReadSampleFailuresType0",
     "ResultReadSamplingType0",
+    "RetentionSettingRead",
+    "RetentionSettingReadUnit",
     "RunComparisonRead",
     "RunDetailRead",
     "RunOutcomeRead",
@@ -630,6 +638,9 @@ __all__ = (
     "ShareRead",
     "ShareUpdate",
     "ShareUpdatePermission",
+    "SignupAllowlistRead",
+    "SignupAllowlistReadGrants",
+    "SignupAllowlistReadKind",
     "SourceConnectionRef",
     "SourceConnectionRefIn",
     "SqlGenerationRequest",
@@ -682,4 +693,5 @@ __all__ = (
     "WarehouseLineageStatusRead",
     "WebhookRegenerateResponse",
     "WebhookRegenerateResponseAuthMode",
+    "WorkspaceConfigRead",
 )
