@@ -315,6 +315,26 @@ erDiagram
         uuid user_id FK
         string permission "view / edit (admin schema-legal, never granted)"
     }
+    tags {
+        uuid id PK
+        string name "unique; normalized lower-case label (a key:value form fits inside it)"
+    }
+    suite_tags {
+        uuid suite_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    asset_tags {
+        uuid asset_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    connection_tags {
+        uuid connection_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
+    check_tags {
+        uuid check_id PK,FK "CASCADE"
+        uuid tag_id PK,FK "CASCADE"
+    }
     pipeline_runs {
         uuid id PK
         string provider "adf / airflow / dbt"
@@ -487,6 +507,14 @@ erDiagram
     checks |o--o{ check_suggestions : "created on accept (SET NULL)"
     users |o--o{ check_suggestions : "decided_by (SET NULL)"
     checks ||--o{ check_versions : "config history (CASCADE)"
+    suites ||--o{ suite_tags : "labelled (CASCADE)"
+    assets ||--o{ asset_tags : "labelled (CASCADE)"
+    connections ||--o{ connection_tags : "labelled (CASCADE)"
+    checks ||--o{ check_tags : "labelled (CASCADE)"
+    tags ||--o{ suite_tags : "assigned to (CASCADE)"
+    tags ||--o{ asset_tags : "assigned to (CASCADE)"
+    tags ||--o{ connection_tags : "assigned to (CASCADE)"
+    tags ||--o{ check_tags : "assigned to (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
     runs ||--o{ results : "produces (CASCADE)"
 
