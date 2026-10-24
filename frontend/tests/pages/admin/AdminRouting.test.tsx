@@ -28,6 +28,7 @@ vi.mock('../../../src/api/admin', () => ({
   listAuditEvents: vi.fn(),
   getDeploymentPosture: vi.fn(),
   testAuthEmail: vi.fn(),
+  getWorkspaceConfig: vi.fn(() => new Promise(() => {})),
   listWorkspaceMembers: vi.fn(async () => ({
     enforcement_active: false,
     enforced: false,
