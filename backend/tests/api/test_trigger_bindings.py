@@ -320,10 +320,8 @@ def test_suite_binding_takes_the_upstream_env_whatever_was_sent(
     assert body["warnings"] == []  # the orchestration URL check does not apply
     # `env` may be omitted entirely.
     other = _suite_on(db_session, client, env="dev")
-    assert (
-        client.post("/api/v1/trigger-bindings", json=_suite_payload(upstream, other)).status_code
-        == 201
-    )
+    resp_1 = client.post("/api/v1/trigger-bindings", json=_suite_payload(upstream, other))
+    assert resp_1.status_code == 201
 
 
 def test_suite_binding_refuses_self_and_a_non_uuid_upstream(
@@ -342,7 +340,8 @@ def test_suite_binding_refuses_a_loop_even_through_a_disabled_hop(
     a = _suite_on(db_session, client, env="dev")
     b = _suite_on(db_session, client, env="dev")
     c = _suite_on(db_session, client, env="dev")
-    assert client.post("/api/v1/trigger-bindings", json=_suite_payload(a, b)).status_code == 201
+    a_to_b = client.post("/api/v1/trigger-bindings", json=_suite_payload(a, b))
+    assert a_to_b.status_code == 201
     b_to_c = client.post("/api/v1/trigger-bindings", json=_suite_payload(b, c, enabled=False))
     assert b_to_c.status_code == 201
     loop = client.post("/api/v1/trigger-bindings", json=_suite_payload(c, a))
