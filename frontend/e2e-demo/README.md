@@ -20,6 +20,15 @@ E2E_DEMO_BASE_URL=http://127.0.0.1:3001 pnpm demo:capture
 pnpm demo:build && pnpm demo:smoke
 ```
 
+## How the capture waits
+
+A route is ready when the spinner gate (`settle`) passes, not when the network is idle: a
+polling endpoint or a hung asset would keep a global idle wait open for its full timeout on
+every page and tab. After the gate, `visit.ts` gives open requests a short grace, then moves
+on and logs the URLs still in flight (`[capture] <route>: not idle after settle`). Each route
+has a hard budget (`ROUTE_BUDGET_MS`); one that exceeds it fails the test naming the route and
+the requests still open, instead of running into the test-wide ceiling.
+
 ## What keeps it from drifting
 
 - **A new route** must be added to `ROUTE_PATTERNS` in `routes.ts`;
