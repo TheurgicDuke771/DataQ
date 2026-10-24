@@ -709,3 +709,39 @@ export async function resetScoringWeights(): Promise<ScoringWeights> {
   const { data } = await api.delete<ScoringWeights>('/admin/scoring');
   return data;
 }
+
+/** One retention clock, as the deployment configured it. */
+export interface RetentionSetting {
+  /** The environment variable that sets it. */
+  variable: string;
+  value: number;
+  unit: 'days' | 'hours';
+  /** What the sweep removes once the clock runs out. */
+  detail: string;
+}
+
+/** One deployment allowlist, as configured — identifiers only, never a secret. */
+export interface SignupAllowlist {
+  variable: string;
+  kind: 'emails' | 'domains';
+  values: string[];
+  /** Whether a sign-in door on THIS deployment reads it; an unused mode's list admits nobody. */
+  active: boolean;
+  /** `sign_in` admits the address; `admin_role` grants Admin regardless of the stored role. */
+  grants: 'sign_in' | 'admin_role';
+}
+
+/** Deployment-set values readable in the app but changed only in the deployment configuration. */
+export interface WorkspaceConfig {
+  retention: RetentionSetting[];
+  signup_allowlists: SignupAllowlist[];
+  oidc_default_role: WorkspaceRole;
+  otp_default_role: WorkspaceRole;
+  /** True on a local stack signing in through the developer bypass: no allowlist gates it. */
+  dev_bypass_active: boolean;
+}
+
+export async function getWorkspaceConfig(signal?: AbortSignal): Promise<WorkspaceConfig> {
+  const { data } = await api.get<WorkspaceConfig>('/admin/workspace-config', { signal });
+  return data;
+}
