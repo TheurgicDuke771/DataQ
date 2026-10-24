@@ -59,7 +59,7 @@ connection mutation, and a credential must never transit an LLM.
 | `cancel_run` | `edit` on the suite | Cancel a queued or still-running suite run. |
 | `create_check` | `edit` on the suite | Add a new check (a Great Expectations expectation, by default) to a suite. Requires edit access to the suite. Returns the created check's id. |
 | `create_schedule` | `edit` on the suite | Schedule a suite to run automatically on a cron expression. |
-| `create_trigger_binding` | `edit` on the suite | Run a suite automatically whenever an orchestrator pipeline succeeds. |
+| `create_trigger_binding` | `edit` on the suite | Run a suite automatically whenever an orchestrator pipeline — or another suite — succeeds. |
 | `delete_check` | `edit` on the suite | Permanently delete a check from a suite — **and every result it ever recorded**. |
 | `delete_schedule` | `edit` on the suite | Delete a suite's cron schedule so it stops running automatically. |
 | `delete_trigger_binding` | `edit` on the suite | Delete an orchestration trigger so a pipeline stops running its suite. |

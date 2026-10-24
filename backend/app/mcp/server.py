@@ -50,6 +50,8 @@ from backend.app.db.models import (
     INCIDENT_STATUSES,
     ORCHESTRATION_PROVIDERS,
     PIPELINE_RUN_STATUSES,
+    SUITE_TRIGGER_PROVIDER,
+    TRIGGER_PROVIDERS,
     Asset,
     Check,
     Connection,
@@ -1762,12 +1764,16 @@ def list_trigger_bindings(
     Confirm with ``list_runs``.
 
     Only *successful* pipeline completions trigger a suite run; a failure alerts
-    but never triggers. Scoped to suites the user can access.
+    but never triggers. A ``provider="suite"`` row (ADR 0051) is a suite-on-suite
+    trigger: ``pipeline_or_dag_id`` is the **upstream suite's id**, and it fires
+    when that suite's run passes (no fail/critical). Scoped to suites the user can
+    access.
     """
     # The shared vocabulary, not a third hand-written copy of it: dbt joined the
-    # set in ADR 0029 and a literal here would silently exclude the next provider.
-    if provider is not None and provider not in ORCHESTRATION_PROVIDERS:
-        raise ToolError(f"provider must be one of {list(ORCHESTRATION_PROVIDERS)}")
+    # set in ADR 0029 and `suite` in ADR 0051; a literal here would silently
+    # exclude the next provider.
+    if provider is not None and provider not in TRIGGER_PROVIDERS:
+        raise ToolError(f"provider must be one of {list(TRIGGER_PROVIDERS)}")
     # `env` gets the same guard as `provider`, for the same reason: a typo'd value
     # would otherwise return `[]`, which reads as "nothing is wired up" (#828).
     if env is not None and env not in ENVS:
@@ -3203,16 +3209,27 @@ def create_trigger_binding(
     # Same bound as the REST twin: the column is String(256) NOT NULL, and an
     # empty value would create a binding that can never match a pipeline.
     pipeline_or_dag_id: Annotated[str, Field(min_length=1, max_length=256)],
-    env: str,
-    suite_id: str,
+    env: str | None = None,
+    suite_id: str = "",
     enabled: bool = True,
 ) -> dict[str, Any]:
-    """Run a suite automatically whenever an orchestrator pipeline succeeds.
+    """Run a suite automatically whenever an orchestrator pipeline — or another
+    suite — succeeds.
 
     Use this for 'run the orders checks after the nightly load finishes'. Binds
     pipeline/DAG ``pipeline_or_dag_id`` on ``provider`` (adf / airflow / dbt) in
     environment ``env`` to this suite: when that pipeline **completes
     successfully** in that environment, the suite runs.
+
+    **Suite-on-suite** ('run the reconciliation suite after the orders suite
+    passes'): ``provider="suite"`` with ``pipeline_or_dag_id`` = the **upstream
+    suite's id** (from ``list_suites``). ``env`` is then ignored — the binding takes
+    the upstream suite's connection env. It fires when the upstream run finishes
+    with **no check at fail or critical** (a warn passes; an errored or skipped check
+    does not block). A suite cannot trigger itself, a binding that would close a
+    loop is refused, chains stop after 5 hops, and you need view access to the
+    upstream suite. A pipeline *gate* cannot wait on a suite chain — only on
+    orchestrator bindings.
 
     Only success triggers a run. A pipeline *failure* alerts but never triggers —
     do not offer this as a way to react to failures.
@@ -3240,8 +3257,12 @@ def create_trigger_binding(
     # NUL can't be stored by Postgres and the driver's ValueError would escape
     # `_service_errors` — the same boundary rejection every other free-text tool
     # argument gets (#567).
-    if contains_nul({"pipeline_or_dag_id": pipeline_or_dag_id, "provider": provider, "env": env}):
+    if contains_nul(
+        {"pipeline_or_dag_id": pipeline_or_dag_id, "provider": provider, "env": env or ""}
+    ):
         raise ToolError("NUL (\\x00) characters are not allowed in a trigger binding")
+    if provider != SUITE_TRIGGER_PROVIDER and env is None:
+        raise ToolError("env is required for an orchestration provider")
     with _ctx() as (session, user), _service_errors():
         result = trigger_binding_service.create_binding(
             session,

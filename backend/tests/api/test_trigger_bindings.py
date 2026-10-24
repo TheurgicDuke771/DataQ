@@ -279,3 +279,95 @@ def test_toggle_then_delete(client: TestClient, db_session: Any) -> None:
     assert deleted.status_code == 204
     resp = client.get(f"/api/v1/trigger-bindings/{bid}")
     assert resp.status_code == 404
+
+
+# ───────────────────────── suite-on-suite (ADR 0051, #244) ─────────────────────────
+
+
+def _suite_on(db_session: Any, client: TestClient, *, env: str) -> str:
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"o-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"pg-{uuid.uuid4().hex[:6]}", type="postgres", env=env, config={}, created_by=owner.id
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return _owned_suite(client, conn.id)
+
+
+def _suite_payload(upstream: str, downstream: str, **overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "provider": "suite",
+        "pipeline_or_dag_id": upstream,
+        "suite_id": downstream,
+    }
+    body.update(overrides)
+    return body
+
+
+def test_suite_binding_takes_the_upstream_env_whatever_was_sent(
+    client: TestClient, db_session: Any
+) -> None:
+    upstream = _suite_on(db_session, client, env="qa")
+    downstream = _suite_on(db_session, client, env="dev")
+    resp = client.post(
+        "/api/v1/trigger-bindings", json=_suite_payload(upstream, downstream, env="dev")
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert (body["provider"], body["pipeline_or_dag_id"], body["env"]) == ("suite", upstream, "qa")
+    assert body["warnings"] == []  # the orchestration URL check does not apply
+    # `env` may be omitted entirely.
+    other = _suite_on(db_session, client, env="dev")
+    assert (
+        client.post("/api/v1/trigger-bindings", json=_suite_payload(upstream, other)).status_code
+        == 201
+    )
+
+
+def test_suite_binding_refuses_self_and_a_non_uuid_upstream(
+    client: TestClient, db_session: Any
+) -> None:
+    suite = _suite_on(db_session, client, env="dev")
+    me = client.post("/api/v1/trigger-bindings", json=_suite_payload(suite, suite))
+    assert me.status_code == 422 and "itself" in me.json()["error"]["message"]
+    bad = client.post("/api/v1/trigger-bindings", json=_suite_payload("load_finance", suite))
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "trigger_binding_invalid"
+
+
+def test_suite_binding_refuses_a_loop_even_through_a_disabled_hop(
+    client: TestClient, db_session: Any
+) -> None:
+    a = _suite_on(db_session, client, env="dev")
+    b = _suite_on(db_session, client, env="dev")
+    c = _suite_on(db_session, client, env="dev")
+    assert client.post("/api/v1/trigger-bindings", json=_suite_payload(a, b)).status_code == 201
+    b_to_c = client.post("/api/v1/trigger-bindings", json=_suite_payload(b, c, enabled=False))
+    assert b_to_c.status_code == 201
+    loop = client.post("/api/v1/trigger-bindings", json=_suite_payload(c, a))
+    assert loop.status_code == 422, loop.text
+    assert loop.json()["error"]["message"].startswith("this binding would make the suites trigger")
+    assert loop.json()["error"]["detail"]["cycle"] == [a, b, c, a]
+    assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 2
+
+
+def test_suite_binding_needs_view_on_the_upstream(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    _member, headers = as_role("member")
+    conn = _connection(db_session)
+    hidden = _unowned_suite(db_session, conn)
+    mine = client.post(
+        "/api/v1/suites",
+        headers=headers,
+        json={"name": f"s-{uuid.uuid4().hex[:8]}", "connection_id": str(conn.id)},
+    )
+    assert mine.status_code == 201, mine.text
+    resp = client.post(
+        "/api/v1/trigger-bindings",
+        headers=headers,
+        json=_suite_payload(str(hidden.id), mine.json()["id"]),
+    )
+    assert resp.status_code == 404  # hidden, not 403: no enumeration of suite ids
+    assert db_session.scalar(select(func.count()).select_from(TriggerBinding)) == 0

@@ -13,7 +13,8 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import (
     ENVS,
-    ORCHESTRATION_PROVIDERS,
+    SUITE_TRIGGER_PROVIDER,
+    TRIGGER_PROVIDERS,
     Connection,
     TriggerBinding,
 )
@@ -39,14 +40,81 @@ class TriggerBindingConflictError(DataQError):
     code = "trigger_binding_conflict"
 
 
-def _validate_provider_env(provider: str, env: str) -> None:
-    if provider not in ORCHESTRATION_PROVIDERS:
+def _validate_provider_env(provider: str, env: str | None) -> None:
+    if provider not in TRIGGER_PROVIDERS:
         raise TriggerBindingInvalidError(
             f"invalid provider {provider!r}",
-            detail={"allowed": list(ORCHESTRATION_PROVIDERS)},
+            detail={"allowed": list(TRIGGER_PROVIDERS)},
         )
+    if provider == SUITE_TRIGGER_PROVIDER:
+        return  # env is derived from the upstream suite, whatever was sent
     if env not in ENVS:
         raise TriggerBindingInvalidError(f"invalid env {env!r}", detail={"allowed": list(ENVS)})
+
+
+def _upstream_suite_id(pipeline_or_dag_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(pipeline_or_dag_id)
+    except ValueError:
+        raise TriggerBindingInvalidError(
+            "for provider 'suite', pipeline_or_dag_id must be the upstream suite's id",
+            detail={"pipeline_or_dag_id": pipeline_or_dag_id},
+        ) from None
+
+
+def suite_chain_path(
+    session: Session, *, downstream_suite_id: uuid.UUID, upstream_suite_id: uuid.UUID
+) -> list[uuid.UUID] | None:
+    """The chain of suite bindings that already leads from ``downstream`` back to ``upstream``
+    (so binding upstream → downstream would close a loop), or ``None``. Disabled bindings count:
+    `enabled` is a toggle, and re-enabling must not be the moment a cycle appears (ADR 0051).
+    """
+    parents: dict[uuid.UUID, uuid.UUID] = {}
+    frontier = [downstream_suite_id]
+    seen = {downstream_suite_id}
+    while frontier:
+        rows = session.execute(
+            select(TriggerBinding.pipeline_or_dag_id, TriggerBinding.suite_id).where(
+                TriggerBinding.provider == SUITE_TRIGGER_PROVIDER,
+                TriggerBinding.pipeline_or_dag_id.in_([str(s) for s in frontier]),
+            )
+        ).all()
+        frontier = []
+        for upstream_text, child in rows:
+            parent = uuid.UUID(upstream_text)
+            if child in seen:
+                continue
+            seen.add(child)
+            parents[child] = parent
+            if child == upstream_suite_id:
+                path = [child]
+                while path[-1] != downstream_suite_id:
+                    path.append(parents[path[-1]])
+                return list(reversed(path))
+            frontier.append(child)
+    return None
+
+
+def _resolve_suite_binding(
+    session: Session, *, pipeline_or_dag_id: str, suite_id: uuid.UUID, user_id: uuid.UUID
+) -> str:
+    """Validate a ``provider='suite'`` binding and return the env it must carry."""
+    upstream_id = _upstream_suite_id(pipeline_or_dag_id)
+    if upstream_id == suite_id:
+        raise TriggerBindingInvalidError(
+            "a suite cannot trigger itself", detail={"suite_id": str(suite_id)}
+        )
+    # `view` on the upstream: you cannot chain onto a suite you cannot see (404 when hidden).
+    upstream = require_permission(session, upstream_id, user_id, minimum="view")
+    path = suite_chain_path(session, downstream_suite_id=suite_id, upstream_suite_id=upstream_id)
+    if path is not None:
+        raise TriggerBindingInvalidError(
+            "this binding would make the suites trigger each other in a loop",
+            detail={"cycle": [str(s) for s in [*path, suite_id]]},
+        )
+    connection = session.get(Connection, upstream.connection_id)
+    assert connection is not None
+    return str(connection.env)
 
 
 @dataclass(frozen=True)
@@ -114,15 +182,22 @@ def create_binding(
     *,
     provider: str,
     pipeline_or_dag_id: str,
-    env: str,
+    env: str | None,
     suite_id: uuid.UUID,
     user_id: uuid.UUID,
     enabled: bool = True,
 ) -> BindingResult:
-    """Create a binding. Requires `edit` on the target suite (404/403 otherwise)."""
+    """Create a binding. Requires `edit` on the target suite (404/403 otherwise). For
+    ``provider='suite'`` the env is the upstream suite's connection env, whatever was sent.
+    """
     _validate_provider_env(provider, env)
     # Proves the suite exists (404) and the caller may automate it (403).
     require_permission(session, suite_id, user_id, minimum="edit")
+    if provider == SUITE_TRIGGER_PROVIDER:
+        env = _resolve_suite_binding(
+            session, pipeline_or_dag_id=pipeline_or_dag_id, suite_id=suite_id, user_id=user_id
+        )
+    assert env is not None
 
     binding = TriggerBinding(
         provider=provider,
@@ -159,7 +234,9 @@ def create_binding(
         suite_id=str(suite_id),
     )
     warnings = (
-        _ambiguous_orchestration_warnings(session, provider=provider, env=env) if enabled else []
+        _ambiguous_orchestration_warnings(session, provider=provider, env=env)
+        if enabled and provider != SUITE_TRIGGER_PROVIDER
+        else []
     )
     return BindingResult(binding=binding, warnings=warnings)
 
@@ -234,7 +311,7 @@ def update_binding(
     log.info("trigger_binding_updated", binding_id=str(binding.id), enabled=enabled)
     warnings = (
         _ambiguous_orchestration_warnings(session, provider=binding.provider, env=binding.env)
-        if enabled
+        if enabled and binding.provider != SUITE_TRIGGER_PROVIDER
         else []
     )
     return BindingResult(binding=binding, warnings=warnings)
