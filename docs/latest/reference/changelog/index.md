@@ -87,6 +87,15 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Run comparison.** From a run's page, **Compare with…** opens any other run of the same
+  suite diffed check by check: each check's status on both sides and whether it regressed,
+  improved, stayed the same or moved through `skip`/`error`; the metric delta, absolute and
+  as a percentage of a non-zero base; and the checks present on only one side. Each side is
+  rendered as the check was at that run — name, type, engine and dimension then, not now — so a
+  check renamed in between is labelled on both sides. Observed values are redacted exactly as
+  on the run page, and a run that has not finished is flagged as not final. API clients get the
+  same diff at `GET /api/v1/runs/{run_id}/compare/{other_run_id}`; a pair from different suites
+  is refused with `runs_not_comparable`.
 - **Google Cloud Storage is a datasource.** The third object store beside ADLS Gen2 and S3: the
   same flat-file checks, batch patterns, browsing, profiler, sampling and arrival-time freshness
   over a GCS bucket, authenticated with a service-account key file (read-only scope) or

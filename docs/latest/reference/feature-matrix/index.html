@@ -3414,6 +3414,10 @@ catalog knowing about them (mechanism ④).</p>
 <td>Redacted column-aware before display (suite column policy + classifier)</td>
 </tr>
 <tr>
+<td>Run comparison</td>
+<td>Any two runs of a suite diffed check by check: status change (regressed / improved / same / added / removed), metric delta, each side as the check was at that run; in the UI and at <code>GET /runs/{id}/compare/{other}</code></td>
+</tr>
+<tr>
 <td>Run history retention</td>
 <td>Samples purged after the retention window; metric trends kept</td>
 </tr>

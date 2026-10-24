@@ -3828,6 +3828,17 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   read off the runs already recorded — there is no connection-probe polling loop.
 - **Results page** — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and **redacted failing-row samples**.
+- **Run comparison** — from a run, **Compare with…** any other run of the same suite
+  (the earlier one becomes the base) to see what changed between them: each check's
+  status on both sides and whether it **regressed**, **improved**, stayed the same, or
+  moved through `skip`/`error` (neither better nor worse — it was not evaluated); the
+  metric delta, absolute and as a percentage of a non-zero base; and checks present on
+  only one side (**added** / **removed**). Each side shows the check **as it was at that
+  run** — its name, type, engine and dimension then, not now — so a check renamed or
+  re-engined in between is labelled on both sides rather than silently relabelled.
+  Observed values are redacted exactly as on the run page; a run that has not finished is
+  flagged as not final, since its side of the diff is still partial. Also available to API
+  clients as `GET /api/v1/runs/{run_id}/compare/{other_run_id}`.
 - **Severity + operational statuses** — warn / fail / critical for data outcomes, plus
   `error` (evaluation threw) and `skip` (precondition unmet) kept distinct from failures.
 - **Failure reasons** — a run that fails to execute shows a redaction-safe reason
@@ -5225,6 +5236,15 @@ section below.
   a database at the previous release's schema, seeded with that release's demo data, is
   upgraded to the current head, downgraded back and upgraded again
   (`python -m backend.scripts.upgrade_path`).
+- **Run comparison.** From a run's page, **Compare with…** opens any other run of the same
+  suite diffed check by check: each check's status on both sides and whether it regressed,
+  improved, stayed the same or moved through `skip`/`error`; the metric delta, absolute and
+  as a percentage of a non-zero base; and the checks present on only one side. Each side is
+  rendered as the check was at that run — name, type, engine and dimension then, not now — so a
+  check renamed in between is labelled on both sides. Observed values are redacted exactly as
+  on the run page, and a run that has not finished is flagged as not final. API clients get the
+  same diff at `GET /api/v1/runs/{run_id}/compare/{other_run_id}`; a pair from different suites
+  is refused with `runs_not_comparable`.
 - **Google Cloud Storage is a datasource.** The third object store beside ADLS Gen2 and S3: the
   same flat-file checks, batch patterns, browsing, profiler, sampling and arrival-time freshness
   over a GCS bucket, authenticated with a service-account key file (read-only scope) or
@@ -7102,6 +7122,7 @@ catalog knowing about them (mechanism ④).
 | Operational statuses | `error` (evaluation threw) and `skip` (precondition unmet) are distinct from failures |
 | Health score | Severity-weighted, on the Dashboard |
 | Failing-row samples | Redacted column-aware before display (suite column policy + classifier) |
+| Run comparison | Any two runs of a suite diffed check by check: status change (regressed / improved / same / added / removed), metric delta, each side as the check was at that run; in the UI and at `GET /runs/{id}/compare/{other}` |
 | Run history retention | Samples purged after the retention window; metric trends kept |
 
 ## Alerting

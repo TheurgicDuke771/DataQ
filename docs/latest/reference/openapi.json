@@ -3808,6 +3808,408 @@
         "title": "ColumnsRead",
         "type": "object"
       },
+      "ComparisonCheckRead": {
+        "description": "A check's identity as it WAS when one side's result was written (from\n`check_versions`), never its current state \u2014 the two sides of a row may differ.",
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "expectation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectation Type"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "engine",
+          "expectation_type",
+          "dimension",
+          "column"
+        ],
+        "title": "ComparisonCheckRead",
+        "type": "object"
+      },
+      "ComparisonDeltaRead": {
+        "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric. `metric_changed` is true whenever the two\nmetrics differ \u2014 including when only ONE side has one, in which case the deltas\nare null because no difference can be stated.",
+        "properties": {
+          "metric_changed": {
+            "title": "Metric Changed",
+            "type": "boolean"
+          },
+          "metric_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Delta"
+          },
+          "metric_delta_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Delta Pct"
+          },
+          "status_change": {
+            "enum": [
+              "improved",
+              "regressed",
+              "changed",
+              "same",
+              "added",
+              "removed"
+            ],
+            "title": "Status Change",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status_change",
+          "metric_delta",
+          "metric_delta_pct",
+          "metric_changed"
+        ],
+        "title": "ComparisonDeltaRead",
+        "type": "object"
+      },
+      "ComparisonRowRead": {
+        "properties": {
+          "base": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComparisonSideRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "check_id": {
+            "format": "uuid",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "delta": {
+            "$ref": "#/components/schemas/ComparisonDeltaRead"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComparisonSideRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "check_id",
+          "label",
+          "base",
+          "target",
+          "delta"
+        ],
+        "title": "ComparisonRowRead",
+        "type": "object"
+      },
+      "ComparisonRunRead": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "checks_passed": {
+            "default": 0,
+            "title": "Checks Passed",
+            "type": "integer"
+          },
+          "checks_total": {
+            "default": 0,
+            "title": "Checks Total",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "queued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued Reason"
+          },
+          "results_final": {
+            "title": "Results Final",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "triggered_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By"
+          },
+          "triggered_by_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Label"
+          },
+          "worst_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Severity"
+          }
+        },
+        "required": [
+          "id",
+          "suite_id",
+          "status",
+          "triggered_by",
+          "started_at",
+          "finished_at",
+          "created_at",
+          "results_final"
+        ],
+        "title": "ComparisonRunRead",
+        "type": "object"
+      },
+      "ComparisonSideRead": {
+        "description": "One run's result for a check. `observed_value` is redacted exactly as on\n`GET /runs/{id}`; failing-row samples are never carried here.",
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/ComparisonCheckRead"
+          },
+          "metric_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value"
+          },
+          "observed_value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Value"
+          },
+          "result_id": {
+            "format": "uuid",
+            "title": "Result Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result_id",
+          "status",
+          "metric_value",
+          "observed_value",
+          "check"
+        ],
+        "title": "ComparisonSideRead",
+        "type": "object"
+      },
+      "ComparisonSummaryRead": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "integer"
+          },
+          "improved": {
+            "title": "Improved",
+            "type": "integer"
+          },
+          "metric_changed": {
+            "title": "Metric Changed",
+            "type": "integer"
+          },
+          "regressed": {
+            "title": "Regressed",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "unchanged",
+          "improved",
+          "regressed",
+          "added",
+          "removed",
+          "metric_changed"
+        ],
+        "title": "ComparisonSummaryRead",
+        "type": "object"
+      },
       "ComposingSuiteRead": {
         "description": "One suite the caller can see that targets the asset, with its latest run.",
         "properties": {
@@ -8566,6 +8968,35 @@
           "sample_failures"
         ],
         "title": "ResultRead",
+        "type": "object"
+      },
+      "RunComparisonRead": {
+        "description": "Two runs of one suite diffed check by check: `base` is the run in the path,\n`target` the other. Rows are ordered by label.",
+        "properties": {
+          "base": {
+            "$ref": "#/components/schemas/ComparisonRunRead"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonRowRead"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ComparisonSummaryRead"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ComparisonRunRead"
+          }
+        },
+        "required": [
+          "base",
+          "target",
+          "summary",
+          "rows"
+        ],
+        "title": "RunComparisonRead",
         "type": "object"
       },
       "RunDetailRead": {
@@ -16332,6 +16763,52 @@
           }
         },
         "summary": "Cancel a queued or running run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/compare/{other_run_id}": {
+      "get": {
+        "operationId": "compare_runs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "other_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Other Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunComparisonRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "`runs_not_comparable` \u2014 the runs belong to different suites, or the same run was given twice."
+          }
+        },
+        "summary": "Compare two runs of a suite check by check",
         "tags": [
           "runs"
         ]

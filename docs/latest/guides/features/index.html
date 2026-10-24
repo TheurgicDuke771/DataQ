@@ -2984,6 +2984,17 @@ schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
   read off the runs already recorded — there is no connection-probe polling loop.</li>
 <li><strong>Results page</strong> — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and <strong>redacted failing-row samples</strong>.</li>
+<li><strong>Run comparison</strong> — from a run, <strong>Compare with…</strong> any other run of the same suite
+  (the earlier one becomes the base) to see what changed between them: each check's
+  status on both sides and whether it <strong>regressed</strong>, <strong>improved</strong>, stayed the same, or
+  moved through <code>skip</code>/<code>error</code> (neither better nor worse — it was not evaluated); the
+  metric delta, absolute and as a percentage of a non-zero base; and checks present on
+  only one side (<strong>added</strong> / <strong>removed</strong>). Each side shows the check <strong>as it was at that
+  run</strong> — its name, type, engine and dimension then, not now — so a check renamed or
+  re-engined in between is labelled on both sides rather than silently relabelled.
+  Observed values are redacted exactly as on the run page; a run that has not finished is
+  flagged as not final, since its side of the diff is still partial. Also available to API
+  clients as <code>GET /api/v1/runs/{run_id}/compare/{other_run_id}</code>.</li>
 <li><strong>Severity + operational statuses</strong> — warn / fail / critical for data outcomes, plus
   <code>error</code> (evaluation threw) and <code>skip</code> (precondition unmet) kept distinct from failures.</li>
 <li><strong>Failure reasons</strong> — a run that fails to execute shows a redaction-safe reason
