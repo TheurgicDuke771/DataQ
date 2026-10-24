@@ -171,6 +171,7 @@ function defineScans(mode: Theme): void {
       let checkId: string;
       let assetId: string;
       let connectionId: string;
+      let compareUrl: string;
 
       test.beforeAll(async ({ request }) => {
         const suites: { id: string; name: string }[] = await (
@@ -189,9 +190,16 @@ function defineScans(mode: Theme): void {
           await request.get('/api/v1/connections')
         ).json();
         connectionId = connections[0].id;
+        // The seeded suite's two most recent runs, the older one as the base.
+        const runs: { id: string }[] = await (
+          await request.get(`/api/v1/runs?suite_id=${suiteId}&limit=2`)
+        ).json();
+        expect(runs.length, 'two seeded runs of "Orders quality"').toBe(2);
+        compareUrl = `/results/${runs[1].id}/compare/${runs[0].id}`;
       });
 
       const routes: [string, () => string][] = [
+        ['route:/results/:id/compare/:id', () => compareUrl],
         ['route:/connections/new', () => '/connections/new'],
         ['route:/connections/:id/edit', () => `/connections/${connectionId}/edit`],
         ['route:/suites/new', () => '/suites/new'],

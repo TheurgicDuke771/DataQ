@@ -56,6 +56,23 @@ export function formatScalar(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+/**
+ * A run-comparison metric delta: `+2 (+20%)`, `−36 (−90%)`, `+12.5` when no percentage is defined
+ * (a zero base), or an em dash when either side has no metric.
+ */
+export function formatMetricDelta(delta: number | null, pct: number | null): string {
+  if (delta === null) return '—';
+  // Rounded first, then signed, so float noise (1.1799999999999926) and a −0.04% that rounds to
+  // zero never show a sign on a zero.
+  const signed = (value: number, decimals: number): string => {
+    const rounded = Math.round(value * 10 ** decimals) / 10 ** decimals;
+    const sign = rounded > 0 ? '+' : rounded < 0 ? '−' : '';
+    return `${sign}${formatScalar(Math.abs(rounded))}`;
+  };
+  if (pct === null) return signed(delta, 4);
+  return `${signed(delta, 4)} (${signed(pct, 1)}%)`;
+}
+
 /** True when `iso` falls within the last `windowDays` days (inclusive). */
 export function isWithinWindowDays(iso: string | null, windowDays: number): boolean {
   if (!iso) return false;

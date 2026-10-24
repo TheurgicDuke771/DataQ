@@ -1,4 +1,4 @@
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, SwapOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -18,10 +18,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { type Incident, listIncidents } from '../api/incidents';
 import {
+  compareRunsPath,
   getRun,
+  listRuns,
   triggeredByText,
   type Result,
   type ResultStatus,
+  type Run,
   type RunStatus,
 } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
@@ -68,6 +71,10 @@ const ACTIVE_INCIDENT_STATUSES = new Set(['open', 'acknowledged']);
  * comparison buckets, anomaly stats) is unbounded in principle.
  */
 const OBSERVED_COLUMN_WIDTH = 220;
+/** How many of the suite's most recent OTHER runs the "Compare with…" menu offers (the page
+ *  fetched includes the run itself, hence the +1 below). An older run is still comparable by
+ *  URL — `/results/<older>/compare/<this>` — or through the API. */
+const COMPARE_CANDIDATES = 20;
 
 /**
  * Routed run-detail page (`/results/:runId`, ADR 0022) — replaces the run-detail drawer so a run
@@ -82,7 +89,7 @@ export function RunDetail() {
     const run = await getRun(runId);
     // The suite may be readable while details race; tolerate a missing name/checks
     // rather than failing the whole page.
-    const [suite, checks, incidents] = await Promise.all([
+    const [suite, checks, incidents, siblings] = await Promise.all([
       getSuite(run.suite_id).catch(() => null),
       // `known: false` when the list could not be read: a check missing from it is then not
       // known to be deleted.
@@ -99,6 +106,12 @@ export function RunDetail() {
             () => [] as Incident[],
           )
         : Promise.resolve([] as Incident[]),
+      // The other runs of this suite, newest first, for "Compare with…". A failed read only
+      // loses the menu, never the page.
+      listRuns({ suite_id: run.suite_id, limit: COMPARE_CANDIDATES + 1 }).then(
+        (page) => page.items.filter((r) => r.id !== run.id).slice(0, COMPARE_CANDIDATES),
+        () => [] as Run[],
+      ),
     ]);
     return {
       run,
@@ -106,6 +119,7 @@ export function RunDetail() {
       checks: checks.list,
       checksKnown: checks.known,
       incidents,
+      siblings,
     };
   });
 
@@ -157,6 +171,7 @@ export function RunDetail() {
               checks={state.data.checks}
               checksKnown={state.data.checksKnown}
               incidents={state.data.incidents}
+              siblings={state.data.siblings}
             />
           )}
         </Page>
@@ -179,12 +194,14 @@ function RunDetailBody({
   checks,
   checksKnown,
   incidents,
+  siblings,
 }: {
   run: Awaited<ReturnType<typeof getRun>>;
   suiteName: string | null;
   checks: Check[];
   checksKnown: boolean;
   incidents: Incident[];
+  siblings: Run[];
 }) {
   const checksById = useMemo(() => {
     const map = new Map<string, Check>();
@@ -218,12 +235,15 @@ function RunDetailBody({
           {/* Links back to the asset this run executed against (#773). */}
           <AssetLink assetId={run.asset_id} />
         </Flex>
-        <DownloadMenu
-          run={run}
-          suiteName={suiteName}
-          checks={checksById}
-          checksKnown={checksKnown}
-        />
+        <Flex gap={8} wrap>
+          <CompareMenu run={run} siblings={siblings} />
+          <DownloadMenu
+            run={run}
+            suiteName={suiteName}
+            checks={checksById}
+            checksKnown={checksKnown}
+          />
+        </Flex>
       </Flex>
 
       {/* Equal-width cards that fill the row so its right edge lines up with the
@@ -377,6 +397,37 @@ function DownloadMenu({
       disabled={run.results.length === 0}
     >
       <Button icon={<DownloadOutlined />}>Download</Button>
+    </Dropdown>
+  );
+}
+
+/**
+ * "Compare with…" — the suite's other recent runs, newest first. Picking one opens the comparison
+ * with the EARLIER run as the base, so the deltas read as what changed since.
+ */
+function CompareMenu({ run, siblings }: { run: Run; siblings: Run[] }) {
+  const navigate = useNavigate();
+  const outcome = (r: Run) =>
+    r.checks_total === 0 ? '' : ` · ${r.checks_passed}/${r.checks_total} passed`;
+  const items = siblings.map((r) => ({
+    key: r.id,
+    label: `${formatTimestamp(r.started_at ?? r.created_at)} · ${r.status}${outcome(r)}`,
+    onClick: () => navigate(compareRunsPath(run, r)),
+  }));
+  if (items.length === 0) {
+    return (
+      <Tooltip title="No other runs of this suite to compare with yet.">
+        <Button icon={<SwapOutlined />} disabled>
+          Compare with…
+        </Button>
+      </Tooltip>
+    );
+  }
+  return (
+    <Dropdown menu={{ items }} trigger={['click']}>
+      <Button icon={<SwapOutlined />} aria-label="Compare with another run of this suite">
+        Compare with…
+      </Button>
     </Dropdown>
   );
 }

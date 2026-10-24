@@ -48,6 +48,7 @@ const ROUTE_NAMES: [string, string][] = [
   ['/assets/:id', 'asset_detail'],
   ['/results', 'results'],
   ['/results/:id', 'run_detail'],
+  ['/results/:id/compare/:otherId', 'run_compare'],
   ['/profile', 'profile'],
   ['/admin/overview', 'admin_overview'],
   ['/admin/members', 'admin_members'],

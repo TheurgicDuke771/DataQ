@@ -155,6 +155,17 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   read off the runs already recorded — there is no connection-probe polling loop.
 - **Results page** — every run with its per-check outcomes; drill into a run for
   observed-vs-expected values and **redacted failing-row samples**.
+- **Run comparison** — from a run, **Compare with…** any other run of the same suite
+  (the earlier one becomes the base) to see what changed between them: each check's
+  status on both sides and whether it **regressed**, **improved**, stayed the same, or
+  moved through `skip`/`error` (neither better nor worse — it was not evaluated); the
+  metric delta, absolute and as a percentage of a non-zero base; and checks present on
+  only one side (**added** / **removed**). Each side shows the check **as it was at that
+  run** — its name, type, engine and dimension then, not now — so a check renamed or
+  re-engined in between is labelled on both sides rather than silently relabelled.
+  Observed values are redacted exactly as on the run page; a run that has not finished is
+  flagged as not final, since its side of the diff is still partial. Also available to API
+  clients as `GET /api/v1/runs/{run_id}/compare/{other_run_id}`.
 - **Severity + operational statuses** — warn / fail / critical for data outcomes, plus
   `error` (evaluation threw) and `skip` (precondition unmet) kept distinct from failures.
 - **Failure reasons** — a run that fails to execute shows a redaction-safe reason

@@ -24,6 +24,7 @@ const ROUTES: [RegExp, string][] = [
   [/^\/suites$/, 'Suites'],
   [/^\/assets\/[^/]+$/, 'Asset'],
   [/^\/assets$/, 'Assets'],
+  [/^\/results\/[^/]+\/compare\/[^/]+$/, 'Compare runs'],
   [/^\/results\/[^/]+$/, 'Run'],
   [/^\/results$/, 'Results'],
   [/^\/profile$/, 'Profile'],
