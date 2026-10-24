@@ -995,6 +995,24 @@
               }
             ],
             "title": "Owner User Id"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
           }
         },
         "title": "AssetMetadataUpdate",
@@ -1114,6 +1132,13 @@
           "suite_count": {
             "title": "Suite Count",
             "type": "integer"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
           },
           "worst_severity": {
             "anyOf": [
@@ -2253,6 +2278,24 @@
             ],
             "title": "Source Connection Id"
           },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
+          },
           "warn_threshold": {
             "anyOf": [
               {
@@ -2761,6 +2804,13 @@
             "title": "Suite Id",
             "type": "string"
           },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
           "warn_threshold": {
             "anyOf": [
               {
@@ -2985,6 +3035,24 @@
               }
             ],
             "title": "Source Connection Id"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
           },
           "warn_threshold": {
             "anyOf": [
@@ -4571,6 +4639,13 @@
             "title": "Refused Expectation Types",
             "type": "array"
           },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4700,6 +4775,24 @@
             "description": "Save without running the connectivity test first (#1927) \u2014 for a store the API cannot reach at authoring time. Recorded on the audit event.",
             "title": "Skip Test",
             "type": "boolean"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
           }
         },
         "title": "ConnectionUpdate",
@@ -11227,6 +11320,24 @@
             "title": "Name",
             "type": "string"
           },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
+          },
           "target": {
             "anyOf": [
               {
@@ -11620,6 +11731,13 @@
             "title": "Origin",
             "type": "string"
           },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
           "target": {
             "anyOf": [
               {
@@ -11920,6 +12038,24 @@
             ],
             "title": "Name"
           },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name creates the tag; `[]` clears them. Omit to leave the tags as they are.",
+            "title": "Tags"
+          },
           "target": {
             "anyOf": [
               {
@@ -11999,6 +12135,64 @@
           "problems"
         ],
         "title": "SuiteValidationRead",
+        "type": "object"
+      },
+      "TagRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TagUsageRead"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "usage"
+        ],
+        "title": "TagRead",
+        "type": "object"
+      },
+      "TagUsageRead": {
+        "description": "How many of each entity carry the tag \u2014 workspace-wide, including suites and checks the\ncaller cannot open. Counts only: which entities carry it is read from the entities, where the\nsuite grant applies.",
+        "properties": {
+          "assets": {
+            "title": "Assets",
+            "type": "integer"
+          },
+          "checks": {
+            "title": "Checks",
+            "type": "integer"
+          },
+          "connections": {
+            "title": "Connections",
+            "type": "integer"
+          },
+          "suites": {
+            "title": "Suites",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "suites",
+          "assets",
+          "connections",
+          "checks"
+        ],
+        "title": "TagUsageRead",
         "type": "object"
       },
       "TelemetryEventRead": {
@@ -14535,6 +14729,29 @@
               "title": "Sort",
               "type": "string"
             }
+          },
+          {
+            "description": "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries all of these', not an error.",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries all of these', not an error.",
+              "title": "Tag"
+            }
           }
         ],
         "responses": {
@@ -14553,7 +14770,7 @@
             "description": "Successful Response",
             "headers": {
               "X-Total-Count": {
-                "description": "Total assets in the workspace (#925) \u2014 the same unfiltered population this page's limit/offset slice into. A page shorter than `limit` doesn't by itself prove there's no more; compare against this header.",
+                "description": "Total assets in the workspace (#925) \u2014 the same population this page's limit/offset slice into, after any `tag` filter. A page shorter than `limit` doesn't by itself prove there's no more; compare against this header.",
                 "schema": {
                   "type": "integer"
                 }
@@ -17797,6 +18014,29 @@
               ],
               "title": "Connection Id"
             }
+          },
+          {
+            "description": "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries all of these', not an error.",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries all of these', not an error.",
+              "title": "Tag"
+            }
           }
         ],
         "responses": {
@@ -20402,6 +20642,69 @@
         "summary": "A suite's proposed rules (automatic coverage review queue)",
         "tags": [
           "suggestions"
+        ]
+      }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "description": "Every tag in the workspace, by name, with workspace-wide usage counts. The vocabulary is shared: a tag exists once any editor assigns the name, and this list shows it to every member. It never names the entities \u2014 read those through `/suites`, `/assets`, `/connections` and a suite's checks, where the suite grant applies.",
+        "operationId": "list_tags",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagRead"
+                  },
+                  "title": "Response List Tags",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the tag vocabulary",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/api/v1/tags/{tag_id}": {
+      "delete": {
+        "description": "Removes the tag from the vocabulary and detaches it from every suite, asset, connection and check that carried it. To take a tag off one entity, PATCH that entity's `tags` instead.",
+        "operationId": "delete_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a tag (workspace-admin only)",
+        "tags": [
+          "tags"
         ]
       }
     },

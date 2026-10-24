@@ -29,6 +29,8 @@ class CheckUpdate:
         fail_threshold (float | None | str | Unset):
         name (None | str | Unset):
         source_connection_id (None | Unset | UUID):
+        tags (list[str] | None | Unset): Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a
+            new name creates the tag; `[]` clears them. Omit to leave the tags as they are.
         warn_threshold (float | None | str | Unset):
     """
 
@@ -41,6 +43,7 @@ class CheckUpdate:
     fail_threshold: float | None | str | Unset = UNSET
     name: None | str | Unset = UNSET
     source_connection_id: None | Unset | UUID = UNSET
+    tags: list[str] | None | Unset = UNSET
     warn_threshold: float | None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,6 +107,15 @@ class CheckUpdate:
         else:
             source_connection_id = self.source_connection_id
 
+        tags: list[str] | None | Unset
+        if isinstance(self.tags, Unset):
+            tags = UNSET
+        elif isinstance(self.tags, list):
+            tags = self.tags
+
+        else:
+            tags = self.tags
+
         warn_threshold: float | None | str | Unset
         if isinstance(self.warn_threshold, Unset):
             warn_threshold = UNSET
@@ -131,6 +143,8 @@ class CheckUpdate:
             field_dict["name"] = name
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
+        if tags is not UNSET:
+            field_dict["tags"] = tags
         if warn_threshold is not UNSET:
             field_dict["warn_threshold"] = warn_threshold
 
@@ -239,6 +253,23 @@ class CheckUpdate:
 
         source_connection_id = _parse_source_connection_id(d.pop("source_connection_id", UNSET))
 
+        def _parse_tags(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                tags_type_0 = cast(list[str], data)
+
+                return tags_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        tags = _parse_tags(d.pop("tags", UNSET))
+
         def _parse_warn_threshold(data: object) -> float | None | str | Unset:
             if data is None:
                 return data
@@ -258,6 +289,7 @@ class CheckUpdate:
             fail_threshold=fail_threshold,
             name=name,
             source_connection_id=source_connection_id,
+            tags=tags,
             warn_threshold=warn_threshold,
         )
 

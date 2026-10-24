@@ -35,7 +35,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service, credential_health
+from backend.app.services import audit_service, credential_health, tag_service
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -594,7 +594,11 @@ def list_connections(
     conn_type: str | None = None,
     env: str | None = None,
 ) -> list[Connection]:
-    stmt = select(Connection).order_by(Connection.created_at.desc())
+    stmt = (
+        select(Connection)
+        .options(selectinload(Connection.tags))
+        .order_by(Connection.created_at.desc())
+    )
     if conn_type is not None:
         stmt = stmt.where(Connection.type == conn_type)
     if env is not None:
@@ -622,8 +626,9 @@ def update_connection(
     actor_id: uuid.UUID | None = None,
     catalog_secret: str | None = None,
     skip_test: bool = False,
+    tags: Sequence[str] | None = None,
 ) -> Connection:
-    """Partial update of name / config / secret(s). Type and env are immutable.
+    """Partial update of name / config / secret(s) / tags. Type and env are immutable.
 
     A change to the config or either credential is tested before anything is written (#1927);
     a rename alone is not.
@@ -694,8 +699,11 @@ def update_connection(
             conn.inventory_sync_failing_since = None
     if name is not None:
         conn.name = name
-    # Snapshot only a *real* name/config change.
+    # Snapshot only a *real* name/config change — tags are labels, not a version of the
+    # connection, so they are applied after this is read.
     versioned_change = session.is_modified(conn)
+    if tags is not None:
+        tag_service.set_tags(session, conn, tags)
     # Catalog secret FIRST, primary secret LAST — deliberately, not incidentally.
     if catalog_secret is not None:
         try:

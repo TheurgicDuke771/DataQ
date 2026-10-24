@@ -38,6 +38,9 @@ _SWEEP_REFERENCE_GUARDS: tuple[tuple[str, str], ...] = (
     # steward's recorded decision — sweeping the asset would erase it silently, and the column
     # would re-mask on the next profile with no trace of ever having been cleared.
     ("asset_column_classifications", "asset_id"),
+    # #888: a tag is a steward's label, applied by hand — an asset someone tagged is never
+    # swept, or the label would vanish with the row and nothing would say why.
+    ("asset_tags", "asset_id"),
 )
 
 

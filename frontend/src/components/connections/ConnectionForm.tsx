@@ -25,6 +25,7 @@ import {
   withAuthDefault,
   withToggleDefaults,
 } from './connectionFormSpec';
+import { TagPicker } from '../shared/TagPicker';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError } from '../../utils/fieldErrors';
@@ -38,6 +39,8 @@ interface FormValues {
   /** The second (catalog) credential, e.g. an Iceberg SQL catalog's DB
    * password (#1181) — write-only, shown in both create and edit. */
   catalogSecret?: string;
+  /** Workspace labels — edit only (a new connection is tagged once it exists). */
+  tags?: string[];
 }
 
 /** Inline result of the "Test connection" button — a card-free version of the
@@ -81,6 +84,7 @@ export function ConnectionForm({
       form.setFieldsValue({
         name: connection.name,
         config: withAuthDefault(type, withToggleDefaults(type, connection.config)),
+        tags: connection.tags ?? [],
       });
     } else {
       form.setFieldsValue({ config: initialConfigForType(type) });
@@ -122,6 +126,11 @@ export function ConnectionForm({
     run(async () => {
       let saved: Connection;
       try {
+        // Only when this form changed them — re-sending the loaded list would undo a tag added
+        // elsewhere since the page opened.
+        const tags = values.tags ?? [];
+        const tagsChanged =
+          isEdit && tags.join('\u0000') !== (connection.tags ?? []).join('\u0000');
         saved = isEdit
           ? await updateConnection(connection.id, {
               name: values.name,
@@ -131,6 +140,7 @@ export function ConnectionForm({
               // credential, so a routine rename can never overwrite a working one.
               secret: movedDestinations.length > 0 ? buildSecret(values) : undefined,
               skip_test: skipTest || undefined,
+              ...(tagsChanged ? { tags } : {}),
             })
           : await createConnection({
               name: values.name,
@@ -250,6 +260,15 @@ export function ConnectionForm({
         form={form}
         showSecret={!isEdit || movedDestinations.length > 0}
       />
+      {isEdit && (
+        <Form.Item
+          name="tags"
+          label="Tags (optional)"
+          extra="Workspace labels — pick existing ones or type a new name. Changing them does not re-test the connection."
+        >
+          <TagPicker />
+        </Form.Item>
+      )}
       <Flex align="center" gap={8} style={{ marginBottom: 24 }}>
         <Button loading={testState === 'testing'} onClick={onTest}>
           {isEdit ? 'Test saved connection' : 'Test connection'}

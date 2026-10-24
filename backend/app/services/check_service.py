@@ -76,7 +76,12 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service, coverage_settings_service, suggestion_claims
+from backend.app.services import (
+    audit_service,
+    coverage_settings_service,
+    suggestion_claims,
+    tag_service,
+)
 from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
@@ -934,6 +939,7 @@ def create_check(
     machine_write: bool = False,
     unclassified: bool = False,
     enabled: bool = True,
+    tags: Sequence[str] | None = None,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
 
@@ -1041,6 +1047,8 @@ def create_check(
     )
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it
+    if tags:
+        tag_service.set_tags(session, check, tags)
     record_check_version(session, check, actor_id=actor_id)
     if origin == "user" and not machine_write:
         # A rule waiting in the suite's review queue that a person has now authored directly
@@ -1071,7 +1079,12 @@ def create_check(
 def list_checks(session: Session, suite_id: uuid.UUID) -> list[Check]:
     """List a suite's checks (404 if the suite does not exist)."""
     get_suite(session, suite_id)
-    stmt = select(Check).where(Check.suite_id == suite_id).order_by(*CHECK_ORDER)
+    stmt = (
+        select(Check)
+        .options(selectinload(Check.tags))
+        .where(Check.suite_id == suite_id)
+        .order_by(*CHECK_ORDER)
+    )
     return list(session.scalars(stmt))
 
 
@@ -1172,14 +1185,16 @@ def _record_version_and_commit(
     read-modify-write against the same `(check_id, version_no)` backstop, so
     both need the identical race handling, not two copies that can drift.
     """
-    # Only snapshot a real change: a no-op write (identical fields, or restoring the already-current
-    # version) must not mint a duplicate version.
-    modified = session.is_modified(check)
-    if modified:
+    # Only snapshot a real change to the DEFINITION: a no-op write (identical fields, or restoring
+    # the already-current version) must not mint a duplicate version, and neither must a change
+    # to the labels alone — tags are not part of what a version records (#888).
+    definition_modified = session.is_modified(check, include_collections=False)
+    modified = definition_modified or session.is_modified(check)
+    if definition_modified:
         record_check_version(session, check, actor_id=actor_id)
     try:
-        # Audited on the same condition as the version snapshot, and for the same reason: a no-op
-        # write (identical fields, or restoring the already-current version) changed nothing.
+        # Audited on any real change, labels included: a no-op write (identical fields, or
+        # restoring the already-current version) changed nothing.
         if modified:
             audit_service.record_entity_change(
                 session,
@@ -1268,6 +1283,7 @@ def update_check(
     dimension: str | None = None,
     engine: str | None = None,
     enabled: bool | None = None,
+    tags: Sequence[str] | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Partial update, snapshotting the post-update state as a new version (#280).
@@ -1282,11 +1298,14 @@ def update_check(
     definition_untouched = all(
         v is None for v in (name, expectation_type, config, source_connection_id, dimension, engine)
     ) and all(t is KEEP for t in (warn_threshold, fail_threshold, critical_threshold))
-    if enabled is not None and definition_untouched:
-        # Only the switch: nothing about the definition is re-validated, so a check whose
-        # stored config today's validators refuse (and which is erroring every run for it)
-        # can still be switched off. The bulk path has the same rule.
-        check.enabled = enabled
+    if definition_untouched and (enabled is not None or tags is not None):
+        # Only the switch and/or the labels: nothing about the definition is re-validated, so a
+        # check whose stored config today's validators refuse (and which is erroring every run for
+        # it) can still be switched off or re-labelled. The bulk path has the same rule.
+        if enabled is not None:
+            check.enabled = enabled
+        if tags is not None:
+            tag_service.set_tags(session, check, tags)
         check = _record_version_and_commit(
             session,
             check,
@@ -1295,7 +1314,10 @@ def update_check(
             audit_action="check.update",
             audit_before=audit_before,
         )
-        log.info("check_enabled_set", check_id=str(check.id), enabled=enabled)
+        if enabled is not None:
+            log.info("check_enabled_set", check_id=str(check.id), enabled=enabled)
+        else:
+            log.info("check_tags_set", check_id=str(check.id))
         return check
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_dimension(dimension)
@@ -1385,6 +1407,8 @@ def update_check(
         check.engine = engine
     if enabled is not None:
         check.enabled = enabled
+    if tags is not None:
+        tag_service.set_tags(session, check, tags)
     check = _record_version_and_commit(
         session, check, check_id, actor_id, audit_action="check.update", audit_before=audit_before
     )

@@ -25,6 +25,8 @@ class ConnectionUpdate:
         secret (None | str | Unset): Rotate the credential; write-only
         skip_test (bool | Unset): Save without running the connectivity test first (#1927) — for a store the API cannot
             reach at authoring time. Recorded on the audit event. Default: False.
+        tags (list[str] | None | Unset): Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a
+            new name creates the tag; `[]` clears them. Omit to leave the tags as they are.
     """
 
     catalog_secret: None | str | Unset = UNSET
@@ -32,6 +34,7 @@ class ConnectionUpdate:
     name: None | str | Unset = UNSET
     secret: None | str | Unset = UNSET
     skip_test: bool | Unset = False
+    tags: list[str] | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.connection_update_config_type_0 import (
@@ -66,6 +69,15 @@ class ConnectionUpdate:
 
         skip_test = self.skip_test
 
+        tags: list[str] | None | Unset
+        if isinstance(self.tags, Unset):
+            tags = UNSET
+        elif isinstance(self.tags, list):
+            tags = self.tags
+
+        else:
+            tags = self.tags
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
@@ -79,6 +91,8 @@ class ConnectionUpdate:
             field_dict["secret"] = secret
         if skip_test is not UNSET:
             field_dict["skip_test"] = skip_test
+        if tags is not UNSET:
+            field_dict["tags"] = tags
 
         return field_dict
 
@@ -136,12 +150,30 @@ class ConnectionUpdate:
 
         skip_test = d.pop("skip_test", UNSET)
 
+        def _parse_tags(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                tags_type_0 = cast(list[str], data)
+
+                return tags_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        tags = _parse_tags(d.pop("tags", UNSET))
+
         connection_update = cls(
             catalog_secret=catalog_secret,
             config=config,
             name=name,
             secret=secret,
             skip_test=skip_test,
+            tags=tags,
         )
 
         return connection_update

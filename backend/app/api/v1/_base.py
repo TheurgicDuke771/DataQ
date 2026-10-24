@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+
+from backend.app.db.models import TAG_NAME_MAX_LENGTH
 
 # The one paging-total header name for every list endpoint that carries one (#925 introduced it on
 # `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
@@ -74,3 +76,30 @@ def updated_by_email(db: Any, row: Any) -> str | None:
         return None
     user = db.get(User, row.updated_by)
     return user.email if user is not None else None
+
+
+def _tag_names(value: Any) -> Any:
+    """ORM ``Tag`` rows (what `from_attributes` hands a read model) → their names; plain strings
+    pass through, so a response built from a dict validates too."""
+    if isinstance(value, (list, tuple)):
+        return [getattr(item, "name", item) for item in value]
+    return value
+
+
+#: `tags` on a read model (#888): the entity's tag names, sorted, from its ORM relationship.
+TagNames = Annotated[list[str], BeforeValidator(_tag_names)]
+
+
+#: Tag names on a write (#888): free text, normalized by the service (lower-case, trimmed,
+#: single-spaced; a name nobody has used yet is created). The whole list replaces the entity's tags.
+TagNamesIn = list[Annotated[str, Field(min_length=1, max_length=TAG_NAME_MAX_LENGTH)]]
+
+TAGS_WRITE_DESCRIPTION = (
+    "Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a new name "
+    "creates the tag; `[]` clears them. Omit to leave the tags as they are."
+)
+TAG_FILTER_DESCRIPTION = (
+    "Only rows carrying this tag. Repeat the parameter to require every named tag (AND): "
+    "`?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag "
+    "has matches nothing, so an empty result is 'nothing carries all of these', not an error."
+)

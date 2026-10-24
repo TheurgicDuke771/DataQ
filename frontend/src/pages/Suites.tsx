@@ -79,6 +79,8 @@ import { useRunTrigger } from '../hooks/useRunTrigger';
 import { errorMessage } from '../utils/errors';
 import { PageError } from '../components/feedback/PageError';
 import { RowLink } from '../components/shared/RowLink';
+import { TagChips } from '../components/shared/TagChips';
+import { TagFilter } from '../components/shared/TagFilter';
 import { useAppModal } from '../hooks/useAppModal';
 
 /**
@@ -130,6 +132,7 @@ function SuiteIdentity({
             No connection
           </Typography.Text>
         )}
+        <TagChips tags={suite.tags} label={`${suite.name} tags`} size="small" />
         {showDescription && suite.description && (
           <Typography.Paragraph
             type="secondary"
@@ -153,9 +156,18 @@ export function Suites() {
   // survives the round-trip to the check editor; `/suites` selects nothing.
   const { suiteId } = useParams<{ suiteId: string }>();
   const selectedId = suiteId ?? null;
-  const { state, reload } = useAsyncData(() => listSuites());
+  // Server-side AND filter (`tag=a&tag=b`); useAsyncData re-fetches on `reload()`, not on the
+  // fetcher's identity, so a filter change bumps it explicitly (the Assets table does the same).
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const { state, reload } = useAsyncData(() =>
+    listSuites(tagFilter.length > 0 ? { tag: tagFilter } : undefined),
+  );
   const { state: connState } = useAsyncData(() => listConnections());
   const [importOpen, setImportOpen] = useState(false);
+  const onTagFilterChange = (next: string[]) => {
+    setTagFilter(next);
+    reload();
+  };
 
   const connections = connState.status === 'ok' ? connState.data : [];
   // A suite binds to a datasource only — creating/importing needs at least one
@@ -196,6 +208,9 @@ export function Suites() {
           )}
         </Flex>
       </Flex>
+      <Flex gap={12} align="flex-end" wrap>
+        <TagFilter value={tagFilter} onChange={onTagFilterChange} />
+      </Flex>
       {connState.status === 'error' && (
         // Suites can still be viewed/deleted, but creating one needs the
         // connection list — surface the failure rather than silently disabling.
@@ -209,6 +224,7 @@ export function Suites() {
       <SuitesBody
         state={state}
         connections={connections}
+        filtered={tagFilter.length > 0}
         canAuthor={role === null ? null : canAuthor}
         hasDatasource={connState.status === 'ok' ? hasDatasource : null}
         selectedId={selectedId}
@@ -242,9 +258,12 @@ function SuitesBody({
   onDeleted,
   canAuthor,
   hasDatasource,
+  filtered = false,
 }: {
   state: AsyncState<Suite[]>;
   connections: Connection[];
+  /** A tag filter is active — an empty list then means "no match", not "no suites". */
+  filtered?: boolean;
   /** `null` until the role is known. */
   canAuthor: boolean | null;
   /** `null` until the connection list has loaded. */
@@ -272,6 +291,14 @@ function SuitesBody({
     );
   }
   const suites = state.data;
+  if (suites.length === 0 && filtered) {
+    return (
+      <EmptyState
+        title="No suites carry all of those tags"
+        description="Clear a tag from the filter to widen the list."
+      />
+    );
+  }
   if (suites.length === 0) {
     // `null` = not known yet (`/me` or the connection list still loading, or failed): say only
     // what is certain rather than "you cannot" or "add a connection first".
@@ -430,6 +457,7 @@ function SuiteBrowseCard({
             {suite.description}
           </Typography.Paragraph>
         )}
+        <TagChips tags={suite.tags} label={`${suite.name} tags`} size="small" />
       </Flex>
     </Card>
   );
@@ -519,6 +547,7 @@ function SuiteDetail({
           ) : (
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>
           )}
+          <TagChips tags={suite.tags} label="Suite tags" />
           {targetSummary && (
             <Flex gap={8} align="center" wrap>
               <Typography.Text type="secondary">Target:</Typography.Text>
@@ -1023,6 +1052,7 @@ function ChecksList({
                     <InheritedTag check={check} />
                     <DimensionTag dimension={check.dimension} />
                     <SnoozedTag check={check} now={now} />
+                    <TagChips tags={check.tags} label={`${check.name} tags`} size="small" />
                   </Flex>
                   <Flex gap={6} align="center" wrap>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, any_, func, or_, select, true
-from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -25,8 +26,9 @@ from backend.app.db.models import (
     Suite,
     SuiteNotificationChannel,
     TriggerBinding,
+    suite_tags,
 )
-from backend.app.services import audit_service, run_target
+from backend.app.services import audit_service, run_target, tag_service
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.column_classification import is_sensitive
 
@@ -95,6 +97,7 @@ def create_suite(
     target: dict[str, Any] | None = None,
     origin: str = "user",
     machine_write: bool = False,
+    tags: Sequence[str] | None = None,
 ) -> Suite:
     """Create a suite bound to an existing connection. ``origin='auto'`` + ``machine_write`` is the
     coverage loop (ADR 0047): no human owner, and no audit event (ADR 0041 §2.1)."""
@@ -126,6 +129,8 @@ def create_suite(
         origin=origin,
     )
     session.add(suite)
+    if tags:
+        tag_service.set_tags(session, suite, tags)
     if not machine_write:
         audit_service.record_entity_change(
             session,
@@ -146,17 +151,22 @@ def list_suites(
     user_id: uuid.UUID,
     connection_id: uuid.UUID | None = None,
     include_all: bool = False,
+    tags: Sequence[str] | None = None,
 ) -> list[Suite]:
     """Suites the user can access: owned (`created_by`) or shared with them — or
-    *all* suites when `include_all` (the workspace-admin view, ADR 0027).
+    *all* suites when `include_all` (the workspace-admin view, ADR 0027). ``tags``
+    keeps only suites carrying every one of them (#888), inside that same population.
     """
     stmt = (
         select(Suite)
+        .options(selectinload(Suite.tags))
         .where(Suite.id.in_(accessible_suite_ids(user_id, include_all=include_all)))
         .order_by(Suite.created_at.desc())
     )
     if connection_id is not None:
         stmt = stmt.where(Suite.connection_id == connection_id)
+    if tags:
+        stmt = tag_service.filter_by_tags(stmt, suite_tags, Suite.id, tags)
     return list(session.scalars(stmt))
 
 
@@ -196,9 +206,10 @@ def update_suite(
     name: str | None = None,
     description: str | None = None,
     target: dict[str, Any] | None = None,
+    tags: Sequence[str] | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Suite:
-    """Partial update of name / description / target. `connection_id` is immutable."""
+    """Partial update of name / description / target / tags. `connection_id` is immutable."""
     suite = get_suite(session, suite_id)
     # Before ANY field is mutated — a snapshot taken later would record the new
     # state as the old one, which is worse than no `before` at all.
@@ -220,6 +231,8 @@ def update_suite(
             # Re-point the suite at the asset its new target resolves to (ADR 0034).
             # Fail-soft: an unresolvable target leaves asset_id NULL, never 500s.
             suite.asset_id = resolve_and_upsert_asset(session, connection, target)
+    if tags is not None:
+        tag_service.set_tags(session, suite, tags)
     audit_service.record_entity_change(
         session,
         action="suite.update",

@@ -14,6 +14,7 @@ from ...types import UNSET, Response, Unset
 def _get_kwargs(
     *,
     connection_id: None | Unset | UUID = UNSET,
+    tag: list[str] | None | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -26,6 +27,16 @@ def _get_kwargs(
     else:
         json_connection_id = connection_id
     params["connection_id"] = json_connection_id
+
+    json_tag: list[str] | None | Unset
+    if isinstance(tag, Unset):
+        json_tag = UNSET
+    elif isinstance(tag, list):
+        json_tag = tag
+
+    else:
+        json_tag = tag
+    params["tag"] = json_tag
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -77,11 +88,16 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     connection_id: None | Unset | UUID = UNSET,
+    tag: list[str] | None | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[SuiteRead]]:
     """List suites
 
     Args:
         connection_id (None | Unset | UUID):
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -93,6 +109,7 @@ def sync_detailed(
 
     kwargs = _get_kwargs(
         connection_id=connection_id,
+        tag=tag,
     )
 
     response = client.get_httpx_client().request(
@@ -106,11 +123,16 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
     connection_id: None | Unset | UUID = UNSET,
+    tag: list[str] | None | Unset = UNSET,
 ) -> HTTPValidationError | list[SuiteRead] | None:
     """List suites
 
     Args:
         connection_id (None | Unset | UUID):
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -123,6 +145,7 @@ def sync(
     return sync_detailed(
         client=client,
         connection_id=connection_id,
+        tag=tag,
     ).parsed
 
 
@@ -130,11 +153,16 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     connection_id: None | Unset | UUID = UNSET,
+    tag: list[str] | None | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[SuiteRead]]:
     """List suites
 
     Args:
         connection_id (None | Unset | UUID):
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -146,6 +174,7 @@ async def asyncio_detailed(
 
     kwargs = _get_kwargs(
         connection_id=connection_id,
+        tag=tag,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -157,11 +186,16 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     connection_id: None | Unset | UUID = UNSET,
+    tag: list[str] | None | Unset = UNSET,
 ) -> HTTPValidationError | list[SuiteRead] | None:
     """List suites
 
     Args:
         connection_id (None | Unset | UUID):
+        tag (list[str] | None | Unset): Only rows carrying this tag. Repeat the parameter to
+            require every named tag (AND): `?tag=finance&tag=daily` returns rows tagged both. Matching
+            ignores case. A name no tag has matches nothing, so an empty result is 'nothing carries
+            all of these', not an error.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -175,5 +209,6 @@ async def asyncio(
         await asyncio_detailed(
             client=client,
             connection_id=connection_id,
+            tag=tag,
         )
     ).parsed

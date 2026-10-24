@@ -69,7 +69,7 @@ describe('SuiteEdit', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('orders-suite'));
     // Connection is locked in edit mode.
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Connection' })).toBeDisabled();
 
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'orders-suite-2');
