@@ -7995,6 +7995,111 @@
         "title": "NearMissRead",
         "type": "object"
       },
+      "NotificationRead": {
+        "description": "One entry of the caller's feed. `deep_link` is the run page while the run still\nexists and null once it is gone (the entry outlives the run); `incident_link` is the\nincident's own view while the incident exists.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deep_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deep Link"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "incident_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Link"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "suite_id",
+          "run_id",
+          "incident_id",
+          "severity",
+          "title",
+          "body",
+          "deep_link",
+          "incident_link",
+          "created_at",
+          "read_at"
+        ],
+        "title": "NotificationRead",
+        "type": "object"
+      },
       "OffboardPreviewRead": {
         "properties": {
           "display_name": {
@@ -8938,6 +9043,19 @@
         "title": "RcaNarrativeRequest",
         "type": "object"
       },
+      "ReadAllResult": {
+        "properties": {
+          "marked": {
+            "title": "Marked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marked"
+        ],
+        "title": "ReadAllResult",
+        "type": "object"
+      },
       "ResultRead": {
         "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
         "properties": {
@@ -9061,6 +9179,39 @@
           "sample_failures"
         ],
         "title": "ResultRead",
+        "type": "object"
+      },
+      "RetentionSettingRead": {
+        "description": "One retention clock, as the deployment configured it.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "hours"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "value",
+          "unit",
+          "detail"
+        ],
+        "title": "RetentionSettingRead",
         "type": "object"
       },
       "RunComparisonRead": {
@@ -10738,6 +10889,51 @@
         "title": "ShareUpdate",
         "type": "object"
       },
+      "SignupAllowlistRead": {
+        "description": "One deployment allowlist, as configured \u2014 identifiers only, never a secret.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "grants": {
+            "enum": [
+              "sign_in",
+              "sign_in_and_admin_role"
+            ],
+            "title": "Grants",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "emails",
+              "domains"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "kind",
+          "values",
+          "active",
+          "grants"
+        ],
+        "title": "SignupAllowlistRead",
+        "type": "object"
+      },
       "SourceConnectionRef": {
         "description": "A comparison check's portable source ref (ADR 0015) \u2014 `(name, env)` is the\nworkspace-unique connection key, so it survives an export/import while a raw\nUUID would not.",
         "properties": {
@@ -12314,6 +12510,19 @@
         "title": "TriggerBindingWarningRead",
         "type": "object"
       },
+      "UnreadCountRead": {
+        "properties": {
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread"
+        ],
+        "title": "UnreadCountRead",
+        "type": "object"
+      },
       "UserRoleUpdate": {
         "additionalProperties": false,
         "description": "`PATCH /admin/users/{id}/role` body (ADR 0033, #742).",
@@ -12564,6 +12773,71 @@
           "inbound_url"
         ],
         "title": "WebhookRegenerateResponse",
+        "type": "object"
+      },
+      "WorkspaceConfigRead": {
+        "description": "Deployment-set values an admin can read in the app but only change by\nediting the deployment's configuration and restarting.",
+        "properties": {
+          "dev_bypass_active": {
+            "title": "Dev Bypass Active",
+            "type": "boolean"
+          },
+          "idp_decides_signup": {
+            "title": "Idp Decides Signup",
+            "type": "boolean"
+          },
+          "oidc_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
+            "title": "Oidc Default Role",
+            "type": "string"
+          },
+          "otp_default_role": {
+            "enum": [
+              "member",
+              "viewer"
+            ],
+            "title": "Otp Default Role",
+            "type": "string"
+          },
+          "retention": {
+            "items": {
+              "$ref": "#/components/schemas/RetentionSettingRead"
+            },
+            "title": "Retention",
+            "type": "array"
+          },
+          "sign_in_mode": {
+            "enum": [
+              "azure_ad",
+              "oidc",
+              "otp",
+              "dev_bypass",
+              "none"
+            ],
+            "title": "Sign In Mode",
+            "type": "string"
+          },
+          "signup_allowlists": {
+            "items": {
+              "$ref": "#/components/schemas/SignupAllowlistRead"
+            },
+            "title": "Signup Allowlists",
+            "type": "array"
+          }
+        },
+        "required": [
+          "retention",
+          "signup_allowlists",
+          "oidc_default_role",
+          "otp_default_role",
+          "sign_in_mode",
+          "idp_decides_signup",
+          "dev_bypass_active"
+        ],
+        "title": "WorkspaceConfigRead",
         "type": "object"
       }
     }
@@ -14380,6 +14654,28 @@
           }
         },
         "summary": "Change a user's workspace role (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/workspace-config": {
+      "get": {
+        "description": "Read-only: these values come from the environment, not the database.",
+        "operationId": "get_workspace_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceConfigRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retention clocks and sign-in allowlists as deployed (workspace-admin only)",
         "tags": [
           "admin"
         ]
@@ -16415,6 +16711,171 @@
         "summary": "Update a channel",
         "tags": [
           "notification-channels"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "list_notifications",
+        "parameters": [
+          {
+            "description": "Only entries not yet marked read",
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only entries not yet marked read",
+              "title": "Unread Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationRead"
+                  },
+                  "title": "Response List Notifications",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Total entries in the caller's own feed matching `unread_only` \u2014 the population this page's limit/offset slice into; a page shorter than `limit` does not by itself prove there are no more.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List my notifications (newest first)",
+        "tags": [
+          "notification-feed"
+        ]
+      }
+    },
+    "/api/v1/notifications/read_all": {
+      "post": {
+        "operationId": "read_all_notifications",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadAllResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mark all my notifications read",
+        "tags": [
+          "notification-feed"
+        ]
+      }
+    },
+    "/api/v1/notifications/unread_count": {
+      "get": {
+        "operationId": "get_unread_count",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "How many of my notifications are unread",
+        "tags": [
+          "notification-feed"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "operationId": "read_notification",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark one of my notifications read",
+        "tags": [
+          "notification-feed"
         ]
       }
     },

@@ -33,6 +33,7 @@ from backend.app.api.v1 import incidents as incidents_router
 from backend.app.api.v1 import llm as llm_router
 from backend.app.api.v1 import me as me_router
 from backend.app.api.v1 import notification_channels as notification_channels_router
+from backend.app.api.v1 import notification_feed as notification_feed_router
 from backend.app.api.v1 import notifications as notifications_router
 from backend.app.api.v1 import orchestration as orchestration_router
 from backend.app.api.v1 import probe as probe_router
@@ -245,6 +246,7 @@ app.include_router(suites_router.router, prefix="/api/v1")
 app.include_router(suggestions_router.router, prefix="/api/v1")
 app.include_router(checks_router.router, prefix="/api/v1")
 app.include_router(notifications_router.router, prefix="/api/v1")
+app.include_router(notification_feed_router.router, prefix="/api/v1")
 app.include_router(notification_channels_router.router, prefix="/api/v1")
 app.include_router(runs_router.router, prefix="/api/v1")
 app.include_router(dashboard_router.router, prefix="/api/v1")

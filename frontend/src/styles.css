@@ -338,3 +338,19 @@ a:focus-visible,
 .ant-modal.ant-fade-appear {
   user-select: none;
 }
+
+/* The header bell's unread count (NotificationBell): antd renders a custom count node unstyled. */
+.dq-bell-count {
+  display: inline-block;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dq-error);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 1px var(--dq-surface);
+}

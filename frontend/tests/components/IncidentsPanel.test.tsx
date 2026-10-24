@@ -248,3 +248,29 @@ describe('IncidentsPanel', () => {
     await screen.findByText('expect_column_values_to_not_be_null');
   });
 });
+
+describe('IncidentsPanel deep link', () => {
+  it('opens the evidence for a changed ?incident= while mounted, and reports the close', async () => {
+    mockList.mockResolvedValue([incident({ id: 'inc-1' }), incident({ id: 'inc-2' })]);
+    mockGetIncident.mockImplementation(async (id) => detail({ id }));
+    const onEvidenceClosed = vi.fn();
+    const user = userEvent.setup();
+    const props = { assetId: 'a1', permissionBySuite: { s1: 'owner' }, onEvidenceClosed };
+    const view = render(
+      <AntApp>
+        <IncidentsPanel {...props} initialIncidentId="inc-1" />
+      </AntApp>,
+    );
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(mockGetIncident).toHaveBeenLastCalledWith('inc-1');
+    // A second feed entry for the same asset: the prop changes, the mount does not.
+    view.rerender(
+      <AntApp>
+        <IncidentsPanel {...props} initialIncidentId="inc-2" />
+      </AntApp>,
+    );
+    await waitFor(() => expect(mockGetIncident).toHaveBeenLastCalledWith('inc-2'));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(onEvidenceClosed).toHaveBeenCalledTimes(1));
+  });
+});

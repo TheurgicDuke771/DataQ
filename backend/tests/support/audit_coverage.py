@@ -147,6 +147,15 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
 
 #: Routes that must NOT record a config event, each with the reason.
 EXEMPT: Final[dict[tuple[str, str], str]] = {
+    # 0. Per-user read state on the caller's OWN notification feed (#1687) — not configuration
+    #    and not a suite mutation: marking an entry read changes nothing anyone else can see,
+    #    and `notifications.read_at` is itself the durable record of who read what, when.
+    ("POST", "/api/v1/notifications/{notification_id}/read"): (
+        "per-user read-ack on the caller's own feed entry; `read_at` is the record (#1687)"
+    ),
+    ("POST", "/api/v1/notifications/read_all"): (
+        "per-user read-ack over the caller's own feed; `read_at` is the record (#1687)"
+    ),
     # 1. Nothing is persisted. These open a connection or evaluate an expression
     #    and return; there is no configuration afterwards that differs from before.
     ("POST", "/api/v1/connections/test"): (

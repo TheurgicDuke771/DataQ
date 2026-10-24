@@ -93,7 +93,7 @@ constraints are non-negotiable:
 | `connection_created` | a connection is saved | `type` |
 | `mcp_tool_called` | an MCP tool is called (a call naming no registered tool is not counted) | `tool` (a registered tool name), `outcome`: `ok` · `error` · `cancelled` |
 | `llm_feature_used` | an LLM feature is invoked | `feature`: `sql_generation` · `check_suggestion` · `rca_narrative` |
-| `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` |
+| `alert_delivered` | an alert reaches a channel | `channel`: `teams` · `slack` · `email` · `webhook` · `in_app` (the in-app feed; one event per run, not per recipient) |
 | `coverage_auto_check_created` | automatic coverage adds a check | `kind` |
 
 The authoritative list, with every allowed value, is the one the Admin settings page shows

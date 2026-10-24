@@ -78,13 +78,32 @@ export function IncidentsPanel({
   assetId,
   permissionBySuite,
   restrictedSuiteCount = 0,
+  initialIncidentId = null,
+  onEvidenceClosed,
 }: {
   assetId: string;
   permissionBySuite: Record<string, string>;
   restrictedSuiteCount?: number;
+  /** An incident to open in the evidence drawer straight away — the notification feed's
+   *  `?incident=` deep link lands here. */
+  initialIncidentId?: string | null;
+  /** Fired when the evidence drawer closes, so the owner of `?incident=` can drop it. */
+  onEvidenceClosed?: () => void;
 }) {
   const { state, reload } = useAsyncData(() => listIncidents({ asset_id: assetId }));
-  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
+  const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(initialIncidentId);
+  // A second deep link while this panel is mounted (following another feed entry for the same
+  // asset) changes the prop, not the mount — so a changed prop re-opens the drawer (React's
+  // adjust-state-during-render pattern, not an effect).
+  const [seenDeepLink, setSeenDeepLink] = useState(initialIncidentId);
+  if (initialIncidentId !== seenDeepLink) {
+    setSeenDeepLink(initialIncidentId);
+    if (initialIncidentId) setEvidenceIncidentId(initialIncidentId);
+  }
+  const closeEvidence = () => {
+    setEvidenceIncidentId(null);
+    onEvidenceClosed?.();
+  };
   return (
     <Card size="small" title="Incidents">
       <AsyncBody
@@ -113,10 +132,7 @@ export function IncidentsPanel({
           </>
         )}
       </AsyncBody>
-      <IncidentEvidenceDrawer
-        incidentId={evidenceIncidentId}
-        onClose={() => setEvidenceIncidentId(null)}
-      />
+      <IncidentEvidenceDrawer incidentId={evidenceIncidentId} onClose={closeEvidence} />
     </Card>
   );
 }

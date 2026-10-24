@@ -1,21 +1,40 @@
 import { App, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
+import type { WorkspaceRole } from '../api/admin';
+import type { MeResponse } from '../api/me';
+import { listSuites, type Suite } from '../api/suites';
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { useSaveDisplayName } from '../auth/useSaveDisplayName';
+import { AsyncBody } from '../components/AsyncBody';
 import { ApiKeysPanel } from '../components/profile/ApiKeysPanel';
 import { Page } from '../components/layout/Page';
 import { PageError } from '../components/feedback/PageError';
+import { SimpleList } from '../components/SimpleList';
+import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
 
-/** Profile (`/profile`, ADR 0022 ProfileScreen). */
+const ROLE_LABELS: Record<WorkspaceRole, string> = {
+  admin: 'Workspace admin',
+  member: 'Member',
+  viewer: 'Viewer',
+};
+
+/** What each workspace role lets its holder do, in the user's own terms (ADR 0033). */
+const ROLE_SUMMARIES: Record<WorkspaceRole, string> = {
+  admin:
+    'You can manage connections, members and workspace settings, and act on every suite in the workspace.',
+  member:
+    'You can create suites and author checks on connections an admin has set up, and run or edit the suites shared with you at that level.',
+  viewer:
+    'Read-only: you can open the suites shared with you and read their results, but not change or run anything.',
+};
+
+/** Profile (`/profile`, ADR 0022 ProfileScreen): identity, access summary, owned suites, API keys. */
 export function Profile() {
   const me = useMe();
-  const saveDisplayName = useSaveDisplayName();
-  const { message } = App.useApp();
-  const [savingName, setSavingName] = useState(false);
-
   if (me.status === 'loading') {
     return <Spin size="large" style={{ marginTop: 80 }} />;
   }
@@ -29,8 +48,19 @@ export function Profile() {
       />
     );
   }
+  return <ProfileBody me={me.data} />;
+}
 
-  const { display_name, email, last_seen_at, is_workspace_admin } = me.data;
+/** Mounted only once `/me` has resolved, so the suites fetch never fires for a failed sign-in. */
+function ProfileBody({ me }: { me: MeResponse }) {
+  const saveDisplayName = useSaveDisplayName();
+  const { message } = App.useApp();
+  const [savingName, setSavingName] = useState(false);
+  const suites = useAsyncData((signal) => listSuites(undefined, signal));
+
+  // `role` is already the EFFECTIVE role — the server resolves a break-glass allowlist admin
+  // to `admin` here (api/me.ts), so nothing is re-derived client-side.
+  const { display_name, email, last_seen_at, role } = me;
   const name = display_name ?? email;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
@@ -57,7 +87,7 @@ export function Profile() {
 
       <Card>
         <Flex gap={16} align="center">
-          <Avatar size={56} style={{ backgroundColor: 'var(--dq-primary)' }}>
+          <Avatar size={56} style={{ backgroundColor: 'var(--dq-primary)' }} aria-hidden>
             {initial}
           </Avatar>
           <Flex vertical gap={2}>
@@ -76,25 +106,141 @@ export function Profile() {
             </Typography.Text>
             <Typography.Text type="secondary">{email}</Typography.Text>
             <span>
-              <Tag color={is_workspace_admin ? 'gold' : 'default'}>
-                {is_workspace_admin ? 'Workspace admin' : 'Member'}
-              </Tag>
+              <Tag color={role === 'admin' ? 'gold' : 'default'}>{ROLE_LABELS[role]}</Tag>
             </span>
           </Flex>
         </Flex>
       </Card>
 
-      <Card title="Workspace" size="small">
+      <Card title={<CardHeading>Workspace</CardHeading>} size="small">
         <Descriptions column={1} size="small">
           <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
-          <Descriptions.Item label="Role">
-            {is_workspace_admin ? 'Workspace admin' : 'Member'}
-          </Descriptions.Item>
+          <Descriptions.Item label="Role">{ROLE_LABELS[role]}</Descriptions.Item>
           <Descriptions.Item label="Last seen">{last_seen_at ?? '—'}</Descriptions.Item>
         </Descriptions>
       </Card>
 
+      <Card title={<CardHeading>Your access</CardHeading>} size="small">
+        <Flex vertical gap={12}>
+          <Typography.Text>{ROLE_SUMMARIES[role]}</Typography.Text>
+          <AsyncBody
+            state={suites.state}
+            loadingText="Counting your suites…"
+            errorTitle="Could not load your suite access"
+            onRetry={suites.reload}
+          >
+            {(all) => <AccessSummary suites={all} role={role} />}
+          </AsyncBody>
+        </Flex>
+      </Card>
+
+      <Card title={<CardHeading>Suites you own</CardHeading>} size="small">
+        <AsyncBody
+          state={suites.state}
+          loadingText="Loading your suites…"
+          errorTitle="Could not load your suites"
+          onRetry={suites.reload}
+        >
+          {(all) => <OwnedSuites suites={all.filter((s) => s.my_permission === 'owner')} />}
+        </AsyncBody>
+      </Card>
+
       <ApiKeysPanel />
     </Page>
+  );
+}
+
+/** A real heading inside antd's Card title slot, so the page outline reads Profile → sections. */
+function CardHeading({ children }: { children: string }) {
+  return (
+    <Typography.Title level={4} style={{ margin: 0, fontSize: 'inherit', fontWeight: 600 }}>
+      {children}
+    </Typography.Title>
+  );
+}
+
+const ACCESS_LEVELS = [
+  ['owner', 'Owned by you'],
+  ['admin', 'Shared with you as admin'],
+  ['edit', 'Shared with you to edit'],
+  ['view', 'Shared with you to view'],
+] as const;
+
+/**
+ * A workspace admin's list is every suite in the workspace, each non-owned one stamped `admin`
+ * whether or not anyone shared it (ADR 0033) — the payload cannot tell a share from the role,
+ * so per-share counts would be false for them. They get the two numbers that are true.
+ */
+function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole }) {
+  const counts = new Map<string, number>();
+  for (const s of suites) {
+    if (s.my_permission) counts.set(s.my_permission, (counts.get(s.my_permission) ?? 0) + 1);
+  }
+  const owned = counts.get('owner') ?? 0;
+  if (role === 'admin') {
+    return (
+      <Flex vertical gap={8}>
+        <Descriptions column={1} size="small" aria-label="Suites by access level">
+          <Descriptions.Item label="Owned by you">{owned}</Descriptions.Item>
+          <Descriptions.Item label="All other suites in the workspace">
+            {suites.length - owned}
+          </Descriptions.Item>
+        </Descriptions>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          As a workspace admin you can act on every suite whether or not it was shared with you, so
+          suites are not counted by share level here. Each suite&apos;s sharing is managed by its
+          owner from the suite itself.
+        </Typography.Text>
+      </Flex>
+    );
+  }
+  return (
+    <Flex vertical gap={8}>
+      <Descriptions column={1} size="small" aria-label="Suites by access level">
+        {ACCESS_LEVELS.map(([level, label]) => (
+          <Descriptions.Item key={level} label={label}>
+            {counts.get(level) ?? 0}
+          </Descriptions.Item>
+        ))}
+      </Descriptions>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Suites nobody has shared with you are not visible to you and are not counted here. Each
+        suite&apos;s sharing is managed by its owner from the suite itself.
+      </Typography.Text>
+    </Flex>
+  );
+}
+
+function OwnedSuites({ suites }: { suites: Suite[] }) {
+  if (suites.length === 0) {
+    return (
+      <Typography.Text type="secondary">
+        You don&apos;t own any suites. A suite you create from <Link to="/suites">Suites</Link> is
+        yours; one transferred to you by a workspace admin is too.
+      </Typography.Text>
+    );
+  }
+  const sorted = [...suites].sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <SimpleList
+      dataSource={sorted}
+      rowKey="id"
+      size="small"
+      aria-label="Suites you own"
+      renderItem={(suite) => (
+        <SimpleList.Item style={{ paddingBlock: 8 }}>
+          <Flex vertical gap={2}>
+            <Link to={`/suites/${suite.id}`} className="dq-text-link">
+              {suite.name}
+            </Link>
+            {suite.description && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                {suite.description}
+              </Typography.Text>
+            )}
+          </Flex>
+        </SimpleList.Item>
+      )}
+    />
   );
 }

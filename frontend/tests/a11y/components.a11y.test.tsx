@@ -34,6 +34,8 @@ import {
   listConnections,
 } from '../../src/api/connections';
 import { ConnectionForm } from '../../src/components/connections/ConnectionForm';
+import { getUnreadCount, listNotifications } from '../../src/api/notificationFeed';
+import { NotificationBell } from '../../src/components/notifications/NotificationBell';
 import {
   CatalogBrowserButton,
   FileBrowserButton,
@@ -108,6 +110,11 @@ vi.mock('../../src/api/runs', async (importOriginal) => {
 vi.mock('../../src/api/search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/search')>();
   return { ...actual, search: vi.fn() };
+});
+
+vi.mock('../../src/api/notificationFeed', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/notificationFeed')>();
+  return { ...actual, getUnreadCount: vi.fn(), listNotifications: vi.fn() };
 });
 
 vi.mock('../../src/api/seasonalPeriods', async (importOriginal) => {
@@ -420,6 +427,60 @@ const EFFECTIVE = {
 };
 
 describe('component a11y floor — v1.3 surfaces (CONTRIBUTING rule 44)', () => {
+  it('the notification bell and its open feed name every control', async () => {
+    vi.mocked(getUnreadCount).mockResolvedValue(2);
+    vi.mocked(listNotifications).mockResolvedValue({
+      total: 2,
+      items: [
+        {
+          id: 'n1',
+          suite_id: 's1',
+          run_id: 'r1',
+          incident_id: 'i1',
+          severity: 'fail',
+          title: 'orders: 1 of 2 checks breached (worst: fail)',
+          body: 'RETAIL.ORDERS (dev): id not null (fail)',
+          deep_link: '/results/r1',
+          incident_link: '/assets/a1?incident=i1',
+          created_at: '2026-10-24T10:00:00Z',
+          read_at: null,
+        },
+        {
+          id: 'n2',
+          suite_id: 's1',
+          run_id: null,
+          incident_id: null,
+          severity: 'error',
+          title: 'orders: run failed to execute',
+          body: 'The run on RETAIL.ORDERS did not complete.',
+          deep_link: null,
+          incident_link: null,
+          created_at: '2026-10-23T10:00:00Z',
+          read_at: '2026-10-23T11:00:00Z',
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <NotificationBell />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    const bell = await screen.findByRole('button', { name: 'Notifications, 2 unread' });
+    await user.click(bell);
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    expect(
+      within(dialog).getByRole('link', { name: 'orders: 1 of 2 checks breached (worst: fail)' }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', {
+        name: 'Mark read: orders: 1 of 2 checks breached (worst: fail)',
+      }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Mark all read' })).toBeEnabled();
+    await checkA11y('component:NotificationBell', document.body);
+  });
+
   it('Admin → Calendar and its entry dialog name every control', async () => {
     vi.mocked(listSeasonalPeriods).mockResolvedValue([ENTRY]);
     render(

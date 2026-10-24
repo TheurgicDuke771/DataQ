@@ -107,11 +107,11 @@ export interface SuiteUpdate {
 }
 
 /** `tag` repeats (`tag=a&tag=b`) and means every named tag — AND, not OR. */
-export async function listSuites(params?: {
-  connection_id?: string;
-  tag?: string[];
-}): Promise<Suite[]> {
-  const { data } = await api.get<Suite[]>('/suites', { params });
+export async function listSuites(
+  params?: { connection_id?: string; tag?: string[] },
+  signal?: AbortSignal,
+): Promise<Suite[]> {
+  const { data } = await api.get<Suite[]>('/suites', { params, signal });
   return data;
 }
 

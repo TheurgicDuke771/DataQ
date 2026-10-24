@@ -1901,9 +1901,11 @@ def list_suite_channels(suite_id: str) -> list[dict[str, Any]]:
     Returns the same shape as ``list_notification_channels`` (id, name, type,
     and presence-only credential booleans — no credential value, ever, from any
     caller), scoped to channels linked to this suite. An empty list means no
-    channel is linked — the suite's alerts, if any, come solely from its own
-    override or the workspace default (see ``get_notification_config``), not
-    from a reusable channel.
+    channel is linked — the suite's outbound alerts, if any, come solely from its
+    own override or the workspace default (see ``get_notification_config``), not
+    from a reusable channel. The in-app notification feed is not a channel and
+    never appears here: it always receives the suite's alerts for every user
+    with access to the suite.
 
     **Delivery is additive, not either/or (see ``get_notification_config``):**
     every channel returned here delivers ALONGSIDE the suite/workspace
@@ -1951,6 +1953,15 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     A ``*_source`` of ``"suite"`` is a **legacy** inline override: a suite can no
     longer be given its own webhook or recipients (destinations are admin-defined
     channels), it can only have one cleared — so do not suggest setting one.
+
+    **The in-app feed is not listed here and is always on**: every run outcome
+    that passes this suite's ``enabled`` + ``alert_on`` gate also lands in the
+    in-app notification feed (the bell in the app) of every user who can see the
+    suite — its owner, each user it is shared with, and the workspace admins. So
+    even when every ``has_*`` here is false, "nobody is told" is wrong while
+    ``enabled`` is true: the people with access see it in the app. Only the
+    outbound channels (Teams, Slack, email, generic webhook) are optional and
+    reported above.
 
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it

@@ -15,6 +15,7 @@ from backend.app.alerting.base import (
     IncidentCard,
     RunReport,
     WorkspaceSignalReport,
+    unverified_checks,
 )
 from backend.app.alerting.routing import route_for
 from backend.app.core import usage_telemetry
@@ -35,6 +36,12 @@ _TD = "padding:6px 10px;border-bottom:1px solid #eee;font-size:13px;vertical-ali
 def render_subject(report: RunReport) -> str:
     """The email subject line — verdict + suite + counts at a glance."""
     if report.success:
+        unverified = len(unverified_checks(report))
+        if unverified:
+            return (
+                f"[DataQ] {report.suite_name}: {unverified}/{report.total_checks} checks "
+                "could not be verified"
+            )
         return f"[DataQ] {report.suite_name}: all {report.total_checks} checks passed"
     sev = (report.worst_severity or "fail").upper()
     return (

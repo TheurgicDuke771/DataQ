@@ -243,6 +243,8 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 - **Channels** — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
   admin and linked per suite, with deep links + expected-vs-observed context.
+- **In-app feed** — a bell in the header with an unread count; every alert also lands in the
+  feed of each user who can see the suite, with read-acks and links to the run and incident.
 - **Threshold** — per suite: fail-only / warn-and-worse (default) / always.
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
@@ -280,6 +282,9 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
   authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).
 - **Suite sharing** — per-suite view / edit grants, capped by workspace role (below).
+- **Profile** — your identity (the display name is editable), your effective role in plain
+  words, your suites counted by access level, the suites you own as links, and your
+  [API keys](api-keys.md). A Viewer sees the same page read-only.
 - **Workspace roles — Admin / Member / Viewer** — a stored, in-app-managed role per user
   (ADR 0033), not just an env allowlist. Admin has workspace-wide visibility over every
   suite/result/schedule and is the only role that can create, edit, delete, re-auth, or
