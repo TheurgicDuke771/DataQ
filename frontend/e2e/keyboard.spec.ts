@@ -39,6 +39,29 @@ test.describe('Keyboard navigation', () => {
     await expect(page).toHaveURL(/\/results$/);
   });
 
+  test('a run comparison opens from the "Compare with…" menu by keyboard', async ({ page }) => {
+    await page.goto('/results');
+    await page.locator('tr.ant-table-row a.dq-row-link').first().click();
+    await expect(page.getByTestId('rd-screen')).toBeVisible();
+    const trigger = page.getByRole('button', { name: 'Compare with another run of this suite' });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    // Scoped to the dropdown — the sidebar nav is a menu of menuitems too.
+    const item = page.locator('.ant-dropdown').getByRole('menuitem').first();
+    await expect(item).toBeVisible();
+    await item.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/results\/[0-9a-f-]+\/compare\/[0-9a-f-]+$/);
+    await expect(page.getByTestId('rc-screen')).toBeVisible();
+    await expect(page.locator('main#dq-main')).toBeFocused();
+    // The filter chips are a radio group: arrow keys move between them and the count is re-announced.
+    const all = page.getByRole('radio', { name: 'All' });
+    await all.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('radio', { name: 'Changed' })).toBeChecked();
+    await expect(page.getByRole('status')).toContainText(/Showing \d+ of \d+ checks/);
+  });
+
   test('an asset is openable from the Assets table by keyboard', async ({ page }) => {
     await page.goto('/assets');
     await page.getByText('All assets', { exact: true }).click();

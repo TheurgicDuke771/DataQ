@@ -295,6 +295,7 @@ catalog knowing about them (mechanism ④).
 | Operational statuses | `error` (evaluation threw) and `skip` (precondition unmet) are distinct from failures |
 | Health score | Severity-weighted, on the Dashboard |
 | Failing-row samples | Redacted column-aware before display (suite column policy + classifier) |
+| Run comparison | Any two runs of a suite diffed check by check: status change (regressed / improved / same / added / removed), metric delta, each side as the check was at that run; in the UI and at `GET /runs/{id}/compare/{other}` |
 | Run history retention | Samples purged after the retention window; metric trends kept |
 
 ## Alerting

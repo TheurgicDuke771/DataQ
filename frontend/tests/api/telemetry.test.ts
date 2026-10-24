@@ -27,6 +27,7 @@ describe('routeName', () => {
     expect(routeName('/suites/new')).toBe('suite_new');
     expect(routeName('/suites/abc/checks/def/edit')).toBe('check_edit');
     expect(routeName('/results/run-1')).toBe('run_detail');
+    expect(routeName('/results/run-0/compare/run-1')).toBe('run_compare');
     expect(routeName('/nowhere/at/all')).toBe('other');
   });
 

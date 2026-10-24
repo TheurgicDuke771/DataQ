@@ -40,11 +40,17 @@ describe('demo route coverage', () => {
   });
 
   it('expands every pattern into the seeded rows', async () => {
-    const lists: Record<string, { id: string }[]> = {
+    const lists: Record<string, { id: string; suite_id?: string; created_at?: string }[]> = {
       '/suites': [{ id: 's1' }, { id: 's2' }],
       '/connections': [{ id: 'c1' }],
       '/assets': [{ id: 'a1' }],
-      '/runs': [{ id: 'r1' }],
+      // Deliberately NOT newest first: the expansion must order by `created_at` itself. s2 has a
+      // single run and so no comparison.
+      '/runs': [
+        { id: 'r0', suite_id: 's1', created_at: '2026-06-10T00:00:00Z' },
+        { id: 'r1', suite_id: 's1', created_at: '2026-06-11T00:00:00Z' },
+        { id: 'r9', suite_id: 's2', created_at: '2026-06-11T00:00:00Z' },
+      ],
       '/suites/s1/checks': [{ id: 'k1' }],
       '/suites/s2/checks': [],
     };
@@ -54,8 +60,11 @@ describe('demo route coverage', () => {
     expect(routes).toContain('/connections/c1/edit');
     expect(routes).toContain('/assets/a1');
     expect(routes).toContain('/results/r1');
+    // The older run is the base, the newest the target — one comparison per suite with two runs.
+    expect(routes).toContain('/results/r0/compare/r1');
+    expect(routes.filter((r) => r.includes('/compare/'))).toHaveLength(1);
     expect(routes.some((r) => r.includes(':id'))).toBe(false);
-    // 15 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 1 run.
-    expect(routes).toHaveLength(25);
+    // 15 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 3 runs + 1 comparison.
+    expect(routes).toHaveLength(28);
   });
 });

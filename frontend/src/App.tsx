@@ -57,6 +57,9 @@ const AssetDetail = lazy(() =>
 );
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
+const RunCompare = lazy(() =>
+  import('./pages/RunCompare').then((m) => ({ default: m.RunCompare })),
+);
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 // Only the static demo build loads this (#2419); elsewhere the import is compiled away.
@@ -306,6 +309,7 @@ export function App() {
                   <Route path="/assets/:assetId" element={<AssetDetail />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
+                  <Route path="/results/:runId/compare/:otherRunId" element={<RunCompare />} />
                   <Route path="/profile" element={<Profile />} />
                   {ADMIN_ROUTES}
                   {SETTINGS_REDIRECT_ROUTE}

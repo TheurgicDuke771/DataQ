@@ -220,3 +220,86 @@ export async function downloadComparisonReport(
   // dereferences the blob URL asynchronously after click().
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+// ───────────────────────────── run comparison ─────────────────────────────
+
+/** How a check's status moved from the base run to the target run. `changed` is a transition
+ *  through `skip`/`error`, which carry no rank, so it is neither an improvement nor a regression. */
+export type StatusChange = 'improved' | 'regressed' | 'changed' | 'same' | 'added' | 'removed';
+
+/** A check's identity as it WAS when one side's result was written — the two sides may differ. */
+export interface ComparisonCheck {
+  name: string | null;
+  kind: string | null;
+  engine: string;
+  expectation_type: string | null;
+  dimension: string | null;
+  column: string | null;
+}
+
+/** One run's result for a check; `observed_value` is redacted exactly as on the run detail. */
+export interface ComparisonSide {
+  result_id: string;
+  status: ResultStatus;
+  metric_value: number | null;
+  observed_value: Record<string, unknown> | null;
+  check: ComparisonCheck;
+}
+
+export interface ComparisonDelta {
+  status_change: StatusChange;
+  /** Target minus base; null when either side has no metric. */
+  metric_delta: number | null;
+  /** Relative to a non-zero base; null otherwise. */
+  metric_delta_pct: number | null;
+  /** True whenever the two metrics differ — including when only ONE side has one, in which case
+   *  both deltas above are null because no difference can be stated. */
+  metric_changed: boolean;
+}
+
+export interface ComparisonRow {
+  check_id: string;
+  /** The target side's check name, else the base side's (a removed check). */
+  label: string;
+  base: ComparisonSide | null;
+  target: ComparisonSide | null;
+  delta: ComparisonDelta;
+}
+
+/** A compared run: `results_final` is false while it is queued or running, so its side is partial. */
+export interface ComparisonRun extends Run {
+  results_final: boolean;
+}
+
+export interface ComparisonSummary {
+  changed: number;
+  unchanged: number;
+  improved: number;
+  regressed: number;
+  added: number;
+  removed: number;
+  metric_changed: number;
+}
+
+/** Mirrors `RunComparisonRead`: `base` is the run in the path, `target` the other. */
+export interface RunComparison {
+  base: ComparisonRun;
+  target: ComparisonRun;
+  summary: ComparisonSummary;
+  rows: ComparisonRow[];
+}
+
+export async function compareRuns(runId: string, otherRunId: string): Promise<RunComparison> {
+  const { data } = await api.get<RunComparison>(`/runs/${runId}/compare/${otherRunId}`);
+  return data;
+}
+
+/** The compare URL with the EARLIER run as the base, so deltas read as "what changed since". */
+export function compareRunsPath(
+  a: Pick<Run, 'id' | 'created_at'>,
+  b: Pick<Run, 'id' | 'created_at'>,
+): string {
+  // Parsed, not compared as strings: `…:00Z` sorts after `…:00.250000Z` lexically.
+  const [base, target] = Date.parse(a.created_at) <= Date.parse(b.created_at) ? [a, b] : [b, a];
+  return `/results/${base.id}/compare/${target.id}`;
+}
