@@ -253,7 +253,8 @@ def test_blank_and_over_long_queries_are_422(
 
 def test_nul_in_the_query_is_422(client: TestClient, as_role: Callable[..., Principal]) -> None:
     _, headers = as_role("member")
-    assert client.get("/api/v1/search?q=a%00b", headers=headers).status_code == 422
+    resp = client.get("/api/v1/search?q=a%00b", headers=headers)
+    assert resp.status_code == 422
 
 
 @pytest.mark.parametrize("limit", [0, 21])
@@ -275,7 +276,8 @@ def test_the_query_is_echoed_stripped(
 
 def test_a_missing_query_is_422(client: TestClient, as_role: Callable[..., Principal]) -> None:
     _, headers = as_role("member")
-    assert client.get("/api/v1/search", headers=headers).status_code == 422
+    resp = client.get("/api/v1/search", headers=headers)
+    assert resp.status_code == 422
 
 
 def test_unrelated_names_do_not_match(
