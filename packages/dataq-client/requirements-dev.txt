@@ -1,7 +1,9 @@
 # Tooling for the dataq-client package (#1829): the generator its CI drift check reruns, and the
-# package's own test/type/build tools. Versions shared with the backend match its pins.
+# package's own test/type/build tools. pytest matches the backend pin; ruff and mypy are pinned
+# separately for now — the generator's post-hook formats with ruff, so a ruff bump regenerates models
+# (aligning them with requirements-tooling.txt is #2533).
 openapi-python-client==0.29.1     # MIT — generates src/dataq_client/generated from the OpenAPI spec
-ruff==0.16.5                      # the generator's post-hooks format with it; = requirements-tooling.txt
+ruff==0.16.5                      # the generator's post-hooks format with it (see above)
 pytest==9.1.1                     # = backend/requirements-dev.txt
-mypy==2.3.1                       # = backend/requirements-tooling.txt
+mypy==2.3.1                       # see above
 build==1.3.0                      # MIT — builds the wheel CI checks and the release workflow publishes

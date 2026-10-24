@@ -142,8 +142,9 @@ jobs:
           # CVE-2026-49265 is in oauthlib's authorization-server PKCE check, which DataQ never runs;
           # databricks-sql-connector pins oauthlib<4.0.0, so the fix can't be installed yet (#2260).
           # CVE-2026-112940/112913/112907 are in filelock's ReadWriteLock (unused by any dependent) and
-          # Windows-only SoftFileLock paths; the fix (4.2.1) is capped out by snowflake-connector-python<4
-          # until the connector moves to 5.x (#2530).
+          # Windows-only SoftFileLock paths. The fix is filelock 4.2.1, but snowflake-connector-python 4.x
+          # requires filelock<4 (so does virtualenv<21.14, pre-commit's dependency; the resolver already
+          # picks a newer virtualenv here). Remove the three ignores with #2530, the connector 5.x bump.
           audit() {
             pip-audit -r backend/requirements-dev.txt \
                 --ignore-vuln CVE-2026-49265 \
