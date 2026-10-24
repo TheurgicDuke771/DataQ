@@ -2828,6 +2828,7 @@ section below.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>Dependency security updates.</strong> <code>fastmcp</code> moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own <code>/mcp</code> server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). <code>dompurify</code>, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.</li>
 <li><strong>Dependency security updates.</strong> The CA bundle (<code>certifi</code>) moves to 2026.10.19 for PYSEC-2026-4320. <code>follow-redirects</code>, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.</li>
 </ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
