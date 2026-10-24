@@ -20,6 +20,17 @@ E2E_DEMO_BASE_URL=http://127.0.0.1:3001 pnpm demo:capture
 pnpm demo:build && pnpm demo:smoke
 ```
 
+## How the capture waits
+
+Each page and tab waits at most 1.5 s for the network to go quiet, then requires the spinner
+gate (`settle`) to pass. A polling endpoint or a hung asset therefore costs 1.5 s, not the 5 s
+a plain idle wait used to take on every page and tab. Requests still open after the grace are
+logged by method and path (`[capture] <route>: network busy past the grace`). Each route has a
+hard budget (`ROUTE_BUDGET_MS`); one that exceeds it fails the test naming the route and the
+requests still open, instead of running into the test-wide ceiling. Reading a response body is
+bounded the same way (10 s, logged by path): a body the page abandoned mid-flight never settles,
+and without the bound it held the end of the capture until the test-wide timeout.
+
 ## What keeps it from drifting
 
 - **A new route** must be added to `ROUTE_PATTERNS` in `routes.ts`;

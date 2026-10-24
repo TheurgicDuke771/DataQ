@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Response } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,9 +11,29 @@ import { visit } from './visit';
 // output, demo-fixtures.json, is never committed: CI records it from the stack it just seeded.
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../demo-fixtures.json');
 const API = '/api/v1';
+// A body read that never settles (a response the page abandoned mid-flight) would hold the
+// final `Promise.all(pending)` until the test-wide timeout; the recording was already complete.
+const BODY_BUDGET_MS = 10_000;
+
+async function readBody(response: Response, key: string): Promise<unknown> {
+  let timer: NodeJS.Timeout | undefined;
+  const stalled = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      console.log(
+        `[capture] body of ${key.split('?')[0]} not read within ${BODY_BUDGET_MS / 1000}s`,
+      );
+      resolve(undefined);
+    }, BODY_BUDGET_MS);
+  });
+  try {
+    return await Promise.race([response.json().catch(() => undefined), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 test('record the seeded workspace', async ({ page }) => {
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(8 * 60_000);
   const entries: Record<string, RecordedResponse> = {};
   const failures: string[] = [];
   const pending: Promise<void>[] = [];
@@ -32,7 +52,7 @@ test('record the seeded workspace', async ({ page }) => {
         );
         // A response whose page navigated away before its body was read is recorded on the
         // page that waits for it; losing this copy is fine.
-        const data: unknown = await response.json().catch(() => undefined);
+        const data = await readBody(response, key);
         if (data === undefined) return;
         entries[key] = { status: response.status(), data, headers };
       })(),
