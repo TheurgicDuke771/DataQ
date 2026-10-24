@@ -22,12 +22,12 @@ pnpm demo:build && pnpm demo:smoke
 
 ## How the capture waits
 
-A route is ready when the spinner gate (`settle`) passes, not when the network is idle: a
-polling endpoint or a hung asset would keep a global idle wait open for its full timeout on
-every page and tab. After the gate, `visit.ts` gives open requests a short grace, then moves
-on and logs the URLs still in flight (`[capture] <route>: not idle after settle`). Each route
-has a hard budget (`ROUTE_BUDGET_MS`); one that exceeds it fails the test naming the route and
-the requests still open, instead of running into the test-wide ceiling.
+Each page and tab waits at most 1.5 s for the network to go quiet, then requires the spinner
+gate (`settle`) to pass. A polling endpoint or a hung asset therefore costs 1.5 s, not the 5 s
+a plain idle wait used to take on every page and tab. Requests still open after the grace are
+logged by method and path (`[capture] <route>: network busy past the grace`). Each route has a
+hard budget (`ROUTE_BUDGET_MS`); one that exceeds it fails the test naming the route and the
+requests still open, instead of running into the test-wide ceiling.
 
 ## What keeps it from drifting
 
