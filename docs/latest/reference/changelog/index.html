@@ -2983,6 +2983,14 @@ section below.</p>
   directory when the site is built, and a release gathers them into a dated section. The
   list a reader sees is unchanged; what changed is that two pull requests can each record
   an entry without conflicting with each other.</li>
+<li><strong>Profile and Workspace Settings carry real content where placeholders stood.</strong> Profile
+  shows your effective role in plain words, your suites counted by access level and the suites
+  you own as links. Workspace Settings gains two read-only cards — <strong>Sign-in access</strong> (each
+  deployment allowlist with its values and whether this deployment's sign-in mode actually
+  reads it, plus the first-sign-in roles) and <strong>Data retention</strong> (each clock with its variable
+  and what the sweep removes) — over the new Admin-only <code>GET /admin/workspace-config</code>, and the
+  "no destructive actions" notice is replaced by a card pointing each destructive action at
+  where it lives.</li>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
@@ -2998,6 +3006,10 @@ section below.</p>
 <li><strong>The bulk "Set thresholds" dropdowns no longer open as a sliver.</strong> Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.</li>
+<li><strong>Settings → Notifications no longer describes workspace-wide alert defaults as a future
+  feature.</strong> The card says they are set by the deployment's configuration, names the variables,
+  links the notifications guide, and states that a suite alerts through them in addition to
+  its linked channels.</li>
 </ul>
 <h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>

@@ -167,6 +167,14 @@ section below.
   directory when the site is built, and a release gathers them into a dated section. The
   list a reader sees is unchanged; what changed is that two pull requests can each record
   an entry without conflicting with each other.
+- **Profile and Workspace Settings carry real content where placeholders stood.** Profile
+  shows your effective role in plain words, your suites counted by access level and the suites
+  you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each
+  deployment allowlist with its values and whether this deployment's sign-in mode actually
+  reads it, plus the first-sign-in roles) and **Data retention** (each clock with its variable
+  and what the sweep removes) — over the new Admin-only `GET /admin/workspace-config`, and the
+  "no destructive actions" notice is replaced by a card pointing each destructive action at
+  where it lives.
 
 ### Fixed
 
@@ -182,6 +190,10 @@ section below.
 - **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.
+- **Settings → Notifications no longer describes workspace-wide alert defaults as a future
+  feature.** The card says they are set by the deployment's configuration, names the variables,
+  links the notifications guide, and states that a suite alerts through them in addition to
+  its linked channels.
 
 ## v1.2.0 — 2026-10-04
 

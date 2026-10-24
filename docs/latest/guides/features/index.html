@@ -3065,6 +3065,9 @@ answers, your DAG decides (<a href="../orchestration/#gate-a-pipeline-on-dataq">
 <li><strong>Personal access tokens (PATs)</strong> — <code>dq_live_</code> tokens for headless / AI-client use, same
   authz as the user, on REST <strong>and</strong> <code>/mcp</code> (<a href="../api-keys/">API keys</a>, ADR 0026).</li>
 <li><strong>Suite sharing</strong> — per-suite view / edit grants, capped by workspace role (below).</li>
+<li><strong>Profile</strong> — your identity (the display name is editable), your effective role in plain
+  words, your suites counted by access level, the suites you own as links, and your
+  <a href="../api-keys/">API keys</a>. A Viewer sees the same page read-only.</li>
 <li><strong>Workspace roles — Admin / Member / Viewer</strong> — a stored, in-app-managed role per user
   (ADR 0033), not just an env allowlist. Admin has workspace-wide visibility over every
   suite/result/schedule and is the only role that can create, edit, delete, re-auth, or

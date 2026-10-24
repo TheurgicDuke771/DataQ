@@ -1449,6 +1449,50 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-notification-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — notification channels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-sign-in-access-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — sign-in access (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-data-retention-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — data retention (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-destructive-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — destructive actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#settings-scoring" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3165,6 +3209,50 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-notification-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — notification channels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-sign-in-access-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — sign-in access (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-data-retention-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — data retention (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-destructive-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — destructive actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#settings-scoring" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3318,7 +3406,7 @@ without losing your place. <code>/admin</code> on its own lands on <strong>Overv
 <tr>
 <td>Settings</td>
 <td><code>/admin/settings</code></td>
-<td>Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone.</td>
+<td>Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the deployment's sign-in allowlists and retention clocks (read-only), the health-score weights, automatic coverage, usage telemetry, the secret-store notice, and where each destructive action lives.</td>
 </tr>
 <tr>
 <td>Calendar</td>
@@ -3617,7 +3705,7 @@ writes its own audit event, alongside one for the pass as a whole.</p>
 </tr>
 <tr>
 <td><code>WORKSPACE_ADMIN_EMAILS</code></td>
-<td>Grants the Admin role regardless of the stored one (see roles, below).</td>
+<td>Admits the address <strong>and</strong> grants it the Admin role regardless of the stored one (see roles, below). Removing someone from Members while this names them leaves them able to sign in as Admin.</td>
 </tr>
 </tbody>
 </table>
@@ -3711,6 +3799,56 @@ environment the toggle is shown pinned and can only be turned <em>on</em> from h
 that is deliberate, so an operator's floor cannot be undone by a click. Every change is
 audited with who made it and when. Samples stored before the switch are not deleted by it;
 the retention sweep removes them on its schedule.</p>
+<h2 id="settings-notification-channels">Settings — notification channels<a class="headerlink" href="#settings-notification-channels" title="Permanent link">¶</a></h2>
+<p>Reusable Teams, Slack, email and webhook <strong>channels</strong> are created here and linked from each
+suite's own panel, which also sets the suite's threshold. Workspace-wide default
+destinations are not set in the app: they come from the deployment's configuration
+(<code>TEAMS_WEBHOOK_SECRET_NAME</code>, <code>SLACK_WEBHOOK_SECRET_NAME</code>, <code>EMAIL_*</code>), and every suite
+alerts through them <strong>in addition to</strong> its linked channels. The card above the channel list
+says so and names the variables; the <a href="../notifications/#channels">notifications guide</a> has
+the detail.</p>
+<h2 id="settings-sign-in-access-read-only">Settings — sign-in access (read-only)<a class="headerlink" href="#settings-sign-in-access-read-only" title="Permanent link">¶</a></h2>
+<p>The <strong>Sign-in access</strong> card names the sign-in mode this deployment uses (Entra ID, OIDC,
+email code or the developer bypass) and shows its allowlists exactly as configured — the
+values of <code>OIDC_ALLOWED_EMAILS</code>, <code>OIDC_ALLOWED_DOMAINS</code>, <code>AUTH_OTP_ALLOWED_EMAILS</code>,
+<code>AUTH_OTP_ALLOWED_DOMAINS</code> and <code>WORKSPACE_ADMIN_EMAILS</code> — with a worded status per row:</p>
+<ul>
+<li><strong>Read at sign-in</strong> — this deployment signs people in through the mode that reads the list.</li>
+<li><strong>Read at sign-in — empty, so the identity provider decides</strong> — OIDC is the mode and both
+  <code>OIDC_ALLOWED_*</code> lists are empty, so every identity the issuer vouches for is admitted and
+  provisioned on first sign-in. The card carries a warning saying so; set one of the two
+  lists to make the app, not the issuer, the gate.</li>
+<li><strong>Not read — not the sign-in mode in use</strong> — the list may have values but its mode is not
+  the one this deployment uses, so it admits nobody. Values set for the wrong mode are a
+  common reason an expected sign-in is refused; this row makes that visible.</li>
+<li><strong>Admits and grants the Admin role</strong> — <code>WORKSPACE_ADMIN_EMAILS</code>, which both signs its
+  addresses in and makes them Admin whatever their stored role (see
+  <a href="#seed-and-emergency-access">seed and emergency access</a>).</li>
+</ul>
+<p>In Entra ID mode no app-side allowlist is read at all: the tenant decides who may sign in, and
+the card says so rather than leaving four "not read" rows to be puzzled over.</p>
+<p>Below the table are the roles a first sign-in lands on for each mode. Everything on the
+card is read-only: these values change only when the deployment's configuration is edited
+and the app restarted, and they are identifiers, never secrets. On a local stack signing in
+through the developer bypass the card says so, because no allowlist gates anything there.
+Day-to-day admission is the <a href="#members">Members</a> tab.</p>
+<h2 id="settings-data-retention-read-only">Settings — data retention (read-only)<a class="headerlink" href="#settings-data-retention-read-only" title="Permanent link">¶</a></h2>
+<p>The <strong>Data retention</strong> card lists each retention clock with the variable that sets it and
+what the daily sweep removes when it runs out: failing-row samples and captured cell values
+inside stored results (<code>SAMPLE_FAILURES_RETENTION_DAYS</code>), audit events
+(<code>AUDIT_RETENTION_DAYS</code>), spent sign-in codes (<code>OTP_CODES_RETENTION_HOURS</code>) and asset rows
+nothing references any more (<code>ASSET_ORPHAN_RETENTION_DAYS</code> — the one clock that deletes a
+catalog entry, so an asset that vanished from Assets is explained here). Run and
+result rows are never deleted by retention — only the samples inside them — so metric
+trends survive. Shortening a clock takes effect at the next sweep; lengthening one cannot
+bring back what an earlier sweep removed.</p>
+<h2 id="settings-destructive-actions">Settings — destructive actions<a class="headerlink" href="#settings-destructive-actions" title="Permanent link">¶</a></h2>
+<p>There is no workspace-level delete: the workspace is the deployment. The last card on the
+page points each destructive action at where it lives — deleting or transferring any suite
+under <a href="#suites">Suites</a>, deleting a connection from Connections, removing or
+<a href="#offboarding">offboarding</a> a member, and erasing a person's values under
+<a href="#data-subject-rights">Compliance</a>. Run history is never purged by hand; the retention
+clocks above do that on schedule.</p>
 <h2 id="settings-scoring">Settings — scoring<a class="headerlink" href="#settings-scoring" title="Permanent link">¶</a></h2>
 <p><strong>Health-score weights</strong> are the penalties each severity tier carries when a score is
 computed: <code>warn</code>, <code>fail</code> and <code>critical</code>, with <code>pass</code> fixed at zero. The defaults are
