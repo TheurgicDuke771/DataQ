@@ -1,17 +1,17 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getIncident, type Incident, listIncidents } from '../../src/api/incidents';
-import { getRun, type RunDetail as RunDetailType } from '../../src/api/runs';
+import { getRun, listRuns, type Run, type RunDetail as RunDetailType } from '../../src/api/runs';
 import { type Check, type Suite, getSuite, listChecks } from '../../src/api/suites';
 import { RunDetail } from '../../src/pages/RunDetail';
 import { downloadCsv, downloadJson } from '../../src/utils/download';
 
 vi.mock('../../src/api/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/runs')>();
-  return { ...actual, getRun: vi.fn() };
+  return { ...actual, getRun: vi.fn(), listRuns: vi.fn() };
 });
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
@@ -40,6 +40,7 @@ vi.mock('../../src/utils/download', async (importOriginal) => {
 });
 
 const mockGetRun = vi.mocked(getRun);
+const mockListRuns = vi.mocked(listRuns);
 const mockGetSuite = vi.mocked(getSuite);
 const mockListChecks = vi.mocked(listChecks);
 const mockListIncidents = vi.mocked(listIncidents);
@@ -101,12 +102,19 @@ const runDetail: RunDetailType = {
   ],
 };
 
+/** Stands in for the comparison page: shows which pair the menu navigated to, in order. */
+function CompareProbe() {
+  const { runId, otherRunId } = useParams();
+  return <div>{`compare ${runId} → ${otherRunId}`}</div>;
+}
+
 function renderAt(runId: string) {
   return render(
     <MemoryRouter initialEntries={[`/results/${runId}`]}>
       <Routes>
         <Route path="/results/:runId" element={<RunDetail />} />
         <Route path="/results" element={<div>results-list</div>} />
+        <Route path="/results/:runId/compare/:otherRunId" element={<CompareProbe />} />
         <Route path="/assets/:assetId" element={<div>asset page</div>} />
       </Routes>
     </MemoryRouter>,
@@ -121,6 +129,8 @@ function screenRegion() {
 // Default: no incidents (#1634) — the tests that care about the linkage override this.
 beforeEach(() => {
   mockListIncidents.mockResolvedValue([]);
+  // Default: no other runs of the suite — the tests of the "Compare with…" menu override this.
+  mockListRuns.mockResolvedValue({ items: [], total: 0 });
 });
 
 afterEach(() => {
@@ -671,6 +681,49 @@ describe('RunDetail page', () => {
     expect(region.queryByText(/values redacted/)).not.toBeInTheDocument();
     expect(region.queryByText(/values shown/)).not.toBeInTheDocument();
     expect(region.queryByText(/column.*redacted/)).not.toBeInTheDocument();
+  });
+
+  it('offers the suite\'s other runs under "Compare with…" and opens the older one as the base', async () => {
+    const older: Run = {
+      ...runDetail,
+      id: 'r0',
+      created_at: '2026-06-10T00:00:00Z',
+      started_at: '2026-06-10T00:00:00Z',
+      checks_passed: 1,
+      worst_severity: null,
+    };
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    // The list includes the run itself; the menu must leave it out.
+    mockListRuns.mockResolvedValue({ items: [runDetail, older], total: 2 });
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('Orders quality');
+    expect(mockListRuns).toHaveBeenCalledWith({ suite_id: 's1', limit: 20 });
+    await user.click(
+      region.getByRole('button', { name: 'Compare with another run of this suite' }),
+    );
+    const items = await screen.findAllByRole('menuitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(/succeeded · 1\/1 passed/);
+    await user.click(items[0]);
+    // The older run is the base, so the deltas read as what changed since it.
+    expect(await screen.findByText('compare r0 → r1')).toBeInTheDocument();
+  });
+
+  it('disables "Compare with…" when the suite has no other run', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    mockListRuns.mockResolvedValue({ items: [runDetail], total: 1 });
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('Orders quality');
+    expect(region.getByRole('button', { name: /Compare with/ })).toBeDisabled();
   });
 
   it('exports the run as JSON (failing-row sample omitted from the payload)', async () => {

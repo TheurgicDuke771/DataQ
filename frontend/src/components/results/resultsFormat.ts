@@ -56,6 +56,19 @@ export function formatScalar(value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+/**
+ * A run-comparison metric delta: `+2 (+20%)`, `−36 (−90%)`, `+12.5` when no percentage is defined
+ * (a zero base), or an em dash when either side has no metric.
+ */
+export function formatMetricDelta(delta: number | null, pct: number | null): string {
+  if (delta === null) return '—';
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+  const abs = formatScalar(Math.abs(delta));
+  if (pct === null) return `${sign}${abs}`;
+  const pctSign = pct > 0 ? '+' : pct < 0 ? '−' : '';
+  return `${sign}${abs} (${pctSign}${formatScalar(Math.abs(Math.round(pct * 10) / 10))}%)`;
+}
+
 /** True when `iso` falls within the last `windowDays` days (inclusive). */
 export function isWithinWindowDays(iso: string | null, windowDays: number): boolean {
   if (!iso) return false;
