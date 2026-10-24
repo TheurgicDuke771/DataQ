@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **93** open repo-wide (2026-10-21, live re-count): Week 4 6, Week 5 6, Week 6 23, Week 7 27, Week 8 26, `v1.3 Backlog` 5 (#2309, #505 and #717 moved there 2026-10-21); every open issue has a milestone. Weeks 1 and 2 are closed; Week 3 is complete and its milestone closes when this update merges. |
-| **Open PRs** | **0 open** (2026-10-21), apart from the one carrying this update. |
+| **Open issues** | **96** open repo-wide (2026-10-24, live re-count): Week 4 4, Week 5 6, Week 6 24, Week 7 27, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–3 are closed; Week 4 has shipped #1667 and #1686 (2026-10-24). |
+| **Open PRs** | **0 open** (2026-10-24), apart from the one carrying this update. |
 
 ---
 
@@ -169,6 +169,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 
 | Status | Task |
 |---|---|
+| ✅ | [#2494](https://github.com/TheurgicDuke771/DataQ/issues/2494) e2e-demo capture flake: each capture route bounded, no global network-idle wait — [PR #2524](https://github.com/TheurgicDuke771/DataQ/pull/2524), merged 2026-10-24 |
 | ⬜ | [#2358](https://github.com/TheurgicDuke771/DataQ/issues/2358) test: test_an_admin_reads_the_log_newest_first fails when backend/tests/services runs before it (audit events leak across tests) |
 | ⬜ | [#2135](https://github.com/TheurgicDuke771/DataQ/issues/2135) test_membership_service is not hermetic: WORKSPACE_ADMIN_EMAILS from the repo .env changes its outcome |
 | ⬜ | [#2115](https://github.com/TheurgicDuke771/DataQ/issues/2115) test flake: test_the_access_write_cost_does_not_grow_with_the_result_count fails on CI noise (4.36x > 3.0) on a docs-only PR |
