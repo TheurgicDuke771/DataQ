@@ -95,8 +95,8 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | Status | Task |
 |---|---|
 | ⬜ | [#1687](https://github.com/TheurgicDuke771/DataQ/issues/1687) feat(ui): in-app notification center — bell/feed with read-ack + deep links |
-| ⬜ | [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) feat(ui): global search / command palette (⌘K) — jump to any suite/check/connection/run by name |
-| 🟡 | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) feat(results): run comparison — diff two runs of a suite — [PR #2527](https://github.com/TheurgicDuke771/DataQ/pull/2527) (`GET /runs/{id}/compare/{other}`, the compare page + "Compare with…" control; each side as the check was at that run via `check_versions`) |
+| ✅ | [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) feat(ui): global search / command palette (⌘K) — jump to any suite/check/connection/run by name — [PR #2525](https://github.com/TheurgicDuke771/DataQ/pull/2525), merged 2026-10-24 |
+| ✅ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) feat(results): run comparison — diff two runs of a suite — [PR #2527](https://github.com/TheurgicDuke771/DataQ/pull/2527) (`GET /runs/{id}/compare/{other}`, the compare page + "Compare with…" control; each side as the check was at that run via `check_versions`) |
 | ⬜ | [#888](https://github.com/TheurgicDuke771/DataQ/issues/888) feat: tagging for suites / assets / connections / checks (workspace labels + list filters) |
 | ⬜ | [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) feat(ui): Profile / Workspace-Settings IA pickup — replace the labelled placeholders (deferred-by-design) |
 | ⬜ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering (run a suite when another suite completes) |
