@@ -13,14 +13,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Literal
 
-from sqlalchemy import ColumnElement, Row, Select, String, case, cast, func, or_, select
+from sqlalchemy import ColumnElement, Select, case, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.core.errors import DataQError
 from backend.app.db.models import Check, Connection, Run, Suite
+from backend.app.services.like_match import contains_ci, starts_with_ci
 from backend.app.services.suite_authz import effective_permissions
-from backend.app.services.suite_service import accessible_suite_filter, accessible_suite_ids
-from backend.app.services.user_service import _escape_like as escape_like
+from backend.app.services.suite_service import (
+    accessible_suite_filter,
+    accessible_suite_ids,
+)
 
 GroupName = Literal["suites", "checks", "connections", "runs"]
 GROUPS: Final[tuple[GroupName, ...]] = ("suites", "checks", "connections", "runs")
@@ -28,8 +31,9 @@ GROUPS: Final[tuple[GroupName, ...]] = ("suites", "checks", "connections", "runs
 MAX_QUERY_LEN: Final = 200
 DEFAULT_LIMIT: Final = 8
 MAX_LIMIT: Final = 20
-# A run id prefix only counts as a query once it is long enough not to match most of the table.
-_RUN_ID_PREFIX_MIN: Final = 4
+# A run-id prefix counts once it covers the first UUID group: shorter hex runs (`cafe`, `2024`,
+# `beef`) are ordinary words and numbers, and would pull in unrelated runs.
+RUN_ID_PREFIX_MIN_HEX: Final = 8
 _SUITE_EDIT_LEVELS: Final = frozenset({"edit", "admin", "owner"})
 
 
@@ -70,17 +74,30 @@ def normalise_query(raw: str) -> str:
     return term
 
 
-def _rank(column: InstrumentedAttribute[str], term: str) -> ColumnElement[int]:
-    return case((column.ilike(f"{escape_like(term)}%", escape="\\"), 0), else_=1)
+def _prefix_first(column: InstrumentedAttribute[str], term: str) -> ColumnElement[int]:
+    return case((starts_with_ci(column, term), 0), else_=1)
 
 
-def _page(
-    session: Session, stmt: Select[Any], count_stmt: Select[tuple[int]], limit: int
-) -> tuple[list[Row[Any]], bool]:
-    """The first `limit` rows and whether more exist — from the real count, not `len == limit`."""
-    total = session.scalar(count_stmt) or 0
-    rows = list(session.execute(stmt.limit(limit)).all())
-    return rows, total > limit
+def _page(session: Session, stmt: Select[Any], limit: int) -> tuple[list[Any], bool]:
+    """The first `limit` rows and whether more exist — one row past the limit is fetched so the
+    answer is exact without a second COUNT query."""
+    rows = list(session.execute(stmt.limit(limit + 1)).all())
+    return rows[:limit], len(rows) > limit
+
+
+def run_id_range(term: str) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """The `[lo, hi]` UUID range a hex prefix denotes, or None when `term` is not one.
+
+    Hyphens are ignored so a pasted `f105e319-5912` works; the range lets the lookup use the
+    primary key instead of casting every row's id to text.
+    """
+    hex_part = term.replace("-", "").lower()
+    if len(hex_part) < RUN_ID_PREFIX_MIN_HEX or len(hex_part) > 32:
+        return None
+    if any(ch not in "0123456789abcdef" for ch in hex_part):
+        return None
+    pad = 32 - len(hex_part)
+    return uuid.UUID(hex_part + "0" * pad), uuid.UUID(hex_part + "f" * pad)
 
 
 def search(
@@ -89,73 +106,68 @@ def search(
     user_id: uuid.UUID,
     query: str,
     limit: int = DEFAULT_LIMIT,
-    include_all: bool = False,
     is_admin: bool = False,
 ) -> SearchResults:
+    """`is_admin` (the caller's workspace role) widens the suite population to every suite and
+    gives connections their own page, the two things ADR 0033 grants an Admin here."""
     term = normalise_query(query)
-    pattern = f"%{escape_like(term)}%"
-    visible = accessible_suite_ids(user_id, include_all=include_all)
+    visible = accessible_suite_ids(user_id, include_all=is_admin)
     results = SearchResults(query=term)
 
     # Suites — the caller's own population, exactly `GET /suites`.
-    suite_where = (Suite.id.in_(visible), Suite.name.ilike(pattern, escape="\\"))
     suite_rows, more = _page(
         session,
-        select(Suite).where(*suite_where).order_by(_rank(Suite.name, term), Suite.name, Suite.id),
-        select(func.count()).select_from(Suite).where(*suite_where),
+        select(Suite)
+        .where(Suite.id.in_(visible), contains_ci(Suite.name, term))
+        .order_by(_prefix_first(Suite.name, term), Suite.name, Suite.id),
         limit,
     )
-    suites = [row[0] for row in suite_rows]
     results.suites = [
-        SearchHit(id=s.id, label=s.name, sublabel=None, href=f"/suites/{s.id}") for s in suites
+        SearchHit(id=s.id, label=s.name, sublabel=None, href=f"/suites/{s.id}")
+        for (s,) in suite_rows
     ]
     if more:
         results.truncated_groups.append("suites")
 
-    # Checks — reachable only through a visible suite; the suite name is the sublabel.
-    check_where = (
-        accessible_suite_filter(Check.suite_id, user_id, include_all=include_all),
-        Check.name.ilike(pattern, escape="\\"),
-    )
+    # Checks — reachable only through a visible suite; the suite name is the sublabel and its
+    # permission level decides whether the hit opens the editor or the suite.
     check_rows, more = _page(
         session,
-        select(Check, Suite.name)
+        select(Check, Suite)
         .join(Suite, Suite.id == Check.suite_id)
-        .where(*check_where)
-        .order_by(_rank(Check.name, term), Check.name, Check.id),
-        select(func.count()).select_from(Check).where(*check_where),
+        .where(
+            accessible_suite_filter(Check.suite_id, user_id, include_all=is_admin),
+            contains_ci(Check.name, term),
+        )
+        .order_by(_prefix_first(Check.name, term), Check.name, Check.id),
         limit,
     )
-    check_suites = {row[0].suite_id for row in check_rows}
-    if check_suites:
-        suite_objs = list(session.scalars(select(Suite).where(Suite.id.in_(check_suites))))
-        levels = effective_permissions(session, suite_objs, user_id)
-    else:
-        levels = {}
+    check_suites = {suite.id: suite for _, suite in check_rows}
+    levels = (
+        effective_permissions(session, list(check_suites.values()), user_id) if check_suites else {}
+    )
     results.checks = [
         SearchHit(
             id=check.id,
             label=check.name,
-            sublabel=suite_name,
+            sublabel=suite.name,
             href=(
-                f"/suites/{check.suite_id}/checks/{check.id}/edit"
-                if levels.get(check.suite_id) in _SUITE_EDIT_LEVELS
-                else f"/suites/{check.suite_id}"
+                f"/suites/{suite.id}/checks/{check.id}/edit"
+                if levels.get(suite.id) in _SUITE_EDIT_LEVELS
+                else f"/suites/{suite.id}"
             ),
         )
-        for check, suite_name in check_rows
+        for check, suite in check_rows
     ]
     if more:
         results.truncated_groups.append("checks")
 
     # Connections — unscoped, like `GET /connections`; only an Admin has a page per connection.
-    conn_where = (Connection.name.ilike(pattern, escape="\\"),)
     conn_rows, more = _page(
         session,
         select(Connection)
-        .where(*conn_where)
-        .order_by(_rank(Connection.name, term), Connection.name, Connection.id),
-        select(func.count()).select_from(Connection).where(*conn_where),
+        .where(contains_ci(Connection.name, term))
+        .order_by(_prefix_first(Connection.name, term), Connection.name, Connection.id),
         limit,
     )
     results.connections = [
@@ -170,33 +182,31 @@ def search(
     if more:
         results.truncated_groups.append("connections")
 
-    # Runs — matched by their suite's name (and by id prefix), newest first.
-    run_match: list[ColumnElement[bool]] = [Suite.name.ilike(pattern, escape="\\")]
-    if len(term) >= _RUN_ID_PREFIX_MIN and _looks_like_uuid_prefix(term):
-        run_match.append(cast(Run.id, String).like(f"{term.lower()}%"))
-    run_where = (
-        accessible_suite_filter(Run.suite_id, user_id, include_all=include_all),
-        or_(*run_match),
-    )
+    # Runs — those of a suite whose name matches (an indexable `suite_id IN (...)`), plus a run
+    # whose id starts with the term (a primary-key range); newest first.
+    matching_suites = select(Suite.id).where(Suite.id.in_(visible), contains_ci(Suite.name, term))
+    run_match: list[ColumnElement[bool]] = [Run.suite_id.in_(matching_suites)]
+    id_range = run_id_range(term)
+    if id_range is not None:
+        run_match.append(Run.id.between(*id_range))
     run_rows, more = _page(
         session,
         select(Run, Suite.name)
         .join(Suite, Suite.id == Run.suite_id)
-        .where(*run_where)
+        .where(
+            accessible_suite_filter(Run.suite_id, user_id, include_all=is_admin),
+            or_(*run_match),
+        )
         .order_by(Run.created_at.desc(), Run.id.desc()),
-        select(func.count())
-        .select_from(Run)
-        .join(Suite, Suite.id == Run.suite_id)
-        .where(*run_where),
         limit,
     )
     results.runs = [
         SearchHit(
             id=run.id,
             label=suite_name,
-            sublabel=run.status,
-            when=run.started_at or run.created_at,
+            sublabel=_run_sublabel(run, id_range),
             href=f"/results/{run.id}",
+            when=run.started_at or run.created_at,
         )
         for run, suite_name in run_rows
     ]
@@ -205,5 +215,8 @@ def search(
     return results
 
 
-def _looks_like_uuid_prefix(term: str) -> bool:
-    return all(ch in "0123456789abcdefABCDEF-" for ch in term)
+def _run_sublabel(run: Run, id_range: tuple[uuid.UUID, uuid.UUID] | None) -> str:
+    # A run that matched on its id says so — its suite's name alone would not explain the hit.
+    if id_range is not None and id_range[0] <= run.id <= id_range[1]:
+        return f"{run.status} · run {str(run.id)[:8]}…"
+    return run.status

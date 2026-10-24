@@ -79,14 +79,12 @@ def search(
     ],
     limit: Annotated[int, Query(ge=1, le=svc.MAX_LIMIT)] = svc.DEFAULT_LIMIT,
 ) -> SearchResponse:
-    admin = is_workspace_admin(current_user)
     found = svc.search(
         db,
         user_id=current_user.id,
         query=q,
         limit=limit,
-        include_all=admin,
-        is_admin=admin,
+        is_admin=is_workspace_admin(current_user),
     )
     return SearchResponse(
         query=found.query,

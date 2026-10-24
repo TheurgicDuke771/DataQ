@@ -139,6 +139,23 @@ def test_an_edit_share_opens_the_check_editor(
     assert body["groups"]["checks"][0]["href"] == f"/suites/{suite.id}/checks/{check.id}/edit"
 
 
+def test_a_viewer_with_an_edit_share_is_clamped_to_the_suite_page(
+    client: TestClient, db_session: Any, as_role: Callable[..., Principal]
+) -> None:
+    owner, _ = as_role("member")
+    viewer, headers = as_role("viewer")
+    conn = _connection(db_session, owner)
+    suite = _suite(db_session, owner, conn, "Orders quality")
+    _check(db_session, suite, "orders id not null")
+    db_session.add(Share(suite_id=suite.id, user_id=viewer.id, permission="edit"))
+    db_session.commit()
+
+    body = _search(client, headers, "orders id").json()
+
+    # The workspace Viewer role caps every grant at view (ADR 0033): no editor route.
+    assert body["groups"]["checks"][0]["href"] == f"/suites/{suite.id}"
+
+
 def test_a_workspace_admin_sees_every_suite_and_a_connection_page(
     client: TestClient, db_session: Any, as_role: Callable[..., Principal]
 ) -> None:
@@ -190,7 +207,7 @@ def test_like_wildcards_in_the_query_are_literal(
     assert labels == ["100% complete"]
 
 
-def test_a_run_matches_on_its_id_prefix(
+def test_a_run_matches_on_its_id_prefix_and_says_so(
     client: TestClient, db_session: Any, as_role: Callable[..., Principal]
 ) -> None:
     owner, headers = as_role("member")
@@ -201,9 +218,47 @@ def test_a_run_matches_on_its_id_prefix(
     hidden = _suite(db_session, other_owner, _connection(db_session, other_owner), "x")
     _run(db_session, hidden)
 
-    body = _search(client, headers, str(run.id)[:8]).json()
+    body = _search(client, headers, str(run.id)[:13]).json()  # first group + a hyphen + 4
 
     assert [h["id"] for h in body["groups"]["runs"]] == [str(run.id)]
+    assert body["groups"]["runs"][0]["sublabel"] == f"succeeded · run {str(run.id)[:8]}…"
+
+
+def test_a_short_hex_word_is_not_a_run_id_prefix(
+    client: TestClient, db_session: Any, as_role: Callable[..., Principal]
+) -> None:
+    owner, headers = as_role("member")
+    conn = _connection(db_session, owner)
+    suite = _suite(db_session, owner, conn, "Cafe sales")
+    run = _run(db_session, suite)
+
+    body = _search(client, headers, str(run.id)[:4]).json()
+
+    assert body["groups"]["runs"] == []
+
+
+@pytest.mark.parametrize(
+    ("term", "lo", "hi"),
+    [
+        (
+            "f105e319",
+            "f105e319-0000-0000-0000-000000000000",
+            "f105e319-ffff-ffff-ffff-ffffffffffff",
+        ),
+        (
+            "F105E319-5912",
+            "f105e319-5912-0000-0000-000000000000",
+            "f105e319-5912-ffff-ffff-ffffffffffff",
+        ),
+    ],
+)
+def test_run_id_range_covers_every_id_with_that_prefix(term: str, lo: str, hi: str) -> None:
+    assert search_service.run_id_range(term) == (uuid.UUID(lo), uuid.UUID(hi))
+
+
+@pytest.mark.parametrize("term", ["cafe", "2024", "f105e31", "g105e319", "f" * 33])
+def test_run_id_range_rejects_short_non_hex_and_over_long_terms(term: str) -> None:
+    assert search_service.run_id_range(term) is None
 
 
 def test_truncation_is_reported_from_the_real_count_not_the_page_length(
