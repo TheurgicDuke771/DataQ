@@ -3764,6 +3764,22 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   ([Orchestration](orchestration.md)).
 - **API / MCP** — `POST /suites/{id}/run`, or the `trigger_suite_run` MCP tool.
 
+## Finding things — global search (⌘K / Ctrl K)
+
+- **One search box for the whole workspace.** Press **⌘K** (macOS) or **Ctrl K**, or use the
+  **Search** button in the header, from any page. Type part of a name and the palette lists
+  matching **suites, checks, connections and runs** as you type; a run is listed under its
+  suite's name with its status and start time, and a run's id prefix also matches.
+- **Keyboard first.** ↑/↓ move through the results, **Enter** opens the highlighted one,
+  **Esc** closes and puts focus back where it was. Prefix matches rank first; a group with
+  more matches than it shows says so — keep typing to narrow it.
+- **Your access, nothing more.** Results follow the same rules as the lists: a suite that is
+  not shared with you is absent, and so are its checks and runs; a check you may only view
+  opens on its suite rather than in the editor. Connections are listed for everyone, and open
+  on their own page only for a workspace admin.
+- **For API clients and assistants**, the same read is `GET /api/v1/search?q=…`
+  ([API reference](../reference/rest-api.md)).
+
 ## Results, dashboard & history
 
 - **Monitoring dashboard** — **leads with asset-level health** (how many assets are
@@ -5250,6 +5266,11 @@ section below.
   (`GET /assets/{id}`, MCP `get_asset`) lists the detections, dismissed ones included, each with
   what it does now (masks, overridden by the column's own warehouse tag, or dismissed), and when a
   full profile last looked, so an empty list is never mistaken for "never looked".
+- **Global search (⌘K / Ctrl K).** A search button in the header, or the shortcut from anywhere
+  in the app, opens a command palette that finds suites, checks, connections and runs by name
+  as you type, with the arrow keys to move, Enter to open and Escape to close. Results follow
+  your access: a suite you cannot see is absent, and so are its checks and runs. The same read
+  is available to API clients as `GET /api/v1/search`.
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**

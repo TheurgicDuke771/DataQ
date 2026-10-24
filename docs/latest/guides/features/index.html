@@ -925,6 +925,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#finding-things-global-search-k-ctrl-k" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding things — global search (⌘K / Ctrl K)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#results-dashboard-history" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2648,6 +2659,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#finding-things-global-search-k-ctrl-k" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Finding things — global search (⌘K / Ctrl K)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#results-dashboard-history" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2897,6 +2919,22 @@ schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
 <li><strong>Pipeline trigger</strong> — runs automatically when a bound ADF / Airflow / dbt run <strong>succeeds</strong>
   (<a href="../orchestration/">Orchestration</a>).</li>
 <li><strong>API / MCP</strong> — <code>POST /suites/{id}/run</code>, or the <code>trigger_suite_run</code> MCP tool.</li>
+</ul>
+<h2 id="finding-things-global-search-k-ctrl-k">Finding things — global search (⌘K / Ctrl K)<a class="headerlink" href="#finding-things-global-search-k-ctrl-k" title="Permanent link">¶</a></h2>
+<ul>
+<li><strong>One search box for the whole workspace.</strong> Press <strong>⌘K</strong> (macOS) or <strong>Ctrl K</strong>, or use the
+  <strong>Search</strong> button in the header, from any page. Type part of a name and the palette lists
+  matching <strong>suites, checks, connections and runs</strong> as you type; a run is listed under its
+  suite's name with its status and start time, and a run's id prefix also matches.</li>
+<li><strong>Keyboard first.</strong> ↑/↓ move through the results, <strong>Enter</strong> opens the highlighted one,
+  <strong>Esc</strong> closes and puts focus back where it was. Prefix matches rank first; a group with
+  more matches than it shows says so — keep typing to narrow it.</li>
+<li><strong>Your access, nothing more.</strong> Results follow the same rules as the lists: a suite that is
+  not shared with you is absent, and so are its checks and runs; a check you may only view
+  opens on its suite rather than in the editor. Connections are listed for everyone, and open
+  on their own page only for a workspace admin.</li>
+<li><strong>For API clients and assistants</strong>, the same read is <code>GET /api/v1/search?q=…</code>
+  (<a href="../../reference/rest-api/">API reference</a>).</li>
 </ul>
 <h2 id="results-dashboard-history">Results, dashboard &amp; history<a class="headerlink" href="#results-dashboard-history" title="Permanent link">¶</a></h2>
 <ul>

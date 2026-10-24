@@ -128,6 +128,11 @@ section below.
   (`GET /assets/{id}`, MCP `get_asset`) lists the detections, dismissed ones included, each with
   what it does now (masks, overridden by the column's own warehouse tag, or dismissed), and when a
   full profile last looked, so an empty list is never mistaken for "never looked".
+- **Global search (⌘K / Ctrl K).** A search button in the header, or the shortcut from anywhere
+  in the app, opens a command palette that finds suites, checks, connections and runs by name
+  as you type, with the arrow keys to move, Enter to open and Escape to close. Results follow
+  your access: a suite you cannot see is absent, and so are its checks and runs. The same read
+  is available to API clients as `GET /api/v1/search`.
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
