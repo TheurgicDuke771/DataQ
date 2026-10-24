@@ -36,6 +36,7 @@ from backend.app.services import (
     gate_service,
     orchestration_service,
     privacy_settings_service,
+    run_comparison,
     run_dispatch,
     suite_service,
     trigger_labels,
@@ -171,6 +172,80 @@ class PipelineRunRead(ApiModel):
     #: colliding `triggered_by` marker fails closed to `[]` instead of claiming another
     #: row's run (#1728). Visibility-scoped like `/runs`.
     triggered_run_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class ComparisonCheckRead(ApiModel):
+    """A check's identity as it WAS when one side's result was written (from
+    `check_versions`), never its current state — the two sides of a row may differ.
+    """
+
+    name: str | None
+    kind: str | None
+    engine: str
+    expectation_type: str | None
+    dimension: str | None
+    column: str | None
+
+
+class ComparisonSideRead(ApiModel):
+    """One run's result for a check. `observed_value` is redacted exactly as on
+    `GET /runs/{id}`; failing-row samples are never carried here.
+    """
+
+    result_id: uuid.UUID
+    status: str  # pass | warn | fail | critical | skip | error
+    metric_value: float | None
+    observed_value: dict[str, Any] | None
+    check: ComparisonCheckRead
+
+
+class ComparisonDeltaRead(ApiModel):
+    """`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;
+    `changed` is a transition through `skip`/`error`, which carry no rank;
+    `added`/`removed` mean the check has a result on only one side. `metric_delta`
+    is target minus base, `metric_delta_pct` relative to a non-zero base; both null
+    when either side has no metric.
+    """
+
+    status_change: run_comparison.StatusChange
+    metric_delta: float | None
+    metric_delta_pct: float | None
+    metric_changed: bool
+
+
+class ComparisonRowRead(ApiModel):
+    check_id: uuid.UUID
+    #: The target side's check name, else the base side's (a removed check).
+    label: str
+    base: ComparisonSideRead | None
+    target: ComparisonSideRead | None
+    delta: ComparisonDeltaRead
+
+
+class ComparisonRunRead(RunRead):
+    #: False while the run is queued or running — its side of the diff is partial.
+    results_final: bool
+
+
+class ComparisonSummaryRead(ApiModel):
+    changed: int
+    unchanged: int
+    improved: int
+    regressed: int
+    added: int
+    removed: int
+    metric_changed: int
+
+
+class RunComparisonRead(ApiModel):
+    """Two runs of one suite diffed check by check: `base` is the run in the path,
+    `target` the other. Rows are ordered by label.
+    """
+
+    base: ComparisonRunRead
+    target: ComparisonRunRead
+    summary: ComparisonSummaryRead
+    rows: list[ComparisonRowRead]
 
 
 _OUTCOME_FIELDS = ("checks_total", "checks_passed", "worst_severity")
@@ -410,6 +485,48 @@ def get_run(
     return RunDetailRead(
         **run_reads(db, [run], outcomes)[0].model_dump(),
         results=reads,
+    )
+
+
+def _visible_run(db: Session, run_id: uuid.UUID, user: User) -> tuple[Any, Any]:
+    """The run and its suite, or 404 — the same existence-hiding gate as `GET /runs/{id}`."""
+    run = svc.get_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    return run, require_permission(db, run.suite_id, user.id, minimum="view")
+
+
+@router.get(
+    "/runs/{run_id}/compare/{other_run_id}",
+    response_model=RunComparisonRead,
+    summary="Compare two runs of a suite check by check",
+    responses={
+        422: {
+            "description": "`runs_not_comparable` — the runs belong to different suites, "
+            "or the same run was given twice."
+        }
+    },
+)
+def compare_runs(
+    run_id: uuid.UUID,
+    other_run_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RunComparisonRead:
+    base, suite = _visible_run(db, run_id, current_user)
+    target, _ = _visible_run(db, other_run_id, current_user)
+    diff = run_comparison.compare_runs(
+        db, base=base, target=target, suite=suite, actor=current_user
+    )
+    outcomes = svc.check_outcome_counts(db, [base.id, target.id])
+    base_read, target_read = run_reads(db, [base, target], outcomes)
+    return RunComparisonRead(
+        base=ComparisonRunRead(**base_read.model_dump(), results_final=diff.base_results_final),
+        target=ComparisonRunRead(
+            **target_read.model_dump(), results_final=diff.target_results_final
+        ),
+        summary=ComparisonSummaryRead(**diff.summary),
+        rows=[ComparisonRowRead.model_validate(row, from_attributes=True) for row in diff.rows],
     )
 
 

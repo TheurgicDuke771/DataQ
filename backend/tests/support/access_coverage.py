@@ -34,6 +34,9 @@ AUDITED: Final[dict[str, str]] = {
     # primitive, which #1649's additional-table profiling also calls directly.
     "services/llm_prompt_context.py::masked_profile_for_target": "column.profile",
     "mcp/server.py::dryrun_check": "check.dryrun",
+    # Run comparison: each side's `observed_value` goes through the run-detail
+    # redactor; one event per run compared, written by `compare_runs`.
+    "services/run_comparison.py::_sides": "run_results.read",
 }
 
 #: Redactor call sites that do NOT record an access event, each with the reason.

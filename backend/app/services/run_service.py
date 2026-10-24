@@ -714,6 +714,11 @@ _TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _NON_TERMINAL_STATUSES = frozenset(RUN_STATUSES) - _TERMINAL_STATUSES
 
 
+def results_final(run: Run) -> bool:
+    """Whether a run's results can still change — False while it is queued or running."""
+    return run.status in _TERMINAL_STATUSES
+
+
 def cancel_run(session: Session, run: Run) -> bool:
     """Transition a non-terminal run to ``cancelled``; return whether it changed."""
     if run.status in _TERMINAL_STATUSES:
@@ -1283,6 +1288,52 @@ def historical_check_kind(
         if effective is not None:
             return effective.kind
         return check.kind if check else None
+
+    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
+
+
+@dataclass(frozen=True)
+class CheckAsOf:
+    """A check's editable identity as it WAS at one instant — every field a
+    `CheckVersion` snapshots, so a result is never relabelled by a later edit.
+    """
+
+    name: str | None
+    kind: str | None
+    engine: str
+    expectation_type: str | None
+    dimension: str | None
+    column: str | None
+
+
+def historical_check_snapshots(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, CheckAsOf]:
+    """Per-**result** `CheckAsOf`, each resolved as of WHEN that result was written —
+    the `historical_check_context` rule widened to the whole snapshot (name, kind,
+    engine, dimension) for a surface that renders two instants side by side.
+    """
+    check_ids = {r.check_id for r in results if r.check_id is not None}
+    versions_by_check = _versions_by_check(session, check_ids)
+
+    def _resolve(check_id: uuid.UUID | None, at: datetime) -> CheckAsOf:
+        check = checks.get(check_id) if check_id is not None else None
+        effective = _effective_version(
+            versions_by_check.get(check_id) if check_id is not None else None, at
+        )
+        source: CheckVersion | Check | None = effective if effective is not None else check
+        if source is None:
+            return CheckAsOf(None, None, GX_ENGINE, None, None, None)
+        return CheckAsOf(
+            name=source.name,
+            kind=source.kind,
+            engine=source.engine or GX_ENGINE,
+            expectation_type=source.expectation_type,
+            dimension=source.dimension,
+            column=source.config.get("column"),
+        )
 
     return {r.id: _resolve(r.check_id, r.created_at) for r in results}
 
