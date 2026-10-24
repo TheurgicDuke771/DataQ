@@ -28,7 +28,7 @@ export const ROUTE_PATTERNS = [
   '/admin/integrations',
 ] as const;
 
-type Row = { id: string; suite_id?: string };
+type Row = { id: string; suite_id?: string; created_at?: string };
 /** Reads one API list (path under /api/v1) — live while recording, from the recording after. */
 export type ListReader = (path: string) => Promise<Row[]>;
 
@@ -60,14 +60,17 @@ export async function discoverRoutes(list: ListReader): Promise<string[]> {
       case '/results/:id':
         return runs.map((r) => `/results/${r.id}`);
       case '/results/:id/compare/:id': {
-        // One comparison per suite: its two most recent runs, the older one as the base.
+        // One comparison per suite: its two most recent runs, the older one as the base. Sorted
+        // here on `created_at` rather than trusting the list's order.
         const bySuite = new Map<string, Row[]>();
         for (const r of runs) {
           if (!r.suite_id) continue;
           bySuite.set(r.suite_id, [...(bySuite.get(r.suite_id) ?? []), r]);
         }
+        const createdAt = (r: Row) => (r.created_at ? Date.parse(r.created_at) : 0);
         return [...bySuite.values()]
           .filter((list) => list.length >= 2)
+          .map((list) => [...list].sort((a, b) => createdAt(b) - createdAt(a)))
           .map(([newest, older]) => `/results/${older.id}/compare/${newest.id}`);
       }
       default:

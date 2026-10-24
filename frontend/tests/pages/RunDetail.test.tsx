@@ -702,7 +702,8 @@ describe('RunDetail page', () => {
     const user = userEvent.setup();
 
     await region.findByText('Orders quality');
-    expect(mockListRuns).toHaveBeenCalledWith({ suite_id: 's1', limit: 20 });
+    // One more than the menu shows, because the page includes the run itself.
+    expect(mockListRuns).toHaveBeenCalledWith({ suite_id: 's1', limit: 21 });
     await user.click(
       region.getByRole('button', { name: 'Compare with another run of this suite' }),
     );

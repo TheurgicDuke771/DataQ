@@ -40,15 +40,16 @@ describe('demo route coverage', () => {
   });
 
   it('expands every pattern into the seeded rows', async () => {
-    const lists: Record<string, { id: string; suite_id?: string }[]> = {
+    const lists: Record<string, { id: string; suite_id?: string; created_at?: string }[]> = {
       '/suites': [{ id: 's1' }, { id: 's2' }],
       '/connections': [{ id: 'c1' }],
       '/assets': [{ id: 'a1' }],
-      // Newest first, as `/runs` lists them; s2 has a single run and so no comparison.
+      // Deliberately NOT newest first: the expansion must order by `created_at` itself. s2 has a
+      // single run and so no comparison.
       '/runs': [
-        { id: 'r1', suite_id: 's1' },
-        { id: 'r0', suite_id: 's1' },
-        { id: 'r9', suite_id: 's2' },
+        { id: 'r0', suite_id: 's1', created_at: '2026-06-10T00:00:00Z' },
+        { id: 'r1', suite_id: 's1', created_at: '2026-06-11T00:00:00Z' },
+        { id: 'r9', suite_id: 's2', created_at: '2026-06-11T00:00:00Z' },
       ],
       '/suites/s1/checks': [{ id: 'k1' }],
       '/suites/s2/checks': [],

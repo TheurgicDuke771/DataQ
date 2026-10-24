@@ -71,7 +71,9 @@ const ACTIVE_INCIDENT_STATUSES = new Set(['open', 'acknowledged']);
  * comparison buckets, anomaly stats) is unbounded in principle.
  */
 const OBSERVED_COLUMN_WIDTH = 220;
-/** How many of the suite's most recent runs the "Compare with…" menu offers. */
+/** How many of the suite's most recent OTHER runs the "Compare with…" menu offers (the page
+ *  fetched includes the run itself, hence the +1 below). An older run is still comparable by
+ *  URL — `/results/<older>/compare/<this>` — or through the API. */
 const COMPARE_CANDIDATES = 20;
 
 /**
@@ -106,8 +108,8 @@ export function RunDetail() {
         : Promise.resolve([] as Incident[]),
       // The other runs of this suite, newest first, for "Compare with…". A failed read only
       // loses the menu, never the page.
-      listRuns({ suite_id: run.suite_id, limit: COMPARE_CANDIDATES }).then(
-        (page) => page.items.filter((r) => r.id !== run.id),
+      listRuns({ suite_id: run.suite_id, limit: COMPARE_CANDIDATES + 1 }).then(
+        (page) => page.items.filter((r) => r.id !== run.id).slice(0, COMPARE_CANDIDATES),
         () => [] as Run[],
       ),
     ]);

@@ -324,11 +324,15 @@ function ComparisonTable({ rows }: { rows: ComparisonRow[] }) {
       title: 'Δ metric',
       key: 'delta',
       align: 'right',
-      render: (_, row) => (
-        <Typography.Text type={row.delta.metric_changed ? undefined : 'secondary'}>
-          {formatMetricDelta(row.delta.metric_delta, row.delta.metric_delta_pct)}
-        </Typography.Text>
-      ),
+      render: (_, row) =>
+        row.delta.metric_changed && row.delta.metric_delta === null ? (
+          // Both sides exist and only one carries a metric: changed, but no difference to state.
+          <Typography.Text type="secondary">one side only</Typography.Text>
+        ) : (
+          <Typography.Text type={row.delta.metric_changed ? undefined : 'secondary'}>
+            {formatMetricDelta(row.delta.metric_delta, row.delta.metric_delta_pct)}
+          </Typography.Text>
+        ),
     },
   ];
 

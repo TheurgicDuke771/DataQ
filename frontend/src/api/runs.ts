@@ -252,6 +252,8 @@ export interface ComparisonDelta {
   metric_delta: number | null;
   /** Relative to a non-zero base; null otherwise. */
   metric_delta_pct: number | null;
+  /** True whenever the two metrics differ — including when only ONE side has one, in which case
+   *  both deltas above are null because no difference can be stated. */
   metric_changed: boolean;
 }
 
@@ -297,6 +299,7 @@ export function compareRunsPath(
   a: Pick<Run, 'id' | 'created_at'>,
   b: Pick<Run, 'id' | 'created_at'>,
 ): string {
-  const [base, target] = a.created_at <= b.created_at ? [a, b] : [b, a];
+  // Parsed, not compared as strings: `…:00Z` sorts after `…:00.250000Z` lexically.
+  const [base, target] = Date.parse(a.created_at) <= Date.parse(b.created_at) ? [a, b] : [b, a];
   return `/results/${base.id}/compare/${target.id}`;
 }

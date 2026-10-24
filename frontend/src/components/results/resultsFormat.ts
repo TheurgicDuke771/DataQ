@@ -62,11 +62,15 @@ export function formatScalar(value: unknown): string {
  */
 export function formatMetricDelta(delta: number | null, pct: number | null): string {
   if (delta === null) return '—';
-  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
-  const abs = formatScalar(Math.abs(delta));
-  if (pct === null) return `${sign}${abs}`;
-  const pctSign = pct > 0 ? '+' : pct < 0 ? '−' : '';
-  return `${sign}${abs} (${pctSign}${formatScalar(Math.abs(Math.round(pct * 10) / 10))}%)`;
+  // Rounded first, then signed, so float noise (1.1799999999999926) and a −0.04% that rounds to
+  // zero never show a sign on a zero.
+  const signed = (value: number, decimals: number): string => {
+    const rounded = Math.round(value * 10 ** decimals) / 10 ** decimals;
+    const sign = rounded > 0 ? '+' : rounded < 0 ? '−' : '';
+    return `${sign}${formatScalar(Math.abs(rounded))}`;
+  };
+  if (pct === null) return signed(delta, 4);
+  return `${signed(delta, 4)} (${signed(pct, 1)}%)`;
 }
 
 /** True when `iso` falls within the last `windowDays` days (inclusive). */
