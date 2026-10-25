@@ -3,7 +3,7 @@
 - **Status:** Accepted (2026-10-25)
 - **Date:** 2026-10-25
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0004](0004-orchestration-abstraction.md) (the `OrchestrationProvider` contract), [0011](0011-provider-agnostic-trigger-bindings.md) (`trigger_bindings` as the provider-agnostic trigger key), [0029](0029-dbt-orchestration-provider.md) (the last time the provider value-set widened), [0046](0046-pipeline-dq-gate.md) (the gate, which this does **not** extend), [0027](0027-suite-permission-model-workspace-admin.md) (per-suite `view`/`edit`).
+- **Related:** ADR [0004](0004-orchestration-abstraction.md) (the `OrchestrationProvider` contract), [0011](0011-extensibility-seams-for-deferred-integrations.md) (`trigger_bindings` as the provider-agnostic trigger key), [0029](0029-dbt-orchestration-provider.md) (the last time the provider value-set widened), [0046](0046-pipeline-dq-gate.md) (the gate, which this does **not** extend), [0027](0027-suite-permission-model-workspace-admin.md) (per-suite `view`/`edit`).
 
 ## Context
 
