@@ -44,8 +44,14 @@ test('a revoked session drops the app WITHOUT a navigation, on the next API 401'
   await revokeServerSide(page, session);
   await page.context().addCookies([session]);
 
-  // A same-page action that hits the API. Client-side routing only — no reload.
-  await page.getByRole('link', { name: 'Suites' }).click();
+  // A same-page action that hits the API. Client-side routing only — no reload. The header's
+  // notification bell and the dashboard's own fetches are background API calls, so the 401 that
+  // drops the app may already have landed before this click — in which case the link is gone
+  // and the property under test (dropped WITHOUT a navigation) has already held.
+  const suites = page.getByRole('link', { name: 'Suites' });
+  if (await suites.isVisible()) {
+    await suites.click({ timeout: 5_000 }).catch(() => undefined);
+  }
   await expect(page.getByLabel('Email address')).toBeVisible();
 });
 
