@@ -108,6 +108,11 @@ DQ_DIMENSIONS = (
 )
 PIPELINE_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 ORCHESTRATION_PROVIDERS = ("adf", "airflow", "dbt")
+# ADR 0051: a suite's own success is a trigger source but NOT an orchestration provider — no
+# connection type, no pipeline_runs row, no poller. Only `trigger_bindings` and the run marker
+# know this value.
+SUITE_TRIGGER_PROVIDER = "suite"
+TRIGGER_PROVIDERS = (*ORCHESTRATION_PROVIDERS, SUITE_TRIGGER_PROVIDER)
 PERMISSIONS = ("view", "edit", "admin")
 # Coarse workspace roles (ADR 0033) — orthogonal to per-suite PERMISSIONS; neither replaces the
 # other.
@@ -834,7 +839,7 @@ class Run(Base):
             unique=True,
             postgresql_where=text(
                 "triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%' "
-                "OR triggered_by LIKE 'dbt:%'"
+                "OR triggered_by LIKE 'dbt:%' OR triggered_by LIKE 'suite:%'"
             ),
         ),
         # #1715: `markers.triggered_runs` looks runs up by marker alone, which the index above
@@ -1057,7 +1062,7 @@ class PipelineRun(Base):
 class TriggerBinding(Base):
     __tablename__ = "trigger_bindings"
     __table_args__ = (
-        _in_check("provider", ORCHESTRATION_PROVIDERS, "provider_valid"),
+        _in_check("provider", TRIGGER_PROVIDERS, "provider_valid"),
         _in_check("env", ENVS, "env_valid"),
         UniqueConstraint(
             "provider",

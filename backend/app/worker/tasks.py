@@ -58,6 +58,7 @@ from backend.app.services import (
     secret_sweep_service,
     stateful_monitors,
     suite_service,
+    suite_trigger_service,
     workspace_health_service,
 )
 from backend.app.services.failure_classifier import (
@@ -309,10 +310,21 @@ def run_suite(
             incident_service.sync_incidents_for_run(session, run_id=rid)
             alert_dispatch.publish_run_outcome(session, run_id=rid)
             _alert_datasource_health_for_run(session, run_id=rid)
+            _fire_suite_triggers(session, run_id=rid)
             return outcome
     finally:
         run_admission.release(rid)
         session.close()
+
+
+def _fire_suite_triggers(session: Session, *, run_id: uuid.UUID) -> None:
+    """ADR 0051: a passed run queues the suites bound to it. Fail-soft like the hooks before
+    it — a broken follower must never fail the run that completed."""
+    try:
+        suite_trigger_service.fire_for_run(session, run_id=run_id)
+    except Exception:
+        log.exception("suite_trigger_failed", run_id=str(run_id))
+        session.rollback()
 
 
 def _admit_run(

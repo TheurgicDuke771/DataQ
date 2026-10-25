@@ -27,9 +27,29 @@ from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import PipelineRun, Run
+from backend.app.db.models import SUITE_TRIGGER_PROVIDER, PipelineRun, Run
 
 log = get_logger(__name__)
+
+
+def suite_marker(suite_id: uuid.UUID, run_id: uuid.UUID) -> str:
+    """ADR 0051: ``suite:<upstream suite>:<upstream run>`` — the one marker whose parts are both
+    UUIDs, so unlike the orchestrator markers it can be split back apart."""
+    return f"{SUITE_TRIGGER_PROVIDER}:{suite_id}:{run_id}"
+
+
+def parse_suite_marker(marker: str | None) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """``(upstream suite id, upstream run id)`` for a ``suite:`` marker, else ``None``."""
+    if not marker:
+        return None
+    provider, _, rest = marker.partition(":")
+    if provider != SUITE_TRIGGER_PROVIDER:
+        return None
+    suite_text, _, run_text = rest.partition(":")
+    try:
+        return uuid.UUID(suite_text), uuid.UUID(run_text)
+    except ValueError:
+        return None
 
 
 def pipeline_run_marker(pipeline_run: PipelineRun) -> str:

@@ -20,9 +20,13 @@ router = APIRouter(tags=["trigger-bindings"])
 
 
 class TriggerBindingCreate(ApiRequestModel):
+    #: `adf` | `airflow` | `dbt`, or `suite` (ADR 0051: run this suite when another suite passes).
     provider: str
+    #: The pipeline / DAG / job id — or, for `provider='suite'`, the upstream suite's id.
     pipeline_or_dag_id: str = Field(min_length=1, max_length=256)
-    env: str
+    #: Required for an orchestration provider; for `provider='suite'` it is the upstream suite's
+    #: connection env and anything sent is ignored.
+    env: str | None = None
     suite_id: uuid.UUID
     enabled: bool = True
 

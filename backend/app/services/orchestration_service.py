@@ -62,7 +62,8 @@ def validate_read_filters(
 # Predicate of the partial unique index `uq_runs_suite_triggered_by` (#308) — kept identical to the
 # migration and the model's `postgresql_where`.
 _ORCH_TRIGGER_PREDICATE = text(
-    "triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%' OR triggered_by LIKE 'dbt:%'"
+    "triggered_by LIKE 'adf:%' OR triggered_by LIKE 'airflow:%' OR triggered_by LIKE 'dbt:%' "
+    "OR triggered_by LIKE 'suite:%'"
 )
 
 # Terminal pipeline-run statuses — a run in one of these won't transition again, so the poll's

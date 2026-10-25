@@ -577,3 +577,36 @@ def test_run_suite_drives_the_datasource_health_edges(monkeypatch: Any) -> None:
     # After the outcome publish: the run's own report goes first, the connection -level edge second,
     # so an operator reads "this run failed" before "this connection looks dead".
     assert calls == ["outcome", "health"]
+
+
+def test_run_suite_fires_suite_triggers_last_and_fail_soft(monkeypatch: Any) -> None:
+    """ADR 0051: the followers are queued after every alert hook, and a broken trigger never
+    fails the run that completed."""
+    from backend.app.worker import tasks
+
+    calls: list[str] = []
+    session = FakeSession()
+    monkeypatch.setattr(tasks, "get_session", lambda: _sess(session))
+    monkeypatch.setattr(tasks, "_run_suite", lambda *_a, **_k: "succeeded")
+    from backend.app.alerting import dispatch as alert_dispatch
+    from backend.app.lineage import dispatch as lineage_dispatch
+    from backend.app.services import incident_service, suite_trigger_service
+
+    monkeypatch.setattr(lineage_dispatch, "emit_run_lineage_start", lambda *_a, **_k: None)
+    monkeypatch.setattr(lineage_dispatch, "emit_run_lineage_terminal", lambda *_a, **_k: None)
+    monkeypatch.setattr(incident_service, "sync_incidents_for_run", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        alert_dispatch, "publish_run_outcome", lambda *_a, **_k: calls.append("outcome")
+    )
+    monkeypatch.setattr(
+        tasks, "_alert_datasource_health_for_run", lambda *_a, **_k: calls.append("health")
+    )
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        calls.append("suite_triggers")
+        raise RuntimeError("binding table on fire")
+
+    monkeypatch.setattr(suite_trigger_service, "fire_for_run", _boom)
+
+    assert tasks.run_suite(str(uuid.uuid4())) == "succeeded"
+    assert calls == ["outcome", "health", "suite_triggers"]

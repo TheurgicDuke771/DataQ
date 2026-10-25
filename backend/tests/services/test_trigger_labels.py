@@ -57,6 +57,38 @@ def test_orchestration_marker_keeps_the_remainder_whole(db_session: Any) -> None
     }
 
 
+def test_suite_marker_names_the_upstream_suite(db_session: Any) -> None:
+    # ADR 0051: the one marker that splits — the upstream suite is named, the run id is not shown.
+    from backend.app.db.models import Connection, Suite, User
+
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"l-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(name="pg", type="postgres", env="dev", config={}, created_by=owner.id)
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name="orders upstream", connection_id=conn.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.commit()
+    marker = f"suite:{suite.id}:{uuid.uuid4()}"
+    gone = f"suite:{uuid.uuid4()}:{uuid.uuid4()}"
+
+    # The owner (or a workspace admin) sees the name; a viewer with no grant on the upstream,
+    # and a call with no viewer at all, get the kind only — the name must not leak.
+    assert trigger_labels(db_session, [marker, gone], viewer_id=owner.id) == {
+        marker: "Suite — orders upstream",
+        gone: "Suite",
+    }
+    stranger = User(aad_object_id=uuid.uuid4().hex, email=f"s-{uuid.uuid4().hex[:8]}@example.com")
+    db_session.add(stranger)
+    db_session.commit()
+    assert trigger_labels(db_session, [marker], viewer_id=stranger.id) == {marker: "Suite"}
+    assert trigger_labels(db_session, [marker], viewer_id=stranger.id, include_all=True) == {
+        marker: "Suite — orders upstream"
+    }
+    assert trigger_labels(db_session, [marker]) == {marker: "Suite"}
+
+
 def test_every_registered_provider_has_a_label() -> None:
     assert set(PROVIDER_LABELS) == set(_PROVIDERS)
 

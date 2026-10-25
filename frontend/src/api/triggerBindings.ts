@@ -9,10 +9,17 @@ import { api } from './client';
 export const ORCHESTRATION_PROVIDERS = ['adf', 'airflow', 'dbt'] as const;
 export type OrchestrationProvider = (typeof ORCHESTRATION_PROVIDERS)[number];
 
-export const PROVIDER_LABELS: Record<OrchestrationProvider, string> = {
+/** A suite's own success is a trigger source too (ADR 0051) — never an orchestration provider. */
+export const SUITE_TRIGGER_PROVIDER = 'suite' as const;
+/** Mirrors the backend `TRIGGER_PROVIDERS`: everything a binding's `provider` may be. */
+export const TRIGGER_PROVIDERS = [...ORCHESTRATION_PROVIDERS, SUITE_TRIGGER_PROVIDER] as const;
+export type TriggerProvider = (typeof TRIGGER_PROVIDERS)[number];
+
+export const PROVIDER_LABELS: Record<TriggerProvider, string> = {
   adf: 'Azure Data Factory',
   airflow: 'Apache Airflow',
   dbt: 'dbt',
+  suite: 'Another suite (on success)',
 };
 
 /**
@@ -38,7 +45,8 @@ export interface TriggerBindingWarning {
 /** Mirrors the backend `TriggerBindingRead`. */
 export interface TriggerBinding {
   id: string;
-  provider: OrchestrationProvider;
+  provider: TriggerProvider;
+  /** The pipeline / DAG / job id — or, for `provider: 'suite'`, the upstream suite's id. */
   pipeline_or_dag_id: string;
   env: string;
   suite_id: string;
@@ -49,9 +57,10 @@ export interface TriggerBinding {
 
 /** Mirrors `TriggerBindingCreate`. */
 export interface TriggerBindingCreate {
-  provider: OrchestrationProvider;
+  provider: TriggerProvider;
   pipeline_or_dag_id: string;
-  env: string;
+  /** Required for an orchestration provider; omitted for `suite` (the server derives it). */
+  env?: string;
   suite_id: string;
   enabled?: boolean;
 }

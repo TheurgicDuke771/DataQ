@@ -28,6 +28,7 @@ from backend.app.db.models import (
     CONNECTION_TYPES,
     LLM_INVOCATION_KINDS,
     ORCHESTRATION_PROVIDERS,
+    SUITE_TRIGGER_PROVIDER,
 )
 
 if TYPE_CHECKING:
@@ -121,6 +122,7 @@ TRIGGER_KINDS: Final[tuple[str, ...]] = (
     "probe",
     "other",
     *ORCHESTRATION_PROVIDERS,
+    SUITE_TRIGGER_PROVIDER,
 )
 RUN_OUTCOMES: Final[tuple[str, ...]] = ("succeeded", "failed", "cancelled", "other")
 ALERT_CHANNELS: Final[tuple[str, ...]] = ("teams", "slack", "email", "webhook", "in_app")

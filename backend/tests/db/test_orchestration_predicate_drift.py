@@ -1,10 +1,11 @@
-"""#457 — trip-wire for partial-index / predicate drift across OrchestrationProviders."""
+"""#457 — trip-wire for partial-index / predicate drift across trigger providers (the
+orthestration ones plus `suite`, ADR 0051): the dedup index must name exactly that set."""
 
 from __future__ import annotations
 
 import re
 
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Run
+from backend.app.db.models import TRIGGER_PROVIDERS, Run
 from backend.app.services.orchestration_service import _ORCH_TRIGGER_PREDICATE
 
 _PREFIX_RE = re.compile(r"triggered_by LIKE '([a-z_]+):%'")
@@ -21,14 +22,14 @@ def _model_predicate() -> str:
     raise AssertionError("uq_runs_suite_triggered_by is missing from Run.__table_args__")
 
 
-def test_model_partial_index_covers_every_orchestration_provider() -> None:
+def test_model_partial_index_covers_every_trigger_provider() -> None:
     """The dedup index's predicate must name every provider — no more, no fewer."""
-    assert _covered_prefixes(_model_predicate()) == set(ORCHESTRATION_PROVIDERS)
+    assert _covered_prefixes(_model_predicate()) == set(TRIGGER_PROVIDERS)
 
 
-def test_service_upsert_predicate_covers_every_orchestration_provider() -> None:
+def test_service_upsert_predicate_covers_every_trigger_provider() -> None:
     """The `ON CONFLICT` predicate must match the index it targets."""
-    assert _covered_prefixes(str(_ORCH_TRIGGER_PREDICATE)) == set(ORCHESTRATION_PROVIDERS)
+    assert _covered_prefixes(str(_ORCH_TRIGGER_PREDICATE)) == set(TRIGGER_PROVIDERS)
 
 
 def test_model_and_service_predicates_agree() -> None:
