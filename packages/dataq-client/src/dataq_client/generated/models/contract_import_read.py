@@ -25,6 +25,7 @@ class ContractImportRead:
         contract (ContractRead):
         created_suite_ids (list[UUID]):
         reconciled_suite_ids (list[UUID]):
+        retired_suite_ids (list[UUID]):
         untargeted_objects (list[str]):
         warnings (list[str]):
     """
@@ -35,6 +36,7 @@ class ContractImportRead:
     contract: ContractRead
     created_suite_ids: list[UUID]
     reconciled_suite_ids: list[UUID]
+    retired_suite_ids: list[UUID]
     untargeted_objects: list[str]
     warnings: list[str]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -58,6 +60,11 @@ class ContractImportRead:
             reconciled_suite_ids_item = str(reconciled_suite_ids_item_data)
             reconciled_suite_ids.append(reconciled_suite_ids_item)
 
+        retired_suite_ids = []
+        for retired_suite_ids_item_data in self.retired_suite_ids:
+            retired_suite_ids_item = str(retired_suite_ids_item_data)
+            retired_suite_ids.append(retired_suite_ids_item)
+
         untargeted_objects = self.untargeted_objects
 
         warnings = self.warnings
@@ -72,6 +79,7 @@ class ContractImportRead:
                 "contract": contract,
                 "created_suite_ids": created_suite_ids,
                 "reconciled_suite_ids": reconciled_suite_ids,
+                "retired_suite_ids": retired_suite_ids,
                 "untargeted_objects": untargeted_objects,
                 "warnings": warnings,
             }
@@ -106,6 +114,13 @@ class ContractImportRead:
 
             reconciled_suite_ids.append(reconciled_suite_ids_item)
 
+        retired_suite_ids = []
+        _retired_suite_ids = d.pop("retired_suite_ids")
+        for retired_suite_ids_item_data in _retired_suite_ids:
+            retired_suite_ids_item = UUID(retired_suite_ids_item_data)
+
+            retired_suite_ids.append(retired_suite_ids_item)
+
         untargeted_objects = cast(list[str], d.pop("untargeted_objects"))
 
         warnings = cast(list[str], d.pop("warnings"))
@@ -117,6 +132,7 @@ class ContractImportRead:
             contract=contract,
             created_suite_ids=created_suite_ids,
             reconciled_suite_ids=reconciled_suite_ids,
+            retired_suite_ids=retired_suite_ids,
             untargeted_objects=untargeted_objects,
             warnings=warnings,
         )

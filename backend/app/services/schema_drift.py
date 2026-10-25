@@ -84,7 +84,7 @@ def diff_schemas(
         (
             {"column": cur[k]["name"], "from": base[k]["type"], "to": cur[k]["type"]}
             for k in set(base) & set(cur)
-            if base[k]["type"] is not None and base[k]["type"] != cur[k]["type"]
+            if base[k]["type"] != cur[k]["type"] and not (declared and base[k]["type"] is None)
         ),
         key=lambda change: change["column"],
     )

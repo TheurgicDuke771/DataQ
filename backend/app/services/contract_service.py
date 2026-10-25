@@ -32,7 +32,7 @@ from backend.app.db.models import (
 from backend.app.services import audit_service, cron, suite_authz
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import record_check_version
-from backend.app.services.monitor_baseline import insert_baseline_if_absent
+from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.run_target import SuiteTargetInvalidError, validate_target
 from backend.app.services.suite_io_service import (
     EXPORT_VERSION,
@@ -58,6 +58,26 @@ class ContractSuitesInvalidError(DataQError):
     code = "contract_suites_invalid"
 
 
+class ContractForbiddenError(DataQError):
+    status_code = 403
+    code = "contract_forbidden"
+
+
+def _require_edit_on_all(session: Session, contract: Contract, user_id: uuid.UUID) -> None:
+    """`edit` on every suite the contract governs. A suite the caller cannot even view is
+    refused WITHOUT naming it (ADR 0037: restricted suites are counted, never identified)."""
+    suites = list(contract.suites)
+    perms = suite_authz.effective_permissions(session, suites, user_id)
+    if any(perms.get(s.id) is None for s in suites):
+        raise ContractForbiddenError(
+            "this contract governs suites you cannot see; only someone who can edit all of them "
+            "may change it",
+            detail={"contract_id": str(contract.id)},
+        )
+    for suite in suites:
+        suite_authz.require_permission(session, suite.id, user_id, minimum="edit")
+
+
 @dataclass
 class ImportOutcome:
     """What an import did — the REST/MCP response, and the audit payload's counts."""
@@ -65,6 +85,8 @@ class ImportOutcome:
     contract: Contract
     created_suite_ids: list[uuid.UUID] = field(default_factory=list)
     reconciled_suite_ids: list[uuid.UUID] = field(default_factory=list)
+    #: Suites taken over for a schema object this version dropped: unlinked, contract checks off.
+    retired_suite_ids: list[uuid.UUID] = field(default_factory=list)
     #: Objects whose `physicalName` / `name` did not resolve to a run target on this connection:
     #: their suites exist (with checks) but cannot run until a target is set.
     untargeted_objects: list[str] = field(default_factory=list)
@@ -150,7 +172,13 @@ def _current_fingerprint(check: Check) -> str:
     )
 
 
-def _apply(check: Check, draft: tr.CheckDraft) -> None:
+#: Set on `contract_ref` when a re-import switched the check off because its clause left the
+#: contract — the only off-switch a later version may undo. A check a PERSON switched off has no
+#: such mark, and an import never turns it back on.
+DISABLED_BY_CONTRACT = "disabled_by_contract"
+
+
+def _apply(check: Check, draft: tr.CheckDraft, *, set_enabled: bool = True) -> None:
     check.name = draft.name
     check.expectation_type = draft.expectation_type
     check.engine = draft.engine
@@ -159,7 +187,8 @@ def _apply(check: Check, draft: tr.CheckDraft) -> None:
     check.fail_threshold = draft.fail_threshold
     check.critical_threshold = draft.critical_threshold
     check.dimension = _dimension(draft)
-    check.enabled = draft.enabled
+    if set_enabled:
+        check.enabled = draft.enabled
     check.contract_ref = draft.ref_dict()
 
 
@@ -222,6 +251,21 @@ class _ReconcileCounts:
     disabled: int = 0
 
 
+def _refresh_declared_baseline(session: Session, check: Check, draft: tr.CheckDraft) -> bool:
+    """A new version's declared columns replace a DECLARED baseline (never a learned one — that
+    is what a run observed, and a person may have re-baselined it on purpose)."""
+    if draft.kind != SCHEMA_DRIFT or draft.baseline is None:
+        return False
+    row = get_baseline(session, check.id, for_update=True)
+    if row is None:
+        _seed_declared_baseline(session, check, draft)
+        return True
+    if not row.baseline.get("declared") or row.baseline.get("columns") == draft.baseline:
+        return False
+    row.baseline = {"columns": draft.baseline, "declared": True}
+    return True
+
+
 def _reconcile(
     session: Session,
     suite: Suite,
@@ -231,7 +275,11 @@ def _reconcile(
 ) -> tuple[_ReconcileCounts, list[tuple[Check, tr.CheckDraft]]]:
     """ADR 0052 §6 / ADR 0047's rules: add checks for new clauses, update a clause-derived check
     only if nobody edited it since its import, disable (never delete) the checks whose clause
-    disappeared, and leave every hand-authored check alone."""
+    disappeared, and leave every hand-authored check alone.
+
+    Switching on and off: a clause that returns re-enables only a check an earlier import switched
+    off (`DISABLED_BY_CONTRACT`); a check a person switched off stays off, even when its clause
+    changes."""
     counts = _ReconcileCounts()
     created: list[tuple[Check, tr.CheckDraft]] = []
     by_clause = {
@@ -252,18 +300,36 @@ def _reconcile(
             created.append((check, draft))
             counts.added += 1
             continue
-        stored = (existing.contract_ref or {}).get("fingerprint")
+        ref = existing.contract_ref or {}
+        reopened = bool(ref.get(DISABLED_BY_CONTRACT)) and not existing.enabled
+        stored = ref.get("fingerprint")
         unedited = stored is not None and stored == _current_fingerprint(existing)
+        changed = False
         if unedited and stored != draft.fingerprint():
-            _apply(existing, draft)
+            _apply(existing, draft, set_enabled=False)
+            changed = True
+        if reopened:
+            existing.enabled = True
+            existing.contract_ref = {
+                k: v for k, v in (existing.contract_ref or {}).items() if k != DISABLED_BY_CONTRACT
+            }
+            changed = True
+        if unedited and _refresh_declared_baseline(session, existing, draft):
+            changed = True
+        if changed:
             record_check_version(session, existing, actor_id=actor_id)
             counts.updated += 1
     for key, check in by_clause.items():
         if key not in seen and check.enabled:
-            check.enabled = False
-            record_check_version(session, check, actor_id=actor_id)
+            _retire(session, check, actor_id=actor_id)
             counts.disabled += 1
     return counts, created
+
+
+def _retire(session: Session, check: Check, *, actor_id: uuid.UUID) -> None:
+    check.enabled = False
+    check.contract_ref = {**(check.contract_ref or {}), DISABLED_BY_CONTRACT: True}
+    record_check_version(session, check, actor_id=actor_id)
 
 
 # ───────────────────────────── import ───────────────────────────────
@@ -311,8 +377,7 @@ def import_contract(
                 "replace=true to replace it",
                 detail={"contract_id": str(existing.id), "odcs_id": odcs_id, "version": version},
             )
-        for linked in existing.suites:
-            suite_authz.require_permission(session, linked.id, actor_id, minimum="edit")
+        _require_edit_on_all(session, existing, actor_id)
         contract = existing
         targets = list(contract.suites)
     else:
@@ -383,6 +448,20 @@ def import_contract(
         if obj.schedule_cron:
             _ensure_schedule(session, suite, obj, actor_id=actor_id, unmapped=unmapped)
 
+    # A suite taken over for an object this version no longer has: its contract checks are switched
+    # off (never deleted) and the suite is unlinked, so nothing keeps enforcing a dropped object.
+    current = {obj.name for obj in translated.objects}
+    for suite in targets:
+        if suite.contract_object in current:
+            continue
+        for check in suite.checks:
+            if check.origin == CONTRACT_CHECK_ORIGIN and check.enabled:
+                _retire(session, check, actor_id=actor_id)
+                outcome.checks_disabled += 1
+        outcome.retired_suite_ids.append(suite.id)
+        suite.contract_id = None
+        suite.contract_object = None
+
     session.flush()
     for check, draft in new_checks:
         record_check_version(session, check, actor_id=actor_id)
@@ -402,6 +481,7 @@ def import_contract(
             "replaced": existing is not None,
             "suites_created": len(outcome.created_suite_ids),
             "suites_reconciled": len(outcome.reconciled_suite_ids),
+            "suites_retired": len(outcome.retired_suite_ids),
             "checks_added": outcome.checks_added,
             "checks_updated": outcome.checks_updated,
             "checks_disabled": outcome.checks_disabled,
@@ -433,6 +513,11 @@ def _suites_to_repoint(
             raise ContractSuitesInvalidError(
                 "a suite named in suite_ids is not linked to an earlier version of this contract",
                 detail={"suite_id": str(suite_id)},
+            )
+        if any(s.contract_object == suite.contract_object for s in suites):
+            raise ContractSuitesInvalidError(
+                "two suites in suite_ids stand for the same schema object; name one",
+                detail={"suite_id": str(suite_id), "contract_object": suite.contract_object},
             )
         suites.append(suite)
     return suites
@@ -486,25 +571,36 @@ class VisibleContract:
     restricted_suite_count: int
 
 
-def _visible(session: Session, contract: Contract, user_id: uuid.UUID) -> VisibleContract | None:
-    """A contract is visible when the caller can `view` at least one linked suite, or is a
-    workspace admin (who also sees a contract with no linked suite)."""
+def _visible_from(
+    contract: Contract, perms: dict[uuid.UUID, str | None], *, is_admin: bool
+) -> VisibleContract | None:
     suites = list(contract.suites)
-    perms = suite_authz.effective_permissions(session, suites, user_id)
     visible = [s for s in suites if perms.get(s.id) is not None]
-    is_admin = suite_authz.is_workspace_admin(session, user_id)
     if not visible and not is_admin:
         return None
     return VisibleContract(contract, visible, len(suites) - len(visible))
 
 
+def _visible(session: Session, contract: Contract, user_id: uuid.UUID) -> VisibleContract | None:
+    """A contract is visible when the caller can `view` at least one linked suite, or is a
+    workspace admin (who also sees a contract with no linked suite)."""
+    perms = suite_authz.effective_permissions(session, list(contract.suites), user_id)
+    return _visible_from(contract, perms, is_admin=suite_authz.is_workspace_admin(session, user_id))
+
+
 def list_contracts(session: Session, user_id: uuid.UUID) -> list[VisibleContract]:
-    rows = session.scalars(
-        select(Contract)
-        .options(selectinload(Contract.suites))
-        .order_by(Contract.name, Contract.version)
+    """One permissions query for every linked suite and one role lookup, whatever the count."""
+    contracts = list(
+        session.scalars(
+            select(Contract)
+            .options(selectinload(Contract.suites))
+            .order_by(Contract.name, Contract.version)
+        )
     )
-    return [v for c in rows if (v := _visible(session, c, user_id)) is not None]
+    suites = [s for c in contracts for s in c.suites]
+    perms = suite_authz.effective_permissions(session, suites, user_id) if suites else {}
+    is_admin = suite_authz.is_workspace_admin(session, user_id)
+    return [v for c in contracts if (v := _visible_from(c, perms, is_admin=is_admin)) is not None]
 
 
 def get_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID) -> VisibleContract:
@@ -520,8 +616,7 @@ def delete_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID
     """Unlink the contract's suites (both columns, together) and delete the row; suites, checks
     and results stay. Requires `edit` on every linked suite — unlinking is a suite mutation."""
     visible = get_contract(session, contract_id, user_id)
-    for suite in visible.contract.suites:
-        suite_authz.require_permission(session, suite.id, user_id, minimum="edit")
+    _require_edit_on_all(session, visible.contract, user_id)
     for suite in visible.contract.suites:
         suite.contract_id = None
         suite.contract_object = None

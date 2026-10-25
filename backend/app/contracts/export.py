@@ -55,8 +55,8 @@ def _set_custom(node: dict[str, Any], name: str, value: Any) -> None:
 
 
 def _find_rule(obj: dict[str, Any], ref: dict[str, Any]) -> dict[str, Any] | None:
-    """The quality rule a check's clause names, by the same `(property, rule_id)` the importer
-    recorded (`rule.id`, else `quality[<index>]`)."""
+    """The quality rule a check's clause names, by the same ids the importer recorded
+    (`translate.rule_ids`). The clause names a property by its logical `name`."""
     prop_name = ref.get("property")
     container: dict[str, Any] | None
     if prop_name is None:
@@ -66,14 +66,15 @@ def _find_rule(obj: dict[str, Any], ref: dict[str, Any]) -> dict[str, Any] | Non
             (
                 p
                 for p in obj.get("properties") or ()
-                if isinstance(p, dict) and tr._column_name(p) == prop_name
+                if isinstance(p, dict) and str(p.get("name")) == prop_name
             ),
             None,
         )
         if container is None:
             return None
-    for index, rule in enumerate(container.get("quality") or ()):
-        if isinstance(rule, dict) and tr._rule_id(rule, index) == ref.get("rule_id"):
+    rules = [r for r in container.get("quality") or () if isinstance(r, dict)]
+    for rule, rule_id in zip(rules, tr.rule_ids(rules), strict=True):
+        if rule_id == ref.get("rule_id"):
             return rule
     return None
 

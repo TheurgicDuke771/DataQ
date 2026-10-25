@@ -132,6 +132,9 @@ class ContractImportRead(ApiModel):
     contract: ContractRead
     created_suite_ids: list[uuid.UUID]
     reconciled_suite_ids: list[uuid.UUID]
+    #: Suites named in `suite_ids` whose schema object this version dropped: unlinked, with
+    #: their contract checks switched off (never deleted).
+    retired_suite_ids: list[uuid.UUID]
     #: Schema objects whose `physicalName` / `name` did not resolve on this connection.
     untargeted_objects: list[str]
     checks_added: int
@@ -174,6 +177,7 @@ def import_contract(
         contract=ContractRead.of(visible),
         created_suite_ids=outcome.created_suite_ids,
         reconciled_suite_ids=outcome.reconciled_suite_ids,
+        retired_suite_ids=outcome.retired_suite_ids,
         untargeted_objects=outcome.untargeted_objects,
         checks_added=outcome.checks_added,
         checks_updated=outcome.checks_updated,

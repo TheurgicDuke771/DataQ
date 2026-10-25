@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from dataclasses import field as _dc_field
@@ -318,9 +319,31 @@ def _column_name(prop: dict[str, Any]) -> str:
     return physical if isinstance(physical, str) and physical.strip() else str(prop.get("name"))
 
 
-def _rule_id(rule: dict[str, Any], index: int) -> str:
-    rid = rule.get("id")
-    return rid if isinstance(rid, str) and rid else f"quality[{index}]"
+#: The parts of a quality rule that say WHAT it checks — not how strictly (operators, severity,
+#: unit) or how it is labelled — so an id-less rule keeps its identity when a threshold changes or
+#: a rule is inserted before it.
+_RULE_IDENTITY_KEYS: Final = ("type", "metric", "query", "engine", "implementation", "arguments")
+
+
+def rule_ids(rules: list[dict[str, Any]]) -> list[str]:
+    """A stable clause id per rule: the rule's own `id`, else a content key over
+    `_RULE_IDENTITY_KEYS` (`quality:<hash>`, with `#2`, `#3` … for identical siblings). Never a
+    list position, which a reorder or insertion would silently rebind to another rule."""
+    out: list[str] = []
+    seen: dict[str, int] = {}
+    for rule in rules:
+        rid = rule.get("id")
+        if isinstance(rid, str) and rid:
+            out.append(rid)
+            continue
+        identity = {k: rule.get(k) for k in _RULE_IDENTITY_KEYS if rule.get(k) is not None}
+        digest = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, default=str).encode()
+        ).hexdigest()[:12]
+        base = f"quality:{digest}"
+        seen[base] = seen.get(base, 0) + 1
+        out.append(base if seen[base] == 1 else f"{base}#{seen[base]}")
+    return out
 
 
 def _rule_label(rule: dict[str, Any], fallback: str) -> str:
@@ -837,6 +860,36 @@ def _tier_of(draft: CheckDraft) -> str:
     return "fail"
 
 
+def _row_bounds(key: str, value: Any) -> dict[str, int] | None:
+    """The whole-row band an operator allows — exact for a fractional bound (`> 5.7` is `>= 6`,
+    `<= 5.4` is `<= 5`), `None` for an operator or value a row count cannot hold."""
+    if key == "mustBeBetween":
+        if not isinstance(value, list) or len(value) != 2:
+            return None
+        low, high = _decimal(value[0]), _decimal(value[1])
+        if low is None or high is None or math.ceil(low) > math.floor(high):
+            return None
+        return {"min_rows": math.ceil(low), "max_rows": math.floor(high)}
+    bound = _decimal(value)
+    if bound is None:
+        return None
+    if key == "mustBe":
+        return (
+            {"min_rows": int(bound), "max_rows": int(bound)}
+            if bound == bound.to_integral_value()
+            else None
+        )
+    if key == "mustBeGreaterThan":
+        return {"min_rows": math.floor(bound) + 1}
+    if key == "mustBeGreaterOrEqualTo":
+        return {"min_rows": math.ceil(bound)}
+    if key == "mustBeLessThan":
+        return {"max_rows": math.ceil(bound) - 1}
+    if key == "mustBeLessOrEqualTo":
+        return {"max_rows": math.floor(bound)}
+    return None
+
+
 def _row_count_rule(
     obj: str, rule: dict[str, Any], *, ref: ClauseRef, where: str
 ) -> tuple[list[CheckDraft], list[Unmapped]]:
@@ -852,20 +905,8 @@ def _row_count_rule(
             )
         ]
     key, value = operator
-    config: dict[str, Any] = {}
-    if key == "mustBe" and isinstance(value, int | float) and not isinstance(value, bool):
-        config = {"min_rows": int(value), "max_rows": int(value)}
-    elif key == "mustBeGreaterThan" and _decimal(value) is not None:
-        config = {"min_rows": int(Decimal(str(value)).to_integral_value()) + 1}
-    elif key == "mustBeGreaterOrEqualTo" and _decimal(value) is not None:
-        config = {"min_rows": int(value)}
-    elif key == "mustBeLessThan" and _decimal(value) is not None:
-        config = {"max_rows": int(Decimal(str(value)).to_integral_value()) - 1}
-    elif key == "mustBeLessOrEqualTo" and _decimal(value) is not None:
-        config = {"max_rows": int(value)}
-    elif key == "mustBeBetween" and isinstance(value, list) and len(value) == 2:
-        config = {"min_rows": int(value[0]), "max_rows": int(value[1])}
-    else:
+    config = _row_bounds(key, value)
+    if config is None:
         return [], [
             Unmapped(
                 **{
@@ -1307,11 +1348,12 @@ def translate(
             unmapped.extend(more)
             if (pii := classification_pii(prop)) is not None:
                 target.pii_columns.append(pii)
-            for index, rule in enumerate(_rules_of(prop)):
+            prop_rules = list(_rules_of(prop))
+            for rule, rule_id in zip(prop_rules, rule_ids(prop_rules), strict=True):
                 drafts, missed = quality_rule(
                     name,
                     rule,
-                    rule_id=_rule_id(rule, index),
+                    rule_id=rule_id,
                     prop=prop,
                     connection_type=connection_type,
                     object_target=rendered,
@@ -1325,11 +1367,12 @@ def translate(
             target.checks.append(drift)
         elif drift is not None:
             unmapped.append(drift)
-        for index, rule in enumerate(_rules_of(obj)):
+        obj_rules = list(_rules_of(obj))
+        for rule, rule_id in zip(obj_rules, rule_ids(obj_rules), strict=True):
             drafts, missed = quality_rule(
                 name,
                 rule,
-                rule_id=_rule_id(rule, index),
+                rule_id=rule_id,
                 prop=None,
                 connection_type=connection_type,
                 object_target=rendered,

@@ -456,3 +456,73 @@ def test_every_clause_lands_somewhere() -> None:
     )
     assert _checks(obj) == [("expect_column_values_to_not_be_null", {"column": "a"})]
     assert sorted(u.field for u in unmapped) == ["quality", "slaProperties.retention"]
+
+
+@pytest.mark.parametrize(
+    ("rule", "config"),
+    [
+        ({"metric": "rowCount", "mustBeGreaterThan": 5.7}, {"min_rows": 6}),
+        ({"metric": "rowCount", "mustBeGreaterOrEqualTo": 5.5}, {"min_rows": 6}),
+        ({"metric": "rowCount", "mustBeLessThan": 5.4}, {"max_rows": 5}),
+        ({"metric": "rowCount", "mustBeLessOrEqualTo": 5.6}, {"max_rows": 5}),
+        ({"metric": "rowCount", "mustBeBetween": [1.5, 9.5]}, {"min_rows": 2, "max_rows": 9}),
+    ],
+    ids=["gt-frac", "ge-frac", "lt-frac", "le-frac", "between-frac"],
+)
+def test_fractional_row_bounds_are_exact(rule: dict[str, Any], config: dict[str, int]) -> None:
+    obj, unmapped = _translate(quality=[rule])
+    assert _checks(obj) == [("monitor:volume", config)]
+    assert unmapped == []
+
+
+def _translate_unvalidated(rule: dict[str, Any]) -> tuple[list[Any], list[tr.Unmapped]]:
+    """Straight to the translator: the ODCS schema refuses a string operand, but the translator
+    must not raise on one if a caller ever skips validation."""
+    doc = {"schema": [{"name": "orders", "physicalName": "ORDERS", "quality": [rule]}]}
+    result = tr.translate(doc, connection_type="postgres")
+    return _checks(result.objects[0]), result.unmapped
+
+
+@pytest.mark.parametrize(
+    ("rule", "config"),
+    [
+        (
+            {"metric": "rowCount", "mustBeGreaterOrEqualTo": "100.5"},
+            [("monitor:volume", {"min_rows": 101})],
+        ),
+        ({"metric": "rowCount", "mustBeBetween": ["a", 1]}, []),
+    ],
+    ids=["string-number", "non-numeric"],
+)
+def test_string_operands_never_raise(rule: dict[str, Any], config: list[Any]) -> None:
+    checks, unmapped = _translate_unvalidated(rule)
+    assert checks == config
+    assert len(unmapped) == (0 if config else 1)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"metric": "rowCount", "mustBe": 2.5},
+        {"metric": "rowCount", "mustBeBetween": [5.2, 5.8]},  # no whole number fits
+    ],
+    ids=["fractional-equality", "empty-band"],
+)
+def test_unholdable_row_bounds_are_unmapped_not_errors(rule: dict[str, Any]) -> None:
+    obj, unmapped = _translate(quality=[rule])
+    assert _checks(obj) == []
+    assert len(unmapped) == 1
+
+
+def test_rule_ids_are_content_keys_stable_under_insertion() -> None:
+    a = {"metric": "rowCount", "mustBeGreaterThan": 10}
+    b = {"type": "sql", "query": "SELECT 1"}
+    first = tr.rule_ids([a])
+    second = tr.rule_ids([b, a])
+    assert first[0] == second[1]
+    # A threshold change keeps the identity; an explicit id always wins.
+    assert tr.rule_ids([{**a, "mustBeGreaterThan": 99}]) == first
+    assert tr.rule_ids([{**a, "id": "floor"}]) == ["floor"]
+    # Identical siblings are told apart.
+    twins = tr.rule_ids([a, dict(a)])
+    assert twins[0] != twins[1] and twins[1].endswith("#2")

@@ -261,7 +261,14 @@ def test_a_new_version_reconciles_the_suites_it_takes_over(db_session: Any) -> N
         (c.contract_ref or {}).get("property") == "currency" for c in checks.values()
     )  # added
     assert orders.contract_id == second.contract.id
-    assert (second.checks_added, second.checks_updated, second.checks_disabled) == (1, 1, 1)
+    # Updated: the nulls rule, and the declared schema baseline (it now lists `currency`).
+    assert (second.checks_added, second.checks_updated, second.checks_disabled) == (1, 2, 1)
+    drift = next(c for c in checks.values() if c.expectation_type == "monitor:schema_drift")
+    baseline = db_session.scalar(
+        select(MonitorBaseline).where(MonitorBaseline.check_id == drift.id)
+    )
+    assert baseline is not None
+    assert "currency" in [c["name"] for c in baseline.baseline["columns"]]
 
 
 def test_a_suite_from_another_contract_cannot_be_taken_over(db_session: Any) -> None:
@@ -333,8 +340,11 @@ def test_delete_needs_edit_on_every_linked_suite(db_session: Any) -> None:
         Share(suite_id=outcome.created_suite_ids[0], user_id=viewer.id, permission="view")
     )
     db_session.commit()
-    with pytest.raises(Exception, match="permission"):
+    with pytest.raises(svc.ContractForbiddenError) as excinfo:
         svc.delete_contract(db_session, outcome.contract.id, viewer.id)
+    # The hidden suite is never named (ADR 0037).
+    detail = json.dumps(excinfo.value.detail or {})
+    assert str(outcome.created_suite_ids[1]) not in detail
 
 
 # ───────────────────────────── export ───────────────────────────────
@@ -429,7 +439,7 @@ def test_replace_needs_the_contract_visible_and_edit_on_every_linked_suite(
         Share(suite_id=outcome.created_suite_ids[0], user_id=viewer.id, permission="view")
     )
     db_session.commit()
-    with pytest.raises(Exception, match="permission"):
+    with pytest.raises(svc.ContractForbiddenError):
         _import(db_session, viewer, conn, _doc(), replace=True)
 
 
@@ -440,3 +450,139 @@ def test_a_suite_on_another_connection_is_not_reconciled(db_session: Any) -> Non
     first = _import(db_session, actor, first_conn, _doc())
     with pytest.raises(svc.ContractSuitesInvalidError, match="different connection"):
         _import(db_session, actor, other_conn, _doc("2.0.0"), suite_ids=first.created_suite_ids)
+
+
+def test_a_view_share_on_every_suite_still_cannot_delete(db_session: Any) -> None:
+    owner = _user(db_session)
+    conn = _connection(db_session, owner)
+    outcome = _import(db_session, owner, conn, _doc())
+    viewer = _user(db_session)
+    for suite_id in outcome.created_suite_ids:
+        db_session.add(Share(suite_id=suite_id, user_id=viewer.id, permission="view"))
+    db_session.commit()
+    with pytest.raises(Exception, match="permission"):
+        svc.delete_contract(db_session, outcome.contract.id, viewer.id)
+
+
+def _rule_check(suite: Suite, rule_id: str) -> Check:
+    return next(c for c in suite.checks if (c.contract_ref or {}).get("rule_id") == rule_id)
+
+
+def test_a_clause_that_returns_re_enables_only_a_check_the_contract_switched_off(
+    db_session: Any,
+) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc())
+    ids = list(v1.created_suite_ids)
+    orders = _suite(db_session, v1, "orders")
+    floor_id = _rule_check(orders, "row-floor").id
+
+    dropped = _doc("2.0.0")
+    dropped["schema"][0]["quality"] = []
+    _import(db_session, actor, conn, dropped, suite_ids=ids)
+    db_session.refresh(orders)
+    assert db_session.get(Check, floor_id).enabled is False
+
+    _import(db_session, actor, conn, _doc("3.0.0"), suite_ids=ids)
+    db_session.refresh(orders)
+    floor = db_session.get(Check, floor_id)
+    assert floor is not None and floor.enabled is True
+    assert svc.DISABLED_BY_CONTRACT not in (floor.contract_ref or {})
+
+
+def test_a_check_a_person_switched_off_stays_off_when_its_clause_changes(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, v1, "orders")
+    nulls = _rule_check(orders, "amount-nulls")
+    nulls.enabled = False
+    db_session.commit()
+
+    v2 = _doc("2.0.0")
+    v2["schema"][0]["properties"][2]["quality"] = [
+        {"id": "amount-nulls", "metric": "nullValues", "mustBeLessThan": 5, "unit": "percent"}
+    ]
+    _import(db_session, actor, conn, v2, suite_ids=list(v1.created_suite_ids))
+    refreshed = db_session.get(Check, nulls.id)
+    assert refreshed is not None
+    assert refreshed.fail_threshold == 5  # the clause change applied
+    assert refreshed.enabled is False  # the person's off-switch held
+
+
+def test_a_new_version_that_drops_an_object_retires_its_suite(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc())
+    refunds = _suite(db_session, v1, "refunds")
+    v2 = _doc("2.0.0")
+    v2["schema"] = v2["schema"][:1]
+    outcome = _import(db_session, actor, conn, v2, suite_ids=list(v1.created_suite_ids))
+    assert outcome.retired_suite_ids == [refunds.id]
+    db_session.refresh(refunds)
+    assert (refunds.contract_id, refunds.contract_object) == (None, None)
+    assert all(not c.enabled for c in refunds.checks if c.origin == "contract")
+
+
+def test_two_suites_for_one_object_cannot_both_be_taken_over(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    first = _import(db_session, actor, conn, _doc())
+    again = _import(db_session, actor, conn, _doc("1.1.0"))  # fresh suites, same objects
+    orders_ids = [_suite(db_session, first, "orders").id, _suite(db_session, again, "orders").id]
+    with pytest.raises(svc.ContractSuitesInvalidError, match="same schema object"):
+        _import(db_session, actor, conn, _doc("2.0.0"), suite_ids=orders_ids)
+
+
+def test_export_finds_a_rule_on_a_property_with_its_own_physical_name(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    doc = _doc()
+    doc["schema"][0]["properties"][2]["physicalName"] = "AMOUNT_EUR"
+    outcome = _import(db_session, actor, conn, doc)
+    visible = svc.get_contract(db_session, outcome.contract.id, actor.id)
+    exported = export_contract(db_session, visible.contract, visible.suites)
+    amount = exported["schema"][0]["properties"][2]
+    assert any(
+        p.get("property") == "dataq.checkId" for p in amount["quality"][0]["customProperties"]
+    )
+    # Not appended a second time as a dataq-engine rule.
+    assert not [r for r in exported["schema"][0].get("quality", []) if r.get("engine") == "dataq"]
+
+
+def test_id_less_rules_keep_their_checks_when_a_rule_is_inserted_before_them(
+    db_session: Any,
+) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _doc()
+    v1["schema"][0]["quality"] = [{"metric": "rowCount", "mustBeGreaterThan": 10}]
+    first = _import(db_session, actor, conn, v1)
+    orders = _suite(db_session, first, "orders")
+    volume = next(c for c in orders.checks if c.expectation_type == "monitor:volume")
+    v2 = _doc("2.0.0")
+    v2["schema"][0]["quality"] = [
+        {"type": "sql", "query": "SELECT COUNT(*) FROM {object}", "mustBeGreaterThan": 0},
+        {"metric": "rowCount", "mustBeGreaterThan": 10},
+    ]
+    second = _import(db_session, actor, conn, v2, suite_ids=list(first.created_suite_ids))
+    kept = db_session.get(Check, volume.id)
+    assert kept is not None
+    # Still the volume check for its own rule — a positional key would rewrite it into the SQL
+    # rule that now sits first.
+    assert (kept.expectation_type, kept.config, kept.enabled) == (
+        "monitor:volume",
+        {"min_rows": 11},
+        True,
+    )
+    assert (second.checks_added, second.checks_updated, second.checks_disabled) == (1, 0, 0)
+
+
+def test_a_learned_baseline_still_reports_a_type_appearing_where_none_was_recorded() -> None:
+    """#2550 review: the untyped-column skip is for DECLARED baselines only."""
+    learned: list[dict[str, Any]] = [{"name": "a", "type": None}]
+    current: list[dict[str, Any]] = [{"name": "a", "type": "INT"}]
+    assert diff_schemas(learned, current)["type_changed"] == [
+        {"column": "a", "from": None, "to": "INT"}
+    ]
