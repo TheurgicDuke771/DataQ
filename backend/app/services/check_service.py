@@ -1789,12 +1789,17 @@ def list_check_versions(
     )
 
 
-def _get_check_version(session: Session, check_id: uuid.UUID, version_no: int) -> CheckVersion:
-    version = session.scalar(
-        select(CheckVersion).where(
-            CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
+def _get_check_version(
+    session: Session, check_id: uuid.UUID, version_no: int, *, for_update: bool = False
+) -> CheckVersion:
+    if for_update:
+        version = version_redaction.lock_check_version(session, check_id, version_no)
+    else:
+        version = session.scalar(
+            select(CheckVersion).where(
+                CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
+            )
         )
-    )
     if version is None:
         raise CheckVersionNotFoundError(
             "check version not found",
@@ -1812,26 +1817,22 @@ def redact_check_version(
     actor_id: uuid.UUID | None = None,
 ) -> CheckVersion:
     """Empty one snapshot's ``config`` (#685) — for a literal pasted into
-    custom SQL or a config field by mistake and since edited out. The row stays, the newest
-    version is refused (it IS the check's current state, readable on the check), and the audit
-    event names the version number only — never what it held.
+    custom SQL or a config field by mistake and since edited out. The row stays and keeps its
+    tested ``column`` (`version_redaction.KEPT_CHECK_KEYS`); the newest version is refused (it IS
+    the check's current state, readable on the check). Redacting an already-redacted version
+    is a no-op that returns it (a retried request must not read as a failure). The audit event
+    names the version number only — never what it held.
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
-    version = _get_check_version(session, check_id, version_no)
-    latest = session.scalar(
-        select(func.max(CheckVersion.version_no)).where(CheckVersion.check_id == check_id)
-    )
-    if version_no == latest:
+    version = _get_check_version(session, check_id, version_no, for_update=True)
+    if version_no == version_redaction.latest_check_version_no(session, check_id):
         raise CheckVersionIsCurrentError(
             "the newest version is the check's current state; edit the check first, then redact "
             "this version",
             detail={"check_id": str(check_id), "version_no": version_no},
         )
     if version.redacted:
-        raise CheckVersionRedactedError(
-            "check version is already redacted",
-            detail={"check_id": str(check_id), "version_no": version_no},
-        )
+        return version  # idempotent: nothing changes, nothing is audited
     version_redaction.redact(version, actor_id=actor_id)
     audit_service.record(
         session,
@@ -1861,7 +1862,8 @@ def restore_check_version(
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     audit_before = audit_service.snapshot("check", check)
-    version = _get_check_version(session, check_id, version_no)
+    # Locked: a redaction of this version committing mid-restore must not let its config through.
+    version = _get_check_version(session, check_id, version_no, for_update=True)
     if version.redacted:
         # An emptied config is not a config: applying it would turn a privacy action into a
         # broken check.

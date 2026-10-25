@@ -512,7 +512,8 @@ def redact_connection_version(
     db: Annotated[Session, Depends(get_db)],
 ) -> ConnectionVersionRead:
     """For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when (an already-redacted
+    version is returned unchanged); the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
     """

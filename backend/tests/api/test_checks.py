@@ -1324,10 +1324,15 @@ def test_editor_can_restore(client: TestClient, db_session: Any) -> None:
 
 def _check_with_history(client: TestClient, sid: str) -> str:
     """v1 holds a literal pasted into the config by mistake, v2 edits it out (v2 is current)."""
-    cid = client.post(
-        f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": "PASTED_LITERAL"})
-    ).json()["id"]
-    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "order_id"}})
+    pasted = _payload(
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "status", "value_set": ["PASTED_LITERAL"]},
+    )
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=pasted).json()["id"]
+    client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"config": {"column": "status", "value_set": ["open", "closed"]}},
+    )
     return str(cid)
 
 
@@ -1341,9 +1346,10 @@ def test_redact_check_version_empties_the_config_and_blocks_restore(
     assert resp.status_code == 200
     body = resp.json()
     assert body["version_no"] == 1 and body["redacted"] is True
-    assert body["config"] == {} and body["redacted_by_name"] is not None
-    # Everything but the config survives on the row.
-    assert body["expectation_type"] == _payload()["expectation_type"]
+    # The tested column stays — the result's identity, read by masking and data-subject
+    # searches — and every other config value is gone.
+    assert body["config"] == {"column": "status"} and body["redacted_by_name"] is not None
+    assert body["expectation_type"] == "expect_column_values_to_be_in_set"
 
     versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
     assert [(v["version_no"], v["redacted"]) for v in versions] == [(2, False), (1, True)]
@@ -1354,7 +1360,7 @@ def test_redact_check_version_empties_the_config_and_blocks_restore(
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "check_version_redacted"
     resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
-    assert resp.json()["config"] == {"column": "order_id"}
+    assert resp.json()["config"] == {"column": "status", "value_set": ["open", "closed"]}
     resp = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions")
     assert len(resp.json()) == 2
 
@@ -1400,10 +1406,11 @@ def test_redact_check_version_refuses_current_and_unknown(
     resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/9")
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "check_version_not_found"
-    client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+    first = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+    # A retried redaction is a no-op that returns the row, not an error.
     resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "check_version_redacted"
+    assert resp.status_code == 200
+    assert resp.json()["redacted_at"] == first.json()["redacted_at"]
 
 
 def test_redact_check_version_requires_owner_not_an_edit_share(

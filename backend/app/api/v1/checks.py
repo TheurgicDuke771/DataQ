@@ -572,8 +572,9 @@ class CheckVersionRead(ApiModel):
     created_at: datetime
     redacted: bool = Field(
         default=False,
-        description="True when this snapshot was redacted: `config` is then empty, the values "
-        "it held are gone from the version history and the version cannot be restored. The "
+        description="True when this snapshot was redacted: `config` then keeps only the tested "
+        "`column` (the result's identity), every other value it held is gone from the version "
+        "history and the version cannot be restored. The "
         "append-only audit log may still hold them on the `check.update` event that recorded "
         "the edit.",
     )
@@ -594,9 +595,10 @@ def redact_check_version(
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckVersionRead:
     """For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
-    row and the rest of the history stay, and the version can no longer be restored. The newest
-    version is refused (409) — it is the check's current state. Destroying history is gated
+    the snapshot's `config` is emptied except its tested `column`, and the row stamped with who
+    redacted it and when; the row and the rest of the history stay, and the version can no longer
+    be restored. The newest version is refused (409) — it is the check's current state.
+    Redacting an already-redacted version returns it unchanged (200). Destroying history is gated
     above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
     version number only.
     """

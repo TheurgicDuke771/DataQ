@@ -2041,12 +2041,14 @@ def test_redact_version_unknown_version_and_connection_404(db_session: Any) -> N
         svc.redact_connection_version(db_session, uuid.uuid4(), 1, actor_id=actor.id)
 
 
-def test_redact_version_twice_is_refused_not_re_audited(db_session: Any) -> None:
+def test_redact_version_twice_is_a_no_op_not_re_audited(db_session: Any) -> None:
+    """A retried DELETE (dropped response, proxy retry) must not read as a failure."""
     actor = _user(db_session)
     conn = _edit_twice(db_session, actor)
-    svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
-    with pytest.raises(svc.ConnectionVersionRedactedError):
-        svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+    first = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+    stamped = first.redacted_at
+    again = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+    assert again.redacted and again.redacted_at == stamped
     assert len(_redaction_events(db_session, conn.id)) == 1
 
 

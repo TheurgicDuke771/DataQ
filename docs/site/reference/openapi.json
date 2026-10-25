@@ -3255,7 +3255,7 @@
           },
           "redacted": {
             "default": false,
-            "description": "True when this snapshot was redacted: `config` is then empty, the values it held are gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
+            "description": "True when this snapshot was redacted: `config` then keeps only the tested `column` (the result's identity), every other value it held is gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
             "title": "Redacted",
             "type": "boolean"
           },
@@ -15894,7 +15894,7 @@
     },
     "/api/v1/connections/{connection_id}/versions/{version_no}": {
       "delete": {
-        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` is emptied and the row stamped with who redacted it and when; the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
+        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` is emptied and the row stamped with who redacted it and when (an already-redacted\nversion is returned unchanged); the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
         "operationId": "redact_connection_version",
         "parameters": [
           {
@@ -19692,7 +19692,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}": {
       "delete": {
-        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` is emptied and the row stamped with who redacted it and when; the\nrow and the rest of the history stay, and the version can no longer be restored. The newest\nversion is refused (409) \u2014 it is the check's current state. Destroying history is gated\nabove editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the\nversion number only.",
+        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` is emptied except its tested `column`, and the row stamped with who\nredacted it and when; the row and the rest of the history stay, and the version can no longer\nbe restored. The newest version is refused (409) \u2014 it is the check's current state.\nRedacting an already-redacted version returns it unchanged (200). Destroying history is gated\nabove editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the\nversion number only.",
         "operationId": "redact_check_version",
         "parameters": [
           {

@@ -364,8 +364,8 @@ export interface CheckVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
-  /** True once the suite's owner or an admin redacted this snapshot: `config` is then empty, the
-   *  values it held are gone and the version cannot be restored. Optional so older fixtures need
+  /** True once the suite's owner or an admin redacted this snapshot: `config` then keeps only its
+   *  tested `column`, every other value it held is gone and the version cannot be restored. Optional so older fixtures need
    *  no change. */
   redacted?: boolean;
   redacted_at?: string | null;

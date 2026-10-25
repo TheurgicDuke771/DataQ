@@ -59,11 +59,6 @@ class ConnectionVersionIsCurrentError(DataQError):
     code = "connection_version_current"
 
 
-class ConnectionVersionRedactedError(DataQError):
-    status_code = 409
-    code = "connection_version_redacted"
-
-
 class ConnectionConfigInvalidError(DataQError):
     status_code = 422
     code = "connection_config_invalid"
@@ -881,14 +876,6 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
     )
 
 
-def _latest_version_no(session: Session, connection_id: uuid.UUID) -> int | None:
-    return session.scalar(
-        select(func.max(ConnectionVersion.version_no)).where(
-            ConnectionVersion.connection_id == connection_id
-        )
-    )
-
-
 def _record_version_redaction(
     session: Session, conn: Connection, *, version_nos: Sequence[int], actor_id: uuid.UUID | None
 ) -> None:
@@ -909,31 +896,24 @@ def redact_connection_version(
     """Empty one snapshot's ``config`` (#685) — for a value pasted into a
     config field by mistake and since edited out. The row stays (history keeps its shape); the
     newest version is refused because it IS the connection's current state, readable on the
-    connection itself. Audited with the version number only.
+    connection itself; an already-redacted version is returned unchanged. Audited with the
+    version number only.
     """
     conn = get_connection(session, connection_id)
-    version = session.scalar(
-        select(ConnectionVersion).where(
-            ConnectionVersion.connection_id == connection_id,
-            ConnectionVersion.version_no == version_no,
-        )
-    )
+    version = version_redaction.lock_connection_version(session, connection_id, version_no)
     if version is None:
         raise ConnectionVersionNotFoundError(
             "connection version not found",
             detail={"connection_id": str(connection_id), "version_no": version_no},
         )
-    if version_no == _latest_version_no(session, connection_id):
+    if version_no == version_redaction.latest_connection_version_no(session, connection_id):
         raise ConnectionVersionIsCurrentError(
             "the newest version is the connection's current state; edit the connection first, "
             "then redact this version",
             detail={"connection_id": str(connection_id), "version_no": version_no},
         )
     if version.redacted:
-        raise ConnectionVersionRedactedError(
-            "connection version is already redacted",
-            detail={"connection_id": str(connection_id), "version_no": version_no},
-        )
+        return version  # idempotent: a retried request returns the row, nothing is audited
     version_redaction.redact(version, actor_id=actor_id)
     _record_version_redaction(session, conn, version_nos=[version_no], actor_id=actor_id)
     session.commit()
@@ -949,11 +929,12 @@ def redact_connection_versions(
     Already-redacted rows are skipped, and nothing is audited when there was nothing to do.
     """
     conn = get_connection(session, connection_id)
-    latest = _latest_version_no(session, connection_id)
+    latest = version_redaction.latest_connection_version_no(session, connection_id)
     versions = session.scalars(
         select(ConnectionVersion)
         .where(ConnectionVersion.connection_id == connection_id)
         .order_by(ConnectionVersion.version_no)
+        .with_for_update()
     )
     redacted: list[int] = []
     for version in versions:

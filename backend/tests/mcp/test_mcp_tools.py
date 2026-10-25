@@ -3907,11 +3907,13 @@ def test_redacted_check_version_is_flagged_and_cannot_be_restored(
     _as(monkeypatch, db_session, user)
     created = server.create_check(
         str(suite.id),
-        name="not null email",
-        expectation_type="expect_column_values_to_not_be_null",
-        config={"column": "PASTED_LITERAL"},
+        name="status in set",
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "status", "value_set": ["PASTED_LITERAL"]},
     )
-    server.update_check(str(suite.id), created["id"], config={"column": "EMAIL"})
+    server.update_check(
+        str(suite.id), created["id"], config={"column": "status", "value_set": ["open"]}
+    )
     check_service.redact_check_version(
         db_session, suite.id, uuid.UUID(created["id"]), 1, actor_id=user.id
     )
@@ -3923,7 +3925,10 @@ def test_redacted_check_version_is_flagged_and_cannot_be_restored(
 
     with pytest.raises(ToolError, match="is redacted and cannot be restored"):
         server.restore_check_version(str(suite.id), created["id"], version_no=1)
-    assert server.get_check(str(suite.id), created["id"])["config"] == {"column": "EMAIL"}
+    assert server.get_check(str(suite.id), created["id"])["config"] == {
+        "column": "status",
+        "value_set": ["open"],
+    }
 
 
 def test_list_check_versions_thresholds_are_json_encodable(

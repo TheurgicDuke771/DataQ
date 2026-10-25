@@ -1176,8 +1176,8 @@ def list_check_versions(
     Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
     check's name, kind, expectation type, ``engine`` (ADR 0036 — ``gx`` unless it
     was pointed at a platform-native engine like ``dmf`` **as of that version**),
-    dimension, ``config`` (the full stored config, or ``{}`` once ``redacted`` is
-    true) and the three severity thresholds **as they were at that version**,
+    dimension, ``config`` (the full stored config, or only ``{"column": …}`` once
+    ``redacted`` is true) and the three severity thresholds **as they were at that version**,
     plus when the change was made and who made it.
 
     ``total`` reports how many versions exist regardless of ``limit``, so a short
@@ -1210,15 +1210,16 @@ def list_check_versions(
     not show that the alerting level never changed. What each past run was scored
     against is on its result (``expected_value.thresholds`` in ``get_run_results``).
 
-    **A version with ``redacted: true`` has no config to show.** A suite owner or
-    admin emptied its stored config (``redacted_at`` and ``redacted_by_name`` say
-    who and when), usually because a value that should never have been stored —
-    a literal in custom SQL, a token — had been pasted into it. Its name,
-    thresholds, author and time are still real; its ``config`` is ``{}``, not what
-    the check was, and ``restore_check_version`` refuses it. Redaction cannot be
-    undone and has no MCP tool: it is done in the app's History drawer. The
-    append-only audit log may still hold the values on the ``check.update`` event
-    that recorded the edit; only an admin reads that.
+    **A version with ``redacted: true`` has no config to show beyond its tested
+    column.** A suite owner or admin emptied the rest of its stored config
+    (``redacted_at`` and ``redacted_by_name`` say who and when), usually because
+    a value that should never have been stored — a literal in custom SQL, a
+    token — had been pasted into it. Its name, thresholds, author, time and
+    ``config.column`` are still real; the rest of ``config`` is gone, so it is
+    not what the check was, and ``restore_check_version`` refuses it. Redaction
+    cannot be undone and has no MCP tool: it is done in the app's History
+    drawer. The append-only audit log may still hold the values on the
+    ``check.update`` event that recorded the edit; only an admin reads that.
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.

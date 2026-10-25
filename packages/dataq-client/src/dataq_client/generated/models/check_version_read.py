@@ -40,9 +40,10 @@ class CheckVersionRead:
             warn_threshold (float | None):
             dimension (None | str | Unset):
             enabled (bool | Unset):  Default: True.
-            redacted (bool | Unset): True when this snapshot was redacted: `config` is then empty, the values it held are
-                gone from the version history and the version cannot be restored. The append-only audit log may still hold them
-                on the `check.update` event that recorded the edit. Default: False.
+            redacted (bool | Unset): True when this snapshot was redacted: `config` then keeps only the tested `column` (the
+                result's identity), every other value it held is gone from the version history and the version cannot be
+                restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.
+                Default: False.
             redacted_at (datetime.datetime | None | Unset):
             redacted_by_name (None | str | Unset):
             source_connection_id (None | Unset | UUID):

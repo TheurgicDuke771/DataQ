@@ -274,7 +274,8 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   History drawer. A value pasted into a **config** field by mistake — a token, a hostname
   with an embedded credential, a literal in custom SQL — and then edited out would otherwise
   stay readable there indefinitely, so a version can be **redacted**: its stored config is
-  emptied and the row records who redacted it and when; the rest of the history stays, and
+  emptied (a check version keeps the column it tested, which masking and data-subject
+  searches need) and the row records who redacted it and when; the rest of the history stays, and
   the drawer says so. Connection versions are redacted by a workspace admin (one version, or
   every version but the current one); check versions by the suite's owner or an admin — an
   `edit` share can restore a version but not redact one. The current version is refused — it

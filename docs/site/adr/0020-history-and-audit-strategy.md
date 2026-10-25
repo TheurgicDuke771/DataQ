@@ -31,7 +31,9 @@
 > one deliberate exception*. A value pasted into a **config** field by mistake (a token, a
 > hostname with an embedded credential, a literal in custom SQL) and then edited out stayed
 > readable in the snapshot for every user who could open the History drawer. Both snapshot
-> tables now accept an in-place **redaction**: the row's `config` is emptied and two nullable
+> tables now accept an in-place **redaction**: the row's `config` is emptied (a check version
+> keeps its tested `column`, the result's identity that masking and data-subject searches read)
+> and two nullable
 > columns, `redacted_at` and `redacted_by`, record when and by whom; every other column stays, so
 > the history keeps its shape and the drawer says who redacted it and when instead of losing a
 > row. The flag is the column, never a marker inside the JSONB, so no user-supplied config can

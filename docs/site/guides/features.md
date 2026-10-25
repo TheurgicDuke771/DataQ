@@ -86,7 +86,7 @@ schema-drift / anomaly / PII-drift / comparison** monitor kinds:
 - **Check version history** — every edit is versioned and viewable per check, and any version
   can be restored. The suite's owner or an admin can **redact** an old version whose config
   held something it should not have (a literal pasted into custom SQL, say): the row stays,
-  its config is emptied, and it can no longer be restored. Connections have the same history,
+  its config is emptied except the tested column, and it can no longer be restored. Connections have the same history,
   redactable by a workspace admin.
 
 ## Suites
