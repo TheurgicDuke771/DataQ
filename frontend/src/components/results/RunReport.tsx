@@ -47,7 +47,9 @@ export function RunReport({
       : 'Unclassified';
     return label + currentSuffix(check.source);
   };
-  const anyCurrent = run.results.some((r) => asOf(r)?.source === 'live');
+  const marked = new Set(
+    run.results.map((r) => asOf(r)?.source).filter((s) => s && s !== 'version'),
+  );
   // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a muted check must say
   // so here too.
   const snoozedSuffix = (id: string) => {
@@ -141,10 +143,17 @@ export function RunReport({
           state-neutral (#1122 review): redaction has several possible states
           (#417/#1115/#1873), and a printed artifact is read out of context, so
           this must not claim a specific redaction outcome. */}
-      {anyCurrent && (
+      {marked.has('live') && (
         <p className="rd-report-footnote" data-testid="report-current-footnote">
-          (current) marks a check with no version history for this result: its present expectation,
-          engine or dimension is shown, which may have changed since the run.
+          (current) marks a check shown from its present state: no snapshot of it as it was at this
+          result is available, so its expectation, engine or dimension may have changed since the
+          run.
+        </p>
+      )}
+      {marked.has('later_version') && (
+        <p className="rd-report-footnote" data-testid="report-later-footnote">
+          (later) marks a check shown from its earliest recorded version, which postdates this
+          result: its state at the run was not recorded and may have differed.
         </p>
       )}
       <p className="rd-report-footnote">

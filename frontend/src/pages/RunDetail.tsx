@@ -31,7 +31,7 @@ import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
 import { DimensionTag, EngineTag } from '../components/checks/checkBadges';
-import { AsOfCell, checkAsOf } from '../components/results/checkAsOf';
+import { AsOfCell, checkAsOf, exportSource } from '../components/results/checkAsOf';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { SeasonalResultSummary } from '../components/results/SeasonalResultSummary';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
@@ -335,18 +335,33 @@ function DownloadMenu({
 }) {
   const stem = `${toFilenameStem(suiteName ?? 'run')}_run_${run.id.slice(0, 8)}`;
   const checkName = (id: string) => checkExportName(checks.get(id)?.name, id, checksKnown);
-  // As of the result (#1613), the live check only as the fallback.
-  const expectation = (r: Result) => checkAsOf(r, checks.get(r.check_id))?.expectation_type ?? '';
+  // As of the result (#1613), the live check only as the fallback — and the export says which,
+  // since a downloaded row is read without the in-app "(current)" marker.
+  const asOf = (r: Result) => checkAsOf(r, checks.get(r.check_id));
+  const expectation = (r: Result) => asOf(r)?.expectation_type ?? '';
 
   const exportCsv = () => {
     // `sampled` rides along (#1325 review F2): a downloaded row that says `pass` without saying it
     // was measured on 100k of 5M is the same overclaim the in-app badge exists to prevent.
     downloadCsv(
       `${stem}.csv`,
-      ['check', 'expectation', 'status', 'metric_value', 'observed', 'sampled'],
+      [
+        'check',
+        'expectation',
+        'engine',
+        'dimension',
+        'check_as_of',
+        'status',
+        'metric_value',
+        'observed',
+        'sampled',
+      ],
       run.results.map((r) => [
         checkName(r.check_id),
         expectation(r),
+        asOf(r)?.engine ?? '',
+        asOf(r)?.dimension ?? '',
+        exportSource(asOf(r)?.source),
         r.status,
         r.metric_value,
         exportScalar(r.observed_value),
@@ -372,6 +387,10 @@ function DownloadMenu({
       checks: run.results.map((r) => ({
         check: checkName(r.check_id),
         expectation_type: expectation(r) || null,
+        engine: asOf(r)?.engine ?? null,
+        dimension: asOf(r)?.dimension ?? null,
+        // `version` | `later_version` | `current` — how far the three fields above are history.
+        check_as_of: exportSource(asOf(r)?.source) || null,
         status: r.status,
         metric_value: r.metric_value,
         observed_value: r.observed_value,

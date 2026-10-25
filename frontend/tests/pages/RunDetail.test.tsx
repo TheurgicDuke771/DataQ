@@ -348,15 +348,22 @@ describe('RunDetail page', () => {
     expect(headers).toEqual([
       'check',
       'expectation',
+      'engine',
+      'dimension',
+      'check_as_of',
       'status',
       'metric_value',
       'observed',
       'sampled',
     ]);
-    // check_id → name, observed scalar JSON-stringified.
+    // check_id → name, observed scalar JSON-stringified. The payload carries no snapshot, so the
+    // live check stands in and the row says `current` rather than passing it off as history.
     expect(rows[0]).toEqual([
       'order_id not null',
       'expect_column_values_to_not_be_null',
+      'gx',
+      '',
+      'current',
       'warn',
       2,
       '{"unexpected_percent":2}',
@@ -806,8 +813,8 @@ describe('RunDetail page', () => {
     await user.click(await screen.findByRole('button', { name: /download/i }));
     await user.click(await screen.findByText('Download CSV'));
 
-    const [, , rows] = vi.mocked(downloadCsv).mock.calls[0];
-    expect(rows[0][5]).toBe('yes');
+    const [, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(rows[0][headers.indexOf('sampled')]).toBe('yes');
   });
 
   // ── PDF report export (#345) ───────────────────────────────────────────
@@ -1560,8 +1567,59 @@ describe('check identity as of the result (#1613)', () => {
     await user.click(await screen.findByText('Download JSON'));
     const [, payload] = vi.mocked(downloadJson).mock.calls[0] as [
       string,
-      { checks: { expectation_type: string }[] },
+      {
+        checks: {
+          expectation_type: string;
+          engine: string;
+          dimension: string;
+          check_as_of: string;
+        }[];
+      },
     ];
-    expect(payload.checks[0].expectation_type).toBe('dmf:null_count');
+    expect(payload.checks[0]).toMatchObject({
+      expectation_type: 'dmf:null_count',
+      engine: 'dmf',
+      dimension: 'completeness',
+      check_as_of: 'version',
+    });
+  });
+
+  it('exports a live fallback as `current`, never as history', async () => {
+    const user = userEvent.setup();
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: { ...asOfDmf, resolved_from: 'live' } }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download CSV'));
+    const [, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(rows[0][headers.indexOf('check_as_of')]).toBe('current');
+  });
+
+  it('marks a later-version stand-in "(later)" in the table and the report, with its own footnote', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: { ...asOfDmf, resolved_from: 'later_version' } }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    const markers = region.getAllByText('(later)');
+    expect(markers).toHaveLength(3);
+    expect(markers[0]).toHaveAccessibleName(/postdates this result/);
+    expect(region.queryByText('(current)')).not.toBeInTheDocument();
+    const report = screen.getByTestId('run-report');
+    expect(within(report).getByText('DMF (later)')).toBeInTheDocument();
+    expect(within(report).getByTestId('report-later-footnote')).toBeInTheDocument();
+    expect(within(report).queryByTestId('report-current-footnote')).not.toBeInTheDocument();
   });
 });

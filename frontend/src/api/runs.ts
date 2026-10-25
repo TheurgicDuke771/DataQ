@@ -242,9 +242,10 @@ export interface ComparisonCheck {
   expectation_type: string | null;
   dimension: string | null;
   column: string | null;
-  /** `version`: a `check_versions` snapshot in effect at the result; `live`: the check has no
-   *  version history, so this is its CURRENT state and may postdate the result (#1613). */
-  resolved_from: 'version' | 'live' | null;
+  /** `version`: a `check_versions` snapshot in effect at the result. `later_version`: every
+   *  snapshot postdates the result (clock skew), so the earliest stands in. `live`: the check has
+   *  no version history, so its CURRENT state stands in and may postdate the result (#1613). */
+  resolved_from: 'version' | 'later_version' | 'live' | null;
 }
 
 /** One run's result for a check; `observed_value` is redacted exactly as on the run detail. */
