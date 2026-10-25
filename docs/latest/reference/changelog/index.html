@@ -3035,6 +3035,18 @@ section below.</p>
   feature.</strong> The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
   its linked channels.</li>
+<li><strong>Run detail and report label each result with the check as it WAS, not as it is.</strong> A check
+  re-pointed to another engine or re-classified to another DQ dimension after a run used to have
+  its old results shown with today's engine and dimension (the badges read the suite's current
+  check list). <code>GET /api/v1/runs/{id}</code> now carries a <code>check</code> block per result — name, kind, engine,
+  expectation type, dimension and column resolved from the check's version history at the result's
+  own timestamp — and the run page, the printed report and the CSV/JSON exports read it; the run
+  page gains a Dimension column. <code>resolved_from</code> says whether that came from a version snapshot or,
+  for a check with no version history, from its current row; the UI then marks the value
+  "(current)" instead of presenting it as history, on the run comparison page too. MCP
+  <code>get_run_results</code> / <code>get_suite_results</code> gain <code>dimension</code> and <code>check_resolved_from</code> per check (and
+  <code>get_run_results</code> no longer claims <code>engine</code> is the check's current engine; it has reported the
+  as-of engine for some time).</li>
 </ul>
 <h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>

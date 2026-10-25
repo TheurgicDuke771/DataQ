@@ -3029,7 +3029,11 @@ is stored lower-case, trimmed and single-spaced, so <code>Finance</code> and <co
   "passing". Operational <code>error</code>/<code>skip</code> results feed only the connection axis. Both are
   read off the runs already recorded — there is no connection-probe polling loop.</li>
 <li><strong>Results page</strong> — every run with its per-check outcomes; drill into a run for
-  observed-vs-expected values and <strong>redacted failing-row samples</strong>.</li>
+  observed-vs-expected values and <strong>redacted failing-row samples</strong>. Each result is labelled
+  with the check <strong>as it was at that run</strong> — expectation type, engine and DQ dimension from the
+  check's version history at the result's own timestamp, never its current row — on the run
+  page, in the printed report and in the CSV/JSON exports. A check with no version history
+  falls back to its current values, marked <strong>(current)</strong> so they are not mistaken for history.</li>
 <li><strong>Run comparison</strong> — from a run, <strong>Compare with…</strong> any other run of the same suite
   (the earlier one becomes the base) to see what changed between them: each check's
   status on both sides and whether it <strong>regressed</strong>, <strong>improved</strong>, stayed the same, or

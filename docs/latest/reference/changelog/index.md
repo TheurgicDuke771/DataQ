@@ -219,6 +219,18 @@ section below.
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
   its linked channels.
+- **Run detail and report label each result with the check as it WAS, not as it is.** A check
+  re-pointed to another engine or re-classified to another DQ dimension after a run used to have
+  its old results shown with today's engine and dimension (the badges read the suite's current
+  check list). `GET /api/v1/runs/{id}` now carries a `check` block per result — name, kind, engine,
+  expectation type, dimension and column resolved from the check's version history at the result's
+  own timestamp — and the run page, the printed report and the CSV/JSON exports read it; the run
+  page gains a Dimension column. `resolved_from` says whether that came from a version snapshot or,
+  for a check with no version history, from its current row; the UI then marks the value
+  "(current)" instead of presenting it as history, on the run comparison page too. MCP
+  `get_run_results` / `get_suite_results` gain `dimension` and `check_resolved_from` per check (and
+  `get_run_results` no longer claims `engine` is the check's current engine; it has reported the
+  as-of engine for some time).
 
 ## v1.2.0 — 2026-10-04
 
