@@ -260,15 +260,24 @@ class TranslatedContract:
 
 def custom_properties(node: dict[str, Any], vendor: str = DATAQ_VENDOR) -> dict[str, Any]:
     """`{property: value}` of a node's `customProperties` for one vendor (unknown vendors kept
-    by the caller, as the standard requires — this only reads)."""
-    out: dict[str, Any] = {}
+    by the caller, as the standard requires — this only reads). Both spellings are read: a
+    `vendor: dataq` entry with a bare name (`schedule`), and a `dataq.`-prefixed name
+    (`dataq.schedule`) — the form ADR 0052 writes, and the only one available before ODCS v3.2
+    added `vendor`. The prefixed form wins when both are present."""
+    prefix = f"{vendor}."
+    bare: dict[str, Any] = {}
+    prefixed: dict[str, Any] = {}
     for item in node.get("customProperties") or ():
-        if not isinstance(item, dict) or item.get("vendor") != vendor:
+        if not isinstance(item, dict):
             continue
         name = item.get("property")
-        if isinstance(name, str):
-            out[name] = item.get("value")
-    return out
+        if not isinstance(name, str):
+            continue
+        if name.startswith(prefix):
+            prefixed[name[len(prefix) :]] = item.get("value")
+        elif item.get("vendor") == vendor:
+            bare[name] = item.get("value")
+    return {**bare, **prefixed}
 
 
 def _decimal(value: Any) -> Decimal | None:
