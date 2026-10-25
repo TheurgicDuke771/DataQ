@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "438a920a89d0",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1977-contracts-ui",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/43/8a920a89d0/0/metadata.json",
+      "transcript": "/43/8a920a89d0/0/full.jsonl",
+      "compact_transcript": "/43/8a920a89d0/0/transcript.jsonl",
+      "content_hash": "/43/8a920a89d0/0/content_hash.txt",
+      "prompt": "/43/8a920a89d0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 19594,
+    "cache_read_tokens": 16277696,
+    "output_tokens": 13282,
+    "api_call_count": 19
+  }
+}

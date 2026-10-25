@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>ba6i4rfje</task-id>
+<tool-use-id>toolu_012Vo2JfBkmMHAMUoDeEzPYi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e9d17326-e586-41a9-b7eb-6ead06df2d2a/tasks/ba6i4rfje.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the full CI set on PR 2553's latest head" completed (exit code 0)</summary>
+</task-notification>
