@@ -421,10 +421,11 @@ export interface ConnectionVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
-  /** True once an admin redacted this snapshot: `config` is then a tombstone and the values
-   *  it held are gone. Optional so older fixtures need no change. */
+  /** True once an admin redacted this snapshot: `config` is then empty and the values it held
+   *  are gone. Optional so older fixtures need no change. */
   redacted?: boolean;
   redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /** A connection's version history, newest first. */
@@ -433,21 +434,13 @@ export async function listConnectionVersions(id: string): Promise<ConnectionVers
   return data;
 }
 
-/** Replace one version's config with a tombstone (admin-only; the current version is refused). */
+/** Empty one version's config (admin-only; the current version is refused). */
 export async function redactConnectionVersion(
   id: string,
   versionNo: number,
 ): Promise<ConnectionVersion> {
   const { data } = await api.delete<ConnectionVersion>(`/connections/${id}/versions/${versionNo}`);
   return data;
-}
-
-/** Redact every version but the current one (admin-only); returns the version numbers redacted. */
-export async function redactConnectionVersions(id: string): Promise<number[]> {
-  const { data } = await api.delete<{ redacted_version_nos: number[] }>(
-    `/connections/${id}/versions`,
-  );
-  return data.redacted_version_nos;
 }
 
 /** One name at a level of a catalog tree; `selectable: false` = DataQ cannot target it. */

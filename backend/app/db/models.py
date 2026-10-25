@@ -25,7 +25,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.core import version_tombstone
 from backend.app.db.base import Base
 
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
@@ -571,8 +570,15 @@ class ConnectionVersion(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
+    # Set by a redaction (#685), which also empties `config`; NULL on every other row. The flag is
+    # a column, not a marker inside the JSONB, so no user-supplied config can look redacted.
+    redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    redacted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
 
-    author: Mapped["User | None"] = relationship()
+    author: Mapped["User | None"] = relationship(foreign_keys=[changed_by])
+    redactor: Mapped["User | None"] = relationship(foreign_keys=[redacted_by])
 
     @property
     def changed_by_name(self) -> str | None:
@@ -583,12 +589,13 @@ class ConnectionVersion(Base):
 
     @property
     def redacted(self) -> bool:
-        """True once this snapshot's ``config`` was replaced with a tombstone (#685)."""
-        return version_tombstone.is_redacted(self.config)
+        """True once the snapshot's ``config`` was emptied by a redaction (#685)."""
+        return self.redacted_at is not None
 
     @property
-    def redacted_at(self) -> datetime | None:
-        return version_tombstone.redacted_at(self.config)
+    def redacted_by_name(self) -> str | None:
+        """Redactor display name/email, or None for a removed user / an unredacted row."""
+        return (self.redactor.display_name or self.redactor.email) if self.redactor else None
 
 
 class Suite(TaggedMixin, Base):
@@ -816,8 +823,15 @@ class CheckVersion(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
+    # Set by a redaction (#685), which also empties `config`; NULL on every other row. The flag is
+    # a column, not a marker inside the JSONB, so no user-supplied config can look redacted.
+    redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    redacted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
 
-    author: Mapped["User | None"] = relationship()
+    author: Mapped["User | None"] = relationship(foreign_keys=[changed_by])
+    redactor: Mapped["User | None"] = relationship(foreign_keys=[redacted_by])
 
     @property
     def changed_by_name(self) -> str | None:
@@ -828,12 +842,13 @@ class CheckVersion(Base):
 
     @property
     def redacted(self) -> bool:
-        """True once this snapshot's ``config`` was replaced with a tombstone (#685)."""
-        return version_tombstone.is_redacted(self.config)
+        """True once the snapshot's ``config`` was emptied by a redaction (#685)."""
+        return self.redacted_at is not None
 
     @property
-    def redacted_at(self) -> datetime | None:
-        return version_tombstone.redacted_at(self.config)
+    def redacted_by_name(self) -> str | None:
+        """Redactor display name/email, or None for a removed user / an unredacted row."""
+        return (self.redactor.display_name or self.redactor.email) if self.redactor else None
 
 
 class Run(Base):

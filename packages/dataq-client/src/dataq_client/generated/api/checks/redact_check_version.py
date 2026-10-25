@@ -67,13 +67,14 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[CheckVersionRead | HTTPValidationError]:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
-    the version can no longer be restored. The newest version is refused (409) — it is the
-    check's current state. Edit-gated like every check mutation; audited with the version
-    number only.
+    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
+    row and the rest of the history stay, and the version can no longer be restored. The newest
+    version is refused (409) — it is the check's current state. Destroying history is gated
+    above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
+    version number only.
 
     Args:
         suite_id (UUID):
@@ -108,13 +109,14 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> CheckVersionRead | HTTPValidationError | None:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
-    the version can no longer be restored. The newest version is refused (409) — it is the
-    check's current state. Edit-gated like every check mutation; audited with the version
-    number only.
+    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
+    row and the rest of the history stay, and the version can no longer be restored. The newest
+    version is refused (409) — it is the check's current state. Destroying history is gated
+    above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
+    version number only.
 
     Args:
         suite_id (UUID):
@@ -144,13 +146,14 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[CheckVersionRead | HTTPValidationError]:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
-    the version can no longer be restored. The newest version is refused (409) — it is the
-    check's current state. Edit-gated like every check mutation; audited with the version
-    number only.
+    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
+    row and the rest of the history stay, and the version can no longer be restored. The newest
+    version is refused (409) — it is the check's current state. Destroying history is gated
+    above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
+    version number only.
 
     Args:
         suite_id (UUID):
@@ -183,13 +186,14 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> CheckVersionRead | HTTPValidationError | None:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
-    the version can no longer be restored. The newest version is refused (409) — it is the
-    check's current state. Edit-gated like every check mutation; audited with the version
-    number only.
+    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
+    row and the rest of the history stay, and the version can no longer be restored. The newest
+    version is refused (409) — it is the check's current state. Destroying history is gated
+    above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
+    version number only.
 
     Args:
         suite_id (UUID):

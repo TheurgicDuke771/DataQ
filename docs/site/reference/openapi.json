@@ -3165,7 +3165,7 @@
           },
           "redacted": {
             "default": false,
-            "description": "True when an editor redacted this snapshot: `config` is then a tombstone (`redacted`, `redacted_at`, `redacted_by`), the values it held are gone and the version cannot be restored.",
+            "description": "True when this snapshot was redacted: `config` is then empty, the values it held are gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
             "title": "Redacted",
             "type": "boolean"
           },
@@ -3180,6 +3180,17 @@
               }
             ],
             "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
           },
           "source_connection_id": {
             "anyOf": [
@@ -4862,7 +4873,7 @@
           },
           "redacted": {
             "default": false,
-            "description": "True when an admin redacted this snapshot: `config` is then a tombstone (`redacted`, `redacted_at`, `redacted_by`) and the values it held are gone.",
+            "description": "True when an admin redacted this snapshot: `config` is then empty and the values it held are gone from the version history (connection audit events never carry config, so nothing else retains them).",
             "title": "Redacted",
             "type": "boolean"
           },
@@ -4877,6 +4888,17 @@
               }
             ],
             "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
           },
           "type": {
             "title": "Type",
@@ -15846,7 +15868,7 @@
     },
     "/api/v1/connections/{connection_id}/versions/{version_no}": {
       "delete": {
-        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` becomes `{\"redacted\": true, \"redacted_at\", \"redacted_by\"}`; the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
+        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` is emptied and the row stamped with who redacted it and when; the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
         "operationId": "redact_connection_version",
         "parameters": [
           {
@@ -15891,7 +15913,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Redact one version's config (replace it with a tombstone)",
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "connections"
         ]
@@ -19644,7 +19666,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}": {
       "delete": {
-        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and\nthe version can no longer be restored. The newest version is refused (409) \u2014 it is the\ncheck's current state. Edit-gated like every check mutation; audited with the version\nnumber only.",
+        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` is emptied and the row stamped with who redacted it and when; the\nrow and the rest of the history stay, and the version can no longer be restored. The newest\nversion is refused (409) \u2014 it is the check's current state. Destroying history is gated\nabove editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the\nversion number only.",
         "operationId": "redact_check_version",
         "parameters": [
           {
@@ -19699,7 +19721,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Redact one version's config (replace it with a tombstone)",
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "checks"
         ]

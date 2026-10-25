@@ -64,10 +64,10 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ConnectionVersionRead | HTTPValidationError]:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` becomes `{"redacted": true, "redacted_at", "redacted_by"}`; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
 
@@ -101,10 +101,10 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> ConnectionVersionRead | HTTPValidationError | None:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` becomes `{"redacted": true, "redacted_at", "redacted_by"}`; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
 
@@ -133,10 +133,10 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ConnectionVersionRead | HTTPValidationError]:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` becomes `{"redacted": true, "redacted_at", "redacted_by"}`; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
 
@@ -168,10 +168,10 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> ConnectionVersionRead | HTTPValidationError | None:
-    """Redact one version's config (replace it with a tombstone)
+    """Redact one version's config (empty it, keep the row)
 
      For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` becomes `{"redacted": true, "redacted_at", "redacted_by"}`; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
 

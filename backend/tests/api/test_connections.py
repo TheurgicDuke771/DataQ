@@ -871,7 +871,7 @@ def test_admin_redacts_a_version_and_the_drawer_sees_a_tombstone(
     body = resp.json()
     assert body["version_no"] == 1
     assert body["redacted"] is True and body["redacted_at"] is not None
-    assert set(body["config"]) == {"redacted", "redacted_at", "redacted_by"}
+    assert body["config"] == {} and body["redacted_by_name"] is not None
 
     versions = api.get(f"/api/v1/connections/{cid}/versions").json()
     assert [(v["version_no"], v["redacted"]) for v in versions] == [(2, False), (1, True)]
@@ -917,7 +917,8 @@ def test_redact_all_versions_but_the_current(client: tuple[TestClient, FakeSecre
         (1, True),
     ]
     # Idempotent: nothing left to redact.
-    assert api.delete(f"/api/v1/connections/{cid}/versions").json() == {"redacted_version_nos": []}
+    resp = api.delete(f"/api/v1/connections/{cid}/versions")
+    assert resp.json() == {"redacted_version_nos": []}
 
 
 @pytest.mark.parametrize("role", ["member", "viewer"])
@@ -928,10 +929,14 @@ def test_redaction_is_admin_only(
     api, _ = client
     cid = _connection_with_history(api)
     _, headers = as_role(role)
-    assert api.get(f"/api/v1/connections/{cid}/versions", headers=headers).status_code == 200
-    assert api.delete(f"/api/v1/connections/{cid}/versions/1", headers=headers).status_code == 403
-    assert api.delete(f"/api/v1/connections/{cid}/versions", headers=headers).status_code == 403
-    assert not any(v["redacted"] for v in api.get(f"/api/v1/connections/{cid}/versions").json())
+    resp = api.get(f"/api/v1/connections/{cid}/versions", headers=headers)
+    assert resp.status_code == 200
+    resp = api.delete(f"/api/v1/connections/{cid}/versions/1", headers=headers)
+    assert resp.status_code == 403
+    resp = api.delete(f"/api/v1/connections/{cid}/versions", headers=headers)
+    assert resp.status_code == 403
+    resp = api.get(f"/api/v1/connections/{cid}/versions")
+    assert not any(v["redacted"] for v in resp.json())
 
 
 def test_list_versions_requires_auth(db_session: Any) -> None:

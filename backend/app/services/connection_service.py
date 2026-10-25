@@ -14,7 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core import usage_telemetry, version_tombstone
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError, SafeMonitorError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
@@ -35,7 +35,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service, credential_health, tag_service
+from backend.app.services import audit_service, credential_health, tag_service, version_redaction
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -873,7 +873,9 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
         session.scalars(
             select(ConnectionVersion)
             .where(ConnectionVersion.connection_id == connection_id)
-            .options(selectinload(ConnectionVersion.author))
+            .options(
+                selectinload(ConnectionVersion.author), selectinload(ConnectionVersion.redactor)
+            )
             .order_by(ConnectionVersion.version_no.desc())
         )
     )
@@ -904,7 +906,7 @@ def _record_version_redaction(
 def redact_connection_version(
     session: Session, connection_id: uuid.UUID, version_no: int, *, actor_id: uuid.UUID | None
 ) -> ConnectionVersion:
-    """Replace one snapshot's ``config`` with a tombstone (#685) — for a value pasted into a
+    """Empty one snapshot's ``config`` (#685) — for a value pasted into a
     config field by mistake and since edited out. The row stays (history keeps its shape); the
     newest version is refused because it IS the connection's current state, readable on the
     connection itself. Audited with the version number only.
@@ -932,7 +934,7 @@ def redact_connection_version(
             "connection version is already redacted",
             detail={"connection_id": str(connection_id), "version_no": version_no},
         )
-    version.config = version_tombstone.tombstone(actor_id=actor_id)
+    version_redaction.redact(version, actor_id=actor_id)
     _record_version_redaction(session, conn, version_nos=[version_no], actor_id=actor_id)
     session.commit()
     session.refresh(version)
@@ -957,7 +959,7 @@ def redact_connection_versions(
     for version in versions:
         if version.version_no == latest or version.redacted:
             continue
-        version.config = version_tombstone.tombstone(actor_id=actor_id)
+        version_redaction.redact(version, actor_id=actor_id)
         redacted.append(version.version_no)
     if not redacted:
         return []

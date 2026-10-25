@@ -68,23 +68,25 @@ describe('ConnectionHistoryDrawer', () => {
     expect(screen.getByText(/"role":\s*"DQ_ROLE"/)).toBeInTheDocument();
   });
 
-  it('renders a redacted version as a tombstone notice, never its config', async () => {
+  it('renders a redacted version as a redaction notice, never its config', async () => {
     mockList.mockResolvedValue([
       version({ version_no: 2 }),
       version({
         version_no: 1,
         redacted: true,
         redacted_at: '2026-10-25T09:30:00Z',
-        config: { redacted: true, redacted_at: '2026-10-25T09:30:00Z', redacted_by: 'u-9' },
+        redacted_by_name: null,
+        config: {},
       }),
     ]);
     renderDrawer();
 
     expect(await screen.findByText('Redacted')).toBeInTheDocument();
     expect(screen.getByText('Configuration redacted')).toBeInTheDocument();
-    expect(screen.getByText(/Redacted by an admin on/)).toBeInTheDocument();
-    // The tombstone is not rendered as a config block.
-    expect(screen.queryByText(/"redacted_by"/)).not.toBeInTheDocument();
+    // The redactor's account is gone: the notice says so rather than naming nobody.
+    expect(screen.getByText(/Redacted by a removed user on/)).toBeInTheDocument();
+    // An emptied config is not rendered as a config block.
+    expect(screen.queryByText('{}')).not.toBeInTheDocument();
     // The header fields survive the redaction.
     expect(screen.getAllByText('finance-dev').length).toBeGreaterThan(0);
   });

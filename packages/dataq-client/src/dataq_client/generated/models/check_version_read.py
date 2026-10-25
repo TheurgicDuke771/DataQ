@@ -40,9 +40,11 @@ class CheckVersionRead:
             warn_threshold (float | None):
             dimension (None | str | Unset):
             enabled (bool | Unset):  Default: True.
-            redacted (bool | Unset): True when an editor redacted this snapshot: `config` is then a tombstone (`redacted`,
-                `redacted_at`, `redacted_by`), the values it held are gone and the version cannot be restored. Default: False.
+            redacted (bool | Unset): True when this snapshot was redacted: `config` is then empty, the values it held are
+                gone from the version history and the version cannot be restored. The append-only audit log may still hold them
+                on the `check.update` event that recorded the edit. Default: False.
             redacted_at (datetime.datetime | None | Unset):
+            redacted_by_name (None | str | Unset):
             source_connection_id (None | Unset | UUID):
     """
 
@@ -62,6 +64,7 @@ class CheckVersionRead:
     enabled: bool | Unset = True
     redacted: bool | Unset = False
     redacted_at: datetime.datetime | None | Unset = UNSET
+    redacted_by_name: None | str | Unset = UNSET
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -116,6 +119,12 @@ class CheckVersionRead:
         else:
             redacted_at = self.redacted_at
 
+        redacted_by_name: None | str | Unset
+        if isinstance(self.redacted_by_name, Unset):
+            redacted_by_name = UNSET
+        else:
+            redacted_by_name = self.redacted_by_name
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -150,6 +159,8 @@ class CheckVersionRead:
             field_dict["redacted"] = redacted
         if redacted_at is not UNSET:
             field_dict["redacted_at"] = redacted_at
+        if redacted_by_name is not UNSET:
+            field_dict["redacted_by_name"] = redacted_by_name
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
 
@@ -248,6 +259,15 @@ class CheckVersionRead:
 
         redacted_at = _parse_redacted_at(d.pop("redacted_at", UNSET))
 
+        def _parse_redacted_by_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        redacted_by_name = _parse_redacted_by_name(d.pop("redacted_by_name", UNSET))
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -282,6 +302,7 @@ class CheckVersionRead:
             enabled=enabled,
             redacted=redacted,
             redacted_at=redacted_at,
+            redacted_by_name=redacted_by_name,
             source_connection_id=source_connection_id,
         )
 

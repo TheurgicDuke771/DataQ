@@ -364,10 +364,12 @@ export interface CheckVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
-  /** True once an editor redacted this snapshot: `config` is then a tombstone, the values it
-   *  held are gone and the version cannot be restored. Optional so older fixtures need no change. */
+  /** True once the suite's owner or an admin redacted this snapshot: `config` is then empty, the
+   *  values it held are gone and the version cannot be restored. Optional so older fixtures need
+   *  no change. */
   redacted?: boolean;
   redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /** A check's version history, newest first. Requires `view` on the suite. */
@@ -388,7 +390,7 @@ export async function restoreCheckVersion(
   return data;
 }
 
-/** Replace one version's config with a tombstone (edit-gated; the current version is refused). */
+/** Empty one version's config (suite owner/admin; the current version is refused). */
 export async function redactCheckVersion(
   suiteId: string,
   checkId: string,

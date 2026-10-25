@@ -21,6 +21,7 @@ export function CheckHistoryDrawer({
   suiteId,
   check,
   canRestore = false,
+  canRedact = false,
   onRestored,
   onClose,
 }: {
@@ -33,6 +34,11 @@ export function CheckHistoryDrawer({
    * viewer sees history exactly as read-only as v1 did.
    */
   canRestore?: boolean;
+  /**
+   * Whether the caller may redact a version — stricter than restore: destroying history is the
+   * suite's owner or admin (`canManageSuite`), matching the server's gate.
+   */
+  canRedact?: boolean;
   /**
    * Called after a successful restore so the editor reloads the check (the live config just
    * changed underneath it).
@@ -47,7 +53,7 @@ export function CheckHistoryDrawer({
   // (the drawer stays open so the new row is visible immediately).
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Redaction (#685) shares the restore gate: both are check mutations (suite `edit`).
+  // Redaction (#685) is gated above restore: owner/admin, not an edit share.
   const handleRedact = async (versionNo: number) => {
     if (!check) return;
     setRedactingVersion(versionNo);
@@ -107,28 +113,32 @@ export function CheckHistoryDrawer({
         </Descriptions>
       )}
       renderActions={
-        canRestore
+        canRestore || canRedact
           ? (version, isCurrent) =>
               // A redacted version has no config to restore (the server refuses it), and the
               // current one is the live config — neither action applies to them.
               !isCurrent &&
               !version.redacted && (
                 <Flex gap={8}>
-                  <RedactVersionButton
-                    versionNo={version.version_no}
-                    loading={redactingVersion === version.version_no}
-                    onConfirm={() => handleRedact(version.version_no)}
-                  />
-                  <Popconfirm
-                    title={`Restore v${version.version_no}?`}
-                    description="Creates a new version with this snapshot's config; nothing is deleted. Whether the check is enabled stays as it is now."
-                    okText="Restore"
-                    onConfirm={() => handleRestore(version.version_no)}
-                  >
-                    <Button size="small" loading={restoringVersion === version.version_no}>
-                      Restore this version
-                    </Button>
-                  </Popconfirm>
+                  {canRedact && (
+                    <RedactVersionButton
+                      versionNo={version.version_no}
+                      loading={redactingVersion === version.version_no}
+                      onConfirm={() => handleRedact(version.version_no)}
+                    />
+                  )}
+                  {canRestore && (
+                    <Popconfirm
+                      title={`Restore v${version.version_no}?`}
+                      description="Creates a new version with this snapshot's config; nothing is deleted. Whether the check is enabled stays as it is now."
+                      okText="Restore"
+                      onConfirm={() => handleRestore(version.version_no)}
+                    >
+                      <Button size="small" loading={restoringVersion === version.version_no}>
+                        Restore this version
+                      </Button>
+                    </Popconfirm>
+                  )}
                 </Flex>
               )
           : undefined

@@ -14,7 +14,7 @@ from sqlalchemy import func, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core import usage_telemetry, version_tombstone
+from backend.app.core import usage_telemetry
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import FLAT_FILE_TYPES
@@ -81,6 +81,7 @@ from backend.app.services import (
     coverage_settings_service,
     suggestion_claims,
     tag_service,
+    version_redaction,
 )
 from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
@@ -155,7 +156,7 @@ class CheckVersionIsCurrentError(DataQError):
 
 
 class CheckVersionRedactedError(DataQError):
-    # Raised both for a second redaction and for a restore: a tombstone is not a config.
+    # Raised both for a second redaction and for a restore: an emptied config is not a config.
     status_code = 409
     code = "check_version_redacted"
 
@@ -1782,7 +1783,7 @@ def list_check_versions(
         session.scalars(
             select(CheckVersion)
             .where(CheckVersion.check_id == check_id)
-            .options(selectinload(CheckVersion.author))
+            .options(selectinload(CheckVersion.author), selectinload(CheckVersion.redactor))
             .order_by(CheckVersion.version_no.desc())
         )
     )
@@ -1810,7 +1811,7 @@ def redact_check_version(
     *,
     actor_id: uuid.UUID | None = None,
 ) -> CheckVersion:
-    """Replace one snapshot's ``config`` with a tombstone (#685) — for a literal pasted into
+    """Empty one snapshot's ``config`` (#685) — for a literal pasted into
     custom SQL or a config field by mistake and since edited out. The row stays, the newest
     version is refused (it IS the check's current state, readable on the check), and the audit
     event names the version number only — never what it held.
@@ -1831,7 +1832,7 @@ def redact_check_version(
             "check version is already redacted",
             detail={"check_id": str(check_id), "version_no": version_no},
         )
-    version.config = version_tombstone.tombstone(actor_id=actor_id)
+    version_redaction.redact(version, actor_id=actor_id)
     audit_service.record(
         session,
         action="check.version_redact",
@@ -1862,7 +1863,8 @@ def restore_check_version(
     audit_before = audit_service.snapshot("check", check)
     version = _get_check_version(session, check_id, version_no)
     if version.redacted:
-        # A tombstone is not a config — applying it would turn a privacy action into a broken check.
+        # An emptied config is not a config: applying it would turn a privacy action into a
+        # broken check.
         raise CheckVersionRedactedError(
             "check version is redacted and cannot be restored",
             detail={"check_id": str(check_id), "version_no": version_no},

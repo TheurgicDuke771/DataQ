@@ -462,10 +462,12 @@ class ConnectionVersionRead(ApiModel):
     created_at: datetime
     redacted: bool = Field(
         default=False,
-        description="True when an admin redacted this snapshot: `config` is then a tombstone "
-        "(`redacted`, `redacted_at`, `redacted_by`) and the values it held are gone.",
+        description="True when an admin redacted this snapshot: `config` is then empty and the "
+        "values it held are gone from the version history (connection audit events never "
+        "carry config, so nothing else retains them).",
     )
     redacted_at: datetime | None = None
+    redacted_by_name: str | None = None
 
     @field_validator("config")
     @classmethod
@@ -501,7 +503,7 @@ def list_connection_versions(
 @router.delete(
     "/connections/{connection_id}/versions/{version_no}",
     response_model=ConnectionVersionRead,
-    summary="Redact one version's config (replace it with a tombstone)",
+    summary="Redact one version's config (empty it, keep the row)",
 )
 def redact_connection_version(
     connection_id: uuid.UUID,
@@ -510,7 +512,7 @@ def redact_connection_version(
     db: Annotated[Session, Depends(get_db)],
 ) -> ConnectionVersionRead:
     """For a value pasted into a config field by mistake and since edited out: the snapshot's
-    `config` becomes `{"redacted": true, "redacted_at", "redacted_by"}`; the row and the rest
+    `config` is emptied and the row stamped with who redacted it and when; the row and the rest
     of the history stay. The newest version is refused (409) — it is the connection's current
     state. Admin-only like every connection mutation; audited with the version number only.
     """

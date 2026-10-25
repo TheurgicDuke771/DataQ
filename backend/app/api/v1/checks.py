@@ -572,17 +572,19 @@ class CheckVersionRead(ApiModel):
     created_at: datetime
     redacted: bool = Field(
         default=False,
-        description="True when an editor redacted this snapshot: `config` is then a tombstone "
-        "(`redacted`, `redacted_at`, `redacted_by`), the values it held are gone and the "
-        "version cannot be restored.",
+        description="True when this snapshot was redacted: `config` is then empty, the values "
+        "it held are gone from the version history and the version cannot be restored. The "
+        "append-only audit log may still hold them on the `check.update` event that recorded "
+        "the edit.",
     )
     redacted_at: datetime | None = None
+    redacted_by_name: str | None = None
 
 
 @router.delete(
     "/suites/{suite_id}/checks/{check_id}/versions/{version_no}",
     response_model=CheckVersionRead,
-    summary="Redact one version's config (replace it with a tombstone)",
+    summary="Redact one version's config (empty it, keep the row)",
 )
 def redact_check_version(
     suite_id: uuid.UUID,
@@ -592,12 +594,13 @@ def redact_check_version(
     db: Annotated[Session, Depends(get_db)],
 ) -> CheckVersionRead:
     """For a literal pasted into custom SQL or a config field by mistake and since edited out:
-    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
-    the version can no longer be restored. The newest version is refused (409) — it is the
-    check's current state. Edit-gated like every check mutation; audited with the version
-    number only.
+    the snapshot's `config` is emptied and the row stamped with who redacted it and when; the
+    row and the rest of the history stay, and the version can no longer be restored. The newest
+    version is refused (409) — it is the check's current state. Destroying history is gated
+    above editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the
+    version number only.
     """
-    require_permission(db, suite_id, current_user.id, minimum="edit")
+    require_permission(db, suite_id, current_user.id, minimum="admin")
     version = svc.redact_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
     return CheckVersionRead.model_validate(version)
 

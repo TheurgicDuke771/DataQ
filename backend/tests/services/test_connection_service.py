@@ -1991,20 +1991,16 @@ def _redaction_events(db_session: Any, conn_id: uuid.UUID) -> list[AuditEvent]:
     )
 
 
-def test_redact_version_replaces_config_with_a_tombstone_and_keeps_the_row(db_session: Any) -> None:
+def test_redact_version_empties_config_stamps_the_row_and_keeps_it(db_session: Any) -> None:
     actor = _user(db_session)
     conn = _edit_twice(db_session, actor)
 
     out = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
 
     assert out.redacted is True
-    assert out.redacted_at is not None
-    assert out.config == {
-        "redacted": True,
-        "redacted_at": out.config["redacted_at"],
-        "redacted_by": str(actor.id),
-    }
-    assert "LEAKED" not in str(out.config)
+    assert out.redacted_at is not None and out.redacted_by == actor.id
+    assert out.redacted_by_name == actor.email
+    assert out.config == {}
     versions = _versions(db_session, conn.id)
     # The history keeps its shape: three rows, the other two untouched.
     assert [v.version_no for v in versions] == [1, 2, 3]

@@ -31,18 +31,22 @@
 > one deliberate exception*. A value pasted into a **config** field by mistake (a token, a
 > hostname with an embedded credential, a literal in custom SQL) and then edited out stayed
 > readable in the snapshot for every user who could open the History drawer. Both snapshot
-> tables now accept an in-place **redaction**: the row's `config` is replaced with a tombstone
-> (`{"redacted": true, "redacted_at", "redacted_by"}`) and every other column stays, so the
-> history keeps its shape and the drawer says "redacted by an admin on &lt;date&gt;" instead of
-> losing a row. Rows are never deleted, no column was added (the marker lives in the JSONB), and
-> the **newest** version is refused — it *is* the entity's current state, readable on the entity
-> itself; edit first, then redact. `connection_versions` is Admin-only (a connection mutation,
-> ADR 0033) with a bulk form that redacts every version but the current one; `check_versions`
-> is the same operation gated at suite `edit`, because custom SQL can carry a literal — the
-> question the issue asked to decide is decided the same way for both. A redacted check version
-> can no longer be restored (a tombstone is not a config). Each redaction is an audit event
-> (`connection.version_redact` / `check.version_redact`, ADR 0041) naming **which** version
-> numbers, never what they held — removing the values is the point.
+> tables now accept an in-place **redaction**: the row's `config` is emptied and two nullable
+> columns, `redacted_at` and `redacted_by`, record when and by whom; every other column stays, so
+> the history keeps its shape and the drawer says who redacted it and when instead of losing a
+> row. The flag is the column, never a marker inside the JSONB, so no user-supplied config can
+> pass itself off as redacted. Rows are never deleted, and the **newest** version is refused —
+> it *is* the entity's current state, readable on the entity itself; edit first, then redact.
+> `connection_versions` is Admin-only (a connection mutation, ADR 0033), one version at a time or
+> every version but the current one; `check_versions` is the same operation gated at the suite's
+> **owner or admin** — custom SQL can carry a literal, so checks need it too, but destroying
+> history is gated above editing it, and an `edit` share can restore a version but not redact
+> one. A redacted check version can no longer be restored (there is no config to apply). Each
+> redaction is an audit event (`connection.version_redact` / `check.version_redact`, ADR 0041)
+> naming **which** version numbers, never what they held. Connection audit payloads never carry
+> config, so a redacted connection value is gone; a check's `check.update` audit event records
+> its config, so the append-only audit log may still hold an edited-out check literal — the
+> redaction clears the product surface, not the durable record.
 
 ## Context
 

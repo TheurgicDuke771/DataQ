@@ -12,10 +12,11 @@ export interface HistoryVersion {
   name: string;
   changed_by_name: string | null;
   created_at: string;
-  /** Set once the snapshot's config was replaced with a tombstone (#685): the row is shown
-   *  with the redaction notice instead of its details. */
+  /** Set once the snapshot's config was emptied by a redaction (#685): the row is shown with the
+   *  redaction notice instead of its details. */
   redacted?: boolean;
   redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /**
@@ -110,12 +111,12 @@ function HistoryBody<V extends HistoryVersion>({
               </Typography.Text>
             </Flex>
             {version.redacted ? (
-              // The tombstone is all that is stored — there is no config to show.
+              // The config was emptied — there is nothing to show.
               <Alert
                 type="warning"
                 showIcon
                 title="Configuration redacted"
-                description={`Redacted by an admin on ${
+                description={`Redacted by ${version.redacted_by_name ?? 'a removed user'} on ${
                   version.redacted_at ? formatTimestamp(version.redacted_at) : 'an unknown date'
                 }. The values this version held are gone; its name, author and time are kept.`}
               />
@@ -147,7 +148,7 @@ export function RedactVersionButton({
   return (
     <Popconfirm
       title={`Redact v${versionNo}?`}
-      description="Replaces this version's stored configuration with a tombstone. Its name, author and time stay; the values cannot be recovered."
+      description="Empties this version's stored configuration. Its name, author and time stay; the values cannot be recovered."
       okText="Redact"
       okButtonProps={{ danger: true }}
       onConfirm={onConfirm}

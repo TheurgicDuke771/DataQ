@@ -1168,8 +1168,9 @@ def list_check_versions(
     Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
     check's name, kind, expectation type, ``engine`` (ADR 0036 — ``gx`` unless it
     was pointed at a platform-native engine like ``dmf`` **as of that version**),
-    dimension, full ``config`` and the three severity thresholds **as they were
-    at that version**, plus when the change was made and who made it.
+    dimension, ``config`` (the full stored config, or ``{}`` once ``redacted`` is
+    true) and the three severity thresholds **as they were at that version**,
+    plus when the change was made and who made it.
 
     ``total`` reports how many versions exist regardless of ``limit``, so a short
     page is not mistaken for the whole history — the oldest versions are the ones
@@ -1201,13 +1202,15 @@ def list_check_versions(
     not show that the alerting level never changed. What each past run was scored
     against is on its result (``expected_value.thresholds`` in ``get_run_results``).
 
-    **A version with ``redacted: true`` has no config to show.** An editor replaced
-    its stored values with a tombstone — ``config`` then holds only ``redacted``,
-    ``redacted_at`` and ``redacted_by`` — because something that should never have
-    been in a config field (a literal in custom SQL, a token) was pasted there and
-    later edited out. Its name, thresholds, author and time are still real; its
-    ``config`` is not what the check was, and ``restore_check_version`` refuses it.
-    Redaction itself has no MCP tool: it is done in the app's History drawer.
+    **A version with ``redacted: true`` has no config to show.** A suite owner or
+    admin emptied its stored config (``redacted_at`` and ``redacted_by_name`` say
+    who and when), usually because a value that should never have been stored —
+    a literal in custom SQL, a token — had been pasted into it. Its name,
+    thresholds, author and time are still real; its ``config`` is ``{}``, not what
+    the check was, and ``restore_check_version`` refuses it. Redaction cannot be
+    undone and has no MCP tool: it is done in the app's History drawer. The
+    append-only audit log may still hold the values on the ``check.update`` event
+    that recorded the edit; only an admin reads that.
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -1252,10 +1255,11 @@ def list_check_versions(
                     "critical_threshold": _num(v.critical_threshold),
                     "changed_at": v.created_at.isoformat(),
                     "changed_by_name": v.changed_by_name,
-                    # A redacted snapshot's `config` is the tombstone itself; the flag is what
-                    # a model should branch on (#685).
+                    # A redacted snapshot's `config` is `{}`; the flag is what a model should
+                    # branch on (#685).
                     "redacted": v.redacted,
                     "redacted_at": v.redacted_at.isoformat() if v.redacted_at else None,
+                    "redacted_by_name": v.redacted_by_name,
                 }
                 for v in versions[:limit]
             ],
@@ -2697,9 +2701,9 @@ def update_check(
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
     empty string, which would set that value, not clear it. If an earlier version
-    of the check had the field empty, ``restore_check_version`` will clear it;
-    otherwise the check must be recreated. ``kind`` cannot be changed at all;
-    recreate the check as the other kind.
+    of the check had the field empty, ``restore_check_version`` will clear it (a
+    redacted version cannot be restored); otherwise the check must be recreated.
+    ``kind`` cannot be changed at all; recreate the check as the other kind.
 
     Changing ``expectation_type`` is held to the same vetted set ``create_check``
     describes, so a type outside it is refused here too and the check keeps its
@@ -2716,7 +2720,8 @@ def update_check(
 
     Every update snapshots the new state as a check version, so the change is
     reviewable with ``list_check_versions`` and reversible with
-    ``restore_check_version``. Requires edit access to the suite.
+    ``restore_check_version`` unless that version is later redacted. Requires
+    edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -2782,10 +2787,11 @@ def restore_check_version(
     and keep everything else as it is now, use ``update_check`` with
     ``clear_thresholds`` instead; other empty fields only a restore brings back.
 
-    **Nothing is lost and nothing is renumbered.** History is additive: the
-    restore is recorded as a new version on top, so the state you are replacing
-    remains in ``list_check_versions`` and can itself be restored. Restoring the
-    version the check is already on is a no-op and records nothing.
+    **A restore itself loses nothing and renumbers nothing.** History is additive:
+    the restore is recorded as a new version on top, so the state you are
+    replacing stays in ``list_check_versions`` and can itself be restored — unless
+    a suite owner or admin has since redacted that version. Restoring the version
+    the check is already on is a no-op and records nothing.
 
     A restore never switches a check on or off. Each version records whether the
     check was ``enabled`` at the time, but that is history only: a disabled check
@@ -2798,8 +2804,9 @@ def restore_check_version(
     exactly as it was. That is deliberate: it prevents reinstating a definition
     the authoring path would no longer accept. **A redacted version is always
     refused** (``redacted: true`` in ``list_check_versions``): its config was
-    replaced with a tombstone and no longer exists anywhere, so there is nothing
-    to restore — say so rather than retrying.
+    emptied and is no longer stored on that version, so there is nothing to
+    restore from it — say so rather than retrying. A later version that copied
+    the same config forward is still restorable.
 
     **On an automatic baseline a restore puts back whether it inherited, not
     necessarily its numbers.** If the snapshot was taken while the check inherited
