@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "73744cde25b8",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1977-contracts-phase-b",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/alerting/render.py",
+    "backend/app/api/v1/contracts.py",
+    "backend/app/services/contract_service.py",
+    "backend/app/services/incident_evidence.py",
+    "backend/tests/api/test_contracts.py",
+    "backend/tests/services/test_contract_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/73/744cde25b8/0/metadata.json",
+      "transcript": "/73/744cde25b8/0/full.jsonl",
+      "compact_transcript": "/73/744cde25b8/0/transcript.jsonl",
+      "content_hash": "/73/744cde25b8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 22258,
+    "cache_read_tokens": 8110250,
+    "output_tokens": 15722,
+    "api_call_count": 11,
+    "subagent_tokens": {
+      "input_tokens": 28,
+      "cache_creation_tokens": 147021,
+      "cache_read_tokens": 1704554,
+      "output_tokens": 10393,
+      "api_call_count": 14
+    }
+  }
+}
