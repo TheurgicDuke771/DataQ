@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from ..models.check_as_of_read import CheckAsOfRead
     from ..models.result_read_expected_value_type_0 import ResultReadExpectedValueType0
     from ..models.result_read_observed_value_type_0 import ResultReadObservedValueType0
+    from ..models.result_read_redaction_reasons import ResultReadRedactionReasons
     from ..models.result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
     from ..models.result_read_sampling_type_0 import ResultReadSamplingType0
 
@@ -49,6 +50,11 @@ class ResultRead:
             check (CheckAsOfRead | None | Unset):
             redacted_columns (list[str] | Unset):
             redaction (None | ResultReadRedactionType0 | Unset):
+            redaction_reasons (ResultReadRedactionReasons | Unset): Why each entry of `redacted_columns` was masked, keyed
+                by column — the same key set. `own_tag`: the column's own warehouse classification; `inherited_tag`: `sensitive`
+                inherited through recorded column lineage; `policy`: the suite's `pii_columns`; `unclassified`: fail-closed mode
+                and nothing cleared the column; `detected`: the profiler found PII-shaped values; `classifier`: the read-time
+                name/value heuristic; `default_mask`: nobody classified the column, so masking is precautionary.
             sampling (None | ResultReadSamplingType0 | Unset):
     """
 
@@ -63,6 +69,7 @@ class ResultRead:
     check: CheckAsOfRead | None | Unset = UNSET
     redacted_columns: list[str] | Unset = UNSET
     redaction: None | ResultReadRedactionType0 | Unset = UNSET
+    redaction_reasons: ResultReadRedactionReasons | Unset = UNSET
     sampling: None | ResultReadSamplingType0 | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -129,6 +136,10 @@ class ResultRead:
         else:
             redaction = self.redaction
 
+        redaction_reasons: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.redaction_reasons, Unset):
+            redaction_reasons = self.redaction_reasons.to_dict()
+
         sampling: dict[str, Any] | None | Unset
         if isinstance(self.sampling, Unset):
             sampling = UNSET
@@ -157,6 +168,8 @@ class ResultRead:
             field_dict["redacted_columns"] = redacted_columns
         if redaction is not UNSET:
             field_dict["redaction"] = redaction
+        if redaction_reasons is not UNSET:
+            field_dict["redaction_reasons"] = redaction_reasons
         if sampling is not UNSET:
             field_dict["sampling"] = sampling
 
@@ -170,6 +183,9 @@ class ResultRead:
         )
         from ..models.result_read_observed_value_type_0 import (
             ResultReadObservedValueType0,
+        )
+        from ..models.result_read_redaction_reasons import (
+            ResultReadRedactionReasons,
         )
         from ..models.result_read_sample_failures_type_0 import (
             ResultReadSampleFailuresType0,
@@ -278,6 +294,13 @@ class ResultRead:
 
         redaction = _parse_redaction(d.pop("redaction", UNSET))
 
+        _redaction_reasons = d.pop("redaction_reasons", UNSET)
+        redaction_reasons: ResultReadRedactionReasons | Unset
+        if isinstance(_redaction_reasons, Unset):
+            redaction_reasons = UNSET
+        else:
+            redaction_reasons = ResultReadRedactionReasons.from_dict(_redaction_reasons)
+
         def _parse_sampling(data: object) -> None | ResultReadSamplingType0 | Unset:
             if data is None:
                 return data
@@ -307,6 +330,7 @@ class ResultRead:
             check=check,
             redacted_columns=redacted_columns,
             redaction=redaction,
+            redaction_reasons=redaction_reasons,
             sampling=sampling,
         )
 

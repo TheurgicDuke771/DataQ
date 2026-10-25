@@ -108,8 +108,48 @@ def check_sample_values(check: CheckReport) -> str:
     return f"e.g. {shown}" + (f", +{extra} more" if extra > 0 else "")
 
 
+#: Human wording for `run_service.RedactionReason` (#2255) — kept beside the renderer, not the
+#: ladder, because the ladder's vocabulary is a wire contract and this is prose.
+_REDACTION_REASON_LABELS: dict[str, str] = {
+    "own_tag": "warehouse tag",
+    "inherited_tag": "tag inherited through lineage",
+    "policy": "suite policy",
+    "unclassified": "unclassified under fail-closed mode",
+    "detected": "profiler detected personal data",
+    "classifier": "name/value classifier",
+    "default_mask": "never classified, masked as a precaution",
+}
+
+
+#: How many masked columns an alert names before "+N more" (a wide table can mask dozens).
+_MAX_REDACTION_NOTE_COLUMNS = 5
+
+
+def check_redaction_note(check: CheckReport) -> str:
+    """``"masked: email (warehouse tag), notes (never classified, masked as a precaution)"`` —
+    which sample columns were masked and why — or ``""`` when nothing was. A reason the
+    renderer does not know is shown verbatim rather than dropped, so a new rung is never
+    silently unlabelled."""
+    if not check.redacted_columns:
+        return ""
+    entries = [
+        (
+            f"{column} ({_REDACTION_REASON_LABELS.get(reason, reason)})"
+            if (reason := check.redaction_reasons.get(column))
+            else column
+        )
+        for column in check.redacted_columns[:_MAX_REDACTION_NOTE_COLUMNS]
+    ]
+    rest = len(check.redacted_columns) - len(entries)
+    if rest > 0:
+        # Capped like the narrative clause: Slack refuses a section over 3000 chars and the
+        # whole alert is then lost. The full list is on the run page.
+        entries.append(f"+{rest} more on the run page")
+    return "masked: " + ", ".join(entries)
+
+
 def check_detail(check: CheckReport) -> str:
-    """A one-line *expected · observed · unexpected* summary for a failing check."""
+    """A one-line *expected · observed · unexpected · masked* summary for a failing check."""
     parts: list[str] = []
     expected = _compact(check.expected_value)
     if expected:
@@ -125,6 +165,9 @@ def check_detail(check: CheckReport) -> str:
     values = check_sample_values(check)
     if values:
         parts.append(values)
+    masked = check_redaction_note(check)
+    if masked:
+        parts.append(masked)
     return " · ".join(parts)
 
 

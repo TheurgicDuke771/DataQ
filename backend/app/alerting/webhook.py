@@ -47,6 +47,10 @@ def _check_payload(check: CheckReport) -> dict[str, Any]:
         "observed_value": check.observed_value,
         "expected_value": check.expected_value,
         "sample_summary": check.sample_summary,
+        # Which columns of `sample_summary` were masked, and why (#2255) — same vocabulary as
+        # the REST `redaction_reasons` field.
+        "redacted_columns": list(check.redacted_columns),
+        "redaction_reasons": dict(check.redaction_reasons),
     }
 
 

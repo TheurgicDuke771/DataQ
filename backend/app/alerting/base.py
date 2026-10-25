@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, runtime_checkable
@@ -112,6 +113,12 @@ class CheckReport:
     # The check this result belongs to, so an alert can pair it with its incident
     # by identity — check names are not unique (#2108 review).
     check_id: uuid.UUID | None = None
+    # Which columns of `sample_summary` were masked and why (#2255) — the same pair the REST
+    # and MCP read paths return, so an alert reader can tell an inherited mask from an own
+    # tag. `redaction_reasons` has exactly the keys of `redacted_columns`; its values are
+    # `run_service.RedactionReason`.
+    redacted_columns: tuple[str, ...] = ()
+    redaction_reasons: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
