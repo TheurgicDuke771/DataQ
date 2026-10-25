@@ -15,6 +15,7 @@ GATES: dict[str, str] = {
     "get_suite_performance": "read",
     "list_assets": "read",
     "list_connections": "read",
+    "list_contracts": "read",  # visibility follows the linked suites (ADR 0052 §8)
     "list_notification_channels": "read",
     "list_seasonal_periods": "read",  # the workspace calendar, read by anyone (ADR 0048)
     "list_suites": "read",
@@ -60,6 +61,9 @@ GATES: dict[str, str] = {
     "update_schedule": "suite:edit",
     "update_suite": "suite:edit",
     "update_trigger_binding": "suite:edit",
+    # ── contract-scoped, via the linked suites (ADR 0052) ────────────────────
+    "export_contract": "contract:view",
+    "get_contract": "contract:view",
     # ── incident-scoped, via the incident's suite ────────────────────────────
     "ack_incident": "incident:edit",
     "get_incident": "incident:view",
@@ -80,7 +84,14 @@ MEMBER_DENIED_GATES = frozenset({"role:admin"})
 
 #: Gates whose tools must refuse a user with **no share on the named suite**.
 OUTSIDER_DENIED_GATES = frozenset(
-    {"suite:view", "suite:edit", "incident:view", "incident:edit", "read:suite-optional"}
+    {
+        "suite:view",
+        "suite:edit",
+        "incident:view",
+        "incident:edit",
+        "read:suite-optional",
+        "contract:view",
+    }
 )
 
 #: Every value that may appear in `GATES`. A typo'd gate would otherwise silently
@@ -93,6 +104,7 @@ KNOWN_GATES = frozenset(
         "suite:edit",
         "incident:view",
         "incident:edit",
+        "contract:view",
         "role:member",
         "role:admin",
     }

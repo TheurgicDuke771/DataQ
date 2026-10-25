@@ -295,10 +295,10 @@ def test_visibility_follows_the_linked_suites(db_session: Any) -> None:
     )
     db_session.commit()
 
-    assert [v.contract.id for v in svc.list_contracts(db_session, owner.id)] == [
+    assert [v.contract.id for v in svc.list_contracts(db_session, owner.id)[0]] == [
         outcome.contract.id
     ]
-    assert svc.list_contracts(db_session, outsider.id) == []
+    assert svc.list_contracts(db_session, outsider.id)[0] == []
     with pytest.raises(svc.ContractNotFoundError):
         svc.get_contract(db_session, outcome.contract.id, outsider.id)
     seen = svc.get_contract(db_session, outcome.contract.id, viewer.id)
@@ -318,8 +318,8 @@ def test_an_admin_sees_a_contract_with_no_linked_suite(db_session: Any) -> None:
     )
     db_session.add(contract)
     db_session.commit()
-    assert [v.contract.id for v in svc.list_contracts(db_session, admin.id)] == [contract.id]
-    assert svc.list_contracts(db_session, owner.id) == []
+    assert [v.contract.id for v in svc.list_contracts(db_session, admin.id)[0]] == [contract.id]
+    assert svc.list_contracts(db_session, owner.id)[0] == []
 
 
 def test_delete_unlinks_both_columns_and_keeps_the_suites(db_session: Any) -> None:
@@ -856,3 +856,88 @@ def test_the_alert_clause_leaves_missing_parts_out() -> None:
         "contract c 1 · quality"
     )
     assert _contract_clause({"clause": {}}) == "contract"
+
+
+def test_a_clause_whose_check_is_gone_is_reported_missing(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    db_session.delete(_rule_check(orders, "row-floor"))
+    db_session.commit()
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    missing = [c for c in result.clauses if c.state == "missing"]
+    assert [c.clause["rule_id"] for c in missing] == ["row-floor"]
+    assert missing[0].check_id is None and missing[0].drifted is None
+    assert result.counts["missing"] == 1
+
+
+def test_a_hand_linked_suite_reports_every_clause_missing(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    refunds = _suite(db_session, outcome, "refunds")
+    svc.link_suite(db_session, refunds, contract_id=None, contract_object=None, actor_id=actor.id)
+    hand = Suite(name="hand", connection_id=conn.id, created_by=actor.id)
+    db_session.add(hand)
+    db_session.commit()
+    svc.link_suite(
+        db_session,
+        hand,
+        contract_id=outcome.contract.id,
+        contract_object="refunds",
+        actor_id=actor.id,
+    )
+    db_session.commit()
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    hand_states = {c.state for c in result.clauses if c.suite_id == hand.id}
+    assert hand_states == {"missing"}
+
+
+def test_a_refused_clause_is_not_enforced_rather_than_missing(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    doc = _doc()
+    doc["schema"][0]["quality"] = [{"id": "bad", "metric": "rowCount", "mustBeLessThan": 0}]
+    outcome = _import(db_session, actor, conn, doc)
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    assert "bad" not in {c.clause.get("rule_id") for c in result.clauses if c.state == "missing"}
+
+
+def test_an_engine_change_counts_as_drift(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    check = next(
+        c for c in orders.checks if c.expectation_type == "expect_column_values_to_be_unique"
+    )
+    check.engine = "dmf"
+    db_session.commit()
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    assert next(c for c in result.clauses if c.check_id == check.id).drifted is True
+
+
+def test_versions_are_ordered_by_import_time_with_a_latest_flag(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    first = _import(db_session, actor, conn, _doc("1.9.0"))
+    # The test fixture shares one transaction, so both rows would carry the same now(); two real
+    # imports are separate requests. Age the first explicitly.
+    from datetime import UTC, datetime, timedelta
+
+    first.contract.created_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+    second = _import(
+        db_session, actor, conn, _doc("1.10.0"), suite_ids=list(first.created_suite_ids)
+    )
+    admin = _user(db_session, role="admin")
+    rows, total = svc.list_contracts(db_session, admin.id)
+    assert total == 2
+    assert [(v.contract.version, v.latest_version) for v in rows] == [
+        ("1.10.0", True),
+        ("1.9.0", False),
+    ]
+    assert svc.get_contract(db_session, second.contract.id, actor.id).latest_version is True
+    page, total = svc.list_contracts(db_session, admin.id, limit=1, offset=1)
+    assert [v.contract.version for v in page] == ["1.9.0"] and total == 2

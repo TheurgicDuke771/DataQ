@@ -85,6 +85,9 @@ class ContractRead(ApiModel):
     #: The `apiVersion` the document declared.
     api_version: str
     created_at: datetime
+    #: The newest imported version of this `odcs_id` — "the current contract". Versions are
+    #: ordered by import time, never by the version string.
+    latest_version: bool
     #: Linked suites the caller can view.
     suites: list[ContractSuiteRead]
     #: Linked suites the caller cannot view — counted, never named (ADR 0037).
@@ -108,6 +111,7 @@ class ContractRead(ApiModel):
             "tenant": c.tenant,
             "api_version": c.api_version,
             "created_at": c.created_at,
+            "latest_version": visible.latest_version,
             "suites": [
                 ContractSuiteRead(
                     id=s.id,
@@ -134,16 +138,20 @@ class ContractRead(ApiModel):
 
 class ClauseStateRead(ApiModel):
     suite_id: uuid.UUID
-    check_id: uuid.UUID
-    check_name: str
+    #: Null for a `missing` clause — the suite has no check for it.
+    check_id: uuid.UUID | None
+    check_name: str | None
     #: `{object, property, rule_id, field}` — the clause the check enforces.
     clause: dict[str, Any]
     #: `pass` / `warn` / `fail` / `critical` from the suite's latest run; `unverified` when the
     #: check errored or was skipped; `not_run` when that run has no result for it (added since,
-    #: or the run is still going or stopped early); `disabled` when the check is switched off.
+    #: or the run is still going or stopped early); `disabled` when the check is switched off;
+    #: `missing` when the contract derives a check for the clause and the suite has none
+    #: (deleted since, or the suite was linked by hand) — the clause is not enforced at all.
     state: str
-    #: The check was edited since its import, so it may no longer say what the clause says.
-    drifted: bool
+    #: The check was edited since its import (engine, type, config or thresholds), so it may no
+    #: longer say what the clause says; null when that cannot be told (no check, or none recorded).
+    drifted: bool | None
 
 
 class SuiteComplianceRead(ApiModel):
@@ -264,14 +272,16 @@ def import_contract(
     summary="List data contracts",
     description=(
         "Contracts with at least one linked suite the caller can view (a workspace admin also "
-        "sees contracts with none). Each version of a contract is its own row."
+        "sees contracts with none). Each version of a contract is its own row, grouped by "
+        "`odcs_id` with the newest import first; `latest_version` marks the current one."
     ),
 )
 def list_contracts(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[ContractRead]:
-    return [ContractRead.of(v) for v in svc.list_contracts(db, current_user.id)]
+    rows, _ = svc.list_contracts(db, current_user.id)
+    return [ContractRead.of(v) for v in rows]
 
 
 @router.get(

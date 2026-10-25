@@ -65,12 +65,16 @@ class SuiteImportConnectionInvalidError(DataQError):
     code = "suite_import_connection_invalid"
 
 
-def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
-    """Build a portable document from an already-loaded, authorised suite."""
+def export_suite(
+    session: Session, suite: Suite, *, checks: list[Check] | None = None
+) -> dict[str, Any]:
+    """Build a portable document from an already-loaded, authorised suite. ``checks`` — the
+    suite's checks in `CHECK_ORDER`, when the caller already loaded them."""
     # The listing order (`CHECK_ORDER`), so an export reads like the checks list.
-    checks = list(
-        session.scalars(select(Check).where(Check.suite_id == suite.id).order_by(*CHECK_ORDER))
-    )
+    if checks is None:
+        checks = list(
+            session.scalars(select(Check).where(Check.suite_id == suite.id).order_by(*CHECK_ORDER))
+        )
     docs: list[dict[str, Any]] = []
     inherited = coverage_settings_service.inherited_settings(session, checks)
     for c in checks:

@@ -27,6 +27,7 @@ from backend.app.db.models import (
     CONTRACT_CHECK_ORIGIN,
     RESULT_SEVERITY_TIERS,
     Check,
+    Connection,
     Contract,
     Result,
     Schedule,
@@ -173,6 +174,7 @@ def _current_fingerprint(check: Check) -> str:
         check.warn_threshold,
         check.fail_threshold,
         check.critical_threshold,
+        engine=check.engine,
     )
 
 
@@ -578,6 +580,9 @@ class VisibleContract:
     contract: Contract
     suites: list[Suite]
     restricted_suite_count: int
+    #: The newest imported version of this `odcs_id` (by import time) — what "the current
+    #: contract" means when several versions are stored.
+    latest_version: bool = True
 
 
 def _visible_from(
@@ -597,19 +602,44 @@ def _visible(session: Session, contract: Contract, user_id: uuid.UUID) -> Visibl
     return _visible_from(contract, perms, is_admin=suite_authz.is_workspace_admin(session, user_id))
 
 
-def list_contracts(session: Session, user_id: uuid.UUID) -> list[VisibleContract]:
-    """One permissions query for every linked suite and one role lookup, whatever the count."""
+def _latest_ids(session: Session, odcs_ids: set[str]) -> set[uuid.UUID]:
+    """The newest-imported row per `odcs_id` (a version string does not sort: 1.10 < 1.9)."""
+    if not odcs_ids:
+        return set()
+    rows = session.execute(
+        select(Contract.id)
+        .where(Contract.odcs_id.in_(odcs_ids))
+        .order_by(Contract.odcs_id, Contract.created_at.desc(), Contract.id.desc())
+        .distinct(Contract.odcs_id)
+    ).scalars()
+    return set(rows)
+
+
+def list_contracts(
+    session: Session, user_id: uuid.UUID, *, limit: int | None = None, offset: int = 0
+) -> tuple[list[VisibleContract], int]:
+    """The caller's visible contract versions — grouped by `odcs_id`, newest import first —
+    and how many there are in all. One permissions query and one role lookup, whatever the
+    count."""
     contracts = list(
         session.scalars(
             select(Contract)
             .options(selectinload(Contract.suites))
-            .order_by(Contract.name, Contract.version)
+            .order_by(Contract.odcs_id, Contract.created_at.desc(), Contract.id.desc())
         )
     )
     suites = [s for c in contracts for s in c.suites]
     perms = suite_authz.effective_permissions(session, suites, user_id) if suites else {}
     is_admin = suite_authz.is_workspace_admin(session, user_id)
-    return [v for c in contracts if (v := _visible_from(c, perms, is_admin=is_admin)) is not None]
+    latest = _latest_ids(session, {c.odcs_id for c in contracts})
+    visible = []
+    for c in contracts:
+        v = _visible_from(c, perms, is_admin=is_admin)
+        if v is not None:
+            v.latest_version = c.id in latest
+            visible.append(v)
+    page = visible[offset:] if limit is None else visible[offset : offset + limit]
+    return page, len(visible)
 
 
 def get_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID) -> VisibleContract:
@@ -618,6 +648,7 @@ def get_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID) -
     visible = _visible(session, contract, user_id) if contract is not None else None
     if visible is None:
         raise ContractNotFoundError("contract not found", detail={"contract_id": str(contract_id)})
+    visible.latest_version = visible.contract.id in _latest_ids(session, {visible.contract.odcs_id})
     return visible
 
 
@@ -651,18 +682,30 @@ def delete_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID
 
 #: A clause's state in the rollup — the result its check produced in the suite's latest run, or why
 #: there is none. `not_enforced` clauses are the contract's `unmapped` list, reported beside these.
-CLAUSE_STATES = ("pass", "warn", "fail", "critical", "unverified", "not_run", "disabled")
+CLAUSE_STATES = (
+    "pass",
+    "warn",
+    "fail",
+    "critical",
+    "unverified",
+    "not_run",
+    "disabled",
+    "missing",
+)
 
 
 @dataclass
 class ClauseState:
     suite_id: uuid.UUID
-    check_id: uuid.UUID
-    check_name: str
+    #: None for a `missing` clause: the contract derives a check for it and the suite has none
+    #: (deleted since, or the suite was linked by hand and never imported).
+    check_id: uuid.UUID | None
+    check_name: str | None
     clause: dict[str, Any]
     state: str
-    #: The check was edited since its import, so it may no longer say what the clause says.
-    drifted: bool
+    #: The check was edited since its import, so it may no longer say what the clause says;
+    #: None when that cannot be told (no check, or no fingerprint was recorded).
+    drifted: bool | None
 
 
 @dataclass
@@ -691,6 +734,24 @@ def _clause_state(check: Check, by_check: dict[uuid.UUID, str]) -> str:
         return "not_run"
     status = by_check[check.id]
     return status if status in RESULT_SEVERITY_TIERS else "unverified"
+
+
+def _expected_clauses(session: Session, contract: Contract, suite: Suite) -> list[dict[str, Any]]:
+    """The clauses the contract derives a check for on this suite's object and datasource — the
+    translation re-run, so a clause whose check is gone still shows up (as `missing`)."""
+    connection = session.get(Connection, suite.connection_id)
+    if connection is None or suite.contract_object is None:
+        return []
+    translated = tr.translate(contract.spec, connection_type=connection.type)
+    obj = next((o for o in translated.objects if o.name == suite.contract_object), None)
+    if obj is None:
+        return []
+    # A clause the import recorded as not enforced (e.g. the validators refused its check) is
+    # already counted there; it is not also `missing`.
+    not_enforced = {_clause_key(u) for u in contract.unmapped or []}
+    return [
+        ref for draft in obj.checks if _clause_key(ref := draft.ref.as_dict()) not in not_enforced
+    ]
 
 
 def compliance(session: Session, visible: VisibleContract) -> Compliance:
@@ -735,8 +796,10 @@ def compliance(session: Session, visible: VisibleContract) -> Compliance:
                 results_final=run is not None and run.status in AGGREGATABLE_RUN_STATUSES,
             )
         )
+        present: set[tuple[Any, ...] | None] = set()
         for check in checks_by_suite[suite.id]:
             ref = check.contract_ref or {}
+            present.add(_clause_key(ref))
             stored = ref.get("fingerprint")
             clauses.append(
                 ClauseState(
@@ -745,9 +808,21 @@ def compliance(session: Session, visible: VisibleContract) -> Compliance:
                     check_name=check.name,
                     clause={k: ref.get(k) for k in ("object", "property", "rule_id", "field")},
                     state=_clause_state(check, by_check),
-                    drifted=stored is not None and stored != _current_fingerprint(check),
+                    drifted=None if stored is None else stored != _current_fingerprint(check),
                 )
             )
+        for ref in _expected_clauses(session, contract, suite):
+            if _clause_key(ref) not in present:
+                clauses.append(
+                    ClauseState(
+                        suite_id=suite.id,
+                        check_id=None,
+                        check_name=None,
+                        clause=ref,
+                        state="missing",
+                        drifted=None,
+                    )
+                )
     counts = dict.fromkeys(CLAUSE_STATES, 0)
     for clause in clauses:
         counts[clause.state] += 1

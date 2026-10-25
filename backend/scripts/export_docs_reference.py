@@ -46,6 +46,7 @@ GATES_DOC: dict[str, tuple[str, bool]] = {
     "suite:edit": ("`edit` on the suite", False),
     "incident:view": ("`view` on the incident's suite", True),
     "incident:edit": ("`edit` on the incident's suite", False),
+    "contract:view": ("`view` on one of the contract's suites (or a workspace admin)", True),
     "role:member": ("workspace Member or Admin", False),
 }
 

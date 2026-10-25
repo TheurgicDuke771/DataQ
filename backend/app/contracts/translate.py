@@ -180,13 +180,15 @@ class CheckDraft:
     adopt_check_id: str | None = None
 
     def fingerprint(self) -> str:
-        """The rule's identity (type + config + thresholds), the `check_suggestions` idea."""
+        """The rule's identity (type + engine + config + thresholds), the `check_suggestions`
+        idea — so re-pointing a check to another engine counts as an edit."""
         return fingerprint(
             self.expectation_type,
             self.config,
             self.warn_threshold,
             self.fail_threshold,
             self.critical_threshold,
+            engine=self.engine,
         )
 
     def ref_dict(self) -> dict[str, Any]:
@@ -203,10 +205,13 @@ def fingerprint(
     warn: Decimal | None,
     fail: Decimal | None,
     critical: Decimal | None,
+    *,
+    engine: str = GX_ENGINE,
 ) -> str:
     canonical = json.dumps(
         {
             "type": expectation_type,
+            "engine": engine,
             "config": config,
             "thresholds": [None if t is None else str(Decimal(t)) for t in (warn, fail, critical)],
         },

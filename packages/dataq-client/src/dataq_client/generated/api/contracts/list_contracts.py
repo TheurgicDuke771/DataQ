@@ -56,7 +56,8 @@ def sync_detailed(
     """List data contracts
 
      Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts
-    with none). Each version of a contract is its own row.
+    with none). Each version of a contract is its own row, grouped by `odcs_id` with the newest import
+    first; `latest_version` marks the current one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -82,7 +83,8 @@ def sync(
     """List data contracts
 
      Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts
-    with none). Each version of a contract is its own row.
+    with none). Each version of a contract is its own row, grouped by `odcs_id` with the newest import
+    first; `latest_version` marks the current one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -104,7 +106,8 @@ async def asyncio_detailed(
     """List data contracts
 
      Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts
-    with none). Each version of a contract is its own row.
+    with none). Each version of a contract is its own row, grouped by `odcs_id` with the newest import
+    first; `latest_version` marks the current one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -128,7 +131,8 @@ async def asyncio(
     """List data contracts
 
      Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts
-    with none). Each version of a contract is its own row.
+    with none). Each version of a contract is its own row, grouped by `odcs_id` with the newest import
+    first; `latest_version` marks the current one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

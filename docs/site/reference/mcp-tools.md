@@ -6,8 +6,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 56 |
-| Read-only | 32 |
+| Tools | 59 |
+| Read-only | 35 |
 | Changes state | 18 |
 | Live probe | 6 |
 
@@ -18,12 +18,14 @@ connection mutation, and a credential must never transit an LLM.
 
 | Tool | Who can call it | What it does |
 |---|---|---|
+| `export_contract` | `view` on one of the contract's suites (or a workspace admin) | Export a data contract as an Open Data Contract Standard (ODCS v3) document. |
 | `export_suite` | `view` on the suite | Export a suite as a portable document you can review or re-create elsewhere. |
 | `get_adf_pipeline_status` | any signed-in user | Deprecated alias for ``get_pipeline_status`` — use that tool instead. |
 | `get_asset` | any signed-in user | Get one asset's health, the suites that check it, and its lineage neighbours. |
 | `get_check` | `view` on the suite | Get one check's full definition by id. |
 | `get_check_history` | `view` on the suite | Get one check's recent result history — how it has behaved run over run. |
 | `get_column_policy` | `view` on the suite | Get the suite's failing-sample redaction policy — which columns are masked. |
+| `get_contract` | `view` on one of the contract's suites (or a workspace admin) | Get one data contract with its compliance rollup — is each clause holding? |
 | `get_coverage` | any signed-in user | Get how much of the asset inventory is watched, and how often automatic checks cry wolf. |
 | `get_detected_seasonal_periods` | `view` on the suite | Detect the sale seasons and one-off peaks in an anomaly check's own stored history (read-only; changes no verdict): runs of days or weeks at or above ``thresholds.ratio`` (1.5) times the level of the periods the check is scored against (their median with ``yearly`` on, their mean without: ``thresholds.level``). |
 | `get_doc` | any signed-in user | Read a published DataQ user-facing doc page, verbatim. |
@@ -40,6 +42,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_check_versions` | `view` on the suite | Get one check's edit history — how its definition has changed over time. |
 | `list_checks` | `view` on the suite | List the checks (rules and monitors) configured on one suite. |
 | `list_connections` | any signed-in user | List the configured datasource and orchestration connections, with health. |
+| `list_contracts` | any signed-in user | List the data contracts (ODCS) DataQ enforces that you can see. |
 | `list_incidents` | any signed-in user; suite-scoped when a suite is named | List data-quality incidents — what is unresolved *right now*, and since when. |
 | `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |

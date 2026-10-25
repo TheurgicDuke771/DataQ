@@ -31,6 +31,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.contracts.export import export_contract as _export_contract
 from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
@@ -78,6 +79,7 @@ from backend.app.services import (
     channel_service,
     check_service,
     connection_service,
+    contract_service,
     coverage_service,
     coverage_settings_service,
     credential_health,
@@ -680,6 +682,9 @@ def list_suites() -> list[dict[str, Any]]:
                     "enabled_check_count": int(enabled_counts.get(s.id, 0)),
                     # Loaded with the suites (selectinload), not one query per row.
                     "tags": s.tag_names,
+                    # The data contract it enforces (ADR 0052) — pass to `get_contract`.
+                    "contract_id": str(s.contract_id) if s.contract_id else None,
+                    "contract_object": s.contract_object,
                     "last_run": (
                         {
                             "status": last_run.status,
@@ -981,6 +986,16 @@ def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict
         "dimension": check.dimension,
         # Workspace labels (#888), as on `list_suites`; `[]` means untagged, not unknown.
         "tags": check.tag_names,
+        # `contract` = derived from a data-contract clause (ADR 0052); `contract_clause` names it.
+        "origin": check.origin,
+        "contract_clause": (
+            {
+                k: check.contract_ref.get(k)
+                for k in ("odcs_id", "object", "property", "rule_id", "field")
+            }
+            if check.contract_ref
+            else None
+        ),
         # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
         # equivalence): the baseline connection the suite's dataset is diffed
         # against (ADR 0015). Without it an LLM can describe a comparison check's
@@ -2753,6 +2768,9 @@ def update_check(
     reviewable with ``list_check_versions`` and reversible with
     ``restore_check_version`` unless that version is later redacted. Requires
     edit access to the suite.
+
+    A check whose `origin` is `contract` enforces a data-contract clause: editing its
+    type, engine, config or thresholds marks that clause `drifted` in `get_contract`.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -2879,6 +2897,10 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
     fit: ``update_check`` with ``enabled=false`` when the intent is to stop the
     check running but keep its history, and ``snooze_check`` when it is only to
     stop the alerting. Requires edit access to the suite.
+
+    Deleting a contract-derived check (`origin: contract`) leaves its clause unenforced:
+    `get_contract` then reports it as `missing`. Switching the check off is usually the
+    better answer.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -3844,6 +3866,8 @@ def update_suite(
             "connection_id": str(suite.connection_id),
             "target": suite.target,
             "tags": suite.tag_names,
+            "contract_id": str(suite.contract_id) if suite.contract_id else None,
+            "contract_object": suite.contract_object,
             # Whether the suite can actually run now — the question this tool is
             # usually called to fix, and one an LLM should confirm rather than
             # infer from the absence of an error. It is the ONE precondition
@@ -4654,6 +4678,106 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         return {
             **_incident_payload(incident),
             "evidence": incident_service.evidence_for_caller(session, incident, user_id=user.id),
+        }
+
+
+def _contract_payload(visible: contract_service.VisibleContract) -> dict[str, Any]:
+    """The REST `ContractRead` shape — one serializer for both surfaces."""
+    from backend.app.api.v1.contracts import ContractRead
+
+    return ContractRead.of(visible).model_dump(mode="json")
+
+
+@mcp.tool
+def list_contracts(
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List the data contracts (ODCS) DataQ enforces that you can see.
+
+    Use this for 'which data contracts do we have?' or to find a contract's id before
+    `get_contract`. Returns one entry per contract VERSION — grouped by `odcs_id`, newest
+    import first, with `latest_version: true` on the current one (versions are ordered by
+    import time; never compare version strings) — with its name, status, `created_at`, the
+    suites that enforce it (their ODCS schema object and whether each can run),
+    `restricted_suite_count` (linked suites you cannot see — counted, never named) and
+    `unmapped` (clauses DataQ could not turn into a check, with the reason). A superseded
+    version usually has no suites left (they moved to the newer one). Paged: `total` and
+    `truncated` say whether there is more.
+
+    What this does NOT tell you: whether a clause is holding (that is `get_contract`), and
+    whether a table is covered by a contract at all — a suite enforces a contract only when
+    the contract was imported for it or it was linked by hand, so an empty list is not proof
+    that no contract exists for some dataset. You see a contract only if you can view at
+    least one of its suites (a workspace admin also sees contracts with none).
+    """
+    with _ctx() as (session, user), _service_errors():
+        rows, total = contract_service.list_contracts(session, user.id, limit=limit, offset=offset)
+        return {
+            "total": total,
+            "returned": len(rows),
+            "truncated": offset + len(rows) < total,
+            "contracts": [_contract_payload(v) for v in rows],
+        }
+
+
+@mcp.tool
+def get_contract(contract_id: str) -> dict[str, Any]:
+    """Get one data contract with its compliance rollup — is each clause holding?
+
+    Use this for 'is the seller_payments contract being met?' or 'which clauses of the orders
+    contract are failing?'. Returns the contract (as `list_contracts`), then `compliance`:
+    `clauses` — one per clause the contract derives a check for on each visible suite, with
+    the `state` from that suite's LATEST run (`pass` / `warn` / `fail` / `critical`;
+    `unverified` when the check errored or was skipped; `not_run` when that run has no result
+    for it; `disabled` when the check is switched off; `missing` when the suite has NO check
+    for the clause — deleted since, or the suite was linked by hand — so it is not enforced at
+    all) and `drifted` (true when the check was edited since the import, so it may no longer
+    say what the clause says and can pass while the clause would not; null when that cannot be
+    told); `suites` — each suite's latest run and `results_final`; `counts` per state; and
+    `not_enforced`, the number of `unmapped` clauses.
+
+    Before calling the contract met, check all of: `results_final` is true for every suite (it
+    is false while a run is queued or running and for a failed or cancelled run, whose results
+    are partial); no clause is `missing`, `disabled`, `not_run` or `unverified`;
+    `not_enforced` is 0 or the user accepts those clauses as out of scope; and
+    `restricted_suite_count` is 0 — suites you cannot see are left out of `clauses` entirely.
+    It reads the latest run only, not a trend.
+    """
+    from backend.app.api.v1.contracts import ComplianceRead
+
+    cid = _parse_uuid(contract_id, field="contract_id")
+    with _ctx() as (session, user), _service_errors():
+        visible = contract_service.get_contract(session, cid, user.id)
+        result = contract_service.compliance(session, visible)
+        return {
+            **_contract_payload(visible),
+            "compliance": ComplianceRead.of(result).model_dump(mode="json"),
+        }
+
+
+@mcp.tool
+def export_contract(contract_id: str) -> dict[str, Any]:
+    """Export a data contract as an Open Data Contract Standard (ODCS v3) document.
+
+    Use this for 'give me the orders contract as ODCS' or to hand a contract to another tool.
+    Returns `document`: the contract exactly as it was imported (every schema object and rule
+    the producer wrote), in the newest ODCS v3 vocabulary DataQ knows, plus `dataq.*` custom
+    properties naming the check behind each rule on the suites you can see; checks people
+    added to those suites appear as `type: custom, engine: dataq` rules. Read-only.
+
+    Objects and rules of suites you cannot see are still in the document (they come from the
+    stored contract) but carry no `dataq.*` annotations — their absence does not mean those
+    rules are unenforced. `restricted_suite_count` says how many linked suites that applies
+    to. Importing a contract is not available over MCP; it is done in the app or REST API.
+    """
+    cid = _parse_uuid(contract_id, field="contract_id")
+    with _ctx() as (session, user), _service_errors():
+        visible = contract_service.get_contract(session, cid, user.id)
+        return {
+            "contract_id": str(visible.contract.id),
+            "restricted_suite_count": visible.restricted_suite_count,
+            "document": _export_contract(session, visible.contract, visible.suites),
         }
 
 

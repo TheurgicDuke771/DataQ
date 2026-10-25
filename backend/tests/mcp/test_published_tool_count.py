@@ -12,7 +12,7 @@ _TOTAL = re.compile(
     r"\b(\d+) (?:curated |MCP |`/mcp` )?tools\b|\bThe (\d+) split\b|\b(\d+)-tool (?!surface)"
 )
 _SPLIT = re.compile(r"(\d+) read-only, (\d+) that change state,? (?:and )?(\d+)")
-_READ_ONLY_GATES = ("read", "read:suite-optional", "suite:view", "incident:view")
+_READ_ONLY_GATES = ("read", "read:suite-optional", "suite:view", "incident:view", "contract:view")
 
 
 def _published_pages() -> list[Path]:
