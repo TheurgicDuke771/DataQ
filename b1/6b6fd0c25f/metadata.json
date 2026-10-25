@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "b16b6fd0c25f",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1977-contracts-phase-b",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/alerting/render.py",
+    "backend/app/api/v1/contracts.py",
+    "backend/app/api/v1/suites.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/audit_service.py",
+    "backend/app/services/contract_service.py",
+    "backend/app/services/incident_evidence.py",
+    "backend/app/services/llm_rca.py",
+    "backend/app/services/suite_service.py",
+    "backend/tests/api/test_contracts.py",
+    "backend/tests/services/test_contract_service.py",
+    "changelog.d/1977-2.added.md",
+    "docs/site/adr/0052-data-contracts-odcs.md",
+    "docs/site/guides/data-contracts.md",
+    "docs/site/reference/openapi.json",
+    "packages/dataq-client/src/dataq_client/generated/api/contracts/get_contract.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/clause_state_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/clause_state_read_clause.py",
+    "packages/dataq-client/src/dataq_client/generated/models/compliance_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/compliance_read_counts.py",
+    "packages/dataq-client/src/dataq_client/generated/models/contract_detail_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_compliance_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_contract_link.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_update.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b1/6b6fd0c25f/0/metadata.json",
+      "transcript": "/b1/6b6fd0c25f/0/full.jsonl",
+      "compact_transcript": "/b1/6b6fd0c25f/0/transcript.jsonl",
+      "content_hash": "/b1/6b6fd0c25f/0/content_hash.txt",
+      "prompt": "/b1/6b6fd0c25f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 718,
+    "cache_creation_tokens": 972287,
+    "cache_read_tokens": 141335787,
+    "output_tokens": 248828,
+    "api_call_count": 286,
+    "subagent_tokens": {
+      "input_tokens": 3602,
+      "cache_creation_tokens": 1269486,
+      "cache_read_tokens": 38422631,
+      "output_tokens": 156005,
+      "api_call_count": 186
+    }
+  }
+}
