@@ -26,6 +26,10 @@ class ComparisonSideRead:
         Attributes:
             check (ComparisonCheckRead): A check's identity as it WAS when one side's result was written (from
                 `check_versions`), never its current state — the two sides of a row may differ.
+
+                `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
+                the result's `created_at`; `live` = the check has NO version row, so this is its
+                current state and may postdate the result — a reader must say so.
             metric_value (float | None):
             observed_value (ComparisonSideReadObservedValueType0 | None):
             result_id (UUID):

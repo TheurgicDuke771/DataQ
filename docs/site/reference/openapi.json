@@ -3877,7 +3877,7 @@
         "type": "object"
       },
       "ComparisonCheckRead": {
-        "description": "A check's identity as it WAS when one side's result was written (from\n`check_versions`), never its current state \u2014 the two sides of a row may differ.",
+        "description": "A check's identity as it WAS when one side's result was written (from\n`check_versions`), never its current state \u2014 the two sides of a row may differ.\n\n`resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at\nthe result's `created_at`; `live` = the check has NO version row, so this is its\ncurrent state and may postdate the result \u2014 a reader must say so.",
         "properties": {
           "column": {
             "anyOf": [
@@ -3937,6 +3937,21 @@
               }
             ],
             "title": "Name"
+          },
+          "resolved_from": {
+            "anyOf": [
+              {
+                "enum": [
+                  "version",
+                  "live"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved From"
           }
         },
         "required": [
@@ -9056,9 +9071,108 @@
         "title": "ReadAllResult",
         "type": "object"
       },
-      "ResultRead": {
-        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
+      "ResultCheckRead": {
+        "description": "The check as it WAS when this result was written (#1613) \u2014 `engine` (ADR 0036),\n`dimension` (ADR 0038), `expectation_type` and `kind` resolved from `check_versions`\nas of the result's own `created_at`, not from the check's current row, so a check\nre-pointed or re-classified after a run never relabels that run's results. See\n`resolved_from` for the no-history fallback.",
         "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "expectation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectation Type"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "resolved_from": {
+            "anyOf": [
+              {
+                "enum": [
+                  "version",
+                  "live"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved From"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "engine",
+          "expectation_type",
+          "dimension",
+          "column"
+        ],
+        "title": "ResultCheckRead",
+        "type": "object"
+      },
+      "ResultRead": {
+        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n`check` is the check's identity AS OF this result (#1613), never its current state.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
+        "properties": {
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultCheckRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "check_id": {
             "format": "uuid",
             "title": "Check Id",

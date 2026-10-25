@@ -97,6 +97,7 @@ from .column_trace_asset_read import ColumnTraceAssetRead
 from .column_trace_read import ColumnTraceRead
 from .columns_read import ColumnsRead
 from .comparison_check_read import ComparisonCheckRead
+from .comparison_check_read_resolved_from_type_0 import ComparisonCheckReadResolvedFromType0
 from .comparison_delta_read import ComparisonDeltaRead
 from .comparison_delta_read_status_change import ComparisonDeltaReadStatusChange
 from .comparison_row_read import ComparisonRowRead
@@ -251,6 +252,8 @@ from .queue_depth_read import QueueDepthRead
 from .rca_narrative_request import RcaNarrativeRequest
 from .read_all_result import ReadAllResult
 from .readyz_response_readyz import ReadyzResponseReadyz
+from .result_check_read import ResultCheckRead
+from .result_check_read_resolved_from_type_0 import ResultCheckReadResolvedFromType0
 from .result_read import ResultRead
 from .result_read_expected_value_type_0 import ResultReadExpectedValueType0
 from .result_read_observed_value_type_0 import ResultReadObservedValueType0
@@ -453,6 +456,7 @@ __all__ = (
     "ColumnTraceRead",
     "ColumnsRead",
     "ComparisonCheckRead",
+    "ComparisonCheckReadResolvedFromType0",
     "ComparisonDeltaRead",
     "ComparisonDeltaReadStatusChange",
     "ComparisonRowRead",
@@ -605,6 +609,8 @@ __all__ = (
     "RcaNarrativeRequest",
     "ReadAllResult",
     "ReadyzResponseReadyz",
+    "ResultCheckRead",
+    "ResultCheckReadResolvedFromType0",
     "ResultRead",
     "ResultReadExpectedValueType0",
     "ResultReadObservedValueType0",

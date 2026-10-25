@@ -7,6 +7,9 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.comparison_check_read_resolved_from_type_0 import ComparisonCheckReadResolvedFromType0
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="ComparisonCheckRead")
 
 
@@ -15,6 +18,10 @@ class ComparisonCheckRead:
     """A check's identity as it WAS when one side's result was written (from
     `check_versions`), never its current state — the two sides of a row may differ.
 
+    `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
+    the result's `created_at`; `live` = the check has NO version row, so this is its
+    current state and may postdate the result — a reader must say so.
+
         Attributes:
             column (None | str):
             dimension (None | str):
@@ -22,6 +29,7 @@ class ComparisonCheckRead:
             expectation_type (None | str):
             kind (None | str):
             name (None | str):
+            resolved_from (ComparisonCheckReadResolvedFromType0 | None | Unset):
     """
 
     column: None | str
@@ -30,6 +38,7 @@ class ComparisonCheckRead:
     expectation_type: None | str
     kind: None | str
     name: None | str
+    resolved_from: ComparisonCheckReadResolvedFromType0 | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -50,6 +59,14 @@ class ComparisonCheckRead:
         name: None | str
         name = self.name
 
+        resolved_from: None | str | Unset
+        if isinstance(self.resolved_from, Unset):
+            resolved_from = UNSET
+        elif isinstance(self.resolved_from, ComparisonCheckReadResolvedFromType0):
+            resolved_from = self.resolved_from.value
+        else:
+            resolved_from = self.resolved_from
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -62,6 +79,8 @@ class ComparisonCheckRead:
                 "name": name,
             }
         )
+        if resolved_from is not UNSET:
+            field_dict["resolved_from"] = resolved_from
 
         return field_dict
 
@@ -106,6 +125,25 @@ class ComparisonCheckRead:
 
         name = _parse_name(d.pop("name"))
 
+        def _parse_resolved_from(
+            data: object,
+        ) -> ComparisonCheckReadResolvedFromType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                resolved_from_type_0 = ComparisonCheckReadResolvedFromType0(data)
+
+                return resolved_from_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ComparisonCheckReadResolvedFromType0 | None | Unset, data)
+
+        resolved_from = _parse_resolved_from(d.pop("resolved_from", UNSET))
+
         comparison_check_read = cls(
             column=column,
             dimension=dimension,
@@ -113,6 +151,7 @@ class ComparisonCheckRead:
             expectation_type=expectation_type,
             kind=kind,
             name=name,
+            resolved_from=resolved_from,
         )
 
         comparison_check_read.additional_properties = d
