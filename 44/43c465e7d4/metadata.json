@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "4443c465e7d4",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1977-contracts-phase-b",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/services/suite_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/44/43c465e7d4/0/metadata.json",
+      "transcript": "/44/43c465e7d4/0/full.jsonl",
+      "compact_transcript": "/44/43c465e7d4/0/transcript.jsonl",
+      "content_hash": "/44/43c465e7d4/0/content_hash.txt",
+      "prompt": "/44/43c465e7d4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 7161,
+    "cache_read_tokens": 5264276,
+    "output_tokens": 5286,
+    "api_call_count": 7
+  }
+}
