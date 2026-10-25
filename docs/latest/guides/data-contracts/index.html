@@ -2755,7 +2755,8 @@ and turns them into ordinary suites and checks that run, alert and score like an
 the <strong>consumer</strong> side: DataQ checks data that has already landed against the contract. It does not
 enforce anything inside the producer's pipeline.</p>
 <h2 id="import-a-contract">Import a contract<a class="headerlink" href="#import-a-contract" title="Permanent link">¶</a></h2>
-<p>Send the ODCS document, as YAML text or JSON, with the connection the data lives on:</p>
+<p>In the app, open <strong>Contracts</strong> in the sidebar and choose <strong>Import contract</strong>: pick the connection
+the data lives on and paste the document or choose the file. Over the API, send the ODCS document, as YAML text or JSON, with the connection the data lives on:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$DATAQ</span><span class="s2">/api/v1/contracts/import"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$DATAQ_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>jq<span class="w"> </span>-n<span class="w"> </span>--arg<span class="w"> </span>yaml<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>cat<span class="w"> </span>orders.odcs.yaml<span class="k">)</span><span class="s2">"</span><span class="w"> </span>--arg<span class="w"> </span>conn<span class="w"> </span><span class="s2">"</span><span class="nv">$CONNECTION_ID</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
@@ -2852,7 +2853,9 @@ the import is updated to the new clause, a check whose clause disappeared is <st
 deleted, so its history stays), and checks people added to the suite themselves are left alone.
 Without <code>suite_ids</code>, the new version creates fresh suites.</p>
 <h2 id="compliance">Compliance<a class="headerlink" href="#compliance" title="Permanent link">¶</a></h2>
-<p><code>GET /api/v1/contracts/{id}</code> carries a <code>compliance</code> block: for every clause a check enforces, the
+<p>A contract's page in the app shows the same rollup, with a warning when a suite's latest run has
+not finished or some suites are hidden from you, and a <strong>Download ODCS</strong> button. Over the API,
+<code>GET /api/v1/contracts/{id}</code> carries a <code>compliance</code> block: for every clause a check enforces, the
 state that check reached in its suite's latest run — <code>pass</code>, <code>warn</code>, <code>fail</code>, <code>critical</code>,
 <code>unverified</code> (the check errored or was skipped), <code>not_run</code> (that run has no result for it),
 <code>disabled</code>, or <code>missing</code> (the suite has no check for the clause at all, because it was deleted

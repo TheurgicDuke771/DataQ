@@ -79,6 +79,12 @@ section below.
   see, report whether each clause is holding in its suite's latest run (saying when a run is still
   going and when some suites are hidden from you), and export a contract as an ODCS document.
   Importing a contract stays in the app and the REST API.
+- **A Contracts page.** The sidebar's Contracts page lists the data contracts DataQ enforces, one row
+  per version with the current one marked, and imports an ODCS document onto a connection. A
+  contract's page shows each clause's state in its suite's latest run, which clauses have no check
+  or are not enforced, which checks were edited since the import, and warns when a run has not
+  finished or some suites are hidden from you; it downloads the contract as ODCS. Suites enforcing a
+  contract show a link to it.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
