@@ -134,6 +134,7 @@ lists which).
 - [ADR 0049 — Profiler-detected PII as a classification source](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0049-profiler-pii-classification-source/index.md): Failing-row samples are masked by a ladder of authorities: a column's own warehouse tag
 - [ADR 0050 — Opt-in product-usage telemetry over OpenTelemetry](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0050-usage-telemetry/index.md): ADR [0031](0031-oss-byol-distribution-licensing.md) (licensing, rule 40),
 - [ADR 0051 — Suite-on-suite triggers: a suite's own success as a trigger provider](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0051-suite-on-suite-triggers/index.md): A suite runs today on a schedule, by hand, or when a bound **orchestration** pipeline or DAG
+- [ADR 0052 — Consumer-side data contracts: a `contracts` entity with ODCS v3 import and export](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0052-data-contracts-odcs/index.md): A DataQ suite is a bag of checks a person authored against one target. Nothing records *why*
 
 ## Optional
 

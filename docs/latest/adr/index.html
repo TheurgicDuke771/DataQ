@@ -2884,6 +2884,11 @@
 <td>Suite-on-suite triggers — a suite's own success as a <strong>trigger provider</strong> (<code>provider='suite'</code>, <code>pipeline_or_dag_id</code> = the upstream suite's id, env derived from it) in the existing <code>trigger_bindings</code>, <strong>not</strong> an orchestration provider (no connection, poller, webhook or <code>pipeline_runs</code> row; the gate refuses it); fires from the worker after the run's terminal commit when the run <code>succeeded</code> with no check at fail/critical; marker <code>suite:&lt;suite&gt;:&lt;run&gt;</code> under the same dedup index; self-binding and cycles refused at authoring (disabled bindings count), chain depth capped at 5 at firing, <code>view</code> on the upstream suite required</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0052-data-contracts-odcs/">0052</a></td>
+<td>Consumer-side data contracts — one <code>contracts</code> row per contract <strong>version</strong> holding the ODCS v3 document verbatim; a suite links to one contract + one schema object (N objects → N suites); a <strong>fixed translation table</strong> (schema fields, <code>library</code>/<code>sql</code>/<code>custom</code> quality rules, the <code>latency</code> SLA, <code>classification</code> → the policy rung; v3.0 vocabulary normalised, keyed on the document's <code>id</code>) with an explicit <code>unmapped</code> bucket surfaced as <em>not enforced</em>; DataQ fields travel in <code>customProperties</code> vendor <code>dataq</code>, export round-trips every check; re-import reconciles with ADR 0047's rules (disable, never delete); <code>checks.contract_ref</code> + an incident <code>contract</code> evidence layer for clause-level traceability; three read-only MCP tools, import REST-only</td>
+<td>Proposed</td>
+</tr>
 </tbody>
 </table>
 
