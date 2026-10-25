@@ -2617,11 +2617,11 @@ run against), and the description is the opening of what an AI assistant is show
 <tbody>
 <tr>
 <td>Tools</td>
-<td>56</td>
+<td>59</td>
 </tr>
 <tr>
 <td>Read-only</td>
-<td>32</td>
+<td>35</td>
 </tr>
 <tr>
 <td>Changes state</td>
@@ -2645,6 +2645,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>export_contract</code></td>
+<td><code>view</code> on one of the contract's suites (or a workspace admin)</td>
+<td>Export a data contract as an Open Data Contract Standard (ODCS v3) document.</td>
+</tr>
 <tr>
 <td><code>export_suite</code></td>
 <td><code>view</code> on the suite</td>
@@ -2674,6 +2679,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>get_column_policy</code></td>
 <td><code>view</code> on the suite</td>
 <td>Get the suite's failing-sample redaction policy — which columns are masked.</td>
+</tr>
+<tr>
+<td><code>get_contract</code></td>
+<td><code>view</code> on one of the contract's suites (or a workspace admin)</td>
+<td>Get one data contract with its compliance rollup — is each clause holding?</td>
 </tr>
 <tr>
 <td><code>get_coverage</code></td>
@@ -2754,6 +2764,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>list_connections</code></td>
 <td>any signed-in user</td>
 <td>List the configured datasource and orchestration connections, with health.</td>
+</tr>
+<tr>
+<td><code>list_contracts</code></td>
+<td>any signed-in user</td>
+<td>List the data contracts (ODCS) DataQ enforces that you can see.</td>
 </tr>
 <tr>
 <td><code>list_incidents</code></td>

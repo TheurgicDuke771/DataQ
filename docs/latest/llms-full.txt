@@ -216,7 +216,7 @@ Try the four questions the tools were designed around:
 Every tool states what it **cannot** see — a mid-run suite is reported as *not final*, an
 expired snooze as *expired*, a truncated list as *truncated* — because an assistant has no
 "running" badge to glance at. That design is documented in
-[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 56 tools with who
+[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 59 tools with who
 can call them is the [MCP tools reference](../reference/mcp-tools.md).
 
 !!! tip "Ask about the docs, too"
@@ -2136,8 +2136,9 @@ Without `suite_ids`, the new version creates fresh suites.
 
 `GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
 state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
-`unverified` (the check errored or was skipped), `not_run` (that run has no result for it) or
-`disabled` — and a `drifted` flag when someone has edited the check since the import, so it may
+`unverified` (the check errored or was skipped), `not_run` (that run has no result for it),
+`disabled`, or `missing` (the suite has no check for the clause at all, because it was deleted
+or the suite was linked by hand) — and a `drifted` flag when someone has edited the check since the import, so it may
 no longer say what the clause says. Each suite reports its latest run and `results_final`, which
 is false while that run is still going: the states are partial until then. The clauses DataQ
 does not enforce are counted as `not_enforced`.
@@ -4163,7 +4164,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 ## AI assistants (MCP)
 
-A curated **56-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **59-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
 reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
@@ -4173,7 +4174,7 @@ with health and lineage) and **incidents** (what is broken right now, with the e
 acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
 a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
 connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
-UI. The 56 split three ways: **32 read-only, 18 that change state**, and **6 that persist
+UI. The 59 split three ways: **35 read-only, 18 that change state**, and **6 that persist
 nothing but open a live datasource connection with stored credentials** and so are gated like
 writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
@@ -4222,7 +4223,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 56 tools and per-suite permissions. Two rejections are deliberate in that
+    all 59 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -4280,7 +4281,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 56 tools
+## The 59 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -4290,7 +4291,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (32) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (35) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
@@ -5520,6 +5521,10 @@ section below.
   its check found in the latest run, whether the check was edited since the import, and whether
   that run has finished; an incident on a contract-derived check names the clause it broke, and
   alerts lead with it. A suite can also be linked to a contract by hand.
+- **AI assistants can read data contracts.** Three read-only MCP tools list the contracts you can
+  see, report whether each clause is holding in its suite's latest run (saying when a run is still
+  going and when some suites are hidden from you), and export a contract as an ODCS document.
+  Importing a contract stays in the app and the REST API.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -7568,7 +7573,7 @@ risk that carries.
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin (incl. workspace Settings) (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
 | Python client + `dataq` CLI | Generated from the OpenAPI spec, attached to each GitHub Release ([Python client](../guides/python-client.md)) |
-| MCP | 56 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
+| MCP | 59 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
 
 
 ---
@@ -7597,7 +7602,7 @@ risk that carries.
 | **Incident** | The stateful, deduped object failing results roll up into: `open → acknowledged → resolved`, ≤1 active per (asset, check), evidence card attached (ADR 0034). |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/OpenBao (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 56 curated tools at `/mcp` for AI assistants (32 read-only, 18 that change state, 6 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 59 curated tools at `/mcp` for AI assistants (35 read-only, 18 that change state, 6 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/site/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership
@@ -7618,8 +7623,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 56 |
-| Read-only | 32 |
+| Tools | 59 |
+| Read-only | 35 |
 | Changes state | 18 |
 | Live probe | 6 |
 
@@ -7630,12 +7635,14 @@ connection mutation, and a credential must never transit an LLM.
 
 | Tool | Who can call it | What it does |
 |---|---|---|
+| `export_contract` | `view` on one of the contract's suites (or a workspace admin) | Export a data contract as an Open Data Contract Standard (ODCS v3) document. |
 | `export_suite` | `view` on the suite | Export a suite as a portable document you can review or re-create elsewhere. |
 | `get_adf_pipeline_status` | any signed-in user | Deprecated alias for ``get_pipeline_status`` — use that tool instead. |
 | `get_asset` | any signed-in user | Get one asset's health, the suites that check it, and its lineage neighbours. |
 | `get_check` | `view` on the suite | Get one check's full definition by id. |
 | `get_check_history` | `view` on the suite | Get one check's recent result history — how it has behaved run over run. |
 | `get_column_policy` | `view` on the suite | Get the suite's failing-sample redaction policy — which columns are masked. |
+| `get_contract` | `view` on one of the contract's suites (or a workspace admin) | Get one data contract with its compliance rollup — is each clause holding? |
 | `get_coverage` | any signed-in user | Get how much of the asset inventory is watched, and how often automatic checks cry wolf. |
 | `get_detected_seasonal_periods` | `view` on the suite | Detect the sale seasons and one-off peaks in an anomaly check's own stored history (read-only; changes no verdict): runs of days or weeks at or above ``thresholds.ratio`` (1.5) times the level of the periods the check is scored against (their median with ``yearly`` on, their mean without: ``thresholds.level``). |
 | `get_doc` | any signed-in user | Read a published DataQ user-facing doc page, verbatim. |
@@ -7652,6 +7659,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_check_versions` | `view` on the suite | Get one check's edit history — how its definition has changed over time. |
 | `list_checks` | `view` on the suite | List the checks (rules and monitors) configured on one suite. |
 | `list_connections` | any signed-in user | List the configured datasource and orchestration connections, with health. |
+| `list_contracts` | any signed-in user | List the data contracts (ODCS) DataQ enforces that you can see. |
 | `list_incidents` | any signed-in user; suite-scoped when a suite is named | List data-quality incidents — what is unresolved *right now*, and since when. |
 | `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
@@ -9381,7 +9389,7 @@ Boundary notes:
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS, OpenBao (KV v2) self-hosted (ADR [0039](../adr/0039-openbao-self-hosted-secret-backend.md)). Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 56 FastMCP tools (32 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 59 FastMCP tools (35 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
 
 
@@ -12511,7 +12519,7 @@ a third-party endpoint.
 | 5 | **OIDC identity provider** — Azure AD, AWS Cognito, any standards-compliant issuer | Standard OIDC flows; DataQ receives (never sends) profile claims | User identity (email, name, subject id) held at the IdP | `oidc` auth mode |
 | 6 | **Secret store** — Azure Key Vault, AWS Secrets Manager, OpenBao/Vault | Warehouse credentials (write on connection create, read at run time) | No customer data — but the credentials unlock the systems that hold it | Always (one of the four backends) |
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
-| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 56 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
+| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 59 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows) | No — table/job names and check outcomes, not row data | Pull: when `LINEAGE_PROVIDER` is configured. Emission: when `OPENLINEAGE_URL` (or the library's own transport config) is set |
 | 11 | **Audit tamper anchor** — an HMAC-signed webhook, or an immutable object store (S3 Object Lock / S3-compatible, Azure immutable blob) | The audit hash-chain head: a SHA-256 hash, a label, the hashed-event count and a timestamp — daily and before every retention purge | No — never an audit event's actor, action or payload | `TAMPER_ANCHOR=webhook` or `object_lock` (off by default) |
@@ -12868,7 +12876,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 ## Features
 
 The application feature set — suites/checks across all eleven datasource types, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 56-tool MCP server, PATs, rate limiting —
+assets/lineage/incidents, alerting, scheduling, the 59-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
@@ -13460,7 +13468,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
-**Can an AI assistant use DataQ?** Yes — 56 MCP tools at `/mcp` (Claude Desktop / Claude.ai
+**Can an AI assistant use DataQ?** Yes — 59 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](../guides/mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an
@@ -13748,7 +13756,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted (amended 2026-09-06 — the weights are a workspace setting) |
 | [0006](0006-adf-webhook-authentication.md) | ADF webhook authentication (shared secret in URL + hard-cutover rotation) | Accepted |
 | [0007](0007-airflow-callback-model.md) | Airflow callback model (HMAC-signed webhook + polling fallback) | Accepted |
-| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → 52 (`browse_connection`, run-target browsing) → 54 (`get_coverage`, `list_suggested_rules`) → **56** (`list_seasonal_periods`, `get_detected_seasonal_periods`; 32 read-only / 18 state-changing / 6 live-probe) | Accepted |
+| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → 52 (`browse_connection`, run-target browsing) → 54 (`get_coverage`, `list_suggested_rules`) → 56 (`list_seasonal_periods`, `get_detected_seasonal_periods`) → **59** (`list_contracts`, `get_contract`, `export_contract`; 35 read-only / 18 state-changing / 6 live-probe) | Accepted |
 | [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
@@ -14650,6 +14658,19 @@ history stood behind them and, on every response, that a detected period changes
 Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
 admin-only, and MCP exposes no admin-only tool. The split becomes **56 tools: 32 read-only, 18
 that change state, 6 live-probe**.
+
+## Amendment — the data-contract reads, 56 → 59
+
+Three read-only tools for ADR 0052's data contracts. `list_contracts` lists the contract versions
+the caller can see, with their suites, `restricted_suite_count` and how many clauses DataQ does not
+enforce. `get_contract` adds the compliance rollup — each clause's state in its suite's latest
+run, the `drifted` flag, and `results_final` per suite — and states that restricted suites are left
+out of it. `export_contract` returns the ODCS document. Both take a contract id and gate on the
+contract being visible (`view` on at least one linked suite, or a workspace admin), declared as a
+new `contract:view` gate so the authorization sweeps materialise a real contract rather than
+passing on a fabricated id. Importing a contract stays REST-only: it creates suites and checks
+under a connection, which is a bulk write to hand to a person. The split becomes **59 tools: 35
+read-only, 18 that change state, 6 live-probe**.
 
 
 ---
@@ -20490,8 +20511,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   connection and is the kind of bulk write an assistant should hand to a person.
 - The compliance rollup is per contract: for each linked suite's latest run, each clause is
   `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_run` (no result
-  in that run) / `disabled` (switched off), with **`drifted`** as a separate flag (the check was
-  edited since its import — it can drift and still pass), plus the suite-level `last_run_at` and
+  in that run) / `disabled` (switched off) / `missing` (the contract derives a check for the
+  clause and the suite has none — deleted, or a hand-linked suite), with **`drifted`** as a
+  separate flag (the check's engine, type, config or thresholds were edited since its import — it
+  can drift and still pass; null when that cannot be told), plus the suite-level `last_run_at` and
   `results_final`, so a rollup over a mid-run suite is never read as a verdict. The `unmapped`
   list is the `not_enforced` half, counted beside the clauses.
 

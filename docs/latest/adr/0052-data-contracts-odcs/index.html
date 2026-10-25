@@ -2860,8 +2860,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   connection and is the kind of bulk write an assistant should hand to a person.</li>
 <li>The compliance rollup is per contract: for each linked suite's latest run, each clause is
   <code>pass</code> / <code>warn</code> / <code>fail</code> / <code>critical</code> / <code>unverified</code> (error or skipped) / <code>not_run</code> (no result
-  in that run) / <code>disabled</code> (switched off), with <strong><code>drifted</code></strong> as a separate flag (the check was
-  edited since its import — it can drift and still pass), plus the suite-level <code>last_run_at</code> and
+  in that run) / <code>disabled</code> (switched off) / <code>missing</code> (the contract derives a check for the
+  clause and the suite has none — deleted, or a hand-linked suite), with <strong><code>drifted</code></strong> as a
+  separate flag (the check's engine, type, config or thresholds were edited since its import — it
+  can drift and still pass; null when that cannot be told), plus the suite-level <code>last_run_at</code> and
   <code>results_final</code>, so a rollup over a mid-run suite is never read as a verdict. The <code>unmapped</code>
   list is the <code>not_enforced</code> half, counted beside the clauses.</li>
 </ul>

@@ -169,8 +169,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   connection and is the kind of bulk write an assistant should hand to a person.
 - The compliance rollup is per contract: for each linked suite's latest run, each clause is
   `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_run` (no result
-  in that run) / `disabled` (switched off), with **`drifted`** as a separate flag (the check was
-  edited since its import — it can drift and still pass), plus the suite-level `last_run_at` and
+  in that run) / `disabled` (switched off) / `missing` (the contract derives a check for the
+  clause and the suite has none — deleted, or a hand-linked suite), with **`drifted`** as a
+  separate flag (the check's engine, type, config or thresholds were edited since its import — it
+  can drift and still pass; null when that cannot be told), plus the suite-level `last_run_at` and
   `results_final`, so a rollup over a mid-run suite is never read as a verdict. The `unmapped`
   list is the `not_enforced` half, counted beside the clauses.
 

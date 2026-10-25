@@ -2575,6 +2575,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-the-data-contract-reads-56-59" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — the data-contract reads, 56 → 59
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2886,6 +2897,17 @@ history stood behind them and, on every response, that a detected period changes
 Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
 admin-only, and MCP exposes no admin-only tool. The split becomes <strong>56 tools: 32 read-only, 18
 that change state, 6 live-probe</strong>.</p>
+<h2 id="amendment-the-data-contract-reads-56-59">Amendment — the data-contract reads, 56 → 59<a class="headerlink" href="#amendment-the-data-contract-reads-56-59" title="Permanent link">¶</a></h2>
+<p>Three read-only tools for ADR 0052's data contracts. <code>list_contracts</code> lists the contract versions
+the caller can see, with their suites, <code>restricted_suite_count</code> and how many clauses DataQ does not
+enforce. <code>get_contract</code> adds the compliance rollup — each clause's state in its suite's latest
+run, the <code>drifted</code> flag, and <code>results_final</code> per suite — and states that restricted suites are left
+out of it. <code>export_contract</code> returns the ODCS document. Both take a contract id and gate on the
+contract being visible (<code>view</code> on at least one linked suite, or a workspace admin), declared as a
+new <code>contract:view</code> gate so the authorization sweeps materialise a real contract rather than
+passing on a fabricated id. Importing a contract stays REST-only: it creates suites and checks
+under a connection, which is a bulk write to hand to a person. The split becomes <strong>59 tools: 35
+read-only, 18 that change state, 6 live-probe</strong>.</p>
 
 
 

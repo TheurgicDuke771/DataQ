@@ -304,3 +304,16 @@ history stood behind them and, on every response, that a detected period changes
 Promoting a detected period to the calendar stays off MCP: it is a calendar mutation, which is
 admin-only, and MCP exposes no admin-only tool. The split becomes **56 tools: 32 read-only, 18
 that change state, 6 live-probe**.
+
+## Amendment — the data-contract reads, 56 → 59
+
+Three read-only tools for ADR 0052's data contracts. `list_contracts` lists the contract versions
+the caller can see, with their suites, `restricted_suite_count` and how many clauses DataQ does not
+enforce. `get_contract` adds the compliance rollup — each clause's state in its suite's latest
+run, the `drifted` flag, and `results_final` per suite — and states that restricted suites are left
+out of it. `export_contract` returns the ODCS document. Both take a contract id and gate on the
+contract being visible (`view` on at least one linked suite, or a workspace admin), declared as a
+new `contract:view` gate so the authorization sweeps materialise a real contract rather than
+passing on a fabricated id. Importing a contract stays REST-only: it creates suites and checks
+under a connection, which is a bulk write to hand to a person. The split becomes **59 tools: 35
+read-only, 18 that change state, 6 live-probe**.

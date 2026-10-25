@@ -3364,13 +3364,27 @@
       "ClauseStateRead": {
         "properties": {
           "check_id": {
-            "format": "uuid",
-            "title": "Check Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Id"
           },
           "check_name": {
-            "title": "Check Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Name"
           },
           "clause": {
             "additionalProperties": true,
@@ -3378,8 +3392,15 @@
             "type": "object"
           },
           "drifted": {
-            "title": "Drifted",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drifted"
           },
           "state": {
             "title": "State",
@@ -5076,6 +5097,10 @@
             "title": "Id",
             "type": "string"
           },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -5139,6 +5164,7 @@
           "tenant",
           "api_version",
           "created_at",
+          "latest_version",
           "suites",
           "restricted_suite_count",
           "unmapped",
@@ -5308,6 +5334,10 @@
             "title": "Id",
             "type": "string"
           },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -5371,6 +5401,7 @@
           "tenant",
           "api_version",
           "created_at",
+          "latest_version",
           "suites",
           "restricted_suite_count",
           "unmapped"
@@ -16598,7 +16629,7 @@
     },
     "/api/v1/contracts": {
       "get": {
-        "description": "Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts with none). Each version of a contract is its own row.",
+        "description": "Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts with none). Each version of a contract is its own row, grouped by `odcs_id` with the newest import first; `latest_version` marks the current one.",
         "operationId": "list_contracts",
         "responses": {
           "200": {
