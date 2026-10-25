@@ -46,6 +46,8 @@ const ROUTE_NAMES: [string, string][] = [
   ['/suites/:id/checks/:checkId/edit', 'check_edit'],
   ['/assets', 'assets'],
   ['/assets/:id', 'asset_detail'],
+  ['/contracts', 'contracts'],
+  ['/contracts/:id', 'contract_detail'],
   ['/results', 'results'],
   ['/results/:id', 'run_detail'],
   ['/results/:id/compare/:otherId', 'run_compare'],

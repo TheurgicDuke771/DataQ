@@ -26,6 +26,9 @@ export interface Suite {
   my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
   /** Workspace labels, sorted by name; absent on older payloads. */
   tags?: string[];
+  /** The data contract this suite enforces and its ODCS schema object (ADR 0052). */
+  contract_id?: string | null;
+  contract_object?: string | null;
 }
 
 /** Owner/admin — may manage shares + delete the suite. */

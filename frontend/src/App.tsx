@@ -5,6 +5,7 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   DownOutlined,
+  FileProtectOutlined,
   LogoutOutlined,
   MenuOutlined,
   ReadOutlined,
@@ -57,6 +58,10 @@ const Assets = lazy(() => import('./pages/Assets').then((m) => ({ default: m.Ass
 const AssetDetail = lazy(() =>
   import('./pages/AssetDetail').then((m) => ({ default: m.AssetDetail })),
 );
+const Contracts = lazy(() => import('./pages/Contracts').then((m) => ({ default: m.Contracts })));
+const ContractDetail = lazy(() =>
+  import('./pages/ContractDetail').then((m) => ({ default: m.ContractDetail })),
+);
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const RunCompare = lazy(() =>
@@ -77,6 +82,11 @@ const NAV_ITEMS = [
   { key: '/assets', icon: <DatabaseOutlined />, label: <Link to="/assets">Assets</Link> },
   { key: '/connections', icon: <ApiOutlined />, label: <Link to="/connections">Connections</Link> },
   { key: '/suites', icon: <ContainerOutlined />, label: <Link to="/suites">Suites</Link> },
+  {
+    key: '/contracts',
+    icon: <FileProtectOutlined />,
+    label: <Link to="/contracts">Contracts</Link>,
+  },
   { key: '/results', icon: <BarChartOutlined />, label: <Link to="/results">Results</Link> },
   { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];
@@ -309,6 +319,8 @@ export function App() {
                   <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
                   <Route path="/assets" element={<Assets />} />
                   <Route path="/assets/:assetId" element={<AssetDetail />} />
+                  <Route path="/contracts" element={<Contracts />} />
+                  <Route path="/contracts/:contractId" element={<ContractDetail />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/results/:runId/compare/:otherRunId" element={<RunCompare />} />

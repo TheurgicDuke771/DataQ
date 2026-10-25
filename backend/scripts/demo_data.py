@@ -31,6 +31,7 @@ from backend.app.db.models import (
     Asset,
     Check,
     Connection,
+    Contract,
     Incident,
     LineageEdge,
     PipelineRun,
@@ -42,6 +43,7 @@ from backend.app.db.models import (
 from backend.app.services import (
     check_service,
     connection_service,
+    contract_service,
     incident_service,
     share_service,
     suite_service,
@@ -829,6 +831,9 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
     pipeline_run_count = _seed_pipeline_runs(session, connections=connections)
     incident_count = _seed_incidents(session, suite=first_suite) if first_suite else 0
     edge_count = _seed_lineage(session, suite=first_suite) if first_suite else 0
+    contract_count = _seed_contract(
+        session, connection=connections[("snowflake-analytics", "dev")], owner=owner
+    )
 
     session.commit()
     return {
@@ -840,7 +845,51 @@ def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) 
         "pipeline_runs": pipeline_run_count,
         "incidents": incident_count,
         "lineage_edges": edge_count,
+        "contracts": contract_count,
     }
+
+
+#: A small ODCS contract on a table no other seeded suite targets, so the Contracts page (and its
+#: a11y scan and the static demo) have something to show without changing any other page.
+_DEMO_CONTRACT: dict[str, Any] = {
+    "apiVersion": "v3.2.0",
+    "kind": "DataContract",
+    "id": "demo-orders-contract",
+    "name": "Orders delivery",
+    "version": "1.0.0",
+    "status": "active",
+    "domain": "sales",
+    "schema": [
+        {
+            "name": "order_lines",
+            "physicalName": "PUBLIC.ORDER_LINES",
+            "properties": [
+                {"name": "ORDER_ID", "logicalType": "integer", "required": True},
+                {"name": "CUSTOMER_EMAIL", "logicalType": "string", "classification": "restricted"},
+            ],
+            "quality": [{"id": "has-rows", "metric": "rowCount", "mustBeGreaterThan": 0}],
+        }
+    ],
+    "slaProperties": [{"property": "retention", "value": 7, "unit": "y"}],
+}
+
+
+def _seed_contract(session: Session, *, connection: Connection, owner: User) -> int:
+    """Import the demo contract once (ADR 0052). Idempotent on the document's id + version."""
+    exists = session.scalar(
+        select(Contract.id).where(
+            Contract.odcs_id == _DEMO_CONTRACT["id"], Contract.version == _DEMO_CONTRACT["version"]
+        )
+    )
+    if exists is None:
+        contract_service.import_contract(
+            session,
+            document=_DEMO_CONTRACT,
+            document_yaml=None,
+            connection_id=connection.id,
+            actor_id=owner.id,
+        )
+    return 1
 
 
 # The demo lineage chain around the shared ORDERS asset. Two hops each way, so the

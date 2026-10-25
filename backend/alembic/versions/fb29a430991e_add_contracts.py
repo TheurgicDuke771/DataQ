@@ -4,9 +4,9 @@ Additive: a new table, two nullable columns on `suites`, one on `checks`, and th
 `checks.origin` CHECK widened by one value. Nothing existing changes shape or default, so the
 running release is unaffected and the migration can deploy ahead of the code that reads it.
 
-Rollback: ``downgrade`` drops the columns and the table (contract rows and the suite links are
-lost; suites, checks and results are untouched) and narrows the CHECK — safe only while no
-check carries ``origin = 'contract'``, which the narrowed constraint would otherwise refuse.
+Rollback: ``downgrade`` turns contract-derived checks into ordinary ones (``origin = 'user'``),
+narrows the CHECK, and drops the columns and the table (contract rows and the suite links are
+lost; suites, checks and results are untouched).
 """
 
 from collections.abc import Sequence
@@ -99,6 +99,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # A contract-derived check stays a check: it becomes an ordinary one (its contract link goes
+    # with the columns below), so the narrowed CHECK holds and no check or result is lost.
+    op.execute("UPDATE checks SET origin = 'user' WHERE origin = 'contract'")
     _set_origin_check(_NO_CONTRACT)
     op.drop_column("checks", "contract_ref")
     op.drop_index(op.f("ix_suites_contract_id"), table_name="suites")

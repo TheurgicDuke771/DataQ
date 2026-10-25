@@ -6,6 +6,8 @@ export const ROUTE_PATTERNS = [
   '/dashboard',
   '/assets',
   '/assets/:id',
+  '/contracts',
+  '/contracts/:id',
   '/connections',
   '/connections/new',
   '/connections/:id/edit',
@@ -34,11 +36,12 @@ export type ListReader = (path: string) => Promise<Row[]>;
 
 /** Expand the patterns into concrete URLs for every seeded suite, check, asset, run and connection. */
 export async function discoverRoutes(list: ListReader): Promise<string[]> {
-  const [suites, connections, assets, runs] = await Promise.all([
+  const [suites, connections, assets, runs, contracts] = await Promise.all([
     list('/suites'),
     list('/connections'),
     list('/assets'),
     list('/runs'),
+    list('/contracts'),
   ]);
   const checks = await Promise.all(
     suites.map(async (s) => ({ suite: s.id, checks: await list(`/suites/${s.id}/checks`) })),
@@ -47,6 +50,8 @@ export async function discoverRoutes(list: ListReader): Promise<string[]> {
     switch (pattern) {
       case '/assets/:id':
         return assets.map((a) => `/assets/${a.id}`);
+      case '/contracts/:id':
+        return contracts.map((c) => `/contracts/${c.id}`);
       case '/connections/:id/edit':
         return connections.map((c) => `/connections/${c.id}/edit`);
       case '/suites/:id':

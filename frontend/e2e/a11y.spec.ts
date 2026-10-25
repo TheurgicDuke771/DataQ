@@ -117,6 +117,12 @@ function defineScans(mode: Theme): void {
       await checkRoute(mode, page, 'route:/assets');
     });
 
+    test('contracts', async ({ page }) => {
+      await page.goto('/contracts');
+      await expect(page.getByRole('heading', { name: 'Data contracts', level: 3 })).toBeVisible();
+      await checkRoute(mode, page, 'route:/contracts');
+    });
+
     // Every admin sub-page is its own route; `/admin` redirects to Overview.
     for (const sub of [
       'overview',
@@ -171,6 +177,7 @@ function defineScans(mode: Theme): void {
       let checkId: string;
       let assetId: string;
       let connectionId: string;
+      let contractId: string;
       let compareUrl: string;
 
       test.beforeAll(async ({ request }) => {
@@ -190,6 +197,10 @@ function defineScans(mode: Theme): void {
           await request.get('/api/v1/connections')
         ).json();
         connectionId = connections[0].id;
+        // The demo seed imports one data contract (backend/scripts/demo_data.py).
+        const contracts: { id: string }[] = await (await request.get('/api/v1/contracts')).json();
+        expect(contracts.length, 'the seeded data contract').toBeGreaterThan(0);
+        contractId = contracts[0].id;
         // The seeded suite's two most recent runs, the older one as the base.
         const runs: { id: string }[] = await (
           await request.get(`/api/v1/runs?suite_id=${suiteId}&limit=2`)
@@ -207,6 +218,7 @@ function defineScans(mode: Theme): void {
         ['route:/suites/:id/checks/new', () => `/suites/${suiteId}/checks/new`],
         ['route:/suites/:id/checks/:id/edit', () => `/suites/${suiteId}/checks/${checkId}/edit`],
         ['route:/assets/:id', () => `/assets/${assetId}`],
+        ['route:/contracts/:id', () => `/contracts/${contractId}`],
       ];
       for (const [surface, url] of routes) {
         test(surface, async ({ page }) => {

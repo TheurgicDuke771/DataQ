@@ -16,7 +16,7 @@ import {
 import { EmptyState } from '../components/shared/EmptyState';
 import SimpleList from '../components/SimpleList';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
   CONNECTION_KIND,
@@ -543,6 +543,11 @@ function SuiteDetail({
               {/* Links back to the asset this suite's target resolves to (#773). */}
               <AssetLink assetId={suite.asset_id} />
               <AutomaticTag origin={suite.origin} />
+              {suite.contract_id && (
+                <Link to={`/contracts/${suite.contract_id}`}>
+                  <Tag color="geekblue">Contract · {suite.contract_object}</Tag>
+                </Link>
+              )}
             </Flex>
           ) : (
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>
