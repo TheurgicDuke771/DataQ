@@ -117,12 +117,12 @@ never saw DataQ imports cleanly.
 ### 5. Versions of the standard
 
 The importer accepts `apiVersion` **v3.0.0 through the newest v3 minor it knows** (v3.2.0 today),
-validated against the vendored ODCS JSON Schema for that version. The mapping in §3 is written in
+validated against the vendored ODCS JSON Schema for that version (Apache-2.0, pinned under
+`backend/app/contracts/schema/`, bumped by hand like GX). The mapping in §3 is written in
 v3.1+ vocabulary; a v3.0.x document is **normalised first** — the deprecated `rule` names
 (`duplicateCount` → `duplicateValues`, `validValues` → `invalidValues` + `validValues`, `rowCount`)
 become `metric`s and the `${object}` / `${property}` placeholders become `{object}` /
-`{property}` — in the translation step only, never in the stored `spec` (Apache-2.0, pinned under
-`backend/app/contracts/schema/`, bumped by hand like GX). A newer v3 minor than the vendored
+`{property}` — in the translation step only, never in the stored `spec`. A newer v3 minor than the vendored
 schema is accepted with a warning and validated against the newest known schema — ODCS minors
 are additive and unknown fields are preserved anyway. A **v2** document is refused with a
 pointer to Bitol's migration notes; a **v4** document is refused until this ADR is amended,
