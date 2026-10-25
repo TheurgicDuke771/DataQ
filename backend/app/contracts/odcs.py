@@ -107,9 +107,16 @@ def schema_version_for(api_version: str) -> tuple[str, str | None]:
     return NEWEST_VERSION, None  # pragma: no cover — every branch above returns
 
 
+#: The vendored schema file per known version — looked up, never built from the document, so no
+#: document value reaches a filesystem path.
+_SCHEMA_FILES: dict[str, Path] = {
+    version: SCHEMA_DIR / f"odcs-json-schema-{version}.json" for version in KNOWN_VERSIONS
+}
+
+
 @cache
 def _validator(schema_version: str) -> Draft201909Validator:
-    with (SCHEMA_DIR / f"odcs-json-schema-{schema_version}.json").open(encoding="utf-8") as fh:
+    with _SCHEMA_FILES[schema_version].open(encoding="utf-8") as fh:
         schema = json.load(fh)
     Draft201909Validator.check_schema(schema)
     return Draft201909Validator(schema)

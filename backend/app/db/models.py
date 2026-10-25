@@ -1883,6 +1883,7 @@ class LlmInvocation(Base):
 
 
 __all__ = [
+    "CONTRACT_CHECK_ORIGIN",
     "Asset",
     "AuditChainCheckpoint",
     "AuditChainState",
@@ -1890,6 +1891,7 @@ __all__ = [
     "Base",
     "Check",
     "Connection",
+    "Contract",
     "Incident",
     "LineageEdge",
     "LlmInvocation",
