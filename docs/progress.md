@@ -29,7 +29,7 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **93** open repo-wide (2026-10-25, live re-count): Week 4 0, Week 5 6, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–4 are closed; Week 4 shipped all six items (#1667, #1686 on 2026-10-24; #1516/#1840, #1687, #888, #244 on 2026-10-25) and its milestone is closed. Week 5 (due 2026-11-08) starts with #1977 ODCS. |
+| **Open issues** | **93** open repo-wide (2026-10-25, live re-count): Week 4 0, Week 5 5, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 9 (#1689 rolled 2026-10-25); every open issue has a milestone. Weeks 1–4 are closed; Week 4 shipped all six items (#1667, #1686 on 2026-10-24; #1516/#1840, #1687, #888, #244 on 2026-10-25) and its milestone is closed. Week 5 (due 2026-11-08) starts with #1977 ODCS. |
 | **Open PRs** | **0 open** (2026-10-25) apart from the one carrying this update. |
 
 ---
@@ -105,8 +105,8 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 
 | Status | Task |
 |---|---|
-| ⬜ | [#1977](https://github.com/TheurgicDuke771/DataQ/issues/1977) feat: consumer-side data contract validation — contract entity + ODCS import/export |
-| ⬜ | [#1689](https://github.com/TheurgicDuke771/DataQ/issues/1689) feat(integrations): test-management result publishing — TestRail / Xray / Zephyr behind a result-exporter seam |
+| 🟡 | [#1977](https://github.com/TheurgicDuke771/DataQ/issues/1977) feat: consumer-side data contract validation — contract entity + ODCS import/export — **ADR 0052** ([PR #2543](https://github.com/TheurgicDuke771/DataQ/pull/2543), Proposed); build in three phases: backend core, rollup + traceability + MCP reads, read-only UI |
+| ➡️ | [#1689](https://github.com/TheurgicDuke771/DataQ/issues/1689) feat(integrations): test-management result publishing — TestRail / Xray / Zephyr behind a result-exporter seam — moved to `v1.3 Backlog` 2026-10-25 on the maintainer's decision: the issue's own pick-up gate (a concrete prospect naming a tool) is not met |
 | ⬜ | [#1690](https://github.com/TheurgicDuke771/DataQ/issues/1690) feat(catalog): governance-catalog integration — push DQ quality facets + pull classifications (DataHub / OpenMetadata-REST / Collibra seam) |
 | ⬜ | [#685](https://github.com/TheurgicDuke771/DataQ/issues/685) feat(connections): purge/redact path for connection version history (immutable snapshots retain edited-out config values) |
 | ⬜ | [#1613](https://github.com/TheurgicDuke771/DataQ/issues/1613) RunDetail/RunReport show the check's CURRENT engine/dimension, not as-of-the-result (historical_check_context gap) |
