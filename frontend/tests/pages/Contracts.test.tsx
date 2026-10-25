@@ -1,7 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { listConnections } from '../../src/api/connections';
@@ -253,10 +253,124 @@ describe('Contract detail', () => {
     await user.click(await screen.findByRole('button', { name: /Download ODCS/ }));
     await waitFor(() =>
       expect(downloadText).toHaveBeenCalledWith(
-        'orders_1.0.0.odcs.yaml',
+        'orders_1_0_0.odcs.yaml',
         'apiVersion: v3.2.0\n',
         'application/yaml',
       ),
     );
+  });
+});
+
+describe('Contract import — versions and results', () => {
+  const RESULT = {
+    contract: CONTRACT,
+    created_suite_ids: [],
+    reconciled_suite_ids: ['s1'],
+    retired_suite_ids: [],
+    untargeted_objects: ['refunds'],
+    checks_added: 1,
+    checks_updated: 2,
+    checks_disabled: 1,
+    warnings: ['apiVersion v3.9.0 validated against v3.2.0'],
+  };
+
+  async function openAndFill(user: ReturnType<typeof userEvent.setup>) {
+    await user.click((await screen.findAllByRole('button', { name: /Import contract/ }))[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'Import a data contract' });
+    await user.click(
+      within(dialog).getByRole('combobox', { name: 'Connection the data lives on' }),
+    );
+    await user.click(await screen.findByTitle('warehouse (postgres, dev)'));
+    await user.type(within(dialog).getByRole('textbox', { name: 'ODCS document (YAML)' }), 'x');
+    return dialog;
+  }
+
+  beforeEach(() => {
+    vi.mocked(listContracts).mockResolvedValue([CONTRACT]);
+    vi.mocked(listConnections).mockResolvedValue([
+      { id: 'conn1', name: 'warehouse', type: 'postgres', env: 'dev' } as never,
+    ]);
+    vi.mocked(importContract).mockResolvedValue(RESULT);
+    vi.mocked(getContract).mockResolvedValue(DETAIL);
+  });
+
+  it("a new version takes over the previous version's suites", async () => {
+    const user = userEvent.setup();
+    renderAt('/contracts');
+    const dialog = await openAndFill(user);
+    await user.click(within(dialog).getByRole('combobox', { name: 'New version of' }));
+    await user.click(await screen.findByTitle('orders 1.0.0'));
+    await user.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(importContract).toHaveBeenCalledWith({
+        connection_id: 'conn1',
+        document_yaml: 'x',
+        suite_ids: ['s1'],
+      }),
+    );
+  });
+
+  it('can replace an already imported version', async () => {
+    const user = userEvent.setup();
+    renderAt('/contracts');
+    const dialog = await openAndFill(user);
+    await user.click(
+      within(dialog).getByRole('checkbox', {
+        name: 'Replace this version if it is already imported',
+      }),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(importContract).toHaveBeenCalledWith(expect.objectContaining({ replace: true })),
+    );
+  });
+
+  it('surfaces warnings and unresolved objects instead of a plain success', async () => {
+    const user = userEvent.setup();
+    renderAt('/contracts');
+    const dialog = await openAndFill(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Import' }));
+    expect(
+      (await screen.findAllByText(/1 suites updated, 1 checks added, 2 updated, 1 switched off/))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('apiVersion v3.9.0 validated against v3.2.0')).toBeInTheDocument();
+    expect(screen.getByText(/No table matched refunds/)).toBeInTheDocument();
+  });
+
+  it('names the file input', async () => {
+    const user = userEvent.setup();
+    renderAt('/contracts');
+    await user.click((await screen.findAllByRole('button', { name: /Import contract/ }))[0]);
+    expect(await screen.findByLabelText('ODCS file')).toHaveAttribute('type', 'file');
+  });
+});
+
+describe('Contract detail — navigation', () => {
+  it('loads the new contract when the id changes in place', async () => {
+    const other = { ...DETAIL, id: 'k2', name: 'refunds' };
+    vi.mocked(getContract).mockImplementation((id: string) =>
+      Promise.resolve(id === 'k2' ? other : DETAIL),
+    );
+    function Nav() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/contracts/k2')}>go</button>;
+    }
+    const user = userEvent.setup();
+    render(
+      <MeContext.Provider value={me('member')}>
+        <AntApp>
+          <MemoryRouter initialEntries={['/contracts/k1']}>
+            <Nav />
+            <Routes>
+              <Route path="/contracts/:contractId" element={<ContractDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </AntApp>
+      </MeContext.Provider>,
+    );
+    expect(await screen.findByRole('heading', { name: /orders/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'go' }));
+    expect(await screen.findByRole('heading', { name: /refunds/ })).toBeInTheDocument();
   });
 });

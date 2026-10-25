@@ -197,35 +197,10 @@ function defineScans(mode: Theme): void {
           await request.get('/api/v1/connections')
         ).json();
         connectionId = connections[0].id;
-        // The seed has no data contract; import a small one so the detail page renders a rollup.
-        const datasource = (connections as { id: string; type: string }[]).find(
-          (c) => !['adf', 'airflow', 'dbt'].includes(c.type),
-        );
-        expect(datasource, 'a seeded datasource connection').toBeDefined();
-        const imported = await request.post('/api/v1/contracts/import', {
-          data: {
-            connection_id: datasource?.id,
-            replace: true,
-            document: {
-              apiVersion: 'v3.2.0',
-              kind: 'DataContract',
-              id: 'a11y-probe-contract',
-              name: 'a11y probe',
-              version: '1.0.0',
-              status: 'active',
-              schema: [
-                {
-                  name: 'orders',
-                  physicalName: 'orders',
-                  properties: [{ name: 'order_id', logicalType: 'integer', required: true }],
-                },
-              ],
-              slaProperties: [{ property: 'retention', value: 7, unit: 'y' }],
-            },
-          },
-        });
-        expect(imported.ok(), await imported.text()).toBeTruthy();
-        contractId = ((await imported.json()) as { contract: { id: string } }).contract.id;
+        // The demo seed imports one data contract (backend/scripts/demo_data.py).
+        const contracts: { id: string }[] = await (await request.get('/api/v1/contracts')).json();
+        expect(contracts.length, 'the seeded data contract').toBeGreaterThan(0);
+        contractId = contracts[0].id;
         // The seeded suite's two most recent runs, the older one as the base.
         const runs: { id: string }[] = await (
           await request.get(`/api/v1/runs?suite_id=${suiteId}&limit=2`)

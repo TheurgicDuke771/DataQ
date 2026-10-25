@@ -56,6 +56,12 @@ function clauseLabel(c: ClauseStateRow['clause']): string {
 /** One data contract (`/contracts/:contractId`, ADR 0052): per-clause compliance and what is not enforced. */
 export function ContractDetail() {
   const { contractId = '' } = useParams();
+  // Keyed on the id: the fetch runs on mount only, so moving to another contract in place (back /
+  // forward, the command palette) must remount rather than keep the previous contract on screen.
+  return <ContractDetailFor key={contractId} contractId={contractId} />;
+}
+
+function ContractDetailFor({ contractId }: { contractId: string }) {
   const { state, reload } = useAsyncData((signal) => getContract(contractId, signal));
 
   useEffect(() => {
@@ -75,7 +81,8 @@ export function ContractDetail() {
 function ContractBody({ contract }: { contract: ContractDetailData }) {
   const { message } = App.useApp();
   const { compliance } = contract;
-  const suiteName = new Map(contract.suites.map((s) => [s.id, s.name]));
+  const suitesById = new Map(contract.suites.map((s) => [s.id, s]));
+  const suiteName = (id: string) => suitesById.get(id)?.name ?? 'Suite';
   const partial = compliance.suites.filter((s) => !s.results_final);
   const unenforced =
     compliance.counts.missing + compliance.counts.disabled + compliance.not_enforced;
@@ -84,7 +91,7 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
     try {
       const yaml = await exportContractYaml(contract.id);
       downloadText(
-        `${toFilenameStem(contract.name, 'contract')}_${contract.version}.odcs.yaml`,
+        `${toFilenameStem(contract.name, 'contract')}_${toFilenameStem(contract.version, 'v')}.odcs.yaml`,
         yaml,
         'application/yaml',
       );
@@ -93,14 +100,12 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
     }
   };
 
-  const clauseColumns: ColumnsType<ClauseStateRow> = [
+  const clauseColumns: ColumnsType<ClauseStateRow & { key: string }> = [
     { title: 'Clause', key: 'clause', render: (_, c) => clauseLabel(c.clause) },
     {
       title: 'Suite',
       key: 'suite',
-      render: (_, c) => (
-        <RowLink to={`/suites/${c.suite_id}`}>{suiteName.get(c.suite_id) ?? 'Suite'}</RowLink>
-      ),
+      render: (_, c) => <RowLink to={`/suites/${c.suite_id}`}>{suiteName(c.suite_id)}</RowLink>,
     },
     { title: 'Check', key: 'check', render: (_, c) => c.check_name ?? '—' },
     {
@@ -126,12 +131,11 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
     },
   ];
 
-  const unmappedColumns: ColumnsType<UnmappedClause> = [
+  const unmappedColumns: ColumnsType<UnmappedClause & { key: string }> = [
     {
       title: 'Clause',
       key: 'clause',
-      render: (_, u) =>
-        [u.object, u.property].filter(Boolean).join('.') + ` · ${u.rule_id ?? u.field}`,
+      render: (_, u) => clauseLabel(u),
     },
     { title: 'Why it is not enforced', dataIndex: 'reason', key: 'reason' },
   ];
@@ -223,16 +227,13 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
               title: 'Suite',
               key: 'suite',
               render: (_, s) => (
-                <RowLink to={`/suites/${s.suite_id}`}>
-                  {suiteName.get(s.suite_id) ?? 'Suite'}
-                </RowLink>
+                <RowLink to={`/suites/${s.suite_id}`}>{suiteName(s.suite_id)}</RowLink>
               ),
             },
             {
               title: 'Object',
               key: 'object',
-              render: (_, s) =>
-                contract.suites.find((x) => x.id === s.suite_id)?.contract_object ?? '—',
+              render: (_, s) => suitesById.get(s.suite_id)?.contract_object ?? '—',
             },
             {
               title: 'Latest run',
@@ -256,12 +257,12 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
       </Card>
 
       <Card title="Clauses" size="small">
-        <Table<ClauseStateRow>
-          rowKey={(c) => `${c.suite_id}-${c.check_id ?? clauseLabel(c.clause)}`}
+        <Table<ClauseStateRow & { key: string }>
+          rowKey="key"
           size="small"
           pagination={false}
           aria-label="Contract clauses and their state"
-          dataSource={compliance.clauses}
+          dataSource={compliance.clauses.map((c, i) => ({ ...c, key: `${c.suite_id}-${i}` }))}
           columns={clauseColumns}
         />
       </Card>
@@ -270,12 +271,12 @@ function ContractBody({ contract }: { contract: ContractDetailData }) {
         {contract.unmapped.length === 0 ? (
           <Typography.Text type="secondary">Every clause maps to a check.</Typography.Text>
         ) : (
-          <Table<UnmappedClause>
-            rowKey={(u) => `${u.object}-${u.property}-${u.rule_id}-${u.field}`}
+          <Table<UnmappedClause & { key: string }>
+            rowKey="key"
             size="small"
             pagination={false}
             aria-label="Clauses DataQ does not enforce"
-            dataSource={contract.unmapped}
+            dataSource={contract.unmapped.map((u, i) => ({ ...u, key: String(i) }))}
             columns={unmappedColumns}
           />
         )}

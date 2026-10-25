@@ -1,11 +1,16 @@
 import { UploadOutlined } from '@ant-design/icons';
-import { App, Button, Flex, Form, Input, Select, Table, Tag, Typography } from 'antd';
+import { App, Button, Checkbox, Flex, Form, Input, Select, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { type Connection, DATASOURCE_TYPES, listConnections } from '../api/connections';
-import { type Contract, importContract, listContracts } from '../api/contracts';
+import {
+  type Contract,
+  type ContractImportResult,
+  importContract,
+  listContracts,
+} from '../api/contracts';
 import { useCanAuthor } from '../auth/useMe';
 import { AsyncBody } from '../components/AsyncBody';
 import { Modal } from '../components/shared/Modal';
@@ -13,6 +18,7 @@ import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { EmptyState } from '../components/shared/EmptyState';
 import { RowLink } from '../components/shared/RowLink';
+import { useAppModal } from '../hooks/useAppModal';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
 
@@ -61,6 +67,7 @@ export function Contracts() {
       </AsyncBody>
       <ImportContractModal
         open={importOpen}
+        contracts={state.status === 'ok' ? state.data : []}
         onClose={() => setImportOpen(false)}
         onImported={reload}
       />
@@ -120,10 +127,13 @@ function ContractsTable({ contracts }: { contracts: Contract[] }) {
 
 function ImportContractModal({
   open,
+  contracts,
   onClose,
   onImported,
 }: {
   open: boolean;
+  /** The contracts already imported — a new version can take over one's suites. */
+  contracts: Contract[];
   onClose: () => void;
   onImported: () => void;
 }) {
@@ -135,21 +145,57 @@ function ImportContractModal({
       onCancel={onClose}
       destroyOnHidden
     >
-      {open && <ImportContractForm onClose={onClose} onImported={onImported} />}
+      {open && (
+        <ImportContractForm contracts={contracts} onClose={onClose} onImported={onImported} />
+      )}
     </Modal>
   );
 }
 
+interface ImportValues {
+  connection_id: string;
+  document_yaml: string;
+  previous?: string;
+  replace?: boolean;
+}
+
+/** What the import did, in words — including what needs attention before it can run. */
+function importSummary(result: ContractImportResult): { text: string; attention: string[] } {
+  const parts = [
+    result.created_suite_ids.length && `${result.created_suite_ids.length} suites created`,
+    result.reconciled_suite_ids.length && `${result.reconciled_suite_ids.length} suites updated`,
+    result.retired_suite_ids.length && `${result.retired_suite_ids.length} suites retired`,
+    `${result.checks_added} checks added`,
+    result.checks_updated && `${result.checks_updated} updated`,
+    result.checks_disabled && `${result.checks_disabled} switched off`,
+  ].filter(Boolean);
+  const attention = [
+    ...result.warnings,
+    ...(result.untargeted_objects.length
+      ? [
+          `No table matched ${result.untargeted_objects.join(', ')} on this connection — set a target on those suites before they can run.`,
+        ]
+      : []),
+  ];
+  return {
+    text: `Imported ${result.contract.name} ${result.contract.version}: ${parts.join(', ')}.`,
+    attention,
+  };
+}
+
 function ImportContractForm({
+  contracts,
   onClose,
   onImported,
 }: {
+  contracts: Contract[];
   onClose: () => void;
   onImported: () => void;
 }) {
   const { message } = App.useApp();
+  const modal = useAppModal();
   const navigate = useNavigate();
-  const [form] = Form.useForm<{ connection_id: string; document_yaml: string }>();
+  const [form] = Form.useForm<ImportValues>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Mounted only while the modal is open, so the connections are fetched when it opens.
@@ -160,15 +206,34 @@ function ImportContractForm({
           (DATASOURCE_TYPES as readonly string[]).includes(c.type),
         )
       : [];
+  const latest = contracts.filter((c) => c.latest_version && c.suites.length > 0);
 
-  const submit = async (values: { connection_id: string; document_yaml: string }) => {
+  const submit = async (values: ImportValues) => {
     setSubmitting(true);
     setError(null);
+    const previous = latest.find((c) => c.id === values.previous);
     try {
-      const result = await importContract(values);
-      message.success(
-        `Imported ${result.contract.name} ${result.contract.version}: ${result.created_suite_ids.length} suites, ${result.checks_added} checks`,
-      );
+      const result = await importContract({
+        connection_id: values.connection_id,
+        document_yaml: values.document_yaml,
+        ...(previous ? { suite_ids: previous.suites.map((x) => x.id) } : {}),
+        ...(values.replace ? { replace: true } : {}),
+      });
+      const { text, attention } = importSummary(result);
+      if (attention.length > 0) {
+        modal.warning({
+          title: text,
+          content: (
+            <ul style={{ paddingLeft: 16 }}>
+              {attention.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          ),
+        });
+      } else {
+        message.success(text);
+      }
       onImported();
       onClose();
       navigate(`/contracts/${result.contract.id}`);
@@ -202,15 +267,33 @@ function ImportContractForm({
       >
         <Input.TextArea rows={10} spellCheck={false} />
       </Form.Item>
-      <Form.Item label="ODCS file">
+      <Form.Item label="ODCS file" htmlFor="contract-file">
         <input
+          id="contract-file"
           type="file"
           accept=".yaml,.yml,.json"
+          aria-label="ODCS file"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void file.text().then((text) => form.setFieldValue('document_yaml', text));
           }}
         />
+      </Form.Item>
+      {latest.length > 0 && (
+        <Form.Item
+          name="previous"
+          label="New version of"
+          extra="Take over that version's suites and update their checks, instead of creating new suites."
+        >
+          <Select
+            allowClear
+            placeholder="Not a new version"
+            options={latest.map((c) => ({ value: c.id, label: `${c.name} ${c.version}` }))}
+          />
+        </Form.Item>
+      )}
+      <Form.Item name="replace" valuePropName="checked">
+        <Checkbox>Replace this version if it is already imported</Checkbox>
       </Form.Item>
       {error && (
         <Typography.Paragraph type="danger" role="alert">
