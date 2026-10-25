@@ -3896,6 +3896,41 @@ def test_list_check_versions_reports_the_snapshot_not_todays_check(
     assert versions[1]["warn_threshold"] == pytest.approx(0.01)
 
 
+def test_redacted_check_version_is_flagged_and_cannot_be_restored(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A tombstoned snapshot (#685) must be a FIELD the model branches on, not a config that
+    happens to look odd — and the restore must refuse it rather than write the tombstone back.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="status in set",
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "status", "value_set": ["PASTED_LITERAL"]},
+    )
+    server.update_check(
+        str(suite.id), created["id"], config={"column": "status", "value_set": ["open"]}
+    )
+    check_service.redact_check_version(
+        db_session, suite.id, uuid.UUID(created["id"]), 1, actor_id=user.id
+    )
+
+    versions = server.list_check_versions(str(suite.id), created["id"])["versions"]
+    assert [(v["version_no"], v["redacted"]) for v in versions] == [(2, False), (1, True)]
+    assert versions[1]["redacted_at"] is not None and versions[0]["redacted_at"] is None
+    assert "PASTED_LITERAL" not in str(versions)
+
+    with pytest.raises(ToolError, match="is redacted and cannot be restored"):
+        server.restore_check_version(str(suite.id), created["id"], version_no=1)
+    assert server.get_check(str(suite.id), created["id"])["config"] == {
+        "column": "status",
+        "value_set": ["open"],
+    }
+
+
 def test_list_check_versions_thresholds_are_json_encodable(
     db_session: Any, monkeypatch: Any
 ) -> None:

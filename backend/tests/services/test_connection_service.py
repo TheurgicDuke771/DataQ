@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretWriteError
 from backend.app.datasources import registry
-from backend.app.db.models import Asset, Connection, ConnectionVersion, Run, Suite, User
+from backend.app.db.models import Asset, AuditEvent, Connection, ConnectionVersion, Run, Suite, User
 from backend.app.services import connection_service as svc
 from backend.app.services import suite_service
 from backend.app.services.connection_service import (
@@ -1958,6 +1958,112 @@ def test_secret_only_update_records_no_version(db_session: Any) -> None:
     store.set(str(conn.secret_ref), "old")
     svc.update_connection(db_session, conn.id, secret="rotated", secret_store=store)
     assert [v.version_no for v in _versions(db_session, conn.id)] == [1]  # still just the create
+
+
+# ───────────────────────── version redaction (#685) ─────────────────
+
+
+def _edit_twice(db_session: Any, actor: User) -> Connection:
+    """v1 carries the mistakenly pasted value, v2 edits it out, v3 is another edit."""
+    conn = _create(
+        db_session, FakeSecretStore(), user=actor, config={**_SF_CONFIG, "role": "LEAKED"}
+    )
+    for role in ("DQ_ROLE", "DQ_ROLE_2"):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_SF_CONFIG, "role": role},
+            secret_store=FakeSecretStore(),
+            skip_test=True,
+            actor_id=actor.id,
+        )
+    return conn
+
+
+def _redaction_events(db_session: Any, conn_id: uuid.UUID) -> list[AuditEvent]:
+    db_session.expire_all()
+    return list(
+        db_session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.action == "connection.version_redact", AuditEvent.entity_id == conn_id
+            )
+        )
+    )
+
+
+def test_redact_version_empties_config_stamps_the_row_and_keeps_it(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+
+    out = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+
+    assert out.redacted is True
+    assert out.redacted_at is not None and out.redacted_by == actor.id
+    assert out.redacted_by_name == actor.email
+    assert out.config == {}
+    versions = _versions(db_session, conn.id)
+    # The history keeps its shape: three rows, the other two untouched.
+    assert [v.version_no for v in versions] == [1, 2, 3]
+    assert versions[0].name == conn.name and versions[0].changed_by == actor.id
+    assert [v.redacted for v in versions] == [True, False, False]
+    assert versions[1].config["role"] == "DQ_ROLE"
+
+
+def test_redact_version_audits_which_version_never_what_it_held(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+    svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+
+    events = _redaction_events(db_session, conn.id)
+    assert len(events) == 1
+    assert events[0].actor_user_id == actor.id
+    assert events[0].after is not None
+    assert events[0].after["version_nos"] == [1]
+    assert events[0].before is None
+    assert "LEAKED" not in str(events[0].after) and "config" not in events[0].after
+
+
+def test_redact_version_refuses_the_current_version(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+    with pytest.raises(svc.ConnectionVersionIsCurrentError):
+        svc.redact_connection_version(db_session, conn.id, 3, actor_id=actor.id)
+    assert not any(v.redacted for v in _versions(db_session, conn.id))
+    assert _redaction_events(db_session, conn.id) == []
+
+
+def test_redact_version_unknown_version_and_connection_404(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+    with pytest.raises(svc.ConnectionVersionNotFoundError):
+        svc.redact_connection_version(db_session, conn.id, 99, actor_id=actor.id)
+    with pytest.raises(svc.ConnectionNotFoundError):
+        svc.redact_connection_version(db_session, uuid.uuid4(), 1, actor_id=actor.id)
+
+
+def test_redact_version_twice_is_a_no_op_not_re_audited(db_session: Any) -> None:
+    """A retried DELETE (dropped response, proxy retry) must not read as a failure."""
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+    first = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+    stamped = first.redacted_at
+    again = svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+    assert again.redacted and again.redacted_at == stamped
+    assert len(_redaction_events(db_session, conn.id)) == 1
+
+
+def test_redact_all_versions_spares_the_current_one_and_audits_once(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _edit_twice(db_session, actor)
+    svc.redact_connection_version(db_session, conn.id, 1, actor_id=actor.id)
+
+    assert svc.redact_connection_versions(db_session, conn.id, actor_id=actor.id) == [2]
+    assert [v.redacted for v in _versions(db_session, conn.id)] == [True, True, False]
+    events = _redaction_events(db_session, conn.id)
+    assert sorted(e.after["version_nos"] for e in events if e.after) == [[1], [2]]
+    # Nothing left to do: no row changes, no audit event.
+    assert svc.redact_connection_versions(db_session, conn.id, actor_id=actor.id) == []
+    assert len(_redaction_events(db_session, conn.id)) == 2
 
 
 def test_noop_update_records_no_version(db_session: Any) -> None:

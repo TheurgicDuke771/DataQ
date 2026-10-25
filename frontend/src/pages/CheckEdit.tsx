@@ -16,7 +16,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { type ConnectionType, type DmfCapability, getConnection } from '../api/connections';
-import { canRunSuite, type Check, getCheck, getSuite, updateCheck } from '../api/suites';
+import {
+  canManageSuite,
+  canRunSuite,
+  type Check,
+  getCheck,
+  getSuite,
+  updateCheck,
+} from '../api/suites';
 import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
 import {
   ConfigFieldItem,
@@ -99,6 +106,8 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
             // History's Restore action is edit-gated the same way the rest of
             // the suite's write actions are (Suites.tsx `canRun`).
             canRestore={canRunSuite(state.data.suite)}
+            // Redacting a version destroys history: owner/admin only, as on the server.
+            canRedact={canManageSuite(state.data.suite)}
             onRestored={reload}
             onCancel={back}
             onSaved={back}
@@ -117,6 +126,7 @@ function CheckEditForm({
   dmfCapability,
   refusedTypes = [],
   canRestore,
+  canRedact,
   onRestored,
   onCancel,
   onSaved,
@@ -132,6 +142,7 @@ function CheckEditForm({
   /** Whether the caller may restore a version (#283) — passed straight through
    *  to `CheckHistoryDrawer`. */
   canRestore: boolean;
+  canRedact: boolean;
   /** Refetches the suite/check/connection after a successful restore, so the
    *  form re-seeds from the restored (live) state. */
   onRestored: () => void;
@@ -377,6 +388,7 @@ function CheckEditForm({
         suiteId={suiteId}
         check={check}
         canRestore={canRestore}
+        canRedact={canRedact}
         onRestored={onRestored}
         onClose={() => setHistoryOpen(false)}
       />

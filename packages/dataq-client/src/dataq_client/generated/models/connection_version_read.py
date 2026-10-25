@@ -9,6 +9,8 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.connection_version_read_config import ConnectionVersionReadConfig
 
@@ -32,6 +34,11 @@ class ConnectionVersionRead:
             name (str):
             type_ (str):
             version_no (int):
+            redacted (bool | Unset): True when an admin redacted this snapshot: `config` is then empty and the values it
+                held are gone from the version history (connection audit events never carry config, so nothing else retains
+                them). Default: False.
+            redacted_at (datetime.datetime | None | Unset):
+            redacted_by_name (None | str | Unset):
     """
 
     changed_by: None | UUID
@@ -42,6 +49,9 @@ class ConnectionVersionRead:
     name: str
     type_: str
     version_no: int
+    redacted: bool | Unset = False
+    redacted_at: datetime.datetime | None | Unset = UNSET
+    redacted_by_name: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -66,6 +76,22 @@ class ConnectionVersionRead:
 
         version_no = self.version_no
 
+        redacted = self.redacted
+
+        redacted_at: None | str | Unset
+        if isinstance(self.redacted_at, Unset):
+            redacted_at = UNSET
+        elif isinstance(self.redacted_at, datetime.datetime):
+            redacted_at = self.redacted_at.isoformat()
+        else:
+            redacted_at = self.redacted_at
+
+        redacted_by_name: None | str | Unset
+        if isinstance(self.redacted_by_name, Unset):
+            redacted_by_name = UNSET
+        else:
+            redacted_by_name = self.redacted_by_name
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -80,6 +106,12 @@ class ConnectionVersionRead:
                 "version_no": version_no,
             }
         )
+        if redacted is not UNSET:
+            field_dict["redacted"] = redacted
+        if redacted_at is not UNSET:
+            field_dict["redacted_at"] = redacted_at
+        if redacted_by_name is not UNSET:
+            field_dict["redacted_by_name"] = redacted_by_name
 
         return field_dict
 
@@ -125,6 +157,34 @@ class ConnectionVersionRead:
 
         version_no = d.pop("version_no")
 
+        redacted = d.pop("redacted", UNSET)
+
+        def _parse_redacted_at(data: object) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                redacted_at_type_0 = datetime.datetime.fromisoformat(data)
+
+                return redacted_at_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        redacted_at = _parse_redacted_at(d.pop("redacted_at", UNSET))
+
+        def _parse_redacted_by_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        redacted_by_name = _parse_redacted_by_name(d.pop("redacted_by_name", UNSET))
+
         connection_version_read = cls(
             changed_by=changed_by,
             changed_by_name=changed_by_name,
@@ -134,6 +194,9 @@ class ConnectionVersionRead:
             name=name,
             type_=type_,
             version_no=version_no,
+            redacted=redacted,
+            redacted_at=redacted_at,
+            redacted_by_name=redacted_by_name,
         )
 
         connection_version_read.additional_properties = d

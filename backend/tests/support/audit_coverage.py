@@ -13,6 +13,12 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("PATCH", "/api/v1/connections/{connection_id}"): "connection.update",
     ("DELETE", "/api/v1/connections/{connection_id}"): "connection.delete",
     ("POST", "/api/v1/connections/{connection_id}/reauth"): "connection.reauth",
+    # Version redaction (#685): the event names WHICH snapshots, never what they held.
+    (
+        "DELETE",
+        "/api/v1/connections/{connection_id}/versions/{version_no}",
+    ): "connection.version_redact",
+    ("DELETE", "/api/v1/connections/{connection_id}/versions"): "connection.version_redact",
     # ── Suites.
     ("POST", "/api/v1/suites"): "suite.create",
     ("PATCH", "/api/v1/suites/{suite_id}"): "suite.update",
@@ -39,6 +45,10 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
         "POST",
         "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}/restore",
     ): "check.restore",
+    (
+        "DELETE",
+        "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}",
+    ): "check.version_redact",
     ("POST", "/api/v1/suites/{suite_id}/checks/{check_id}/rebaseline"): "check.rebaseline",
     # ── Shares (ADR 0027 grants).
     ("POST", "/api/v1/suites/{suite_id}/shares"): "share.grant",

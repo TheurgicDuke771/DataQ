@@ -326,3 +326,36 @@ def test_historical_check_snapshots_name_the_clock_skew_branch(db_session: Any) 
 
     assert snapshot.resolved_from == "later_version"
     assert snapshot.dimension == "completeness"
+
+
+def test_a_redacted_version_still_names_the_column_its_results_tested(db_session: Any) -> None:
+    """#685 review: redaction empties the snapshot's config but keeps `column` — the masking
+    ladder and data-subject searches resolve a result's tested column from it."""
+    from backend.app.services import version_redaction
+
+    _suite, check = _suite_and_check(db_session)
+    v1 = _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0,
+        expectation_type="expect_column_values_to_not_be_null",
+        column="email",
+    )
+    v1.config = {**v1.config, "value_set": ["PASTED_LITERAL"]}
+    _version(
+        db_session,
+        check,
+        version_no=2,
+        created_at=_T0 + timedelta(days=1),
+        expectation_type="expect_column_values_to_not_be_null",
+        column="email",
+    )
+    result = _result(db_session, check, created_at=_T0 + timedelta(hours=1))
+
+    version_redaction.redact(v1, actor_id=None)
+    db_session.flush()
+
+    assert v1.config == {"column": "email"} and v1.redacted
+    context = run_service.historical_check_context(db_session, [result], {check.id: check})
+    assert context[result.id] == ("email", "expect_column_values_to_not_be_null")

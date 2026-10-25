@@ -3,16 +3,27 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { type CheckVersion, listCheckVersions, restoreCheckVersion } from '../../src/api/suites';
+import {
+  type CheckVersion,
+  listCheckVersions,
+  redactCheckVersion,
+  restoreCheckVersion,
+} from '../../src/api/suites';
 import { CheckHistoryDrawer } from '../../src/components/checks/CheckHistoryDrawer';
 
 vi.mock('../../src/api/suites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/suites')>();
-  return { ...actual, listCheckVersions: vi.fn(), restoreCheckVersion: vi.fn() };
+  return {
+    ...actual,
+    listCheckVersions: vi.fn(),
+    restoreCheckVersion: vi.fn(),
+    redactCheckVersion: vi.fn(),
+  };
 });
 
 const mockList = vi.mocked(listCheckVersions);
 const mockRestore = vi.mocked(restoreCheckVersion);
+const mockRedact = vi.mocked(redactCheckVersion);
 
 function version(overrides: Partial<CheckVersion> = {}): CheckVersion {
   return {
@@ -33,7 +44,7 @@ function version(overrides: Partial<CheckVersion> = {}): CheckVersion {
 
 function renderDrawer(
   check: { id: string; name: string } | null = { id: 'c1', name: 'orders' },
-  opts: { canRestore?: boolean; onRestored?: () => void } = {},
+  opts: { canRestore?: boolean; canRedact?: boolean; onRestored?: () => void } = {},
 ) {
   return render(
     <AntApp>
@@ -42,6 +53,7 @@ function renderDrawer(
         suiteId="s1"
         check={check}
         canRestore={opts.canRestore}
+        canRedact={opts.canRedact}
         onRestored={opts.onRestored}
         onClose={vi.fn()}
       />
@@ -207,5 +219,64 @@ describe('CheckHistoryDrawer — restore', () => {
     renderDrawer();
 
     expect(await screen.findByText('Great Expectations (gx)')).toBeInTheDocument();
+  });
+});
+
+// ───────────────────────── redaction (#685) ──────────────────────────────
+
+describe('CheckHistoryDrawer — redaction', () => {
+  it('renders a redacted version with neither Restore nor Redact, naming who redacted it', async () => {
+    mockList.mockResolvedValue([
+      version({ version_no: 3 }),
+      version({ version_no: 2 }),
+      version({
+        version_no: 1,
+        redacted: true,
+        redacted_at: '2026-10-25T09:30:00Z',
+        redacted_by_name: 'Olivia Owner',
+        config: {},
+      }),
+    ]);
+    renderDrawer(undefined, { canRestore: true, canRedact: true });
+
+    expect(await screen.findByText('Redacted')).toBeInTheDocument();
+    expect(screen.getByText('Configuration redacted')).toBeInTheDocument();
+    expect(screen.getByText(/Redacted by Olivia Owner on/)).toBeInTheDocument();
+    // Only v2 is actionable: v3 is current, v1 has no config to restore or redact.
+    expect(screen.getAllByRole('button', { name: /Restore this version/ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Redact this version/ })).toHaveLength(1);
+  });
+
+  it('offers no Redact control to a viewer', async () => {
+    mockList.mockResolvedValue([version({ version_no: 2 }), version({ version_no: 1 })]);
+    renderDrawer();
+
+    await screen.findByText('v2');
+    expect(screen.queryByRole('button', { name: /Redact this version/ })).not.toBeInTheDocument();
+  });
+
+  it('lets an edit share restore but not redact', async () => {
+    mockList.mockResolvedValue([version({ version_no: 2 }), version({ version_no: 1 })]);
+    renderDrawer(undefined, { canRestore: true, canRedact: false });
+
+    await screen.findByText('v2');
+    expect(screen.getByRole('button', { name: /Restore this version/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Redact this version/ })).not.toBeInTheDocument();
+  });
+
+  it('redacts on confirm, toasts, and refetches the list', async () => {
+    const user = userEvent.setup();
+    mockList.mockResolvedValue([version({ version_no: 2 }), version({ version_no: 1 })]);
+    mockRedact.mockResolvedValue(version({ version_no: 1, redacted: true }));
+    renderDrawer(undefined, { canRestore: true, canRedact: true });
+
+    await user.click(await screen.findByRole('button', { name: /Redact this version/ }));
+    expect(await screen.findByText('Redact v1?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Redact' }));
+
+    await waitFor(() => expect(mockRedact).toHaveBeenCalledWith('s1', 'c1', 1));
+    expect(await screen.findByText('Redacted v1')).toBeInTheDocument();
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+    expect(mockRestore).not.toHaveBeenCalled();
   });
 });
