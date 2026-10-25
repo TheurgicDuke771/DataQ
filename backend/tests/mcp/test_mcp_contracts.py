@@ -76,14 +76,18 @@ def test_list_contracts_names_suites_and_counts_what_is_hidden(
 
     _as(monkeypatch, db_session, viewer)
     listed = server.list_contracts()
-    assert listed["count"] == 1
+    assert (listed["total"], listed["returned"], listed["truncated"]) == (1, 1, False)
     entry = listed["contracts"][0]
-    assert (entry["odcs_id"], entry["version"]) == ("orders-contract", "1.0.0")
+    assert (entry["odcs_id"], entry["version"], entry["latest_version"]) == (
+        "orders-contract",
+        "1.0.0",
+        True,
+    )
     assert len(entry["suites"]) == 1 and entry["restricted_suite_count"] == 1
-    assert entry["not_enforced_count"] == 1
+    assert [u["field"] for u in entry["unmapped"]] == ["slaProperties.retention"]
 
     _as(monkeypatch, db_session, _user(db_session))
-    assert server.list_contracts() == {"count": 0, "contracts": []}
+    assert server.list_contracts()["contracts"] == []
 
 
 def test_get_contract_reports_clause_states_and_finality(db_session: Any, monkeypatch: Any) -> None:
@@ -127,3 +131,25 @@ def test_export_contract_returns_a_valid_odcs_document(db_session: Any, monkeypa
     document = body["document"]
     assert document["apiVersion"] == odcs.NEWEST_VERSION
     odcs.validate_document(document)
+
+
+def test_list_contracts_pages(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session)
+    _imported(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+    page = server.list_contracts(limit=1, offset=0)
+    assert page["returned"] == 1 and page["truncated"] is False
+
+
+def test_get_check_and_list_suites_name_the_contract(db_session: Any, monkeypatch: Any) -> None:
+    owner = _user(db_session)
+    outcome = _imported(db_session, owner)
+    orders = db_session.get(Suite, outcome.created_suite_ids[0])
+    check = next(c for c in orders.checks if (c.contract_ref or {}).get("rule_id") == "floor")
+    _as(monkeypatch, db_session, owner)
+    got = server.get_check(str(orders.id), str(check.id))
+    assert got["origin"] == "contract"
+    assert got["contract_clause"]["odcs_id"] == "orders-contract"
+    suites = server.list_suites()
+    entry = next(x for x in suites if x["id"] == str(orders.id))
+    assert entry["contract_id"] == str(outcome.contract.id)

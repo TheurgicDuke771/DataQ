@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
@@ -19,29 +19,35 @@ T = TypeVar("T", bound="ClauseStateRead")
 class ClauseStateRead:
     """
     Attributes:
-        check_id (UUID):
-        check_name (str):
+        check_id (None | UUID):
+        check_name (None | str):
         clause (ClauseStateReadClause):
-        drifted (bool):
+        drifted (bool | None):
         state (str):
         suite_id (UUID):
     """
 
-    check_id: UUID
-    check_name: str
+    check_id: None | UUID
+    check_name: None | str
     clause: ClauseStateReadClause
-    drifted: bool
+    drifted: bool | None
     state: str
     suite_id: UUID
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        check_id = str(self.check_id)
+        check_id: None | str
+        if isinstance(self.check_id, UUID):
+            check_id = str(self.check_id)
+        else:
+            check_id = self.check_id
 
+        check_name: None | str
         check_name = self.check_name
 
         clause = self.clause.to_dict()
 
+        drifted: bool | None
         drifted = self.drifted
 
         state = self.state
@@ -68,13 +74,37 @@ class ClauseStateRead:
         from ..models.clause_state_read_clause import ClauseStateReadClause
 
         d = dict(src_dict)
-        check_id = UUID(d.pop("check_id"))
 
-        check_name = d.pop("check_name")
+        def _parse_check_id(data: object) -> None | UUID:
+            if data is None:
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                check_id_type_0 = UUID(data)
+
+                return check_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | UUID, data)
+
+        check_id = _parse_check_id(d.pop("check_id"))
+
+        def _parse_check_name(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        check_name = _parse_check_name(d.pop("check_name"))
 
         clause = ClauseStateReadClause.from_dict(d.pop("clause"))
 
-        drifted = d.pop("drifted")
+        def _parse_drifted(data: object) -> bool | None:
+            if data is None:
+                return data
+            return cast(bool | None, data)
+
+        drifted = _parse_drifted(d.pop("drifted"))
 
         state = d.pop("state")
 

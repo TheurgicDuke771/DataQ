@@ -71,8 +71,9 @@ Without `suite_ids`, the new version creates fresh suites.
 
 `GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
 state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
-`unverified` (the check errored or was skipped), `not_run` (that run has no result for it) or
-`disabled` — and a `drifted` flag when someone has edited the check since the import, so it may
+`unverified` (the check errored or was skipped), `not_run` (that run has no result for it),
+`disabled`, or `missing` (the suite has no check for the clause at all, because it was deleted
+or the suite was linked by hand) — and a `drifted` flag when someone has edited the check since the import, so it may
 no longer say what the clause says. Each suite reports its latest run and `results_final`, which
 is false while that run is still going: the states are partial until then. The clauses DataQ
 does not enforce are counted as `not_enforced`.

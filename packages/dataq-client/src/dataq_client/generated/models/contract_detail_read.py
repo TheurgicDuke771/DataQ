@@ -29,6 +29,7 @@ class ContractDetailRead:
         created_at (datetime.datetime):
         domain (None | str):
         id (UUID):
+        latest_version (bool):
         name (str):
         odcs_id (str):
         restricted_suite_count (int):
@@ -44,6 +45,7 @@ class ContractDetailRead:
     created_at: datetime.datetime
     domain: None | str
     id: UUID
+    latest_version: bool
     name: str
     odcs_id: str
     restricted_suite_count: int
@@ -65,6 +67,8 @@ class ContractDetailRead:
         domain = self.domain
 
         id = str(self.id)
+
+        latest_version = self.latest_version
 
         name = self.name
 
@@ -99,6 +103,7 @@ class ContractDetailRead:
                 "created_at": created_at,
                 "domain": domain,
                 "id": id,
+                "latest_version": latest_version,
                 "name": name,
                 "odcs_id": odcs_id,
                 "restricted_suite_count": restricted_suite_count,
@@ -133,6 +138,8 @@ class ContractDetailRead:
         domain = _parse_domain(d.pop("domain"))
 
         id = UUID(d.pop("id"))
+
+        latest_version = d.pop("latest_version")
 
         name = d.pop("name")
 
@@ -176,6 +183,7 @@ class ContractDetailRead:
             created_at=created_at,
             domain=domain,
             id=id,
+            latest_version=latest_version,
             name=name,
             odcs_id=odcs_id,
             restricted_suite_count=restricted_suite_count,

@@ -110,18 +110,28 @@ def export_contract(session: Session, contract: Contract, suites: list[Suite]) -
     doc["apiVersion"] = odcs.NEWEST_VERSION
     _set_custom(doc, "exportedAt", datetime.now(UTC).isoformat())
     objects = {o.get("name"): o for o in doc.get("schema") or () if isinstance(o, dict)}
+    # One query each for the connections and the checks of every suite, not one per suite.
+    connections = {
+        c.id: c
+        for c in session.scalars(
+            select(Connection).where(Connection.id.in_({s.connection_id for s in suites}))
+        )
+    }
+    checks_by_suite: dict[Any, list[Check]] = {s.id: [] for s in suites}
+    for check in session.scalars(
+        select(Check).where(Check.suite_id.in_(list(checks_by_suite))).order_by(*CHECK_ORDER)
+    ):
+        checks_by_suite[check.suite_id].append(check)
     for suite in suites:
         obj = objects.get(suite.contract_object)
         if obj is None:
             continue
-        connection = session.get(Connection, suite.connection_id)
+        connection = connections.get(suite.connection_id)
         _set_custom(obj, "suiteId", str(suite.id))
         if connection is not None:
             _set_custom(obj, "connectionType", connection.type)
-        checks = list(
-            session.scalars(select(Check).where(Check.suite_id == suite.id).order_by(*CHECK_ORDER))
-        )
-        documents = export_suite(session, suite)["checks"]
+        checks = checks_by_suite[suite.id]
+        documents = export_suite(session, suite, checks=checks)["checks"]
         for check, document in zip(checks, documents, strict=True):
             ref = check.contract_ref if check.origin == CONTRACT_CHECK_ORIGIN else None
             if ref is not None:
