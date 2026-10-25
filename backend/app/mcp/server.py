@@ -4524,7 +4524,10 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     observed value, a kind-shaped detail view of it, the asset, the recent metric
     trend, the sibling checks in the same run, a cross-suite sample of other
     checks on the SAME asset, the upstream pipeline run, and the downstream
-    blast radius.
+    blast radius. ``contract`` names the data-contract clause the failing check
+    enforces (`contract_id`, `name`, `version`, `clause` with `object` /
+    `property` / `rule_id` / `field`); it is null for a check no contract
+    derived, which is the usual case and not missing evidence.
 
     `failing_result.observed_value` is routed through the same column-policy/
     warehouse-tag masking floor `get_run_results` applies to that field. But

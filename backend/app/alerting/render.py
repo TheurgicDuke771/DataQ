@@ -275,7 +275,25 @@ def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
         _sibling_failures_clause(evidence.get("sibling_checks")),
         _blast_radius_clause(evidence.get("downstream_blast_radius")),
     ]
+    contract = _contract_clause(evidence.get("contract"))
+    if contract:
+        # Only for a contract-derived check — for any other check there is no clause to name,
+        # which is not a gap in the evidence.
+        parts.insert(0, contract)
     return "; ".join(parts)
+
+
+def _contract_clause(layer: Any) -> str:
+    """``contract seller_payments 1.1.0 · orders.customer_id required`` — or ``""``. Missing
+    parts are left out rather than printed as ``None`` or as doubled spaces."""
+    if not isinstance(layer, dict):
+        return ""
+    clause = layer.get("clause") or {}
+    where = ".".join(str(p) for p in (clause.get("object"), clause.get("property")) if p)
+    what = clause.get("rule_id") or clause.get("field")
+    head = " ".join(str(p) for p in ("contract", layer.get("name"), layer.get("version")) if p)
+    tail = " ".join(str(p) for p in (where, what) if p)
+    return f"{head} · {tail}" if tail else head
 
 
 #: A stored narrative's `summary`/`cause` can each run to hundreds of characters

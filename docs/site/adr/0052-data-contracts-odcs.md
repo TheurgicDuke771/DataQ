@@ -160,17 +160,19 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   `restricted_suite_count`, as `get_asset` does (ADR 0037). A contract with no linked suite is
   visible to admins only.
-- Linking an existing suite to a contract by hand (`PATCH /suites/{id}` with `contract_id` and
-  `contract_object`, both or neither, `edit`) ships with the compliance rollup, the second build
-  phase; until then a suite is linked only by an import. `DELETE /contracts/{id}` is Member+,
+- Linking an existing suite to a contract by hand: `PATCH /suites/{id}` with
+  `contract: {contract_id, contract_object}` (`edit`; the contract must be visible and name the
+  object), or `contract: null` to unlink. Linking adds no checks; an import derives them. `DELETE /contracts/{id}` is Member+,
   needs `edit` on every linked suite, and unlinks only.
 - MCP: `list_contracts`, `get_contract`, `export_contract` — three **read-only** tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.
 - The compliance rollup is per contract: for each linked suite's latest run, each clause is
-  `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_enforced`
-  (unmapped) / `drifted`, plus the suite-level `last_run_at` and `results_final`, so a rollup
-  over a mid-run suite is never read as a verdict.
+  `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_run` (no result
+  in that run) / `disabled` (switched off), with **`drifted`** as a separate flag (the check was
+  edited since its import — it can drift and still pass), plus the suite-level `last_run_at` and
+  `results_final`, so a rollup over a mid-run suite is never read as a verdict. The `unmapped`
+  list is the `not_enforced` half, counted beside the clauses.
 
 ### 9. UI, phase 1
 

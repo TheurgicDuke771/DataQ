@@ -67,6 +67,25 @@ the import is updated to the new clause, a check whose clause disappeared is **s
 deleted, so its history stays), and checks people added to the suite themselves are left alone.
 Without `suite_ids`, the new version creates fresh suites.
 
+## Compliance
+
+`GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
+state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
+`unverified` (the check errored or was skipped), `not_run` (that run has no result for it) or
+`disabled` — and a `drifted` flag when someone has edited the check since the import, so it may
+no longer say what the clause says. Each suite reports its latest run and `results_final`, which
+is false while that run is still going: the states are partial until then. The clauses DataQ
+does not enforce are counted as `not_enforced`.
+
+When a contract-derived check opens an incident, the incident's evidence names the contract and
+the clause it broke, and alerts lead with it.
+
+## Link a suite by hand
+
+To attach a suite you already have to a contract's schema object, send
+`PATCH /api/v1/suites/{id}` with `{"contract": {"contract_id": "…", "contract_object": "orders"}}`,
+or `{"contract": null}` to detach it. Linking adds no checks; importing the contract does.
+
 ## Export
 
 `GET /api/v1/contracts/{id}/export` returns the contract as an ODCS document (JSON, or YAML with

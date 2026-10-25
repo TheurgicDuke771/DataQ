@@ -62,6 +62,7 @@ _CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
 _EVIDENCE_REFS = frozenset(
     {
         "failing_result",
+        "contract",
         "kind_detail",
         "metric_trend",
         "check_history",

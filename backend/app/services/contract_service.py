@@ -23,9 +23,12 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import SCHEMA_DRIFT
 from backend.app.db.models import (
+    CHECK_ORDER,
     CONTRACT_CHECK_ORIGIN,
+    RESULT_SEVERITY_TIERS,
     Check,
     Contract,
+    Result,
     Schedule,
     Suite,
 )
@@ -33,6 +36,7 @@ from backend.app.services import audit_service, cron, suite_authz
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import record_check_version
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES, latest_runs_per_suite_stmt
 from backend.app.services.run_target import SuiteTargetInvalidError, validate_target
 from backend.app.services.suite_io_service import (
     EXPORT_VERSION,
@@ -178,7 +182,7 @@ def _current_fingerprint(check: Check) -> str:
 DISABLED_BY_CONTRACT = "disabled_by_contract"
 
 
-def _apply(check: Check, draft: tr.CheckDraft, *, set_enabled: bool = True) -> None:
+def _apply(check: Check, draft: tr.CheckDraft, *, odcs_id: str, set_enabled: bool = True) -> None:
     check.name = draft.name
     check.expectation_type = draft.expectation_type
     check.engine = draft.engine
@@ -189,12 +193,14 @@ def _apply(check: Check, draft: tr.CheckDraft, *, set_enabled: bool = True) -> N
     check.dimension = _dimension(draft)
     if set_enabled:
         check.enabled = draft.enabled
-    check.contract_ref = draft.ref_dict()
+    # The contract's own id travels with the clause, so a suite later linked to a DIFFERENT
+    # contract never has this clause reported under that contract's name.
+    check.contract_ref = {**draft.ref_dict(), "odcs_id": odcs_id}
 
 
-def _new_check(draft: tr.CheckDraft, ordinal: int) -> Check:
+def _new_check(draft: tr.CheckDraft, ordinal: int, *, odcs_id: str) -> Check:
     check = Check(kind=draft.kind, origin=CONTRACT_CHECK_ORIGIN, ordinal=ordinal)
-    _apply(check, draft)
+    _apply(check, draft, odcs_id=odcs_id)
     return check
 
 
@@ -271,6 +277,7 @@ def _reconcile(
     suite: Suite,
     drafts: list[tr.CheckDraft],
     *,
+    odcs_id: str,
     actor_id: uuid.UUID,
 ) -> tuple[_ReconcileCounts, list[tuple[Check, tr.CheckDraft]]]:
     """ADR 0052 §6 / ADR 0047's rules: add checks for new clauses, update a clause-derived check
@@ -294,7 +301,7 @@ def _reconcile(
         seen.add(key)
         existing = by_clause.get(key)
         if existing is None:
-            check = _new_check(draft, next_ordinal)
+            check = _new_check(draft, next_ordinal, odcs_id=odcs_id)
             next_ordinal += 1
             suite.checks.append(check)
             created.append((check, draft))
@@ -306,7 +313,7 @@ def _reconcile(
         unedited = stored is not None and stored == _current_fingerprint(existing)
         changed = False
         if unedited and stored != draft.fingerprint():
-            _apply(existing, draft, set_enabled=False)
+            _apply(existing, draft, odcs_id=odcs_id, set_enabled=False)
             changed = True
         if reopened:
             existing.enabled = True
@@ -427,7 +434,7 @@ def import_contract(
             suite.checks = []
             session.add(suite)
             for ordinal, draft in enumerate(drafts, start=1):
-                check = _new_check(draft, ordinal)
+                check = _new_check(draft, ordinal, odcs_id=contract.odcs_id)
                 suite.checks.append(check)
                 new_checks.append((check, draft))
             outcome.checks_added += len(drafts)
@@ -437,7 +444,9 @@ def import_contract(
         else:
             suite.contract_id = contract.id
             suite.contract_object = obj.name
-            counts, created = _reconcile(session, suite, drafts, actor_id=actor_id)
+            counts, created = _reconcile(
+                session, suite, drafts, odcs_id=contract.odcs_id, actor_id=actor_id
+            )
             new_checks.extend(created)
             outcome.checks_added += counts.added
             outcome.checks_updated += counts.updated
@@ -635,3 +644,166 @@ def delete_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID
     )
     session.delete(visible.contract)
     session.commit()
+
+
+# ───────────────────────────── compliance ───────────────────────────
+
+
+#: A clause's state in the rollup — the result its check produced in the suite's latest run, or why
+#: there is none. `not_enforced` clauses are the contract's `unmapped` list, reported beside these.
+CLAUSE_STATES = ("pass", "warn", "fail", "critical", "unverified", "not_run", "disabled")
+
+
+@dataclass
+class ClauseState:
+    suite_id: uuid.UUID
+    check_id: uuid.UUID
+    check_name: str
+    clause: dict[str, Any]
+    state: str
+    #: The check was edited since its import, so it may no longer say what the clause says.
+    drifted: bool
+
+
+@dataclass
+class SuiteCompliance:
+    suite_id: uuid.UUID
+    last_run_id: uuid.UUID | None
+    last_run_status: str | None
+    last_run_at: Any
+    #: True only for a run that completed (`succeeded`): a queued, running, failed or cancelled
+    #: run's results are not a complete account, and the states below are not a verdict.
+    results_final: bool
+
+
+@dataclass
+class Compliance:
+    clauses: list[ClauseState]
+    suites: list[SuiteCompliance]
+    counts: dict[str, int]
+    not_enforced: int
+
+
+def _clause_state(check: Check, by_check: dict[uuid.UUID, str]) -> str:
+    if not check.enabled:
+        return "disabled"
+    if check.id not in by_check:
+        return "not_run"
+    status = by_check[check.id]
+    return status if status in RESULT_SEVERITY_TIERS else "unverified"
+
+
+def compliance(session: Session, visible: VisibleContract) -> Compliance:
+    """Per clause, what the check that enforces it found in its suite's latest run — over the
+    suites the caller can see only (the restricted ones are counted on the contract, never
+    read). Three queries whatever the size: latest runs, their result statuses, the checks.
+    A check counts only when its clause names THIS contract (a suite relinked to another
+    contract keeps its old clauses, and they are not this contract's)."""
+    contract = visible.contract
+    suite_ids = [s.id for s in visible.suites]
+    runs = (
+        {r.suite_id: r for r in session.scalars(latest_runs_per_suite_stmt(suite_ids))}
+        if suite_ids
+        else {}
+    )
+    run_ids = [r.id for r in runs.values()]
+    by_check: dict[uuid.UUID, str] = {}
+    if run_ids:
+        rows = session.execute(
+            select(Result.check_id, Result.status).where(Result.run_id.in_(run_ids))
+        ).tuples()
+        by_check = dict(rows.all())
+    checks_by_suite: dict[uuid.UUID, list[Check]] = {sid: [] for sid in suite_ids}
+    if suite_ids:
+        for check in session.scalars(
+            select(Check)
+            .where(Check.suite_id.in_(suite_ids), Check.origin == CONTRACT_CHECK_ORIGIN)
+            .order_by(*CHECK_ORDER)
+        ):
+            if (check.contract_ref or {}).get("odcs_id") == contract.odcs_id:
+                checks_by_suite[check.suite_id].append(check)
+    clauses: list[ClauseState] = []
+    suites: list[SuiteCompliance] = []
+    for suite in visible.suites:
+        run = runs.get(suite.id)
+        suites.append(
+            SuiteCompliance(
+                suite_id=suite.id,
+                last_run_id=run.id if run else None,
+                last_run_status=run.status if run else None,
+                last_run_at=(run.finished_at or run.created_at) if run else None,
+                results_final=run is not None and run.status in AGGREGATABLE_RUN_STATUSES,
+            )
+        )
+        for check in checks_by_suite[suite.id]:
+            ref = check.contract_ref or {}
+            stored = ref.get("fingerprint")
+            clauses.append(
+                ClauseState(
+                    suite_id=suite.id,
+                    check_id=check.id,
+                    check_name=check.name,
+                    clause={k: ref.get(k) for k in ("object", "property", "rule_id", "field")},
+                    state=_clause_state(check, by_check),
+                    drifted=stored is not None and stored != _current_fingerprint(check),
+                )
+            )
+    counts = dict.fromkeys(CLAUSE_STATES, 0)
+    for clause in clauses:
+        counts[clause.state] += 1
+    return Compliance(
+        clauses=clauses,
+        suites=suites,
+        counts=counts,
+        not_enforced=len(contract.unmapped or []),
+    )
+
+
+# ───────────────────────────── linking ──────────────────────────────
+
+
+def link_suite(
+    session: Session,
+    suite: Suite,
+    *,
+    contract_id: uuid.UUID | None,
+    contract_object: str | None,
+    actor_id: uuid.UUID,
+) -> None:
+    """Set or clear a suite's contract link — both fields together, never one (ADR 0052 §2).
+    The caller already holds `edit` on the suite (the route checked). Linking adds no checks: an
+    import is what derives them. Linking into a contract is a change to that contract's set of
+    suites, so it needs what replacing or deleting it needs — `edit` on every suite already
+    linked — and the suite must run on the same connection and stand for an object no other
+    linked suite does (otherwise the next import could not reconcile it)."""
+    if (contract_id is None) != (contract_object is None):
+        raise ContractSuitesInvalidError(
+            "send contract_id and contract_object together, or both null to unlink",
+            detail={"suite_id": str(suite.id)},
+        )
+    if contract_id is None:
+        suite.contract_id = None
+        suite.contract_object = None
+        return
+    visible = get_contract(session, contract_id, actor_id)
+    contract = visible.contract
+    objects = {o.get("name") for o in contract.spec.get("schema") or () if isinstance(o, dict)}
+    if contract_object not in objects:
+        raise ContractSuitesInvalidError(
+            "the contract has no schema object of that name",
+            detail={"contract_id": str(contract_id), "contract_object": contract_object},
+        )
+    others = [s for s in contract.suites if s.id != suite.id]
+    _require_edit_on_all(session, contract, actor_id)
+    if any(s.contract_object == contract_object for s in others):
+        raise ContractSuitesInvalidError(
+            "another suite already stands for that schema object of this contract",
+            detail={"contract_id": str(contract_id), "contract_object": contract_object},
+        )
+    if any(s.connection_id != suite.connection_id for s in others):
+        raise ContractSuitesInvalidError(
+            "this contract's suites run on a different connection",
+            detail={"contract_id": str(contract_id)},
+        )
+    suite.contract_id = contract_id
+    suite.contract_object = contract_object

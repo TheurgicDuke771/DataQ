@@ -182,6 +182,9 @@ _SUITE_FIELDS: Final[tuple[str, ...]] = (
     "asset_id",
     "origin",
     "tag_names",
+    # The data contract it enforces (ADR 0052) — a link change is a governance act.
+    "contract_id",
+    "contract_object",
 )
 
 _SCHEDULE_FIELDS: Final[tuple[str, ...]] = (

@@ -27,6 +27,7 @@ from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import TAG_NAME_MAX_LENGTH, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import (
+    contract_service,
     credential_health,
     live_probe,
     orchestration_service,
@@ -104,6 +105,13 @@ class SuiteCreate(ApiRequestModel):
     )
 
 
+class SuiteContractLink(ApiRequestModel):
+    """The data contract a suite enforces (ADR 0052) and its ODCS schema object."""
+
+    contract_id: uuid.UUID
+    contract_object: str = Field(min_length=1, max_length=256)
+
+
 class SuiteUpdate(ApiRequestModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
@@ -112,6 +120,13 @@ class SuiteUpdate(ApiRequestModel):
         default=None,
         max_length=tag_service.MAX_TAGS_PER_ENTITY,
         description=TAGS_WRITE_DESCRIPTION,
+    )
+    contract: SuiteContractLink | None = Field(
+        default=None,
+        description=(
+            "Link the suite to a data contract's schema object, or send null to unlink. Omit to "
+            "leave the link alone. Linking adds no checks — importing the contract derives them."
+        ),
     )
 
 
@@ -231,6 +246,19 @@ def update_suite(
         description=payload.description,
         target=new_target,
         tags=payload.tags,
+        apply_contract_link=(
+            (
+                lambda suite: contract_service.link_suite(
+                    db,
+                    suite,
+                    contract_id=payload.contract.contract_id if payload.contract else None,
+                    contract_object=payload.contract.contract_object if payload.contract else None,
+                    actor_id=current_user.id,
+                )
+            )
+            if "contract" in payload.model_fields_set
+            else None
+        ),
         actor_id=current_user.id,
     )
     # A target-setting update on a policy-less suite gets the same best-effort auto-classify as
