@@ -110,7 +110,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ⬜ | [#1690](https://github.com/TheurgicDuke771/DataQ/issues/1690) feat(catalog): governance-catalog integration — push DQ quality facets + pull classifications (DataHub / OpenMetadata-REST / Collibra seam) |
 | ⬜ | [#685](https://github.com/TheurgicDuke771/DataQ/issues/685) feat(connections): purge/redact path for connection version history (immutable snapshots retain edited-out config values) |
 | ✅ | [#1613](https://github.com/TheurgicDuke771/DataQ/issues/1613) RunDetail/RunReport show the check's CURRENT engine/dimension, not as-of-the-result (historical_check_context gap) — [PR #2544](https://github.com/TheurgicDuke771/DataQ/pull/2544) |
-| ⬜ | [#2255](https://github.com/TheurgicDuke771/DataQ/issues/2255) feat(privacy): a reason per entry in redacted_columns (own tag / inherited tag / policy / value classifier / default mask) |
+| 🟡 | [#2255](https://github.com/TheurgicDuke771/DataQ/issues/2255) feat(privacy): a reason per entry in redacted_columns (own tag / inherited tag / policy / value classifier / default mask) | — [PR #2548](https://github.com/TheurgicDuke771/DataQ/pull/2548): `redaction_reasons` beside `redacted_columns` on REST, MCP, alerts and the run page; masking unchanged (rungs pinned first)
 
 ### v1.3 Week 6 — bug fixes & security (due 2026-11-15)
 
