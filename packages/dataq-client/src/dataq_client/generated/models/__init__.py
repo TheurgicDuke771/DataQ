@@ -119,6 +119,7 @@ from .connection_update import ConnectionUpdate
 from .connection_update_config_type_0 import ConnectionUpdateConfigType0
 from .connection_version_read import ConnectionVersionRead
 from .connection_version_read_config import ConnectionVersionReadConfig
+from .connection_versions_redacted import ConnectionVersionsRedacted
 from .coverage_figures_read import CoverageFiguresRead
 from .coverage_gap_read import CoverageGapRead
 from .coverage_settings_read import CoverageSettingsRead
@@ -475,6 +476,7 @@ __all__ = (
     "ConnectionUpdateConfigType0",
     "ConnectionVersionRead",
     "ConnectionVersionReadConfig",
+    "ConnectionVersionsRedacted",
     "CoverageFiguresRead",
     "CoverageGapRead",
     "CoverageSettingsRead",

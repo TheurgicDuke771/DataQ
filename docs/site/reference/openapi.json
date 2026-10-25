@@ -3163,6 +3163,24 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when an editor redacted this snapshot: `config` is then a tombstone (`redacted`, `redacted_at`, `redacted_by`), the values it held are gone and the version cannot be restored.",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
           "source_connection_id": {
             "anyOf": [
               {
@@ -4842,6 +4860,24 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when an admin redacted this snapshot: `config` is then a tombstone (`redacted`, `redacted_at`, `redacted_by`) and the values it held are gone.",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4862,6 +4898,23 @@
           "created_at"
         ],
         "title": "ConnectionVersionRead",
+        "type": "object"
+      },
+      "ConnectionVersionsRedacted": {
+        "properties": {
+          "redacted_version_nos": {
+            "description": "The versions redacted by this call; empty when every older version was already redacted (or there is only the current one).",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Redacted Version Nos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "redacted_version_nos"
+        ],
+        "title": "ConnectionVersionsRedacted",
         "type": "object"
       },
       "CoverageFiguresRead": {
@@ -15704,6 +15757,47 @@
       }
     },
     "/api/v1/connections/{connection_id}/versions": {
+      "delete": {
+        "operationId": "redact_connection_versions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionsRedacted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact every version's config except the current one",
+        "tags": [
+          "connections"
+        ]
+      },
       "get": {
         "operationId": "list_connection_versions",
         "parameters": [
@@ -15745,6 +15839,59 @@
           }
         },
         "summary": "List a connection's version history (newest first)",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` becomes `{\"redacted\": true, \"redacted_at\", \"redacted_by\"}`; the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
+        "operationId": "redact_connection_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (replace it with a tombstone)",
         "tags": [
           "connections"
         ]
@@ -19490,6 +19637,69 @@
           }
         },
         "summary": "List a check's version history (newest first)",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and\nthe version can no longer be restored. The newest version is refused (409) \u2014 it is the\ncheck's current state. Edit-gated like every check mutation; audited with the version\nnumber only.",
+        "operationId": "redact_check_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (replace it with a tombstone)",
         "tags": [
           "checks"
         ]
