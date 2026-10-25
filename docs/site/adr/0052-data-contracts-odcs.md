@@ -1,6 +1,6 @@
 # ADR 0052 — Consumer-side data contracts: a `contracts` entity with ODCS v3 import and export
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-25)
 - **Date:** 2026-10-25
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds the SLA block maps onto), [0016](0016-severity-derivation-semantics.md) (thresholds band the unexpected-%), [0014](0014-reconciliation-comparison-check-kind.md) / [0015](0015-two-connection-comparison-check-model.md) (the adjacent `comparison` kind — two datasets, not one contract), [0019](0019-custom-sql-check-kind.md) (custom SQL, which ODCS `sql` rules ride), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (the grants a contract inherits), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (incidents and their evidence card), [0037](0037-workspace-visible-asset-identity.md) (`restricted_suite_count` on a grant-filtered rollup), [0036](0036-connection-anchored-check-engines.md) / [0038](0038-dq-dimension-classification.md) (engine and dimension on a check), [0041](0041-history-audit-strategy.md) (audit of the import), [0047](0047-automated-coverage-loop.md) (the reconciler shape re-used here), [0049](0049-profiler-pii-classification-source.md) (where a contract's `classification` lands). CONTRIBUTING rule 45 names ODCS as the required format.
@@ -88,7 +88,7 @@ ends in exactly one of: a check it created, or an entry in the contract's **`unm
 | `missingValues` (`arguments.missingValues`) | `expect_column_values_to_not_be_in_set` over the listed values (plus `not_be_null` when the list contains null) |
 | `duplicateValues` at property level / at object level with `arguments.properties` | `expect_column_values_to_be_unique` / `expect_compound_columns_to_be_unique` |
 | `rowCount` with operators | a **`volume`** monitor (`min_rows` / `max_rows`) — the monitor kind, not the GX table expectation, so `metric_value` trends and the anomaly baseline see it. The monitor gains **one-sided bounds** (at least one of `min_rows` / `max_rows`, which also fixes the standing refusal of a min-only volume check), so `mustBeGreaterThan: 1000` never invents a ceiling |
-| the schema object's property list | one **`schema_drift`** check whose baseline is **declared** from the contract (column names, `physicalType` when given) instead of learned from the first run; a declared column with no type is never reported as `type_changed` until a run records one |
+| the schema object's property list | one **`schema_drift`** check whose baseline is **declared** from the contract (column names, `physicalType` when given) instead of learned from the first run; declared names match the warehouse's case-insensitively, and a declared column with no type is never reported as `type_changed` |
 | `type: sql` with `query` + operator | a custom-SQL check (ADR 0019, SQL datasources only) built as `SELECT 1 WHERE NOT COALESCE((<query>) <operator>, FALSE)` — one unexpected row when the scalar breaches **or is NULL** (an empty table must not pass a `mustBeGreaterThan`); `{object}` / `{property}` substituted with the suite target and the property name; the validator still has the last word and a refused query goes to `unmapped` |
 | `type: custom`, `engine` ∈ {`great-expectations`, `greatExpectations`, `dataq`} | the `implementation` parsed as `{expectation_type, kwargs}` (GX) or as a DataQ check document (`dataq`); anything outside `ALLOWED_EXPECTATIONS` goes to `unmapped` |
 | `type: custom` with another engine; `type: text` | `unmapped` (reason: engine not executable here / prose) |
@@ -160,8 +160,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   `restricted_suite_count`, as `get_asset` does (ADR 0037). A contract with no linked suite is
   visible to admins only.
-- `PATCH /suites/{id}` accepts `contract_id` / `contract_object` (`edit`); `DELETE /contracts/{id}`
-  is Member+, unlinks only.
+- Linking an existing suite to a contract by hand (`PATCH /suites/{id}` with `contract_id` and
+  `contract_object`, both or neither, `edit`) ships with the compliance rollup, the second build
+  phase; until then a suite is linked only by an import. `DELETE /contracts/{id}` is Member+,
+  needs `edit` on every linked suite, and unlinks only.
 - MCP: `list_contracts`, `get_contract`, `export_contract` — three **read-only** tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.

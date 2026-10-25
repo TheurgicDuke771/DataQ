@@ -30,6 +30,8 @@ class SuiteRead:
         target (None | SuiteReadTargetType0):
         asset_id (None | Unset | UUID):
         column_policy (None | SuiteReadColumnPolicyType0 | Unset):
+        contract_id (None | Unset | UUID):
+        contract_object (None | str | Unset):
         my_permission (None | str | Unset):
         origin (str | Unset):  Default: 'user'.
         tags (list[str] | Unset):
@@ -43,6 +45,8 @@ class SuiteRead:
     target: None | SuiteReadTargetType0
     asset_id: None | Unset | UUID = UNSET
     column_policy: None | SuiteReadColumnPolicyType0 | Unset = UNSET
+    contract_id: None | Unset | UUID = UNSET
+    contract_object: None | str | Unset = UNSET
     my_permission: None | str | Unset = UNSET
     origin: str | Unset = "user"
     tags: list[str] | Unset = UNSET
@@ -91,6 +95,20 @@ class SuiteRead:
         else:
             column_policy = self.column_policy
 
+        contract_id: None | str | Unset
+        if isinstance(self.contract_id, Unset):
+            contract_id = UNSET
+        elif isinstance(self.contract_id, UUID):
+            contract_id = str(self.contract_id)
+        else:
+            contract_id = self.contract_id
+
+        contract_object: None | str | Unset
+        if isinstance(self.contract_object, Unset):
+            contract_object = UNSET
+        else:
+            contract_object = self.contract_object
+
         my_permission: None | str | Unset
         if isinstance(self.my_permission, Unset):
             my_permission = UNSET
@@ -119,6 +137,10 @@ class SuiteRead:
             field_dict["asset_id"] = asset_id
         if column_policy is not UNSET:
             field_dict["column_policy"] = column_policy
+        if contract_id is not UNSET:
+            field_dict["contract_id"] = contract_id
+        if contract_object is not UNSET:
+            field_dict["contract_object"] = contract_object
         if my_permission is not UNSET:
             field_dict["my_permission"] = my_permission
         if origin is not UNSET:
@@ -213,6 +235,32 @@ class SuiteRead:
 
         column_policy = _parse_column_policy(d.pop("column_policy", UNSET))
 
+        def _parse_contract_id(data: object) -> None | Unset | UUID:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                contract_id_type_0 = UUID(data)
+
+                return contract_id_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | Unset | UUID, data)
+
+        contract_id = _parse_contract_id(d.pop("contract_id", UNSET))
+
+        def _parse_contract_object(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        contract_object = _parse_contract_object(d.pop("contract_object", UNSET))
+
         def _parse_my_permission(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -235,6 +283,8 @@ class SuiteRead:
             target=target,
             asset_id=asset_id,
             column_policy=column_policy,
+            contract_id=contract_id,
+            contract_object=contract_object,
             my_permission=my_permission,
             origin=origin,
             tags=tags,

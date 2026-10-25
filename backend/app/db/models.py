@@ -94,7 +94,9 @@ CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")
 
 # Who created a suite or check (ADR 0047): a person, the coverage loop, or an accepted suggestion.
 SUITE_ORIGINS = ("user", "auto")
-CHECK_ORIGINS = ("user", "auto", "suggestion")
+CHECK_ORIGINS = ("user", "auto", "suggestion", "contract")
+#: A check derived from a data-contract clause (ADR 0052); `checks.contract_ref` names the clause.
+CONTRACT_CHECK_ORIGIN = "contract"
 GX_ENGINE = "gx"
 # DQ dimensions (ADR 0038) — third axis, orthogonal to `kind` and `engine`.
 DQ_DIMENSIONS = (
@@ -598,12 +600,52 @@ class ConnectionVersion(Base):
         return (self.redactor.display_name or self.redactor.email) if self.redactor else None
 
 
+class Contract(Base):
+    """One VERSION of a data contract (ADR 0052): the ODCS document as imported, verbatim, in
+    `spec`, plus what the translation could not enforce in `unmapped`. Identity is the standard's
+    own `id` + `version`; `name` is display only. A new version is a new row; nothing is edited
+    in place. Deleting a row unlinks its suites (SET NULL) and never deletes a suite or a result.
+    """
+
+    __tablename__ = "contracts"
+    __table_args__ = (
+        UniqueConstraint("odcs_id", "version", name="uq_contracts_odcs_id_version"),
+        Index("ix_contracts_created_by", "created_by"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    #: The document's required `id` (ODCS §fundamentals) — stable across renames and versions.
+    odcs_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: Mirrors the document's `status` as text, as the standard does.
+    status: Mapped[str | None] = mapped_column(String(32))
+    domain: Mapped[str | None] = mapped_column(String(256))
+    tenant: Mapped[str | None] = mapped_column(String(256))
+    #: The `apiVersion` the document declared (`v3.2.0`), not the schema it was validated with.
+    api_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    #: `[{object, property, rule_id, field, reason, clause}]` — every clause no check enforces.
+    unmapped: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    #: Provenance, not ownership — SET NULL (GDPR Art 17, #1319).
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+    suites: Mapped[list["Suite"]] = relationship(back_populates="contract")
+
+
 class Suite(TaggedMixin, Base):
     __tablename__ = "suites"
     __table_args__ = (
         Index("ix_suites_connection_id", "connection_id"),
         Index("ix_suites_created_by", "created_by"),
         Index("ix_suites_asset_id", "asset_id"),
+        Index("ix_suites_contract_id", "contract_id"),
         _in_check("origin", SUITE_ORIGINS, "suite_origin_valid"),
         # One automatic suite per asset (ADR 0047).
         Index(
@@ -634,6 +676,12 @@ class Suite(TaggedMixin, Base):
     # Coverage-loop bookkeeping for an automatic suite: checks a person deleted (never recreated)
     # and gaps it recorded instead of guessing. NULL on user suites.
     auto_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # The data contract this suite enforces and the ODCS schema object it stands for (ADR 0052).
+    # Set and cleared together by the service; the FK's SET NULL is the backstop, not the mechanism.
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="SET NULL")
+    )
+    contract_object: Mapped[str | None] = mapped_column(String(256))
     #: Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user un-erasable (GDPR
     #: Art 17, #432/#1319).
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -645,6 +693,7 @@ class Suite(TaggedMixin, Base):
     checks: Mapped[list["Check"]] = relationship(
         back_populates="suite", cascade="all, delete-orphan"
     )
+    contract: Mapped["Contract | None"] = relationship(back_populates="suites")
     tags: Mapped[list[Tag]] = _tags_relationship(suite_tags)
 
 
@@ -701,6 +750,10 @@ class Check(TaggedMixin, Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
+    # The contract clause this check enforces (ADR 0052): `{object, property, rule_id, field,
+    # fingerprint}`. Outside `config` so the editor's wholesale config assignment cannot drop it;
+    # NULL on every check that is not contract-derived.
+    contract_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -1830,6 +1883,7 @@ class LlmInvocation(Base):
 
 
 __all__ = [
+    "CONTRACT_CHECK_ORIGIN",
     "Asset",
     "AuditChainCheckpoint",
     "AuditChainState",
@@ -1837,6 +1891,7 @@ __all__ = [
     "Base",
     "Check",
     "Connection",
+    "Contract",
     "Incident",
     "LineageEdge",
     "LlmInvocation",

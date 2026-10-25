@@ -30,6 +30,11 @@ def _workspace_role(session: Session, user_id: uuid.UUID) -> str:
     return resolve_role(user) if user is not None else DEFAULT_WORKSPACE_ROLE
 
 
+def is_workspace_admin(session: Session, user_id: uuid.UUID) -> bool:
+    """Whether the user's effective workspace role is Admin (ADR 0033)."""
+    return _workspace_role(session, user_id) == ADMIN
+
+
 def cap_for_viewer(level: str | None, role: str) -> str | None:
     """Clamp a resolved suite level to `view` for a workspace **Viewer**."""
     if level is None or role != VIEWER:

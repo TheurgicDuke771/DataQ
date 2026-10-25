@@ -130,6 +130,10 @@ class SuiteRead(ApiModel):
     column_policy: dict[str, Any] | None = None
     #: 'auto' = owned by automatic coverage (ADR 0047), with no human creator.
     origin: str = "user"
+    #: The data contract this suite enforces and its ODCS schema object (ADR 0052); both null
+    #: for a suite no contract governs.
+    contract_id: uuid.UUID | None = None
+    contract_object: str | None = None
     #: `None` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
     #: #1319).
     created_by: uuid.UUID | None

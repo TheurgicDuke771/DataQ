@@ -153,26 +153,45 @@ def row_count_from_scalar(scalar: Any) -> int:
         raise MonitorConfigError(f"COUNT(*) is not an integer: {scalar!r}") from exc
 
 
-def _volume_deviation_pct(row_count: int, *, min_rows: int, max_rows: int) -> float:
-    """Percent the row count falls **outside** ``[min_rows, max_rows]`` (0 in range)."""
-    if row_count < min_rows:
+def _volume_deviation_pct(row_count: int, *, min_rows: int | None, max_rows: int | None) -> float:
+    """Percent the row count falls **outside** the band (0 in range); a missing bound is open."""
+    if min_rows is not None and row_count < min_rows:
         return (min_rows - row_count) / min_rows * 100.0 if min_rows else 100.0
-    if row_count > max_rows:
+    if max_rows is not None and row_count > max_rows:
         return (row_count - max_rows) / max_rows * 100.0 if max_rows else 100.0
     return 0.0
 
 
-def _volume_bounds(config: dict[str, Any]) -> tuple[int, int]:
-    """Validate the ``min_rows``/``max_rows`` range from a volume check's config."""
+def _volume_bound(config: dict[str, Any], key: str) -> int | None:
+    if key not in config or config[key] is None:
+        return None
+    value = config[key]
+    # bool is an int subclass: `{"min_rows": true}` must not pass as 1.
+    if isinstance(value, bool):
+        raise MonitorConfigError(f"volume {key} must be a whole number, not {value!r}")
     try:
-        min_rows = int(config["min_rows"])
-        max_rows = int(config["max_rows"])
-    except (KeyError, TypeError, ValueError) as exc:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise MonitorConfigError(f"volume {key} must be a whole number: {_echo(config)}") from exc
+    if number != value and not (isinstance(value, str) and value.strip() == str(number)):
+        raise MonitorConfigError(f"volume {key} must be a whole number: {_echo(config)}")
+    if number < 0:
+        raise MonitorConfigError(f"volume {key} must be 0 or more: {_echo(config)}")
+    return number
+
+
+def _volume_bounds(config: dict[str, Any]) -> tuple[int | None, int | None]:
+    """The ``min_rows`` / ``max_rows`` band from a volume check's config. Either bound may be left
+    out for a one-sided check ("at least N rows" is the common case, #2374); at least one is
+    required, and when both are set ``min_rows <= max_rows``."""
+    min_rows = _volume_bound(config, "min_rows")
+    max_rows = _volume_bound(config, "max_rows")
+    if min_rows is None and max_rows is None:
         raise MonitorConfigError(
-            f"volume needs integer min_rows/max_rows: {_echo(config)}"
-        ) from exc
-    if min_rows < 0 or max_rows < min_rows:
-        raise MonitorConfigError(f"volume range must be 0 <= min_rows <= max_rows: {_echo(config)}")
+            f"volume needs min_rows, max_rows, or both (a whole number of rows): {_echo(config)}"
+        )
+    if min_rows is not None and max_rows is not None and max_rows < min_rows:
+        raise MonitorConfigError(f"volume range must be min_rows <= max_rows: {_echo(config)}")
     return min_rows, max_rows
 
 
@@ -261,7 +280,12 @@ def _volume_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Check
         success=deviation == 0.0,  # in range → pass; thresholds band the deviation
         metric_value=deviation,
         observed_value={"row_count": row_count, "deviation_pct": round(deviation, 3)},
-        expected_value={"monitor": VOLUME, "min_rows": min_rows, "max_rows": max_rows},
+        # An open side is omitted, never reported as a bound of None.
+        expected_value={
+            "monitor": VOLUME,
+            **({"min_rows": min_rows} if min_rows is not None else {}),
+            **({"max_rows": max_rows} if max_rows is not None else {}),
+        },
     )
 
 

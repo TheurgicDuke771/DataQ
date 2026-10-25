@@ -2803,6 +2803,18 @@
             "title": "Config",
             "type": "object"
           },
+          "contract_ref": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Ref"
+          },
           "critical_threshold": {
             "anyOf": [
               {
@@ -4953,6 +4965,273 @@
           "redacted_version_nos"
         ],
         "title": "ConnectionVersionsRedacted",
+        "type": "object"
+      },
+      "ContractImportRead": {
+        "properties": {
+          "checks_added": {
+            "title": "Checks Added",
+            "type": "integer"
+          },
+          "checks_disabled": {
+            "title": "Checks Disabled",
+            "type": "integer"
+          },
+          "checks_updated": {
+            "title": "Checks Updated",
+            "type": "integer"
+          },
+          "contract": {
+            "$ref": "#/components/schemas/ContractRead"
+          },
+          "created_suite_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Created Suite Ids",
+            "type": "array"
+          },
+          "reconciled_suite_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Reconciled Suite Ids",
+            "type": "array"
+          },
+          "retired_suite_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Retired Suite Ids",
+            "type": "array"
+          },
+          "untargeted_objects": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Untargeted Objects",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contract",
+          "created_suite_ids",
+          "reconciled_suite_ids",
+          "retired_suite_ids",
+          "untargeted_objects",
+          "checks_added",
+          "checks_updated",
+          "checks_disabled",
+          "warnings"
+        ],
+        "title": "ContractImportRead",
+        "type": "object"
+      },
+      "ContractImportRequest": {
+        "additionalProperties": false,
+        "description": "An ODCS v3 document as JSON (`document`) or YAML text (`document_yaml`) \u2014 exactly one.",
+        "properties": {
+          "connection_id": {
+            "description": "The connection the contract's suites run on (one suite per schema object).",
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
+          },
+          "replace": {
+            "default": false,
+            "description": "Replace an already-imported version (and reconcile its linked suites).",
+            "title": "Replace",
+            "type": "boolean"
+          },
+          "suite_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a NEW version: the suites linked to an earlier version of this contract that this version takes over and reconciles. Omit to create fresh suites.",
+            "title": "Suite Ids"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "ContractImportRequest",
+        "type": "object"
+      },
+      "ContractRead": {
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "odcs_id": {
+            "title": "Odcs Id",
+            "type": "string"
+          },
+          "restricted_suite_count": {
+            "title": "Restricted Suite Count",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/ContractSuiteRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant"
+          },
+          "unmapped": {
+            "items": {
+              "$ref": "#/components/schemas/UnmappedClauseRead"
+            },
+            "title": "Unmapped",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "odcs_id",
+          "name",
+          "version",
+          "status",
+          "domain",
+          "tenant",
+          "api_version",
+          "created_at",
+          "suites",
+          "restricted_suite_count",
+          "unmapped"
+        ],
+        "title": "ContractRead",
+        "type": "object"
+      },
+      "ContractSuiteRead": {
+        "properties": {
+          "contract_object": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "runnable": {
+            "title": "Runnable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "contract_object",
+          "runnable"
+        ],
+        "title": "ContractSuiteRead",
         "type": "object"
       },
       "CoverageFiguresRead": {
@@ -11801,6 +12080,29 @@
             "title": "Connection Id",
             "type": "string"
           },
+          "contract_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Id"
+          },
+          "contract_object": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Object"
+          },
           "created_by": {
             "anyOf": [
               {
@@ -12632,6 +12934,67 @@
           "other_envs"
         ],
         "title": "TriggerBindingWarningRead",
+        "type": "object"
+      },
+      "UnmappedClauseRead": {
+        "description": "A clause no DataQ check enforces, and why \u2014 shown as *not enforced*, never dropped.",
+        "properties": {
+          "clause": {
+            "additionalProperties": true,
+            "title": "Clause",
+            "type": "object"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "object": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object"
+          },
+          "property": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "object",
+          "property",
+          "rule_id",
+          "field",
+          "reason",
+          "clause"
+        ],
+        "title": "UnmappedClauseRead",
         "type": "object"
       },
       "UnreadCountRead": {
@@ -15959,6 +16322,217 @@
         "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "connections"
+        ]
+      }
+    },
+    "/api/v1/contracts": {
+      "get": {
+        "description": "Contracts with at least one linked suite the caller can view (a workspace admin also sees contracts with none). Each version of a contract is its own row.",
+        "operationId": "list_contracts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContractRead"
+                  },
+                  "title": "Response List Contracts",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List data contracts",
+        "tags": [
+          "contracts"
+        ]
+      }
+    },
+    "/api/v1/contracts/import": {
+      "post": {
+        "description": "Validates the document against the Open Data Contract Standard (v3.0 to v3.2 vendored; a newer v3 minor is accepted with a warning; v2 and v4 are refused), stores it verbatim, and creates one suite per schema object on `connection_id` with the checks the translation table derives (ADR 0052). Every clause DataQ cannot enforce is returned in `contract.unmapped` with the reason. Member or above; `edit` on every suite it reconciles.",
+        "operationId": "import_contract",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import an ODCS v3 data contract",
+        "tags": [
+          "contracts"
+        ]
+      }
+    },
+    "/api/v1/contracts/{contract_id}": {
+      "delete": {
+        "operationId": "delete_contract",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "contract_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Contract Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a data contract (unlinks its suites; deletes no suite, check or result)",
+        "tags": [
+          "contracts"
+        ]
+      },
+      "get": {
+        "operationId": "get_contract",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "contract_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Contract Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get a data contract",
+        "tags": [
+          "contracts"
+        ]
+      }
+    },
+    "/api/v1/contracts/{contract_id}/export": {
+      "get": {
+        "operationId": "export_contract_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "contract_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Contract Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`yaml` returns the same document as YAML text.",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "description": "`yaml` returns the same document as YAML text.",
+              "enum": [
+                "json",
+                "yaml"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Contract Document",
+                  "type": "object"
+                }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The stored document plus `dataq.*` custom properties for the checks the caller's visible suites hold, in the newest vendored ODCS v3 vocabulary \u2014 JSON, or YAML text with `format=yaml`."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export a data contract as an ODCS v3 document",
+        "tags": [
+          "contracts"
         ]
       }
     },
