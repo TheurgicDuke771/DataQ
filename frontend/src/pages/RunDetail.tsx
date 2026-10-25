@@ -30,7 +30,8 @@ import {
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
-import { EngineTag } from '../components/checks/checkBadges';
+import { DimensionTag, EngineTag } from '../components/checks/checkBadges';
+import { AsOfCell, checkAsOf, exportSource } from '../components/results/checkAsOf';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { SeasonalResultSummary } from '../components/results/SeasonalResultSummary';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
@@ -334,17 +335,33 @@ function DownloadMenu({
 }) {
   const stem = `${toFilenameStem(suiteName ?? 'run')}_run_${run.id.slice(0, 8)}`;
   const checkName = (id: string) => checkExportName(checks.get(id)?.name, id, checksKnown);
-  const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
+  // As of the result (#1613), the live check only as the fallback — and the export says which,
+  // since a downloaded row is read without the in-app "(current)" marker.
+  const asOf = (r: Result) => checkAsOf(r, checks.get(r.check_id));
+  const expectation = (r: Result) => asOf(r)?.expectation_type ?? '';
 
   const exportCsv = () => {
     // `sampled` rides along (#1325 review F2): a downloaded row that says `pass` without saying it
     // was measured on 100k of 5M is the same overclaim the in-app badge exists to prevent.
     downloadCsv(
       `${stem}.csv`,
-      ['check', 'expectation', 'status', 'metric_value', 'observed', 'sampled'],
+      [
+        'check',
+        'expectation',
+        'engine',
+        'dimension',
+        'check_as_of',
+        'status',
+        'metric_value',
+        'observed',
+        'sampled',
+      ],
       run.results.map((r) => [
         checkName(r.check_id),
-        expectation(r.check_id),
+        expectation(r),
+        asOf(r)?.engine ?? '',
+        asOf(r)?.dimension ?? '',
+        exportSource(asOf(r)?.source),
         r.status,
         r.metric_value,
         exportScalar(r.observed_value),
@@ -369,7 +386,11 @@ function DownloadMenu({
       },
       checks: run.results.map((r) => ({
         check: checkName(r.check_id),
-        expectation_type: expectation(r.check_id) || null,
+        expectation_type: expectation(r) || null,
+        engine: asOf(r)?.engine ?? null,
+        dimension: asOf(r)?.dimension ?? null,
+        // `version` | `later_version` | `current` — how far the three fields above are history.
+        check_as_of: exportSource(asOf(r)?.source) || null,
         status: r.status,
         metric_value: r.metric_value,
         observed_value: r.observed_value,
@@ -610,23 +631,54 @@ function ResultsTable({
       },
     },
     {
+      // Expectation, engine and dimension are the check's values AS OF this result (#1613) —
+      // `result.check`, resolved server-side from `check_versions` — not the suite's current
+      // check, which the live map only backfills when the payload has no snapshot; an
+      // `AsOfCell` then marks the cell "(current)" rather than passing today's value off as
+      // history.
       title: 'Expectation',
       dataIndex: 'check_id',
-      render: (id: string) => (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {checks.get(id)?.expectation_type ?? '—'}
-        </Typography.Text>
-      ),
+      render: (id: string, record: Result) => {
+        const asOf = checkAsOf(record, checks.get(id));
+        return (
+          <AsOfCell source={asOf?.source}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {asOf?.expectation_type ?? '—'}
+            </Typography.Text>
+          </AsOfCell>
+        );
+      },
     },
     {
-      // The CURRENT check's engine (#1551, see EngineTag's docstring for why it matters) — the
-      // same "as-of-now, not historical" caveat the Expectation column above already carries.
+      // The evaluator (#1551, see EngineTag's docstring for why it matters), as of this result.
       title: 'Engine',
       dataIndex: 'check_id',
       width: 80,
-      render: (id: string) => {
-        const check = checks.get(id);
-        return check ? <EngineTag engine={check.engine} /> : '—';
+      render: (id: string, record: Result) => {
+        const asOf = checkAsOf(record, checks.get(id));
+        return asOf ? (
+          <AsOfCell source={asOf.source}>
+            <EngineTag engine={asOf.engine} />
+          </AsOfCell>
+        ) : (
+          '—'
+        );
+      },
+    },
+    {
+      // DQ dimension (ADR 0038) as of this result; unclassified renders as a coverage gap.
+      title: 'Dimension',
+      dataIndex: 'check_id',
+      width: 120,
+      render: (id: string, record: Result) => {
+        const asOf = checkAsOf(record, checks.get(id));
+        return asOf ? (
+          <AsOfCell source={asOf.source}>
+            <DimensionTag dimension={asOf.dimension} />
+          </AsOfCell>
+        ) : (
+          '—'
+        );
       },
     },
     {

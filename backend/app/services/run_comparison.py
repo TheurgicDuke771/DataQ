@@ -72,6 +72,8 @@ class CheckIdentity:
     expectation_type: str | None
     dimension: str | None
     column: str | None
+    #: See `run_service.CheckAsOfSource` (#1613).
+    resolved_from: svc.CheckAsOfSource | None
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,7 @@ def _sides(
                 expectation_type=snap.expectation_type,
                 dimension=snap.dimension,
                 column=snap.column,
+                resolved_from=snap.resolved_from,
             ),
         )
     return sides

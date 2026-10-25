@@ -303,6 +303,7 @@ def test_each_side_carries_the_check_as_it_was_at_that_run(
         "expectation_type": "expect_column_values_to_not_be_null",
         "dimension": None,
         "column": "LEGACY_ID",
+        "resolved_from": "version",
     }
     assert row["target"]["check"]["name"] == "orders_new_name"
     assert row["target"]["check"]["engine"] == "dmf"
