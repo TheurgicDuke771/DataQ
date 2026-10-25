@@ -1,8 +1,10 @@
 import { triggeredByText, type RunDetail as RunDetailType } from '../../api/runs';
 import { checkLabel, noResultsMessage } from './runResultLabels';
 import type { Check } from '../../api/suites';
+import { DIMENSION_LABEL, type DqDimension } from '../checks/expectationCatalog';
 import { engineShortLabel } from '../checks/checkBadges';
 import { isSnoozed } from '../checks/snooze';
+import { checkAsOf, currentSuffix } from './checkAsOf';
 import { isSampled, sampledCoverage } from './samplingFormat';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 
@@ -24,15 +26,28 @@ export function RunReport({
 }) {
   const checksById = new Map(checks.map((c) => [c.id, c]));
   const checkName = (id: string) => checkLabel(checksById.get(id)?.name, id, checksKnown);
-  const expectationOrKind = (id: string) => {
-    const check = checksById.get(id);
-    return check?.expectation_type || check?.kind || '—';
+  // Expectation, engine and dimension as the check WAS at this result (#1613) — the live check
+  // only when the payload carries no snapshot, and then suffixed "(current)" (footnote below).
+  const asOf = (r: RunDetailType['results'][number]) => checkAsOf(r, checksById.get(r.check_id));
+  const expectationOrKind = (r: RunDetailType['results'][number]) => {
+    const check = asOf(r);
+    return (check?.expectation_type || check?.kind || '—') + currentSuffix(check?.source);
   };
   // The evaluator (#1551, see checkBadges.tsx's EngineTag docstring for why it matters).
-  const engineLabel = (id: string) => {
-    const check = checksById.get(id);
-    return check ? engineShortLabel(check.engine) : '—';
+  const engineLabel = (r: RunDetailType['results'][number]) => {
+    const check = asOf(r);
+    return check ? engineShortLabel(check.engine) + currentSuffix(check.source) : '—';
   };
+  // ADR 0038: unclassified is a coverage gap and prints as one, never as a blank.
+  const dimensionLabel = (r: RunDetailType['results'][number]) => {
+    const check = asOf(r);
+    if (!check) return '—';
+    const label = check.dimension
+      ? (DIMENSION_LABEL[check.dimension as DqDimension] ?? check.dimension)
+      : 'Unclassified';
+    return label + currentSuffix(check.source);
+  };
+  const anyCurrent = run.results.some((r) => asOf(r)?.source === 'live');
   // Print-friendly parity with the interactive table's <SnoozedTag> (#653): a muted check must say
   // so here too.
   const snoozedSuffix = (id: string) => {
@@ -96,6 +111,7 @@ export function RunReport({
               <th>Check</th>
               <th>Expectation / kind</th>
               <th>Engine</th>
+              <th>Dimension</th>
               <th>Status</th>
               <th>Metric</th>
               <th>Observed</th>
@@ -109,8 +125,9 @@ export function RunReport({
                   {snoozedSuffix(r.check_id)}
                   {isSampled(r) ? ' (sampled)' : ''}
                 </td>
-                <td>{expectationOrKind(r.check_id)}</td>
-                <td>{engineLabel(r.check_id)}</td>
+                <td>{expectationOrKind(r)}</td>
+                <td>{engineLabel(r)}</td>
+                <td>{dimensionLabel(r)}</td>
                 <td>{r.status}</td>
                 <td>{r.metric_value ?? '—'}</td>
                 <td>{formatScalar(r.observed_value)}</td>
@@ -124,6 +141,12 @@ export function RunReport({
           state-neutral (#1122 review): redaction has several possible states
           (#417/#1115/#1873), and a printed artifact is read out of context, so
           this must not claim a specific redaction outcome. */}
+      {anyCurrent && (
+        <p className="rd-report-footnote" data-testid="report-current-footnote">
+          (current) marks a check with no version history for this result: its present expectation,
+          engine or dimension is shown, which may have changed since the run.
+        </p>
+      )}
       <p className="rd-report-footnote">
         Sample failing rows are not included in this report; review them in-app on each check's
         expanded row (redaction policy applies).
