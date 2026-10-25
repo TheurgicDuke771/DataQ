@@ -2876,6 +2876,12 @@ section below.</p>
   anchor at all; an unreachable store is reported as unavailable, never as "nothing
   published". <code>GET /admin/deployment</code> now also lists the tamper anchor and OpenLineage
   emission among the external-transfer vectors, on or off.</li>
+<li><strong>Every masked sample column now says why.</strong> Beside <code>redacted_columns</code>, run detail, the MCP
+  <code>get_run_results</code> / <code>get_suite_results</code> tools and the Teams, Slack, email and webhook alerts carry
+  <code>redaction_reasons</code> (same keys): <code>own_tag</code>, <code>inherited_tag</code> (through column lineage), <code>policy</code>,
+  <code>unclassified</code> (fail-closed mode), <code>detected</code> (the profiler), <code>classifier</code>, or <code>default_mask</code> — the
+  column was never classified, so masking is precautionary. The run page shows the reason beside
+  each masked column; the in-app notification feed links to it. What is masked is unchanged.</li>
 <li><strong>Promote a suite's old inline webhook to a channel.</strong> A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin <strong>Promote to channel</strong> on the suite's notification panel. It creates a

@@ -1997,6 +1997,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#why-a-sample-column-was-masked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a sample column was masked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#personal-data-the-profiler-detects" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2947,6 +2958,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#why-a-sample-column-was-masked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a sample column was masked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#personal-data-the-profiler-detects" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3707,6 +3729,63 @@ lists every column masked only by inheritance, each with the upstream column it 
 The same list is <code>inherited_classifications</code> on <code>GET /api/v1/assets/{id}</code> and the MCP <code>get_asset</code>
 tool. If the lineage is wrong, tag the downstream column <code>public</code> in the warehouse; its own tag
 wins.</p>
+<h3 id="why-a-sample-column-was-masked">Why a sample column was masked<a class="headerlink" href="#why-a-sample-column-was-masked" title="Permanent link">¶</a></h3>
+<p>Every surface that lists the masked columns of a failing-row sample — <code>redacted_columns</code> on run
+detail (<code>GET /api/v1/runs/{id}</code>), the MCP <code>get_run_results</code> / <code>get_suite_results</code> tools, and the
+alert channels (Teams, Slack, email, the generic webhook) — also says <strong>why</strong>, per column, in
+<code>redaction_reasons</code> (same keys as <code>redacted_columns</code>). The run page shows the reason beside each
+masked column under <em>Failing rows</em>. The vocabulary is closed, ordered as the ladder consults it:</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Which rung decided</th>
+<th>What lifts it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>own_tag</code></td>
+<td>The column's own warehouse classification</td>
+<td>Re-tag the column in the warehouse</td>
+</tr>
+<tr>
+<td><code>inherited_tag</code></td>
+<td><code>sensitive</code> inherited through recorded column lineage</td>
+<td>Tag the downstream column <code>public</code>; its own tag wins (see <strong>Masked through lineage</strong> on the asset for the source)</td>
+</tr>
+<tr>
+<td><code>policy</code></td>
+<td>The suite's <code>pii_columns</code></td>
+<td>Edit the suite's column policy</td>
+</tr>
+<tr>
+<td><code>unclassified</code></td>
+<td>Fail-closed mode (<code>require_classification</code>) and nothing cleared the column</td>
+<td>A <code>public</code> tag or the suite's <code>identifier_column</code></td>
+</tr>
+<tr>
+<td><code>detected</code></td>
+<td>The profiler found personal-data-shaped values at profile time</td>
+<td>A warehouse tag, or name it as the <code>identifier_column</code> if it is a false positive</td>
+</tr>
+<tr>
+<td><code>classifier</code></td>
+<td>The read-time name / value heuristic affirmatively says personal data</td>
+<td>Nothing — an <code>EMAIL</code> column or e-mail-shaped values are direct PII whatever they are designated as</td>
+</tr>
+<tr>
+<td><code>default_mask</code></td>
+<td>Nobody classified the column, so it is masked as a precaution</td>
+<td>Name it as the suite's <code>identifier_column</code>. A <code>public</code> warehouse tag does not lift it: outside fail-closed mode the ladder does not read a clearing tag on an incidental column (under fail-closed mode the same column reads <code>unclassified</code>, which a <code>public</code> tag does lift)</td>
+</tr>
+</tbody>
+</table>
+<p><code>default_mask</code> is the one to read carefully: it does <strong>not</strong> mean the column holds personal data,
+only that DataQ cannot say it does not. A reason reports the <strong>first</strong> rung that masked the
+column, in the order of the table. More than one rung can mask the same column, so lifting the
+reported one can reveal the next: a column both tagged and listed in <code>pii_columns</code> reads <code>own_tag</code>,
+and stays masked by the policy after it is re-tagged.</p>
 <h3 id="personal-data-the-profiler-detects">Personal data the profiler detects<a class="headerlink" href="#personal-data-the-profiler-detects" title="Permanent link">¶</a></h3>
 <p>Four datasource families have no warehouse tag at all (PostgreSQL and the other engine-generic
 SQL types, SQL Server, flat files, Iceberg), and on every datasource a column can start carrying

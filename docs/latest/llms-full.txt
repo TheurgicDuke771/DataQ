@@ -5392,6 +5392,12 @@ section below.
   anchor at all; an unreachable store is reported as unavailable, never as "nothing
   published". `GET /admin/deployment` now also lists the tamper anchor and OpenLineage
   emission among the external-transfer vectors, on or off.
+- **Every masked sample column now says why.** Beside `redacted_columns`, run detail, the MCP
+  `get_run_results` / `get_suite_results` tools and the Teams, Slack, email and webhook alerts carry
+  `redaction_reasons` (same keys): `own_tag`, `inherited_tag` (through column lineage), `policy`,
+  `unclassified` (fail-closed mode), `detected` (the profiler), `classifier`, or `default_mask` — the
+  column was never classified, so masking is precautionary. The run page shows the reason beside
+  each masked column; the in-app notification feed links to it. What is masked is unchanged.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -11370,6 +11376,30 @@ lists every column masked only by inheritance, each with the upstream column it 
 The same list is `inherited_classifications` on `GET /api/v1/assets/{id}` and the MCP `get_asset`
 tool. If the lineage is wrong, tag the downstream column `public` in the warehouse; its own tag
 wins.
+
+### Why a sample column was masked
+
+Every surface that lists the masked columns of a failing-row sample — `redacted_columns` on run
+detail (`GET /api/v1/runs/{id}`), the MCP `get_run_results` / `get_suite_results` tools, and the
+alert channels (Teams, Slack, email, the generic webhook) — also says **why**, per column, in
+`redaction_reasons` (same keys as `redacted_columns`). The run page shows the reason beside each
+masked column under *Failing rows*. The vocabulary is closed, ordered as the ladder consults it:
+
+| Reason | Which rung decided | What lifts it |
+|---|---|---|
+| `own_tag` | The column's own warehouse classification | Re-tag the column in the warehouse |
+| `inherited_tag` | `sensitive` inherited through recorded column lineage | Tag the downstream column `public`; its own tag wins (see **Masked through lineage** on the asset for the source) |
+| `policy` | The suite's `pii_columns` | Edit the suite's column policy |
+| `unclassified` | Fail-closed mode (`require_classification`) and nothing cleared the column | A `public` tag or the suite's `identifier_column` |
+| `detected` | The profiler found personal-data-shaped values at profile time | A warehouse tag, or name it as the `identifier_column` if it is a false positive |
+| `classifier` | The read-time name / value heuristic affirmatively says personal data | Nothing — an `EMAIL` column or e-mail-shaped values are direct PII whatever they are designated as |
+| `default_mask` | Nobody classified the column, so it is masked as a precaution | Name it as the suite's `identifier_column`. A `public` warehouse tag does not lift it: outside fail-closed mode the ladder does not read a clearing tag on an incidental column (under fail-closed mode the same column reads `unclassified`, which a `public` tag does lift) |
+
+`default_mask` is the one to read carefully: it does **not** mean the column holds personal data,
+only that DataQ cannot say it does not. A reason reports the **first** rung that masked the
+column, in the order of the table. More than one rung can mask the same column, so lifting the
+reported one can reveal the next: a column both tagged and listed in `pii_columns` reads `own_tag`,
+and stays masked by the policy after it is re-tagged.
 
 ### Personal data the profiler detects
 
