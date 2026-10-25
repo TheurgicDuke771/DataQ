@@ -444,12 +444,13 @@ masked column under *Failing rows*. The vocabulary is closed, ordered as the lad
 | `unclassified` | Fail-closed mode (`require_classification`) and nothing cleared the column | A `public` tag or the suite's `identifier_column` |
 | `detected` | The profiler found personal-data-shaped values at profile time | A warehouse tag, or name it as the `identifier_column` if it is a false positive |
 | `classifier` | The read-time name / value heuristic affirmatively says personal data | Nothing — an `EMAIL` column or e-mail-shaped values are direct PII whatever they are designated as |
-| `default_mask` | Nobody classified the column, so it is masked as a precaution | Name it as the `identifier_column`, or tag it `public` under fail-closed mode |
+| `default_mask` | Nobody classified the column, so it is masked as a precaution | Name it as the suite's `identifier_column`. A `public` warehouse tag does not lift it: outside fail-closed mode the ladder does not read a clearing tag on an incidental column (under fail-closed mode the same column reads `unclassified`, which a `public` tag does lift) |
 
 `default_mask` is the one to read carefully: it does **not** mean the column holds personal data,
-only that DataQ cannot say it does not. A reason reports the highest rung that masked the column —
-the one you would have to change to show it — so a column both tagged and listed in `pii_columns`
-reads `own_tag`.
+only that DataQ cannot say it does not. A reason reports the **first** rung that masked the
+column, in the order of the table. More than one rung can mask the same column, so lifting the
+reported one can reveal the next: a column both tagged and listed in `pii_columns` reads `own_tag`,
+and stays masked by the policy after it is re-tagged.
 
 ### Personal data the profiler detects
 

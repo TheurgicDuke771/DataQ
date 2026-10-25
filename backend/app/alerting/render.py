@@ -121,6 +121,10 @@ _REDACTION_REASON_LABELS: dict[str, str] = {
 }
 
 
+#: How many masked columns an alert names before "+N more" (a wide table can mask dozens).
+_MAX_REDACTION_NOTE_COLUMNS = 5
+
+
 def check_redaction_note(check: CheckReport) -> str:
     """``"masked: email (warehouse tag), notes (never classified, masked as a precaution)"`` —
     which sample columns were masked and why — or ``""`` when nothing was. A reason the
@@ -128,14 +132,19 @@ def check_redaction_note(check: CheckReport) -> str:
     silently unlabelled."""
     if not check.redacted_columns:
         return ""
-    entries = (
+    entries = [
         (
             f"{column} ({_REDACTION_REASON_LABELS.get(reason, reason)})"
             if (reason := check.redaction_reasons.get(column))
             else column
         )
-        for column in check.redacted_columns
-    )
+        for column in check.redacted_columns[:_MAX_REDACTION_NOTE_COLUMNS]
+    ]
+    rest = len(check.redacted_columns) - len(entries)
+    if rest > 0:
+        # Capped like the narrative clause: Slack refuses a section over 3000 chars and the
+        # whole alert is then lost. The full list is on the run page.
+        entries.append(f"+{rest} more on the run page")
     return "masked: " + ", ".join(entries)
 
 

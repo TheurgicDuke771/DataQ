@@ -31,7 +31,7 @@ from backend.app.datasources.monitors import PII_DRIFT, monitor_expectation_type
 from backend.app.db.models import Asset, Check, Connection, Run, Suite
 from backend.app.services import column_detections, profile_service
 from backend.app.services.check_service import FILE_TYPES
-from backend.app.services.classification_vocab import DETECTED, fold_key
+from backend.app.services.classification_vocab import DETECTED, copy_tags, fold_key
 from backend.app.services.column_detections import detect, dismissed_detected_columns
 from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.coverage_settings_service import SuiteCoverage
@@ -234,7 +234,7 @@ def build_pii_drift_executor(
         # baseline. Stronger rungs (warehouse tag, inherited) still win, and a steward's
         # dismissal stands even when this profile detects the column again.
         detected_now = {fold_key(d.column) for d in detect(result.columns)}
-        tags = dict(effective_column_tags(session, asset) or {})
+        tags = copy_tags(effective_column_tags(session, asset))
         for column in detected_now - dismissed_detected_columns(session, asset):
             tags.setdefault(column, DETECTED)
         return _RunProfile(result=result, detected_now=frozenset(detected_now), tags=tags)

@@ -9,7 +9,7 @@ from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, Literal, NamedTuple, cast, get_args
 
 from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.engine import CursorResult
@@ -57,8 +57,17 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
-from backend.app.services.classification_vocab import DETECTED, fold_key, inherited_tag_columns
-from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
+from backend.app.services.classification_vocab import (
+    DETECTED,
+    copy_tags,
+    fold_key,
+    inherited_tag_columns,
+)
+from backend.app.services.column_classification import (
+    ColumnClass,
+    classify_column_with_basis,
+    is_sensitive,
+)
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
@@ -923,15 +932,7 @@ RedactionReason = Literal[
     "classifier",  # the read-time name / value heuristic affirmatively says PII
     "default_mask",  # an incidental column nobody classified — precautionary (#415)
 ]
-REDACTION_REASONS: tuple[RedactionReason, ...] = (
-    "own_tag",
-    "inherited_tag",
-    "policy",
-    "unclassified",
-    "detected",
-    "classifier",
-    "default_mask",
-)
+REDACTION_REASONS: tuple[RedactionReason, ...] = get_args(RedactionReason)
 
 
 def _tag_mask_reason(column: str, tags: Mapping[str, str] | None) -> RedactionReason | None:
@@ -1024,16 +1025,14 @@ def _incidental_mask_reason(
         return None
     if _detected_sensitive(column, tags):
         return "detected"
-    if is_sensitive(column, values, value_signal_summary=value_signal_summary):
-        return "classifier"
-    # `classify_column` answers PII both for an affirmative signal (handled above) and for a
-    # column it cannot place at all — the latter is the precautionary default mask (#415).
-    if (
-        classify_column(column, list(values), value_signal_summary=value_signal_summary)
-        is ColumnClass.PII
-    ):
-        return "default_mask"
-    return None
+    # One classifier pass: PII either from an affirmative signal (`classifier`) or because the
+    # column could not be placed at all — the precautionary default mask (#415).
+    verdict, affirmative = classify_column_with_basis(
+        column, list(values), value_signal_summary=value_signal_summary
+    )
+    if verdict is not ColumnClass.PII:
+        return None
+    return "classifier" if affirmative else "default_mask"
 
 
 def _may_show_incidental(
@@ -1083,7 +1082,7 @@ def build_value_signal_gate(
 ) -> ValueSignalGate:
     """`value_signal_decides` bound to a run's capture-time policy and warehouse tags."""
     policy_snapshot = copy.deepcopy(dict(policy or {}))
-    tags_snapshot = dict(tags or {})
+    tags_snapshot = copy_tags(tags)
 
     def gate(column: str) -> bool:
         return value_signal_decides(column, policy_snapshot, tags_snapshot)
@@ -1127,9 +1126,13 @@ class _RedactionTracker:
         if column:
             self.column_state[column] = self.column_state.get(column, False) or shown
             if not shown and reason is not None:
-                # The ladder is deterministic per column within one sample, so the first masked
-                # reason is THE reason; keeping it (not the last) makes that an invariant.
-                self.column_reason.setdefault(column, reason)
+                # A comparison sample runs the ladder per bucket, so one column can get two
+                # reasons (opaque values in one bucket, emails in another). Keep the strongest —
+                # earliest on the ladder — so an affirmative verdict is never reported as the
+                # precautionary `default_mask`.
+                held = self.column_reason.get(column)
+                if held is None or REDACTION_REASONS.index(reason) < REDACTION_REASONS.index(held):
+                    self.column_reason[column] = reason
         elif not shown:
             self.anonymous_masked = True
 
@@ -1153,13 +1156,19 @@ class _RedactionTracker:
 
     def reasons(self) -> dict[str, RedactionReason]:
         """Why each entry of ``redacted_columns`` was masked (#2255) — the same key set, every
-        time: a masked column whose rung went unrecorded is a bug, not a blank, so it is reported
-        as ``default_mask`` (the precautionary reading) rather than dropped."""
-        return {
-            name: self.column_reason.get(name, "default_mask")
-            for name, shown in sorted(self.column_state.items())
-            if not shown
-        }
+        time. A masked column with no recorded rung is a bug: it is logged and left OUT of the
+        map rather than labelled ``default_mask``, which would assert "never classified" about a
+        column that may well have been (a confident wrong answer)."""
+        out: dict[str, RedactionReason] = {}
+        for name, shown in sorted(self.column_state.items()):
+            if shown:
+                continue
+            reason = self.column_reason.get(name)
+            if reason is None:
+                log.error("redaction_reason_missing", column_count=1)
+                continue
+            out[name] = reason
+        return out
 
 
 def _displayed_sample_key(sample: Mapping[str, Any]) -> str | None:

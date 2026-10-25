@@ -75,3 +75,16 @@ def test_the_builder_fills_them_from_the_same_ladder_as_rest(db_session: Any) ->
     assert report.sample_summary["partial_unexpected_list"] == ["<redacted>", "<redacted>"]
     assert report.redacted_columns == ("email",)
     assert report.redaction_reasons == {"email": "classifier"}
+
+
+def test_the_note_caps_a_wide_table_and_points_at_the_run_page() -> None:
+    """#2548 review: Slack refuses a section over 3000 chars and the whole alert is then lost, so
+    the note names a bounded number of columns."""
+    columns = tuple(f"column_with_a_long_name_{i:02d}" for i in range(40))
+    check = _check(
+        redacted_columns=columns, redaction_reasons=dict.fromkeys(columns, "default_mask")
+    )
+    note = render.check_redaction_note(check)
+    assert note.endswith("+35 more on the run page")
+    assert note.count("(never classified") == 5
+    assert len(note) < 600

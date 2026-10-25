@@ -177,10 +177,71 @@ def test_a_column_shown_anywhere_has_no_reason() -> None:
     assert tracker.reasons() == {"email": "classifier"}
 
 
-def test_an_unrecorded_reason_reads_as_the_precautionary_default() -> None:
+def test_an_unrecorded_reason_is_omitted_never_reported_as_default_mask() -> None:
+    """#2548 review: `default_mask` asserts "never classified"; a column masked with no recorded
+    rung may well have been classified, so it is logged and left out rather than mislabelled."""
     tracker = _RedactionTracker()
     tracker.record("x", False)
-    assert tracker.reasons() == {"x": "default_mask"}
+    assert tracker.summary() == ("full", ["x"])
+    assert tracker.reasons() == {}
+
+
+def test_the_strongest_reason_wins_across_comparison_buckets() -> None:
+    """#2548 review: a comparison sample runs the ladder per bucket, so one column can be
+    `default_mask` in one bucket and `classifier` in another; the affirmative verdict wins
+    whatever order the buckets arrive in."""
+    for order in (("default_mask", "classifier"), ("classifier", "default_mask")):
+        tracker = _RedactionTracker()
+        for reason in order:
+            tracker.record("contact", False, reason)
+        assert tracker.reasons() == {"contact": "classifier"}
+
+
+def test_reason_vocabulary_has_one_source() -> None:
+    from typing import get_args
+
+    from backend.app.services.run_service import RedactionReason
+
+    assert REDACTION_REASONS == get_args(RedactionReason)
+
+
+def test_copy_tags_keeps_lineage_provenance() -> None:
+    """#2548 review: `dict(tags)` drops the inherited set, so an inherited mask would report as
+    `own_tag`; `copy_tags` is the copy every caller that mutates the map uses."""
+    from backend.app.services.classification_vocab import copy_tags, inherited_tag_columns
+
+    copied = copy_tags(_INHERITED)
+    copied["other"] = DETECTED
+    assert inherited_tag_columns(copied) == frozenset({"field_7"})
+    assert _tag_mask_reason("field_7", copied) == "inherited_tag"
+    assert inherited_tag_columns(_INHERITED) == frozenset({"field_7"})  # source untouched
+    assert "other" not in _INHERITED
+    assert copy_tags(None) == {}
+
+
+@pytest.mark.parametrize(
+    ("column", "values"),
+    [
+        ("email", ["a@b.com"]),  # PII by name
+        ("contact", ["a@b.com", "c@d.org"]),  # PII by value
+        ("field_7", ["zq", "xk"]),  # unplaceable: the default mask
+        ("order_id", [1, 2, 3]),  # identifier
+        ("status", ["open", "closed"]),
+    ],
+)
+def test_classify_with_basis_matches_classify_and_is_sensitive(
+    column: str, values: list[object]
+) -> None:
+    """The single-pass basis must equal the two calls it replaces on the default path."""
+    from backend.app.services.column_classification import (
+        classify_column,
+        classify_column_with_basis,
+        is_sensitive,
+    )
+
+    verdict, affirmative = classify_column_with_basis(column, values)
+    assert verdict is classify_column(column, values)
+    assert affirmative is is_sensitive(column, values)
 
 
 def test_comparison_rows_name_the_rung_per_side() -> None:

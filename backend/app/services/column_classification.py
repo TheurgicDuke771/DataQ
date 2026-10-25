@@ -419,6 +419,28 @@ def _value_signal(
     return _classify_counts(counts)
 
 
+def classify_column_with_basis(
+    name: str,
+    sampled_values: Sequence[object] | None = None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
+) -> tuple[ColumnClass, bool]:
+    """`classify_column` plus whether a PII verdict is **affirmative** (a PII name or value
+    signal, what `is_sensitive` answers) rather than the conservative default for a column
+    nothing could place — one pass over the values instead of two."""
+    by_name = _name_signal(name)
+    if by_name is ColumnClass.PII:
+        return ColumnClass.PII, True
+    by_value = _value_signal(sampled_values or [], value_signal_summary=value_signal_summary)
+    if by_value is ColumnClass.PII:  # sensitive values override a name-based identifier
+        return ColumnClass.PII, True
+    if by_name is not None:  # IDENTIFIER or SAFE
+        return by_name, False
+    if by_value is not None:  # IDENTIFIER
+        return by_value, False
+    return ColumnClass.PII, False
+
+
 def classify_column(
     name: str,
     sampled_values: Sequence[object] | None = None,
@@ -426,17 +448,9 @@ def classify_column(
     value_signal_summary: Mapping[str, Any] | None = None,
 ) -> ColumnClass:
     """Classify a column as IDENTIFIER / PII / SAFE for sample redaction (#415)."""
-    by_name = _name_signal(name)
-    if by_name is ColumnClass.PII:
-        return ColumnClass.PII
-    by_value = _value_signal(sampled_values or [], value_signal_summary=value_signal_summary)
-    if by_value is ColumnClass.PII:  # sensitive values override a name-based identifier
-        return ColumnClass.PII
-    if by_name is not None:  # IDENTIFIER or SAFE
-        return by_name
-    if by_value is not None:  # IDENTIFIER
-        return by_value
-    return ColumnClass.PII
+    return classify_column_with_basis(
+        name, sampled_values, value_signal_summary=value_signal_summary
+    )[0]
 
 
 def is_sensitive(

@@ -7,6 +7,7 @@ builds the map; keeping the shared words here is what keeps that edge one-direct
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Final
 
 #: Normalized outputs of every classification source.
@@ -35,6 +36,12 @@ class EffectiveColumnTags(dict[str, str]):
     def __init__(self, tags: dict[str, str], *, inherited: frozenset[str] = frozenset()) -> None:
         super().__init__(tags)
         self.inherited = inherited
+
+
+def copy_tags(tags: Mapping[str, str] | None) -> EffectiveColumnTags:
+    """A mutable copy of a column→verdict map that KEEPS the lineage provenance — `dict(tags)`
+    or `{**tags}` would silently drop it, and an inherited mask would then report as `own_tag`."""
+    return EffectiveColumnTags(dict(tags or {}), inherited=inherited_tag_columns(tags))
 
 
 def inherited_tag_columns(tags: object) -> frozenset[str]:
