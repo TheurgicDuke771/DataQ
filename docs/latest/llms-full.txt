@@ -3811,7 +3811,11 @@ schema-drift / anomaly / PII-drift / comparison** monitor kinds:
   datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
 - **Severity thresholds** — band a check into **warn / fail / critical** from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
-- **Check version history** — every edit is versioned and viewable per check.
+- **Check version history** — every edit is versioned and viewable per check, and any version
+  can be restored. The suite's owner or an admin can **redact** an old version whose config
+  held something it should not have (a literal pasted into custom SQL, say): the row stays,
+  its config is emptied except the tested column, and it can no longer be restored. Connections have the same history,
+  redactable by a workspace admin.
 
 ## Suites
 
@@ -5505,6 +5509,14 @@ section below.
   existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
   `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
   assignments; deleting a tag detaches it everywhere.
+- **A version in a connection's or check's history can be redacted.** A value pasted into a
+  config field by mistake and then edited out used to stay readable in the History drawer for as
+  long as the entity lived. A workspace admin can now redact one connection version, or every
+  version but the current one, and a suite's owner or an admin can redact a check version: the row
+  keeps its number, author and time, its stored config is emptied (a check version keeps the column
+  it tested), the drawer says who redacted it and when, and a redacted check version can no longer
+  be restored. The current version is refused — edit it first, then redact the old one. Each
+  redaction is an audit event naming the version numbers, never the values.
 - **A suite can run when another suite passes.** The Triggers panel gains *Another suite (on
   success)*: pick the upstream suite and the downstream one runs whenever an upstream run
   finishes with no check at fail or critical. It is the same trigger binding the orchestrators
@@ -11185,6 +11197,21 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   `GET /admin/deployment` reports the effective value and which of the two turned it on.
   Turning it on does not delete samples already stored; the retention sweep does.
 - **Logs & traces** are PII-redacted at the logger level, and secret values never enter them.
+- **Version history is append-only, with one deliberate exception.** Every connection and
+  check edit is snapshotted (name and config, never a credential) and readable in the
+  History drawer. A value pasted into a **config** field by mistake — a token, a hostname
+  with an embedded credential, a literal in custom SQL — and then edited out would otherwise
+  stay readable there indefinitely, so a version can be **redacted**: its stored config is
+  emptied (a check version keeps the column it tested, which masking and data-subject
+  searches need) and the row records who redacted it and when; the rest of the history stays, and
+  the drawer says so. Connection versions are redacted by a workspace admin (one version, or
+  every version but the current one); check versions by the suite's owner or an admin — an
+  `edit` share can restore a version but not redact one. The current version is refused — it
+  is the live config, visible on the entity itself; edit it first, then redact the old one. A
+  redacted check version cannot be restored. Each redaction is an audit event naming the
+  version numbers, never the values. Connection audit events never hold config; a check's
+  update event does, so an edited-out check literal can remain in the audit log, which only
+  workspace admins read.
 
 ## Retention
 
@@ -15421,6 +15448,29 @@ De-risk script confirmed the GX round-trip (pass/fail + `observed_value` + `{bat
 > rotation now records an *audit event* naming the secret **pointer**, never a before/after of
 > the value — closing the "credential-rotation events are unrecorded" hole in *Consequences*
 > below without weakening the rule.
+>
+> **Amendment (2026-10-25, redaction of a snapshot):** "immutable" now means *append-only with
+> one deliberate exception*. A value pasted into a **config** field by mistake (a token, a
+> hostname with an embedded credential, a literal in custom SQL) and then edited out stayed
+> readable in the snapshot for every user who could open the History drawer. Both snapshot
+> tables now accept an in-place **redaction**: the row's `config` is emptied (a check version
+> keeps its tested `column`, the result's identity that masking and data-subject searches read)
+> and two nullable
+> columns, `redacted_at` and `redacted_by`, record when and by whom; every other column stays, so
+> the history keeps its shape and the drawer says who redacted it and when instead of losing a
+> row. The flag is the column, never a marker inside the JSONB, so no user-supplied config can
+> pass itself off as redacted. Rows are never deleted, and the **newest** version is refused —
+> it *is* the entity's current state, readable on the entity itself; edit first, then redact.
+> `connection_versions` is Admin-only (a connection mutation, ADR 0033), one version at a time or
+> every version but the current one; `check_versions` is the same operation gated at the suite's
+> **owner or admin** — custom SQL can carry a literal, so checks need it too, but destroying
+> history is gated above editing it, and an `edit` share can restore a version but not redact
+> one. A redacted check version can no longer be restored (there is no config to apply). Each
+> redaction is an audit event (`connection.version_redact` / `check.version_redact`, ADR 0041)
+> naming **which** version numbers, never what they held. Connection audit payloads never carry
+> config, so a redacted connection value is gone; a check's `check.update` audit event records
+> its config, so the append-only audit log may still hold an edited-out check literal — the
+> redaction clears the product surface, not the durable record.
 
 ## Context
 

@@ -3253,6 +3253,35 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when this snapshot was redacted: `config` then keeps only the tested `column` (the result's identity), every other value it held is gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
+          },
           "source_connection_id": {
             "anyOf": [
               {
@@ -4858,6 +4887,35 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when an admin redacted this snapshot: `config` is then empty and the values it held are gone from the version history (connection audit events never carry config, so nothing else retains them).",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4878,6 +4936,23 @@
           "created_at"
         ],
         "title": "ConnectionVersionRead",
+        "type": "object"
+      },
+      "ConnectionVersionsRedacted": {
+        "properties": {
+          "redacted_version_nos": {
+            "description": "The versions redacted by this call; empty when every older version was already redacted (or there is only the current one).",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Redacted Version Nos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "redacted_version_nos"
+        ],
+        "title": "ConnectionVersionsRedacted",
         "type": "object"
       },
       "CoverageFiguresRead": {
@@ -15730,6 +15805,47 @@
       }
     },
     "/api/v1/connections/{connection_id}/versions": {
+      "delete": {
+        "operationId": "redact_connection_versions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionsRedacted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact every version's config except the current one",
+        "tags": [
+          "connections"
+        ]
+      },
       "get": {
         "operationId": "list_connection_versions",
         "parameters": [
@@ -15771,6 +15887,59 @@
           }
         },
         "summary": "List a connection's version history (newest first)",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` is emptied and the row stamped with who redacted it and when (an already-redacted\nversion is returned unchanged); the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
+        "operationId": "redact_connection_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "connections"
         ]
@@ -19516,6 +19685,69 @@
           }
         },
         "summary": "List a check's version history (newest first)",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` is emptied except its tested `column`, and the row stamped with who\nredacted it and when; the row and the rest of the history stay, and the version can no longer\nbe restored. The newest version is refused (409) \u2014 it is the check's current state.\nRedacting an already-redacted version returns it unchanged (200). Destroying history is gated\nabove editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the\nversion number only.",
+        "operationId": "redact_check_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "checks"
         ]

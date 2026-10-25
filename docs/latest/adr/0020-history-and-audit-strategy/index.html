@@ -2521,6 +2521,28 @@ Decisions <strong>1 (no SCD-2)</strong>, <strong>4 (cascade-delete)</strong> and
 rotation now records an <em>audit event</em> naming the secret <strong>pointer</strong>, never a before/after of
 the value — closing the "credential-rotation events are unrecorded" hole in <em>Consequences</em>
 below without weakening the rule.</p>
+<p><strong>Amendment (2026-10-25, redaction of a snapshot):</strong> "immutable" now means <em>append-only with
+one deliberate exception</em>. A value pasted into a <strong>config</strong> field by mistake (a token, a
+hostname with an embedded credential, a literal in custom SQL) and then edited out stayed
+readable in the snapshot for every user who could open the History drawer. Both snapshot
+tables now accept an in-place <strong>redaction</strong>: the row's <code>config</code> is emptied (a check version
+keeps its tested <code>column</code>, the result's identity that masking and data-subject searches read)
+and two nullable
+columns, <code>redacted_at</code> and <code>redacted_by</code>, record when and by whom; every other column stays, so
+the history keeps its shape and the drawer says who redacted it and when instead of losing a
+row. The flag is the column, never a marker inside the JSONB, so no user-supplied config can
+pass itself off as redacted. Rows are never deleted, and the <strong>newest</strong> version is refused —
+it <em>is</em> the entity's current state, readable on the entity itself; edit first, then redact.
+<code>connection_versions</code> is Admin-only (a connection mutation, ADR 0033), one version at a time or
+every version but the current one; <code>check_versions</code> is the same operation gated at the suite's
+<strong>owner or admin</strong> — custom SQL can carry a literal, so checks need it too, but destroying
+history is gated above editing it, and an <code>edit</code> share can restore a version but not redact
+one. A redacted check version can no longer be restored (there is no config to apply). Each
+redaction is an audit event (<code>connection.version_redact</code> / <code>check.version_redact</code>, ADR 0041)
+naming <strong>which</strong> version numbers, never what they held. Connection audit payloads never carry
+config, so a redacted connection value is gone; a check's <code>check.update</code> audit event records
+its config, so the append-only audit log may still hold an edited-out check literal — the
+redaction clears the product surface, not the durable record.</p>
 </blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p>The internal Postgres data has no general history/versioning framework. <strong>Alembic versions the <em>schema</em> (DDL), not the <em>data</em></strong> — it cannot answer "what was this connection's config last Tuesday." A consistency/SCD review (2026-06-20) found:</p>

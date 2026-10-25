@@ -2920,7 +2920,11 @@ schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
   datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).</li>
 <li><strong>Severity thresholds</strong> — band a check into <strong>warn / fail / critical</strong> from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.</li>
-<li><strong>Check version history</strong> — every edit is versioned and viewable per check.</li>
+<li><strong>Check version history</strong> — every edit is versioned and viewable per check, and any version
+  can be restored. The suite's owner or an admin can <strong>redact</strong> an old version whose config
+  held something it should not have (a literal pasted into custom SQL, say): the row stays,
+  its config is emptied except the tested column, and it can no longer be restored. Connections have the same history,
+  redactable by a workspace admin.</li>
 </ul>
 <h2 id="suites">Suites<a class="headerlink" href="#suites" title="Permanent link">¶</a></h2>
 <p>A <strong>suite</strong> is a named set of checks bound to one connection + target

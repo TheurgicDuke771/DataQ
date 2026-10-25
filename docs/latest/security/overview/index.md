@@ -269,6 +269,21 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   `GET /admin/deployment` reports the effective value and which of the two turned it on.
   Turning it on does not delete samples already stored; the retention sweep does.
 - **Logs & traces** are PII-redacted at the logger level, and secret values never enter them.
+- **Version history is append-only, with one deliberate exception.** Every connection and
+  check edit is snapshotted (name and config, never a credential) and readable in the
+  History drawer. A value pasted into a **config** field by mistake — a token, a hostname
+  with an embedded credential, a literal in custom SQL — and then edited out would otherwise
+  stay readable there indefinitely, so a version can be **redacted**: its stored config is
+  emptied (a check version keeps the column it tested, which masking and data-subject
+  searches need) and the row records who redacted it and when; the rest of the history stays, and
+  the drawer says so. Connection versions are redacted by a workspace admin (one version, or
+  every version but the current one); check versions by the suite's owner or an admin — an
+  `edit` share can restore a version but not redact one. The current version is refused — it
+  is the live config, visible on the entity itself; edit it first, then redact the old one. A
+  redacted check version cannot be restored. Each redaction is an audit event naming the
+  version numbers, never the values. Connection audit events never hold config; a check's
+  update event does, so an edited-out check literal can remain in the audit log, which only
+  workspace admins read.
 
 ## Retention
 

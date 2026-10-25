@@ -177,6 +177,14 @@ section below.
   existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
   `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
   assignments; deleting a tag detaches it everywhere.
+- **A version in a connection's or check's history can be redacted.** A value pasted into a
+  config field by mistake and then edited out used to stay readable in the History drawer for as
+  long as the entity lived. A workspace admin can now redact one connection version, or every
+  version but the current one, and a suite's owner or an admin can redact a check version: the row
+  keeps its number, author and time, its stored config is emptied (a check version keeps the column
+  it tested), the drawer says who redacted it and when, and a redacted check version can no longer
+  be restored. The current version is refused — edit it first, then redact the old one. Each
+  redaction is an audit event naming the version numbers, never the values.
 - **A suite can run when another suite passes.** The Triggers panel gains *Another suite (on
   success)*: pick the upstream suite and the downstream one runs whenever an upstream run
   finishes with no check at fail or critical. It is the same trigger binding the orchestrators
