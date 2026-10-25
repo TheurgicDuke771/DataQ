@@ -31,6 +31,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.contracts.export import export_contract as _export_contract
 from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
@@ -78,6 +79,7 @@ from backend.app.services import (
     channel_service,
     check_service,
     connection_service,
+    contract_service,
     coverage_service,
     coverage_settings_service,
     credential_health,
@@ -4654,6 +4656,131 @@ def get_incident(incident_id: str) -> dict[str, Any]:
         return {
             **_incident_payload(incident),
             "evidence": incident_service.evidence_for_caller(session, incident, user_id=user.id),
+        }
+
+
+def _contract_payload(visible: contract_service.VisibleContract) -> dict[str, Any]:
+    c = visible.contract
+    return {
+        "contract_id": str(c.id),
+        "odcs_id": c.odcs_id,
+        "name": c.name,
+        "version": c.version,
+        "status": c.status,
+        "domain": c.domain,
+        "api_version": c.api_version,
+        "suites": [
+            {
+                "suite_id": str(s.id),
+                "name": s.name,
+                "contract_object": s.contract_object,
+                # No target: the suite holds its checks but cannot run until one is set.
+                "runnable": s.target is not None,
+            }
+            for s in visible.suites
+        ],
+        "restricted_suite_count": visible.restricted_suite_count,
+        "not_enforced_count": len(c.unmapped or []),
+    }
+
+
+@mcp.tool
+def list_contracts() -> dict[str, Any]:
+    """List the data contracts (ODCS) DataQ enforces that you can see.
+
+    Use this for 'which data contracts do we have?' or to find a contract's id before
+    `get_contract`. Returns one entry per contract VERSION (a new version is its own row,
+    with the same `odcs_id`): its name, version, status, the suites that enforce it (with
+    their ODCS schema object and whether each can run), `restricted_suite_count` (linked
+    suites you cannot see — counted, never named) and `not_enforced_count` (clauses DataQ
+    could not turn into a check).
+
+    What this does NOT tell you: whether a clause is holding (that is `get_contract`), and
+    whether a table is covered by a contract at all — a suite enforces a contract only when
+    the contract was imported for it or it was linked by hand, so an empty list is not proof
+    that no contract exists for some dataset. You see a contract only if you can view at
+    least one of its suites (a workspace admin also sees contracts with none).
+    """
+    with _ctx() as (session, user), _service_errors():
+        rows = contract_service.list_contracts(session, user.id)
+        return {"count": len(rows), "contracts": [_contract_payload(v) for v in rows]}
+
+
+@mcp.tool
+def get_contract(contract_id: str) -> dict[str, Any]:
+    """Get one data contract with its compliance rollup — is each clause holding?
+
+    Use this for 'is the seller_payments contract being met?' or 'which clauses of the orders
+    contract are failing?'. Returns the contract (as `list_contracts`), then `compliance`:
+    `clauses` — one per clause a check enforces, with the `state` that check reached in its
+    suite's LATEST run (`pass` / `warn` / `fail` / `critical`; `unverified` when it errored or
+    was skipped; `not_run` when that run has no result for it; `disabled` when the check is
+    switched off) and `drifted: true` when someone edited the check since the import, so it
+    may no longer say what the clause says (a drifted check can pass while the clause would
+    not); `suites` — each suite's latest run and `results_final`; `counts` per state; and
+    `not_enforced` with the `unmapped` clauses and the reason for each.
+
+    Read `results_final` before calling anything a verdict: it is false while a run is queued
+    or running and for a failed or cancelled run, whose results are partial. The rollup covers
+    only suites you can view; `restricted_suite_count` says how many it left out, and their
+    clauses are not in `clauses` at all — never describe the contract as fully passing when
+    that count is above zero. It reads the latest run only, not a trend.
+    """
+    cid = _parse_uuid(contract_id, field="contract_id")
+    with _ctx() as (session, user), _service_errors():
+        visible = contract_service.get_contract(session, cid, user.id)
+        result = contract_service.compliance(session, visible)
+        return {
+            **_contract_payload(visible),
+            "unmapped": list(visible.contract.unmapped or []),
+            "compliance": {
+                "clauses": [
+                    {
+                        "suite_id": str(x.suite_id),
+                        "check_id": str(x.check_id),
+                        "check_name": x.check_name,
+                        "clause": x.clause,
+                        "state": x.state,
+                        "drifted": x.drifted,
+                    }
+                    for x in result.clauses
+                ],
+                "suites": [
+                    {
+                        "suite_id": str(x.suite_id),
+                        "last_run_id": str(x.last_run_id) if x.last_run_id else None,
+                        "last_run_status": x.last_run_status,
+                        "last_run_at": x.last_run_at.isoformat() if x.last_run_at else None,
+                        "results_final": x.results_final,
+                    }
+                    for x in result.suites
+                ],
+                "counts": result.counts,
+                "not_enforced": result.not_enforced,
+            },
+        }
+
+
+@mcp.tool
+def export_contract(contract_id: str) -> dict[str, Any]:
+    """Export a data contract as an Open Data Contract Standard (ODCS v3) document.
+
+    Use this for 'give me the orders contract as ODCS' or to hand a contract to another tool.
+    Returns `document`: the contract as it was imported, in the newest ODCS v3 vocabulary DataQ
+    knows, plus `dataq.*` custom properties naming the check behind each rule; checks people
+    added to the suites appear as `type: custom, engine: dataq` rules. Read-only.
+
+    The document reflects only the suites you can view — `restricted_suite_count` says how many
+    linked suites were left out, and their checks are not in it. Importing a contract (creating
+    suites and checks) is not available over MCP; it is done in the app or the REST API.
+    """
+    cid = _parse_uuid(contract_id, field="contract_id")
+    with _ctx() as (session, user), _service_errors():
+        visible = contract_service.get_contract(session, cid, user.id)
+        return {
+            "contract_id": str(visible.contract.id),
+            "restricted_suite_count": visible.restricted_suite_count,
+            "document": _export_contract(session, visible.contract, visible.suites),
         }
 
 

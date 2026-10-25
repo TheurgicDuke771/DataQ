@@ -16,6 +16,7 @@ from backend.app.db.models import (
     Check,
     CheckVersion,
     Connection,
+    Contract,
     Incident,
     Run,
     Schedule,
@@ -52,6 +53,7 @@ _REAL_SCHEDULE = "<a real schedule, substituted at probe time>"
 _REAL_CONNECTION = "<a real connection, substituted at probe time>"
 _REAL_BINDING = "<a real trigger binding, substituted at probe time>"
 _REAL_INCIDENT = "<a real incident, substituted at probe time>"
+_REAL_CONTRACT = "<a real contract, substituted at probe time>"
 
 #: Every role, so a matrix test can't silently skip a tier.
 ROLES = ("admin", "member", "viewer")
@@ -592,6 +594,28 @@ def _assert_tool_denies(
         db_session.add(incident)
         db_session.commit()
         args = {**args, "incident_id": str(incident.id)}
+    if args.get("contract_id") == _REAL_CONTRACT:
+        # A real contract linked to the probe suite: `get_contract` resolves the row (and its
+        # visibility through the linked suites) BEFORE anything else, so a fabricated id would
+        # pass the sweep as "not found" with the gate deleted.
+        contract = Contract(
+            odcs_id=f"probe-{uuid.uuid4().hex[:8]}",
+            name="probe contract",
+            version="1.0.0",
+            api_version="v3.2.0",
+            spec={
+                "apiVersion": "v3.2.0",
+                "kind": "DataContract",
+                "id": "probe",
+                "version": "1.0.0",
+            },
+        )
+        db_session.add(contract)
+        db_session.flush()
+        suite.contract_id = contract.id
+        suite.contract_object = "probe"
+        db_session.commit()
+        args = {**args, "contract_id": str(contract.id)}
     if args.get("check_id") == _REAL_CHECK:
         check = Check(
             suite_id=suite.id,
@@ -714,6 +738,9 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         # incident's suite, so `edit` is what separates these from get_incident.
         "ack_incident": {"incident_id": _REAL_INCIDENT},
         "resolve_incident": {"incident_id": _REAL_INCIDENT},
+        # contract:view — the contract is visible through its linked suites only
+        "get_contract": {"contract_id": _REAL_CONTRACT},
+        "export_contract": {"contract_id": _REAL_CONTRACT},
         # read:suite-optional — the named-suite half is what has a gate
         "get_near_misses": {"suite_id": sid},
         "list_incidents": {"suite_id": sid},
