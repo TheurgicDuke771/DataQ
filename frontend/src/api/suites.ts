@@ -364,6 +364,10 @@ export interface CheckVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
+  /** True once an editor redacted this snapshot: `config` is then a tombstone, the values it
+   *  held are gone and the version cannot be restored. Optional so older fixtures need no change. */
+  redacted?: boolean;
+  redacted_at?: string | null;
 }
 
 /** A check's version history, newest first. Requires `view` on the suite. */
@@ -380,6 +384,18 @@ export async function restoreCheckVersion(
 ): Promise<Check> {
   const { data } = await api.post<Check>(
     `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}/restore`,
+  );
+  return data;
+}
+
+/** Replace one version's config with a tombstone (edit-gated; the current version is refused). */
+export async function redactCheckVersion(
+  suiteId: string,
+  checkId: string,
+  versionNo: number,
+): Promise<CheckVersion> {
+  const { data } = await api.delete<CheckVersion>(
+    `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}`,
   );
   return data;
 }

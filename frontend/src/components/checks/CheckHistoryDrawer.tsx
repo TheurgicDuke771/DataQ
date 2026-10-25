@@ -1,9 +1,14 @@
-import { App, Button, Descriptions, Popconfirm } from 'antd';
+import { App, Button, Descriptions, Flex, Popconfirm } from 'antd';
 import { useState } from 'react';
 
-import { type CheckVersion, listCheckVersions, restoreCheckVersion } from '../../api/suites';
+import {
+  type CheckVersion,
+  listCheckVersions,
+  redactCheckVersion,
+  restoreCheckVersion,
+} from '../../api/suites';
 import { errorMessage } from '../../utils/errors';
-import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
+import { ConfigJson, HistoryDrawer, RedactVersionButton } from '../HistoryDrawer';
 import { ENGINE_LABEL } from './checkBadges';
 import { EXPECTATION_BY_TYPE } from './expectationCatalog';
 
@@ -37,9 +42,26 @@ export function CheckHistoryDrawer({
 }) {
   const { message } = App.useApp();
   const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
-  // Bumped after a successful restore to force the version list to refetch
+  const [redactingVersion, setRedactingVersion] = useState<number | null>(null);
+  // Bumped after a successful restore or redaction to force the version list to refetch
   // (the drawer stays open so the new row is visible immediately).
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Redaction (#685) shares the restore gate: both are check mutations (suite `edit`).
+  const handleRedact = async (versionNo: number) => {
+    if (!check) return;
+    setRedactingVersion(versionNo);
+    try {
+      await redactCheckVersion(suiteId, check.id, versionNo);
+      message.success(`Redacted v${versionNo}`);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      message.error(`Redact failed: ${errorMessage(err)}`);
+      throw err;
+    } finally {
+      setRedactingVersion(null);
+    }
+  };
 
   const handleRestore = async (versionNo: number) => {
     if (!check) return;
@@ -87,17 +109,27 @@ export function CheckHistoryDrawer({
       renderActions={
         canRestore
           ? (version, isCurrent) =>
-              !isCurrent && (
-                <Popconfirm
-                  title={`Restore v${version.version_no}?`}
-                  description="Creates a new version with this snapshot's config; nothing is deleted. Whether the check is enabled stays as it is now."
-                  okText="Restore"
-                  onConfirm={() => handleRestore(version.version_no)}
-                >
-                  <Button size="small" loading={restoringVersion === version.version_no}>
-                    Restore this version
-                  </Button>
-                </Popconfirm>
+              // A redacted version has no config to restore (the server refuses it), and the
+              // current one is the live config — neither action applies to them.
+              !isCurrent &&
+              !version.redacted && (
+                <Flex gap={8}>
+                  <RedactVersionButton
+                    versionNo={version.version_no}
+                    loading={redactingVersion === version.version_no}
+                    onConfirm={() => handleRedact(version.version_no)}
+                  />
+                  <Popconfirm
+                    title={`Restore v${version.version_no}?`}
+                    description="Creates a new version with this snapshot's config; nothing is deleted. Whether the check is enabled stays as it is now."
+                    okText="Restore"
+                    onConfirm={() => handleRestore(version.version_no)}
+                  >
+                    <Button size="small" loading={restoringVersion === version.version_no}>
+                      Restore this version
+                    </Button>
+                  </Popconfirm>
+                </Flex>
               )
           : undefined
       }
