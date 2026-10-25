@@ -1201,6 +1201,14 @@ def list_check_versions(
     not show that the alerting level never changed. What each past run was scored
     against is on its result (``expected_value.thresholds`` in ``get_run_results``).
 
+    **A version with ``redacted: true`` has no config to show.** An editor replaced
+    its stored values with a tombstone — ``config`` then holds only ``redacted``,
+    ``redacted_at`` and ``redacted_by`` — because something that should never have
+    been in a config field (a literal in custom SQL, a token) was pasted there and
+    later edited out. Its name, thresholds, author and time are still real; its
+    ``config`` is not what the check was, and ``restore_check_version`` refuses it.
+    Redaction itself has no MCP tool: it is done in the app's History drawer.
+
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
     """
@@ -1244,6 +1252,10 @@ def list_check_versions(
                     "critical_threshold": _num(v.critical_threshold),
                     "changed_at": v.created_at.isoformat(),
                     "changed_by_name": v.changed_by_name,
+                    # A redacted snapshot's `config` is the tombstone itself; the flag is what
+                    # a model should branch on (#685).
+                    "redacted": v.redacted,
+                    "redacted_at": v.redacted_at.isoformat() if v.redacted_at else None,
                 }
                 for v in versions[:limit]
             ],
@@ -2784,7 +2796,10 @@ def restore_check_version(
     not simply written back, so a version created before a validation rule
     shipped may be rejected — the error names what is wrong and the check is left
     exactly as it was. That is deliberate: it prevents reinstating a definition
-    the authoring path would no longer accept.
+    the authoring path would no longer accept. **A redacted version is always
+    refused** (``redacted: true`` in ``list_check_versions``): its config was
+    replaced with a tombstone and no longer exists anywhere, so there is nothing
+    to restore — say so rather than retrying.
 
     **On an automatic baseline a restore puts back whether it inherited, not
     necessarily its numbers.** If the snapshot was taken while the check inherited
