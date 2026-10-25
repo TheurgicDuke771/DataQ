@@ -62,6 +62,9 @@ export interface Result {
    *  that genuinely had nothing to redact. */
   redaction: 'full' | 'partial' | 'none' | 'zero_sample' | null;
   redacted_columns: string[];
+  /** Why each entry of `redacted_columns` was masked — the same key set. Absent on a
+   *  response from an older API. */
+  redaction_reasons?: Record<string, RedactionReason>;
   /** How much of the dataset this check saw (#595); null = a complete read. */
   sampling?: ResultSampling | null;
   /** The check as it WAS when this result was written (#1613) — engine, dimension, type from
@@ -69,6 +72,27 @@ export interface Result {
    *  predates the field; `null` when the check is unknown. */
   check?: ResultCheck | null;
 }
+
+/** Which rung of the redaction ladder masked a column — mirrors `run_service.RedactionReason`. */
+export type RedactionReason =
+  | 'own_tag'
+  | 'inherited_tag'
+  | 'policy'
+  | 'unclassified'
+  | 'detected'
+  | 'classifier'
+  | 'default_mask';
+
+/** Human wording per reason; `default_mask` means "nobody classified it", not "it is PII". */
+export const REDACTION_REASON_LABELS: Record<RedactionReason, string> = {
+  own_tag: 'warehouse tag on this column',
+  inherited_tag: 'tag inherited through lineage',
+  policy: 'suite policy (PII columns)',
+  unclassified: 'unclassified under fail-closed mode',
+  detected: 'profiler detected personal data',
+  classifier: 'name/value classifier',
+  default_mask: 'never classified — masked as a precaution',
+};
 
 /** `ResultRead.check` — the same as-of identity the comparison sides carry. */
 export type ResultCheck = ComparisonCheck;

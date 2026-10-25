@@ -128,7 +128,8 @@ def _run_frame(
 
 
 def _redacted(check: CheckOutcome) -> tuple[Any, Any, list[str]]:
-    return redact_sample_failures_with_state(check.sample_failures, tested_column=_TESTED)
+    out = redact_sample_failures_with_state(check.sample_failures, tested_column=_TESTED)
+    return out.sample, out.state, out.redacted_columns
 
 
 class _StatementSpy:

@@ -21,7 +21,9 @@ import {
   compareRunsPath,
   getRun,
   listRuns,
+  REDACTION_REASON_LABELS,
   triggeredByText,
+  type RedactionReason,
   type Result,
   type ResultStatus,
   type Run,
@@ -458,10 +460,12 @@ function SampleFailures({
   sample,
   redaction,
   redactedColumns,
+  redactionReasons,
 }: {
   sample: Record<string, unknown> | null;
   redaction: 'full' | 'partial' | 'none' | 'zero_sample' | null;
   redactedColumns: string[];
+  redactionReasons?: Record<string, RedactionReason>;
 }) {
   // #1873: a null sample under `zero_sample` was SUPPRESSED, not absent — say so
   // rather than rendering nothing, which would read identically to "no sample".
@@ -544,6 +548,28 @@ function SampleFailures({
           {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
+      {redactedColumns.length > 0 && (
+        // Why each column is masked, beside its name — an inherited mask and an own tag read
+        // identically in the table, and the fix for each is different.
+        <ul
+          aria-label="Masked columns and why"
+          style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'inherit' }}
+        >
+          {redactedColumns.map((column) => {
+            const reason = redactionReasons?.[column];
+            return (
+              <li key={column}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text code style={{ fontSize: 11 }}>
+                    {column}
+                  </Typography.Text>
+                  {reason !== undefined && ` — ${REDACTION_REASON_LABELS[reason] ?? reason}`}
+                </Typography.Text>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {displayRows.length > 0 ? (
         <>
           <Table<Record<string, unknown>>
@@ -735,6 +761,7 @@ function ResultsTable({
                 sample={record.sample_failures}
                 redaction={record.redaction}
                 redactedColumns={record.redacted_columns}
+                redactionReasons={record.redaction_reasons}
               />
             );
           }
@@ -756,6 +783,7 @@ function ResultsTable({
                   sample={record.sample_failures}
                   redaction={record.redaction}
                   redactedColumns={record.redacted_columns}
+                  redactionReasons={record.redaction_reasons}
                 />
               )}
             </Flex>

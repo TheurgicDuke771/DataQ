@@ -459,6 +459,57 @@ describe('RunDetail page', () => {
     expect(region.getByText('<redacted>')).toBeInTheDocument();
   });
 
+  it('says why each masked column was masked, beside its name', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          sample_failures: {
+            unexpected_index_list: [
+              { order_id: 'ORD-1', email: '<redacted>', notes: '<redacted>' },
+            ],
+          },
+          redaction: 'partial',
+          redacted_columns: ['email', 'notes'],
+          redaction_reasons: { email: 'inherited_tag', notes: 'default_mask' },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    const list = await region.findByRole('list', { name: 'Masked columns and why' });
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('email — tag inherited through lineage');
+    expect(items[1]).toHaveTextContent('notes — never classified — masked as a precaution');
+  });
+
+  it('lists a masked column without a reason when the API sends none', async () => {
+    // The base fixture: `redacted_columns` but no `redaction_reasons` (an older API).
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+    const user = userEvent.setup();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /expand row/i }));
+
+    const list = await region.findByRole('list', { name: 'Masked columns and why' });
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(/^order_id$/);
+  });
+
   // ── #1183: unexpected_index_list identifier column ─────────────────────
 
   it('prefers unexpected_index_list over partial_unexpected_list, surfacing the identifier column (#1183)', async () => {

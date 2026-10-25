@@ -183,6 +183,9 @@ def _check_block(check: CheckReport) -> dict[str, Any]:
     sample = check.sample_summary or {}
     if "unexpected_count" in sample:
         detail += f" · {sample['unexpected_count']} rows"
+    masked = render.check_redaction_note(check)
+    if masked:
+        detail += f" · {masked}"
     return _text(
         f"**{check.check_name}** ({check.status}) — {check.expectation_type}\n\n{detail}",
         wrap=True,

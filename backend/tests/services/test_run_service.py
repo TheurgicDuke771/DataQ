@@ -902,7 +902,7 @@ def test_zero_sample_suppressed_false_for_a_dmf_engine_check() -> None:
 
 
 def test_redact_sample_failures_with_state_reports_zero_sample_for_a_null_sample() -> None:
-    sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
+    sample, state, redacted_columns, _reasons = run_service.redact_sample_failures_with_state(
         None, zero_sample=True
     )
     assert sample is None
@@ -915,7 +915,7 @@ def test_redact_sample_failures_with_state_ignores_zero_sample_when_a_sample_exi
     sample (zero-sample mode off, or off at run time and later flipped on) is
     still redacted normally, not mislabelled as suppressed.
     """
-    sample, state, _redacted_columns = run_service.redact_sample_failures_with_state(
+    sample, state, _redacted_columns, _reasons = run_service.redact_sample_failures_with_state(
         {"partial_unexpected_list": ["alice@example.com"]},
         tested_column="email",
         zero_sample=True,
@@ -1671,7 +1671,7 @@ def test_redact_datasource_tag_is_a_floor_override_cannot_unmask() -> None:
 
 
 def test_redact_state_none_for_a_none_sample() -> None:
-    sample, state, cols = run_service.redact_sample_failures_with_state(None)
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(None)
     assert sample is None
     assert state is None
     assert cols == []
@@ -1680,7 +1680,7 @@ def test_redact_state_none_for_a_none_sample() -> None:
 def test_redact_state_null_when_sample_has_no_data_bearing_content() -> None:
     # Only aggregate counts — nothing was ever shown or masked, so there is
     # nothing true to claim either way.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"unexpected_count": 3, "unexpected_percent": 12.5}
     )
     assert sample == {"unexpected_count": 3, "unexpected_percent": 12.5}
@@ -1689,7 +1689,7 @@ def test_redact_state_null_when_sample_has_no_data_bearing_content() -> None:
 
 
 def test_redact_state_full_when_every_column_masked() -> None:
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"unexpected_index_list": [{"EMAIL": "a@x.com", "SSN": "111-22-3333"}]},
     )
     assert state == "full"
@@ -1700,7 +1700,7 @@ def test_redact_state_full_when_every_column_masked() -> None:
 def test_redact_state_full_for_anonymous_masked_scalar_list_with_no_tested_column() -> None:
     # No tested_column context → the scalar list masks with no column name to attribute the decision
     # to.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"partial_unexpected_list": ["a@x.com", "b@y.com"]}
     )
     assert state == "full"
@@ -1712,7 +1712,7 @@ def test_redact_state_partial_with_no_nameable_column_from_anonymous_mask() -> N
     """#1115 review: an anonymous mask (no nameable column) can coincide with a DIFFERENT column
     being shown in the SAME rendered list.
     """
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [
                 {"ORDER_ID": "ORD-1"},  # shown: identifier
@@ -1734,7 +1734,7 @@ def test_redact_state_ignores_the_list_the_frontend_does_not_render() -> None:
     the dict-shaped index list when present (#1190). Masking that happens only in the
     list nobody sees must not appear in the label for the table they do see.
     """
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # displayed, all shown
             "partial_unexpected_list": ["a@x.com"],  # not displayed; masks
@@ -1755,7 +1755,7 @@ def test_redact_state_masked_column_stays_named_when_the_other_list_would_show_i
     classifies as shown from the other list's own sample must still appear in
     `redacted_columns`.
     """
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             # In the index list the column's own values are emails → PII → masked.
             "unexpected_index_list": [{"CUSTOMER_REF": "a@x.com"}, {"CUSTOMER_REF": "b@x.com"}],
@@ -1777,7 +1777,7 @@ def test_redact_state_falls_back_to_the_partial_list_when_no_index_rows_render()
     """Mirror of the frontend fallback: a non-dict `unexpected_index_list` renders
     nothing, so `partial_unexpected_list` is the displayed list and sets the label.
     """
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [1, 4, 7],  # bare positional indices — not rows
             "partial_unexpected_list": [-12.5, -5.0],
@@ -1795,7 +1795,7 @@ def test_displayed_list_is_decided_on_the_capped_rows_the_frontend_receives() ->
     """#1238 review: the winner must be picked from the same rows the UI tests."""
     rows: list[Any] = [{"CUSTOMER_REF": f"a{i}@x.com"} for i in range(SAMPLE_ROW_CAP)]
     rows.append("not-a-row")  # beyond the cap — never reaches the frontend
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": rows,
             "partial_unexpected_list": ["REF-1", "REF-2"],
@@ -1813,7 +1813,7 @@ def test_displayed_list_is_decided_on_the_capped_rows_the_frontend_receives() ->
 
 def test_redact_state_none_when_every_column_shown() -> None:
     # The tested column's non-PII values surface (#417) and nothing else is masked.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"unexpected_count": 2, "partial_unexpected_list": [-12.5, -5.0]},
         tested_column="LINE_TOTAL",
     )
@@ -1823,7 +1823,7 @@ def test_redact_state_none_when_every_column_shown() -> None:
 
 
 def test_redact_state_partial_when_some_columns_shown_some_masked() -> None:
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [
                 {"ORDER_NUMBER": "ORD-1041", "LINE_TOTAL": -12.5, "EMAIL": "a@x.com"},
@@ -1844,7 +1844,7 @@ def test_redact_state_partial_when_some_columns_shown_some_masked() -> None:
 def test_redact_state_partial_across_comparison_buckets() -> None:
     # Comparison rows (ADR 0015): an explicit `pii_columns` entry masks both sides
     # of STATUS while the unsuffixed, non-PII ORDER_ID join key surfaces.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "mismatched": [
                 {"ORDER_ID": "ORD-1", "STATUS_src": "shipped", "STATUS_tgt": "returned"},
@@ -1879,7 +1879,7 @@ def test_redact_state_a_column_shown_anywhere_counts_as_shown() -> None:
 def test_redact_state_full_for_an_unrecognized_key_with_no_column_context() -> None:
     # A key the redactor doesn't recognize is masked (default-mask, #415) but has no column name to
     # attribute the mask to — must still register as a real (anonymous) mask.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"some_future_bucket": ["secret@x.com"]}
     )
     assert state == "full"
@@ -1888,7 +1888,7 @@ def test_redact_state_full_for_an_unrecognized_key_with_no_column_context() -> N
 
 
 def test_redact_state_partial_when_unrecognized_key_masks_alongside_a_shown_column() -> None:
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "unexpected_index_list": [{"ORDER_ID": "ORD-1"}],  # shown: identifier
             "some_future_bucket": ["secret@x.com"],  # masked, unrecognized key
@@ -1905,7 +1905,7 @@ def test_redact_state_partial_when_unrecognized_key_masks_alongside_a_shown_colu
 def test_redact_state_full_for_a_malformed_non_dict_row_in_index_list() -> None:
     # `unexpected_index_list` is documented as row-dicts; a malformed non-dict entry still masks
     # (via `_redact_row`'s non-dict fallback) but has no column identity.
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {"unexpected_index_list": ["not-a-row-dict"]}
     )
     assert state == "full"
@@ -1914,7 +1914,7 @@ def test_redact_state_full_for_a_malformed_non_dict_row_in_index_list() -> None:
 
 
 def test_redact_state_partial_for_a_malformed_non_dict_comparison_row() -> None:
-    sample, state, cols = run_service.redact_sample_failures_with_state(
+    sample, state, cols, _reasons = run_service.redact_sample_failures_with_state(
         {
             "mismatched": [
                 {"ORDER_ID": "ORD-1"},  # shown: unsuffixed, non-PII join key

@@ -9510,6 +9510,23 @@
             ],
             "title": "Redaction"
           },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "description": "Why each entry of `redacted_columns` was masked, keyed by column \u2014 the same key set. `own_tag`: the column's own warehouse classification; `inherited_tag`: `sensitive` inherited through recorded column lineage; `policy`: the suite's `pii_columns`; `unclassified`: fail-closed mode and nothing cleared the column; `detected`: the profiler found PII-shaped values; `classifier`: the read-time name/value heuristic; `default_mask`: nobody classified the column, so masking is precautionary.",
+            "title": "Redaction Reasons",
+            "type": "object"
+          },
           "sample_failures": {
             "anyOf": [
               {

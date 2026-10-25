@@ -580,7 +580,7 @@ def _redacted_sample(
         engine=engine,
         zero_sample_mode=zero_sample_mode,
     )
-    sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
+    redacted = run_service.redact_sample_failures_with_state(
         result.sample_failures,
         tested_column=tested_column,
         policy=policy,
@@ -588,9 +588,11 @@ def _redacted_sample(
         zero_sample=zero_sample,
     )
     return {
-        "sample_failures": sample,
-        "redaction": state,
-        "redacted_columns": redacted_columns,
+        "sample_failures": redacted.sample,
+        "redaction": redacted.state,
+        "redacted_columns": redacted.redacted_columns,
+        # Why each one was (#2255): the same keys as `redacted_columns`, a closed vocabulary.
+        "redaction_reasons": redacted.redaction_reasons,
     }
 
 
@@ -725,8 +727,19 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     of the dataset the check actually saw (``sampling``
     — null means a complete read; a non-null record means the verdict came from
     a sample), any sample failing rows, and ``redaction`` / ``redacted_columns``
-    saying how much of those rows was masked. A masked sample is not an absent
-    one — never describe redacted rows as "no failing rows". ``redaction:
+    saying how much of those rows was masked. ``redaction_reasons`` says WHY, per
+    masked column (same keys as ``redacted_columns``), from a closed vocabulary:
+    ``own_tag`` (the column's own warehouse classification), ``inherited_tag``
+    (``sensitive`` inherited through recorded column lineage — if the lineage is
+    wrong, the fix is tagging the downstream column ``public``; ``get_asset`` shows
+    the upstream source), ``policy`` (the suite's ``pii_columns``),
+    ``unclassified`` (fail-closed mode and nothing cleared the column),
+    ``detected`` (the profiler found PII-shaped values at profile time),
+    ``classifier`` (the read-time name/value heuristic), ``default_mask`` (nobody
+    classified the column, so masking is precautionary — it does not mean the
+    column IS personal data, only that DataQ cannot say it is not). A masked
+    sample is not an absent one — never describe redacted rows as "no failing
+    rows". ``redaction:
     "zero_sample"`` (#1873) is a THIRD reading of a null sample: this
     deployment's zero-sample privacy mode never persisted one for this
     failing/erroring result at all, distinct from a genuinely sample-free check
@@ -1524,7 +1537,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
     (PII-redacted; see ``get_suite_results`` for what a null sample's
-    ``redaction`` states mean, including ``"zero_sample"``, #1873).
+    ``redaction`` states mean, including ``"zero_sample"``, #1873, and for the
+    ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
+    was masked — ``default_mask`` means never classified, not known personal data).
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
@@ -4514,9 +4529,9 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     `failing_result.observed_value` is routed through the same column-policy/
     warehouse-tag masking floor `get_run_results` applies to that field. But
     NO tool discloses whether a given `observed_value` was actually masked —
-    `get_run_results`'s own `redaction`/`redacted_columns` fields describe
-    `sample_failures` only, not `observed_value`, so they cannot answer this
-    either. A masked value reads identically to a genuinely short one; the
+    `get_run_results`'s own `redaction`/`redacted_columns`/`redaction_reasons`
+    fields describe `sample_failures` only, not `observed_value`, so they cannot
+    answer this either. A masked value reads identically to a genuinely short one; the
     only way to tell is checking the column's policy/tags directly.
 
     The evidence card is a **snapshot taken at the last occurrence**, not a live
