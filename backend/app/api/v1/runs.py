@@ -85,13 +85,17 @@ class RunRead(ApiModel):
     queued_reason: str | None = None
 
 
-class ComparisonCheckRead(ApiModel):
-    """A check's identity as it WAS when one side's result was written (from
-    `check_versions`), never its current state — the two sides of a row may differ.
+class CheckAsOfRead(ApiModel):
+    """A check's identity as it WAS when a result was written — `engine` (ADR 0036),
+    `dimension` (ADR 0038), `expectation_type`, `kind`, name and tested column resolved
+    from `check_versions` at the result's own `created_at`, never the check's current
+    row — so a check re-pointed or re-classified after a run never relabels that run's
+    results (#1489/#1613). The two sides of a comparison row may therefore differ.
 
-    `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
-    the result's `created_at`; `live` = the check has NO version row, so this is its
-    current state and may postdate the result — a reader must say so.
+    `resolved_from` says how trustworthy that is: `version` = a snapshot in effect at the
+    result; `later_version` = every snapshot postdates the result (clock skew), so the
+    earliest stands in; `live` = the check has no version history, so its CURRENT row
+    stands in and may postdate the result. Only `version` is genuinely as-of.
     """
 
     name: str | None
@@ -100,16 +104,7 @@ class ComparisonCheckRead(ApiModel):
     expectation_type: str | None
     dimension: str | None
     column: str | None
-    resolved_from: Literal["version", "live"] | None = None
-
-
-class ResultCheckRead(ComparisonCheckRead):
-    """The check as it WAS when this result was written (#1613) — `engine` (ADR 0036),
-    `dimension` (ADR 0038), `expectation_type` and `kind` resolved from `check_versions`
-    as of the result's own `created_at`, not from the check's current row, so a check
-    re-pointed or re-classified after a run never relabels that run's results. See
-    `resolved_from` for the no-history fallback.
-    """
+    resolved_from: svc.CheckAsOfSource | None = None
 
 
 class ResultRead(ApiModel):
@@ -140,7 +135,7 @@ class ResultRead(ApiModel):
     redaction: Literal["full", "partial", "none", "zero_sample"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
     sampling: dict[str, Any] | None = None
-    check: ResultCheckRead | None = None
+    check: CheckAsOfRead | None = None
 
 
 class RunDetailRead(RunRead):
@@ -211,7 +206,7 @@ class ComparisonSideRead(ApiModel):
     status: str  # pass | warn | fail | critical | skip | error
     metric_value: float | None
     observed_value: dict[str, Any] | None
-    check: ComparisonCheckRead
+    check: CheckAsOfRead
 
 
 class ComparisonDeltaRead(ApiModel):
@@ -419,7 +414,7 @@ def _result_read(
         # optional seed — DataQ-authored metadata about the READ, not target data.
         sampling=result.sampling,
         check=(
-            ResultCheckRead.model_validate(as_of, from_attributes=True)
+            CheckAsOfRead.model_validate(as_of, from_attributes=True)
             if as_of.resolved_from is not None
             else None
         ),

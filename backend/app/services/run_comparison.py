@@ -72,8 +72,8 @@ class CheckIdentity:
     expectation_type: str | None
     dimension: str | None
     column: str | None
-    #: `version` / `live` — see `run_service.CheckAsOf.resolved_from` (#1613).
-    resolved_from: str | None
+    #: See `run_service.CheckAsOfSource` (#1613).
+    resolved_from: svc.CheckAsOfSource | None
 
 
 @dataclass(frozen=True)

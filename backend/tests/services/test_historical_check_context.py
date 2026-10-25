@@ -302,3 +302,27 @@ def test_historical_check_snapshots_name_the_live_fallback(db_session: Any) -> N
         db_session, {"k": (None, _T0)}, {check.id: check}
     )
     assert unknown["k"].resolved_from is None
+
+
+def test_historical_check_snapshots_name_the_clock_skew_branch(db_session: Any) -> None:
+    """Every version postdates the result (clock skew): the earliest stands in, and the
+    snapshot must say `later_version`, not `version` — it may not be what evaluated the
+    result, so no reader may present it as the state in effect (#1613 review)."""
+    _suite, check = _suite_and_check(db_session)
+    _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0 + timedelta(minutes=5),
+        expectation_type="expect_column_values_to_not_be_null",
+        column="v1_column",
+        dimension="completeness",
+    )
+    result = _result(db_session, check, created_at=_T0)
+
+    (snapshot,) = run_service.historical_check_snapshots(
+        db_session, [result], {check.id: check}
+    ).values()
+
+    assert snapshot.resolved_from == "later_version"
+    assert snapshot.dimension == "completeness"

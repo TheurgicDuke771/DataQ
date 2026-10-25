@@ -404,14 +404,8 @@ def _run_results_payload(
     # re-pointed to, and `zero_sample_suppressed` needs both as of THIS result; so
     # does `dimension` (#1613). One `check_versions` read, not three.
     as_of = run_service.historical_check_snapshots(session, results, checks)
-    context = {r_id: snap.context for r_id, snap in as_of.items()}
-    engine_by_result = {r_id: snap.engine for r_id, snap in as_of.items()}
-    kind_by_result = {r_id: snap.kind for r_id, snap in as_of.items()}
     # Resolved once per tool call (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
-
-    def _tested_column(result_id: uuid.UUID) -> str | None:
-        return context.get(result_id, (None, None))[0]
 
     # Redact ONCE, here, and reuse below. An earlier version redacted every result
     # a second time purely to compute `exposed_ids` and then threw the result
@@ -421,17 +415,17 @@ def _run_results_payload(
             "result_id": str(r.id),
             **_redacted_sample(
                 r,
-                _tested_column(r.id),
+                as_of[r.id].column,
                 policy,
                 tags,
-                check_kind=kind_by_result.get(r.id),
-                engine=engine_by_result.get(r.id, GX_ENGINE),
+                check_kind=as_of[r.id].kind,
+                engine=as_of[r.id].engine,
                 zero_sample_mode=zero_sample_mode,
             ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
-                tested_column=_tested_column(r.id),
-                expectation_type=context.get(r.id, (None, None))[1],
+                tested_column=as_of[r.id].column,
+                expectation_type=as_of[r.id].expectation_type,
                 policy=policy,
                 tags=tags,
             ),
@@ -457,7 +451,7 @@ def _run_results_payload(
         for result, r in zip(results, rendered, strict=True)
         if r["redaction"] in {"none", "partial"}
         or run_service.observed_value_exposes_cells(
-            r["observed_value"], expectation_type=context.get(result.id, (None, None))[1]
+            r["observed_value"], expectation_type=as_of[result.id].expectation_type
         )
     ]
     rendered_by_id = {r["result_id"]: r for r in rendered}
@@ -507,17 +501,17 @@ def _run_results_payload(
                 # WHO evaluated this check (ADR 0036) — a dmf result's
                 # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
                 # GX expectation output, and the two have different semantics an
-                # LLM would otherwise conflate. Resolved AS OF this result (like
-                # `context` above): a check re-pointed gx<->dmf after this run
-                # must not have its old result mislabeled with the new engine.
-                "engine": engine_by_result.get(r.id),
+                # LLM would otherwise conflate. Resolved AS OF this result: a check
+                # re-pointed gx<->dmf after this run must not have its old result
+                # mislabeled with the new engine. Null for an unknown check — the
+                # redactors above take the `gx` default for safety, but the payload
+                # must not state an engine nothing recorded.
+                "engine": as_of[r.id].engine if as_of[r.id].resolved_from else None,
                 # The DQ dimension (ADR 0038) the check carried WHEN this result was
                 # written — null is "unclassified", a coverage gap, not an error.
                 "dimension": as_of[r.id].dimension,
-                # Whether `engine`/`dimension` came from a `check_versions` row in
-                # effect at the time (`version`) or, because the check has no version
-                # history, from its CURRENT row (`live`) — in which case they may
-                # postdate the result (#1613).
+                # `version` / `later_version` / `live` / null — see
+                # `run_service.CheckAsOfSource` (#1613).
                 "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
@@ -743,9 +737,11 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     are the values that applied to this particular result, resolved from the
     check's version history as of the result — not the check's current ones, so a
     check re-pointed or re-classified after this run still shows the old values
-    here. ``check_resolved_from`` is ``"version"`` when such a snapshot existed and
-    ``"live"`` when the check has no version history, in which case the two are its
-    CURRENT values and may postdate the result. ``name`` is the check's current name.
+    here. ``check_resolved_from`` is ``"version"`` when such a snapshot existed,
+    ``"later_version"`` when every snapshot postdates the result and the earliest
+    stands in, ``"live"`` when the check has no version history and its CURRENT
+    values stand in (they may postdate the result), and null for an unknown check
+    (``engine`` is then null too). ``name`` is the check's current name.
 
     ``check_enabled`` says whether that check is switched on **now**. ``false``
     means it was switched off after this run: the result is its last, no later run
@@ -1516,10 +1512,13 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
     at the result's own timestamp — a check re-pointed or re-classified after the
-    run still reports what it was then. ``check_resolved_from`` says where that came
-    from: ``"version"`` is a snapshot in effect at the time; ``"live"`` means the
-    check has no version history, so these are its CURRENT values and may postdate
-    the result. ``name`` and ``check_enabled`` are always current.
+    run still reports what it was then. ``check_resolved_from`` says how far to
+    trust that: ``"version"`` is a snapshot in effect at the time; ``"later_version"``
+    means every snapshot postdates the result (clock skew) and the earliest stands
+    in; ``"live"`` means the check has no version history, so these are its CURRENT
+    values and may postdate the result; null means the check is unknown, and
+    ``engine`` is then null too rather than a default. ``name`` and ``check_enabled``
+    are always current.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and

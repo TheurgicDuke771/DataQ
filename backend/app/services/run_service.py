@@ -1199,6 +1199,14 @@ def _effective_version(versions: list[CheckVersion] | None, at: datetime) -> Che
     return effective
 
 
+#: `version`: a `check_versions` row in effect at the instant. `later_version`: every version
+#: row postdates the instant (clock skew between the result and the first snapshot), so the
+#: EARLIEST one stands in — it may not be what evaluated the result. `live`: no version row at
+#: all, so the check's CURRENT row stands in and may postdate the result. A reader must name
+#: the last two rather than present them as history.
+CheckAsOfSource = Literal["version", "later_version", "live"]
+
+
 @dataclass(frozen=True)
 class CheckAsOf:
     """A check's editable identity as it WAS at one instant — every field a
@@ -1213,10 +1221,8 @@ class CheckAsOf:
     expectation_type: str | None
     dimension: str | None
     column: str | None
-    #: Where the snapshot came from (#1613): `version` = a `check_versions` row in effect at the
-    #: instant; `live` = the check's CURRENT row, because no version row exists for it — the
-    #: reader must say so, since the values may then postdate the result; None = unknown check.
-    resolved_from: Literal["version", "live"] | None = None
+    #: Where the snapshot came from (#1613) — see `CheckAsOfSource`; None = unknown check.
+    resolved_from: CheckAsOfSource | None = None
 
     @property
     def context(self) -> tuple[str | None, str | None]:
@@ -1249,6 +1255,13 @@ def historical_check_snapshots_at[K: Hashable](
         )
         if source is None:
             return _UNKNOWN_CHECK
+        resolved_from: CheckAsOfSource
+        if effective is None:
+            resolved_from = "live"
+        elif effective.created_at > at:
+            resolved_from = "later_version"
+        else:
+            resolved_from = "version"
         return CheckAsOf(
             name=source.name,
             kind=source.kind,
@@ -1256,7 +1269,7 @@ def historical_check_snapshots_at[K: Hashable](
             expectation_type=source.expectation_type,
             dimension=source.dimension,
             column=source.config.get("column"),
-            resolved_from="version" if effective is not None else "live",
+            resolved_from=resolved_from,
         )
 
     return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
