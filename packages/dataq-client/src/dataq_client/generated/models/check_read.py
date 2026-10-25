@@ -13,6 +13,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.check_read_config import CheckReadConfig
+    from ..models.check_read_contract_ref_type_0 import CheckReadContractRefType0
     from ..models.inherited_from import InheritedFrom
 
 
@@ -34,6 +35,7 @@ class CheckRead:
         suite_id (UUID):
         warn_threshold (float | None):
         alert_snoozed_until (datetime.datetime | None | Unset):
+        contract_ref (CheckReadContractRefType0 | None | Unset):
         dimension (None | str | Unset):
         enabled (bool | Unset):  Default: True.
         inherited (InheritedFrom | None | Unset):
@@ -53,6 +55,7 @@ class CheckRead:
     suite_id: UUID
     warn_threshold: float | None
     alert_snoozed_until: datetime.datetime | None | Unset = UNSET
+    contract_ref: CheckReadContractRefType0 | None | Unset = UNSET
     dimension: None | str | Unset = UNSET
     enabled: bool | Unset = True
     inherited: InheritedFrom | None | Unset = UNSET
@@ -62,6 +65,7 @@ class CheckRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.check_read_contract_ref_type_0 import CheckReadContractRefType0
         from ..models.inherited_from import InheritedFrom
 
         config = self.config.to_dict()
@@ -94,6 +98,14 @@ class CheckRead:
             alert_snoozed_until = self.alert_snoozed_until.isoformat()
         else:
             alert_snoozed_until = self.alert_snoozed_until
+
+        contract_ref: dict[str, Any] | None | Unset
+        if isinstance(self.contract_ref, Unset):
+            contract_ref = UNSET
+        elif isinstance(self.contract_ref, CheckReadContractRefType0):
+            contract_ref = self.contract_ref.to_dict()
+        else:
+            contract_ref = self.contract_ref
 
         dimension: None | str | Unset
         if isinstance(self.dimension, Unset):
@@ -143,6 +155,8 @@ class CheckRead:
         )
         if alert_snoozed_until is not UNSET:
             field_dict["alert_snoozed_until"] = alert_snoozed_until
+        if contract_ref is not UNSET:
+            field_dict["contract_ref"] = contract_ref
         if dimension is not UNSET:
             field_dict["dimension"] = dimension
         if enabled is not UNSET:
@@ -161,6 +175,9 @@ class CheckRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_read_config import CheckReadConfig
+        from ..models.check_read_contract_ref_type_0 import (
+            CheckReadContractRefType0,
+        )
         from ..models.inherited_from import InheritedFrom
 
         d = dict(src_dict)
@@ -215,6 +232,23 @@ class CheckRead:
             return cast(datetime.datetime | None | Unset, data)
 
         alert_snoozed_until = _parse_alert_snoozed_until(d.pop("alert_snoozed_until", UNSET))
+
+        def _parse_contract_ref(data: object) -> CheckReadContractRefType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                contract_ref_type_0 = CheckReadContractRefType0.from_dict(data)
+
+                return contract_ref_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CheckReadContractRefType0 | None | Unset, data)
+
+        contract_ref = _parse_contract_ref(d.pop("contract_ref", UNSET))
 
         def _parse_dimension(data: object) -> None | str | Unset:
             if data is None:
@@ -277,6 +311,7 @@ class CheckRead:
             suite_id=suite_id,
             warn_threshold=warn_threshold,
             alert_snoozed_until=alert_snoozed_until,
+            contract_ref=contract_ref,
             dimension=dimension,
             enabled=enabled,
             inherited=inherited,

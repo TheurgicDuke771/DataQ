@@ -126,6 +126,9 @@ class CheckRead(ApiModel):
     expectation_type: str
     #: 'auto' = added by automatic coverage; 'suggestion' = an accepted suggestion (ADR 0047).
     origin: str = "user"
+    #: The contract clause this check enforces when `origin` is `contract` (ADR 0052):
+    #: `{object, property, rule_id, field, fingerprint}`; null otherwise.
+    contract_ref: dict[str, Any] | None = None
     # NULL = unclassified (ADR 0038): an underivable type nobody has classified.
     # Consumers must render it as a coverage gap, never bucket it silently.
     dimension: str | None = None

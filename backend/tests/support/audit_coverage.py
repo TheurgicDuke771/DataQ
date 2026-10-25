@@ -8,6 +8,9 @@ from typing import Final
 
 #: Routes that MUST record an audit event, mapped to the `action` they write.
 AUDITED: Final[dict[tuple[str, str], str]] = {
+    # ── Data contracts (ADR 0052): one event per import (counts, never the document).
+    ("POST", "/api/v1/contracts/import"): "contract.import",
+    ("DELETE", "/api/v1/contracts/{contract_id}"): "contract.delete",
     # ── Connections.
     ("POST", "/api/v1/connections"): "connection.create",
     ("PATCH", "/api/v1/connections/{connection_id}"): "connection.update",

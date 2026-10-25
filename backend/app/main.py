@@ -28,6 +28,7 @@ from backend.app.api.v1 import assets as assets_router
 from backend.app.api.v1 import auth_otp as auth_otp_router
 from backend.app.api.v1 import checks as checks_router
 from backend.app.api.v1 import connections as connections_router
+from backend.app.api.v1 import contracts as contracts_router
 from backend.app.api.v1 import dashboard as dashboard_router
 from backend.app.api.v1 import incidents as incidents_router
 from backend.app.api.v1 import llm as llm_router
@@ -253,6 +254,7 @@ app.include_router(dashboard_router.router, prefix="/api/v1")
 app.include_router(schedules_router.router, prefix="/api/v1")
 app.include_router(search_router.router, prefix="/api/v1")
 app.include_router(tags_router.router, prefix="/api/v1")
+app.include_router(contracts_router.router, prefix="/api/v1")
 app.include_router(shares_router.router, prefix="/api/v1")
 app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")

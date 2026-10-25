@@ -150,6 +150,7 @@ nav:
       - Datasources & checks: guides/datasources-checks.md
       - Scheduling: guides/scheduling.md
       - Orchestration: guides/orchestration.md
+      - Data contracts (ODCS): guides/data-contracts.md
       - Notifications & alerting: guides/notifications.md
       - AI assistants (MCP): guides/mcp-setup.md
       - AI features (LLM): guides/ai-features.md
