@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **94** open repo-wide (2026-10-25, live re-count): Week 4 1, Week 5 6, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–3 are closed; Week 4 has shipped #1667, #1686 (2026-10-24) and #1516/#1840, #1687, #888 (2026-10-25) — #244 (suite-on-suite triggers, ADR 0051) is the last item and is in review. |
-| **Open PRs** | **0 open** (2026-10-25) apart from the one carrying this update and the #244 PR. |
+| **Open issues** | **93** open repo-wide (2026-10-25, live re-count): Week 4 0, Week 5 6, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 8; every open issue has a milestone. Weeks 1–4 are closed; Week 4 shipped all six items (#1667, #1686 on 2026-10-24; #1516/#1840, #1687, #888, #244 on 2026-10-25) and its milestone is closed. Week 5 (due 2026-11-08) starts with #1977 ODCS. |
+| **Open PRs** | **0 open** (2026-10-25) apart from the one carrying this update. |
 
 ---
 
@@ -90,7 +90,7 @@ Filed from this week's reviews, in later weeks: [#2413](https://github.com/Theur
 
 Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CONTRIBUTING rules 44–45 and their guard tests ([#2512](https://github.com/TheurgicDuke771/DataQ/pull/2512)), the OpenAPI contract gate with the comparison-report fix ([#2515](https://github.com/TheurgicDuke771/DataQ/pull/2515), #2514), the rule-44 audit of v1.3's UI ([#2517](https://github.com/TheurgicDuke771/DataQ/pull/2517), #2516), the CodeQL import-cycle and dead-alias clean-up ([#2510](https://github.com/TheurgicDuke771/DataQ/pull/2510), [#2513](https://github.com/TheurgicDuke771/DataQ/pull/2513)), the dependency-audit fix ([#2508](https://github.com/TheurgicDuke771/DataQ/pull/2508), #2506) and the accessibility wording on the marketing page ([#2521](https://github.com/TheurgicDuke771/DataQ/pull/2521); conformance report filed as #2520).
 
-### v1.3 Week 4 — product surfaces (due 2026-11-01)
+### v1.3 Week 4 — product surfaces (due 2026-11-01) — CLOSED 2026-10-25, 6/6 shipped, one week early
 
 | Status | Task |
 |---|---|
@@ -99,7 +99,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ✅ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) feat(results): run comparison — diff two runs of a suite — [PR #2527](https://github.com/TheurgicDuke771/DataQ/pull/2527) (`GET /runs/{id}/compare/{other}`, the compare page + "Compare with…" control; each side as the check was at that run via `check_versions`) |
 | ✅ | [#888](https://github.com/TheurgicDuke771/DataQ/issues/888) feat: tagging for suites / assets / connections / checks (workspace labels + list filters) — [PR #2539](https://github.com/TheurgicDuke771/DataQ/pull/2539), merged 2026-10-25 (`tags` + four join tables, migration `e27cb7be87cd` chained after `c38847820d74`; `tag=` AND filters on `/suites` and `/assets`; `GET /tags` / `DELETE /tags/{id}`; chips, pickers and filters in the UI; a tagged asset pins against the orphan sweep; MCP reads and updates carry tags) |
 | ✅ | [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) feat(ui): Profile / Workspace-Settings IA pickup — replace the labelled placeholders — [PR #2535](https://github.com/TheurgicDuke771/DataQ/pull/2535), merged 2026-10-25 (also closes #1840; `GET /admin/workspace-config` read-only retention + sign-in readout with `sign_in_mode` / `idp_decides_signup`; Profile access summary; follow-up [#2537](https://github.com/TheurgicDuke771/DataQ/issues/2537) filed, Week 7) |
-| ⬜ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering (run a suite when another suite completes) |
+| ✅ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering (run a suite when another suite completes) — [PR #2541](https://github.com/TheurgicDuke771/DataQ/pull/2541), merged 2026-10-25. **ADR 0051 (Accepted 2026-10-25):** `provider='suite'` in the existing `trigger_bindings` (a trigger provider, never an orchestration provider), fired from the worker after the alert hooks when the upstream run succeeded with no check at fail/critical; self-binding and loops refused at authoring under an advisory lock, chain depth capped at 5, `view` on the upstream required; migration `7a1c5d9e2b44` rebuilds the dedup index concurrently. The review's nine findings were fixed in the PR; the OTP revoked-session E2E spec was made robust to a background 401 (the header bell's poll) |
 
 ### v1.3 Week 5 — integrations & governance (due 2026-11-08)
 
