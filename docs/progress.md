@@ -109,7 +109,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ➡️ | [#1689](https://github.com/TheurgicDuke771/DataQ/issues/1689) feat(integrations): test-management result publishing — TestRail / Xray / Zephyr behind a result-exporter seam — moved to `v1.3 Backlog` 2026-10-25 on the maintainer's decision: the issue's own pick-up gate (a concrete prospect naming a tool) is not met |
 | ⬜ | [#1690](https://github.com/TheurgicDuke771/DataQ/issues/1690) feat(catalog): governance-catalog integration — push DQ quality facets + pull classifications (DataHub / OpenMetadata-REST / Collibra seam) |
 | ⬜ | [#685](https://github.com/TheurgicDuke771/DataQ/issues/685) feat(connections): purge/redact path for connection version history (immutable snapshots retain edited-out config values) |
-| ⬜ | [#1613](https://github.com/TheurgicDuke771/DataQ/issues/1613) RunDetail/RunReport show the check's CURRENT engine/dimension, not as-of-the-result (historical_check_context gap) |
+| ✅ | [#1613](https://github.com/TheurgicDuke771/DataQ/issues/1613) RunDetail/RunReport show the check's CURRENT engine/dimension, not as-of-the-result (historical_check_context gap) — [PR #2544](https://github.com/TheurgicDuke771/DataQ/pull/2544) |
 | ⬜ | [#2255](https://github.com/TheurgicDuke771/DataQ/issues/2255) feat(privacy): a reason per entry in redacted_columns (own tag / inherited tag / policy / value classifier / default mask) |
 
 ### v1.3 Week 6 — bug fixes & security (due 2026-11-15)

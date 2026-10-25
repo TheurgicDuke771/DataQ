@@ -16,6 +16,7 @@ from backend.app.core.config import get_settings
 from backend.app.db.models import (
     Asset,
     Check,
+    CheckVersion,
     Connection,
     PipelineRun,
     Result,
@@ -821,6 +822,93 @@ def test_get_run_does_not_flag_zero_sample_for_a_dmf_engine_check(
     _as(dev)
     result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
     assert result["redaction"] is None
+
+
+def test_get_run_reports_each_results_check_as_of_the_result_not_the_current_check(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1613: a check re-pointed (`engine`) and re-classified (`dimension`) AFTER a run must
+    not relabel that run's result — RunDetail/RunReport read `check` off the result, not
+    the check's live row. The live row here says gx/validity; the result was dmf/completeness.
+    """
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(
+        suite_id=suite.id,
+        name="nulls",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        engine="gx",
+        dimension="validity",
+    )
+    db_session.add(check)
+    db_session.flush()
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    db_session.add_all(
+        [
+            CheckVersion(
+                check_id=check.id,
+                version_no=1,
+                name="nulls",
+                kind="expectation",
+                engine="dmf",
+                expectation_type="dmf:null_count",
+                dimension="completeness",
+                config={"column": "EMAIL"},
+                created_at=t0 - timedelta(hours=1),
+            ),
+            CheckVersion(
+                check_id=check.id,
+                version_no=2,
+                name="nulls",
+                kind="expectation",
+                engine="gx",
+                expectation_type="expect_column_values_to_not_be_null",
+                dimension="validity",
+                config={"column": "EMAIL"},
+                created_at=t0 + timedelta(hours=1),
+            ),
+        ]
+    )
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass", created_at=t0))
+    db_session.commit()
+
+    _as(dev)
+    (result,) = client.get(f"/api/v1/runs/{run.id}").json()["results"]
+    assert result["check"] == {
+        "name": "nulls",
+        "kind": "expectation",
+        "engine": "dmf",
+        "expectation_type": "dmf:null_count",
+        "dimension": "completeness",
+        "column": "EMAIL",
+        "resolved_from": "version",
+    }
+
+
+def test_get_run_names_the_live_fallback_when_a_check_has_no_version_history(
+    client: TestClient, db_session: Any
+) -> None:
+    """No `check_versions` row → the live check is all there is, and the payload must say
+    so (`resolved_from: "live"`) rather than present today's values as history (#1613)."""
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", engine="dmf"
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass"))
+    db_session.commit()
+
+    _as(dev)
+    (result,) = client.get(f"/api/v1/runs/{run.id}").json()["results"]
+    assert result["check"]["engine"] == "dmf"
+    assert result["check"]["dimension"] is None
+    assert result["check"]["resolved_from"] == "live"
 
 
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:
