@@ -83,7 +83,11 @@ schema-drift / anomaly / PII-drift / comparison** monitor kinds:
   datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
 - **Severity thresholds** — band a check into **warn / fail / critical** from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
-- **Check version history** — every edit is versioned and viewable per check.
+- **Check version history** — every edit is versioned and viewable per check, and any version
+  can be restored. An editor can **redact** an old version whose config held something it
+  should not have (a literal pasted into custom SQL, say): the row stays, its config becomes
+  a tombstone, and it can no longer be restored. Connections have the same history, redactable
+  by an admin.
 
 ## Suites
 
