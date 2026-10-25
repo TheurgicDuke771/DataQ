@@ -23,3 +23,20 @@ def fold_key(column: str) -> str:
     """The redaction map's key for a column name: stripped and lower-cased, the one folding every
     rung (warehouse tags, inheritance, detections, the policy lookups) agrees on."""
     return column.strip().lower()
+
+
+class EffectiveColumnTags(dict[str, str]):
+    """The column→verdict map plus WHICH `sensitive` entries arrived through lineage rather than
+    from the column's own warehouse tag (#2255). A plain dict to every existing reader — equality,
+    `.get`, JSON — so the provenance can never change a verdict; the redaction reasons read it."""
+
+    __slots__ = ("inherited",)
+
+    def __init__(self, tags: dict[str, str], *, inherited: frozenset[str] = frozenset()) -> None:
+        super().__init__(tags)
+        self.inherited = inherited
+
+
+def inherited_tag_columns(tags: object) -> frozenset[str]:
+    """The folded column names whose verdict was inherited, or an empty set for a plain map."""
+    return getattr(tags, "inherited", frozenset()) if isinstance(tags, dict) else frozenset()

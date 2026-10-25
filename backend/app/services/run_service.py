@@ -9,7 +9,7 @@ from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.engine import CursorResult
@@ -57,7 +57,7 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.services import privacy_settings_service, run_dispatch, suite_service
-from backend.app.services.classification_vocab import DETECTED, fold_key
+from backend.app.services.classification_vocab import DETECTED, fold_key, inherited_tag_columns
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
@@ -912,6 +912,71 @@ def _policy_identifier(column: str, policy: Mapping[str, Any] | None) -> bool:
     return bool(ident) and str(ident).strip().lower() == column.strip().lower()
 
 
+# Which rung of the ladder masked a column (#2255) — a closed vocabulary, reported beside
+# `redacted_columns` on every surface that shows the list. Ordered as the ladder consults them.
+RedactionReason = Literal[
+    "own_tag",  # the column's own warehouse classification (G3 floor)
+    "inherited_tag",  # `sensitive` inherited through recorded column lineage (#1710)
+    "policy",  # the suite's `pii_columns`
+    "unclassified",  # fail-closed mode (`require_classification`) and nothing cleared it
+    "detected",  # the profiler found PII-shaped values at profile time (ADR 0049)
+    "classifier",  # the read-time name / value heuristic affirmatively says PII
+    "default_mask",  # an incidental column nobody classified — precautionary (#415)
+]
+REDACTION_REASONS: tuple[RedactionReason, ...] = (
+    "own_tag",
+    "inherited_tag",
+    "policy",
+    "unclassified",
+    "detected",
+    "classifier",
+    "default_mask",
+)
+
+
+def _tag_mask_reason(column: str, tags: Mapping[str, str] | None) -> RedactionReason | None:
+    """Level 1 as a reason: `own_tag` / `inherited_tag` when the tag masks, else `None`."""
+    if not _tag_sensitive(column, tags):
+        return None
+    return "inherited_tag" if fold_key(column) in inherited_tag_columns(tags) else "own_tag"
+
+
+def _floor_mask_reason(
+    column: str, policy: Mapping[str, Any] | None, tags: Mapping[str, str] | None
+) -> RedactionReason | None:
+    """The two rungs no override lifts, in order: the governance tag, then `pii_columns`."""
+    return _tag_mask_reason(column, tags) or ("policy" if _policy_pii(column, policy) else None)
+
+
+def _known_sensitive_reason(
+    column: str,
+    values: Sequence[Any],
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
+) -> RedactionReason | None:
+    """`_known_sensitive`, answering WHICH rung decided; `None` means not known sensitive."""
+    floor = _floor_mask_reason(column, policy, tags)
+    if floor is not None:
+        return floor
+    if _policy_requires_classification(policy):
+        # Fail-closed (G3): "known sensitive" becomes "not known SAFE".
+        cleared = _tag_non_sensitive(column, tags) or _policy_identifier(column, policy)
+        if not cleared:
+            return "unclassified"
+        if is_sensitive(column, values, value_signal_summary=value_signal_summary):
+            return "classifier"
+        return None
+    # A persisted profiler detection masks unless the operator named THIS column as the shown
+    # identifier — on a datasource with no warehouse tag that is a false positive's only exit.
+    if _detected_sensitive(column, tags) and not _policy_identifier(column, policy):
+        return "detected"
+    if is_sensitive(column, values, value_signal_summary=value_signal_summary):
+        return "classifier"
+    return None
+
+
 def _known_sensitive(
     column: str,
     values: Sequence[Any],
@@ -925,19 +990,50 @@ def _known_sensitive(
     Gates the **tested** and **identifier** columns: those are shown *unless* known
     sensitive (seeing the failing value / locating the row is the point).
     """
-    if _tag_sensitive(column, tags) or _policy_pii(column, policy):
-        return True
+    return (
+        _known_sensitive_reason(
+            column, values, policy, tags, value_signal_summary=value_signal_summary
+        )
+        is not None
+    )
+
+
+def _incidental_mask_reason(
+    column: str,
+    values: Sequence[Any],
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    *,
+    value_signal_summary: Mapping[str, Any] | None = None,
+) -> RedactionReason | None:
+    """`_may_show_incidental`, answering WHICH rung masked; `None` means the column may show."""
+    floor = _floor_mask_reason(column, policy, tags)
+    if floor is not None:
+        return floor
     if _policy_requires_classification(policy):
-        # Fail-closed (G3): "known sensitive" becomes "not known SAFE".
-        cleared = _tag_non_sensitive(column, tags) or _policy_identifier(column, policy)
-        if not cleared:
-            return True
-        return is_sensitive(column, values, value_signal_summary=value_signal_summary)
-    # A persisted profiler detection masks unless the operator named THIS column as the shown
-    # identifier — on a datasource with no warehouse tag that is a false positive's only exit.
-    if _detected_sensitive(column, tags) and not _policy_identifier(column, policy):
-        return True
-    return is_sensitive(column, values, value_signal_summary=value_signal_summary)
+        # Fail-closed (G3): shown only on explicit clearance AND nothing affirmatively
+        # sensitive — dropping either half breaks or LOOSENS the mode.
+        if not (_tag_non_sensitive(column, tags) or _policy_identifier(column, policy)):
+            return "unclassified"
+        if is_sensitive(column, values, value_signal_summary=value_signal_summary):
+            return "classifier"
+        return None
+    if _policy_identifier(column, policy):
+        if is_sensitive(column, values, value_signal_summary=value_signal_summary):
+            return "classifier"
+        return None
+    if _detected_sensitive(column, tags):
+        return "detected"
+    if is_sensitive(column, values, value_signal_summary=value_signal_summary):
+        return "classifier"
+    # `classify_column` answers PII both for an affirmative signal (handled above) and for a
+    # column it cannot place at all — the latter is the precautionary default mask (#415).
+    if (
+        classify_column(column, list(values), value_signal_summary=value_signal_summary)
+        is ColumnClass.PII
+    ):
+        return "default_mask"
+    return None
 
 
 def _may_show_incidental(
@@ -952,21 +1048,11 @@ def _may_show_incidental(
     it's affirmatively an IDENTIFIER or SAFE value — everything else default-masks (#415), so
     security can't regress.
     """
-    if _tag_sensitive(column, tags) or _policy_pii(column, policy):
-        return False
-    if _policy_requires_classification(policy):
-        # Fail-closed (G3): shown only on explicit clearance AND nothing affirmatively
-        # sensitive — dropping either half breaks or LOOSENS the mode.
-        if not (_tag_non_sensitive(column, tags) or _policy_identifier(column, policy)):
-            return False
-        return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
-    if _policy_identifier(column, policy):
-        return not is_sensitive(column, values, value_signal_summary=value_signal_summary)
-    if _detected_sensitive(column, tags):
-        return False
     return (
-        classify_column(column, list(values), value_signal_summary=value_signal_summary)
-        is not ColumnClass.PII
+        _incidental_mask_reason(
+            column, values, policy, tags, value_signal_summary=value_signal_summary
+        )
+        is None
     )
 
 
@@ -1032,11 +1118,18 @@ class _RedactionTracker:
     """
 
     column_state: dict[str, bool] = field(default_factory=dict)
+    column_reason: dict[str, RedactionReason] = field(default_factory=dict)
     anonymous_masked: bool = False
 
-    def record(self, column: str | None, shown: bool) -> None:
+    def record(
+        self, column: str | None, shown: bool, reason: RedactionReason | None = None
+    ) -> None:
         if column:
             self.column_state[column] = self.column_state.get(column, False) or shown
+            if not shown and reason is not None:
+                # The ladder is deterministic per column within one sample, so the first masked
+                # reason is THE reason; keeping it (not the last) makes that an invariant.
+                self.column_reason.setdefault(column, reason)
         elif not shown:
             self.anonymous_masked = True
 
@@ -1057,6 +1150,16 @@ class _RedactionTracker:
         if shown_any and not masked_any:
             return "none", redacted_columns
         return "partial", redacted_columns
+
+    def reasons(self) -> dict[str, RedactionReason]:
+        """Why each entry of ``redacted_columns`` was masked (#2255) — the same key set, every
+        time: a masked column whose rung went unrecorded is a bug, not a blank, so it is reported
+        as ``default_mask`` (the precautionary reading) rather than dropped."""
+        return {
+            name: self.column_reason.get(name, "default_mask")
+            for name, shown in sorted(self.column_state.items())
+            if not shown
+        }
 
 
 def _displayed_sample_key(sample: Mapping[str, Any]) -> str | None:
@@ -1098,12 +1201,17 @@ def _redact_row(
         vals = values_by_column.get(name, [val])
         col_summary = (summary_by_column or {}).get(name)
         if tested and name.strip().lower() == tested:
-            show = not _known_sensitive(name, vals, policy, tags, value_signal_summary=col_summary)
+            reason = _known_sensitive_reason(
+                name, vals, policy, tags, value_signal_summary=col_summary
+            )
         else:
-            show = _may_show_incidental(name, vals, policy, tags, value_signal_summary=col_summary)
+            reason = _incidental_mask_reason(
+                name, vals, policy, tags, value_signal_summary=col_summary
+            )
+        show = reason is None
         out[col] = val if show else _redact_sample_value(val)
         if tracker is not None:
-            tracker.record(name, show)
+            tracker.record(name, show, reason)
     return out
 
 
@@ -1144,11 +1252,15 @@ def _redact_comparison_row(
         raw = str(col)
         name = _strip_side_suffix(raw)
         vals = values_by_column.get(raw, [val])
-        hard_masked = _tag_sensitive(raw, tags) or _policy_pii(raw, policy)
-        show = not hard_masked and _may_show_incidental(name, vals, policy, tags)
+        # The suffixed raw name first (a tag or policy entry naming `email_src` itself), then the
+        # stripped name through the whole incidental ladder.
+        reason = _floor_mask_reason(raw, policy, tags) or _incidental_mask_reason(
+            name, vals, policy, tags
+        )
+        show = reason is None
         out[col] = val if show else _redact_sample_value(val)
         if tracker is not None:
-            tracker.record(raw, show)
+            tracker.record(raw, show, reason)
     return out
 
 
@@ -1511,20 +1623,26 @@ def redact_sample_failures(
                     )
                     for row in value
                 ]
-            elif tested_column is not None and not _known_sensitive(
-                tested_column,
-                raw_value,
-                policy,
-                tags,
-                value_signal_summary=(summary_by_column or {}).get(tested_column),
-            ):
-                out[key] = value  # the tested column's failing values — surfaced
-                if key_tracker is not None:
-                    key_tracker.record(tested_column, True)
             else:
-                out[key] = _redact_sample_value(value)
-                if key_tracker is not None:
-                    key_tracker.record(tested_column, False)
+                reason: RedactionReason | None = (
+                    _known_sensitive_reason(
+                        tested_column,
+                        raw_value,
+                        policy,
+                        tags,
+                        value_signal_summary=(summary_by_column or {}).get(tested_column),
+                    )
+                    if tested_column is not None
+                    else None
+                )
+                if tested_column is not None and reason is None:
+                    out[key] = value  # the tested column's failing values — surfaced
+                    if key_tracker is not None:
+                        key_tracker.record(tested_column, True)
+                else:
+                    out[key] = _redact_sample_value(value)
+                    if key_tracker is not None:
+                        key_tracker.record(tested_column, False, reason)
         elif key in _COMPARISON_SAMPLE_KEYS and isinstance(value, list):
             # Comparison buckets (ADR 0015, #794): match on the SUFFIX-STRIPPED name so
             # `pii_columns: email` masks both `_src`/`_tgt` sides.
@@ -1585,6 +1703,16 @@ def zero_sample_suppressed(
     )
 
 
+class RedactedSample(NamedTuple):
+    """`redact_sample_failures_with_state`'s answer: the masked sample, how much was masked,
+    which columns, and why each one was (#2255 — same keys as `redacted_columns`)."""
+
+    sample: dict[str, Any] | None
+    state: RedactionState | None
+    redacted_columns: list[str]
+    redaction_reasons: dict[str, RedactionReason]
+
+
 def redact_sample_failures_with_state(
     sample: dict[str, Any] | None,
     *,
@@ -1592,7 +1720,7 @@ def redact_sample_failures_with_state(
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
     zero_sample: bool = False,
-) -> tuple[dict[str, Any] | None, RedactionState | None, list[str]]:
+) -> RedactedSample:
     """`redact_sample_failures` plus an honest redaction summary (#424).
 
     `zero_sample=True` (from `zero_sample_suppressed`) reports `"zero_sample"` for a
@@ -1600,13 +1728,13 @@ def redact_sample_failures_with_state(
     check that never had one.
     """
     if sample is None and zero_sample:
-        return None, "zero_sample", []
+        return RedactedSample(None, "zero_sample", [], {})
     tracker = _RedactionTracker()
     redacted = redact_sample_failures(
         sample, tested_column=tested_column, policy=policy, tags=tags, tracker=tracker
     )
     state, redacted_columns = tracker.summary()
-    return redacted, state, redacted_columns
+    return RedactedSample(redacted, state, redacted_columns, tracker.reasons())
 
 
 def _is_safe_summary(key: str, value: Any) -> bool:

@@ -10,7 +10,13 @@ from sqlalchemy import text
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Asset, Connection
-from backend.app.services.classification_vocab import DETECTED, NON_SENSITIVE, SENSITIVE, fold_key
+from backend.app.services.classification_vocab import (
+    DETECTED,
+    NON_SENSITIVE,
+    SENSITIVE,
+    EffectiveColumnTags,
+    fold_key,
+)
 
 __all__ = [
     "DATAQ_TAG_KEY",
@@ -343,7 +349,8 @@ def effective_column_tags(session: Any, asset: Asset | None) -> dict[str, str] |
         merged.setdefault(column, DETECTED)
     if not merged and own is None:
         return None  # no verdict from any source — keep the "never looked" shape
-    return merged
+    # Provenance rides along for the redaction reasons (#2255); the verdicts are unchanged.
+    return EffectiveColumnTags(merged, inherited=frozenset(fold_key(c) for c in inherited))
 
 
 def _active_detections(session: Any, asset: Asset) -> list[str]:

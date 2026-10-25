@@ -112,6 +112,17 @@ class ResultRead(ApiModel):
     sample_failures: dict[str, Any] | None  # column-aware redaction (#415); see `redaction` below
     redaction: Literal["full", "partial", "none", "zero_sample"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
+    redaction_reasons: dict[str, svc.RedactionReason] = Field(
+        default_factory=dict,
+        description=(
+            "Why each entry of `redacted_columns` was masked, keyed by column — the same key set. "
+            "`own_tag`: the column's own warehouse classification; `inherited_tag`: `sensitive` "
+            "inherited through recorded column lineage; `policy`: the suite's `pii_columns`; "
+            "`unclassified`: fail-closed mode and nothing cleared the column; `detected`: the "
+            "profiler found PII-shaped values; `classifier`: the read-time name/value heuristic; "
+            "`default_mask`: nobody classified the column, so masking is precautionary."
+        ),
+    )
     sampling: dict[str, Any] | None = None
 
 
@@ -375,7 +386,7 @@ def _result_read(
         engine=engine,
         zero_sample_mode=zero_sample_mode,
     )
-    sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
+    sample, redaction, redacted_columns, redaction_reasons = svc.redact_sample_failures_with_state(
         result.sample_failures,
         tested_column=tested_column,
         policy=policy,
@@ -399,6 +410,7 @@ def _result_read(
         sample_failures=sample,
         redaction=redaction,
         redacted_columns=redacted_columns,
+        redaction_reasons=redaction_reasons,
         # Passed through verbatim (#595): the record holds a strategy name, three counts and an
         # optional seed — DataQ-authored metadata about the READ, not target data.
         sampling=result.sampling,

@@ -577,7 +577,7 @@ def _redacted_sample(
         engine=engine,
         zero_sample_mode=zero_sample_mode,
     )
-    sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
+    redacted = run_service.redact_sample_failures_with_state(
         result.sample_failures,
         tested_column=tested_column,
         policy=policy,
@@ -585,9 +585,11 @@ def _redacted_sample(
         zero_sample=zero_sample,
     )
     return {
-        "sample_failures": sample,
-        "redaction": state,
-        "redacted_columns": redacted_columns,
+        "sample_failures": redacted.sample,
+        "redaction": redacted.state,
+        "redacted_columns": redacted.redacted_columns,
+        # Why each one was (#2255): the same keys as `redacted_columns`, a closed vocabulary.
+        "redaction_reasons": redacted.redaction_reasons,
     }
 
 

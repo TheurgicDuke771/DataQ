@@ -168,7 +168,7 @@ from backend.app.services.run_service import value_signal_decides  # noqa: E402
 # `field_7`, not `weird_name`: the `name` token is itself a PII name signal, which would mask
 # at every rung and hide the one under test.
 _DETECTED = {"field_7": DETECTED}
-_SHOW_IT = {"identifier_column": "field_7", "pii_columns": []}
+_SHOW_IT: dict[str, object] = {"identifier_column": "field_7", "pii_columns": []}
 
 
 def test_a_persisted_detection_masks_an_incidental_column_the_classifier_would_clear() -> None:
@@ -328,7 +328,9 @@ def test_the_redacted_column_set_of_a_mixed_row_is_pinned() -> None:
         tested_column="amt",
         policy={"identifier_column": "order_id", "pii_columns": ["ssn_hash"]},
         tags={"field_7": DETECTED},
-    )[:3]
+    )[
+        :3
+    ]  # the fourth field, the reasons, is #2255's own and asserted in its own tests
     assert state == "partial"
     assert columns == ["email", "field_7", "ssn_hash"]
     assert redacted is not None
