@@ -29,7 +29,7 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **93** open repo-wide (2026-10-25, live re-count): Week 4 0, Week 5 5, Week 6 24, Week 7 28, Week 8 27, `v1.3 Backlog` 9 (#1689 rolled 2026-10-25); every open issue has a milestone. Weeks 1–4 are closed; Week 4 shipped all six items (#1667, #1686 on 2026-10-24; #1516/#1840, #1687, #888, #244 on 2026-10-25) and its milestone is closed. Week 5 (due 2026-11-08) starts with #1977 ODCS. |
+| **Open issues** | **93** open repo-wide (2026-10-25 evening, live re-count): Week 4 0, Week 5 1 (#1690), Week 6 24, Week 7 28, Week 8 31, `v1.3 Backlog` 9 (#1689 rolled 2026-10-25); every open issue has a milestone. Weeks 1–4 are closed; Week 4 shipped all six items (#1667, #1686 on 2026-10-24; #1516/#1840, #1687, #888, #244 on 2026-10-25) and its milestone is closed. Week 5 (due 2026-11-08) starts with #1977 ODCS. |
 | **Open PRs** | **0 open** (2026-10-25) apart from the one carrying this update. |
 
 ---
@@ -105,7 +105,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 
 | Status | Task |
 |---|---|
-| 🟡 | [#1977](https://github.com/TheurgicDuke771/DataQ/issues/1977) feat: consumer-side data contract validation — contract entity + ODCS import/export — **ADR 0052** ([PR #2543](https://github.com/TheurgicDuke771/DataQ/pull/2543), Proposed); build in three phases: backend core ([PR #2550](https://github.com/TheurgicDuke771/DataQ/pull/2550): migration `fb29a430991e`, translation table, import/reconcile/export, REST), then the rollup, incident evidence layer and manual linking ([PR #2552](https://github.com/TheurgicDuke771/DataQ/pull/2552)), the MCP reads ([PR #2553](https://github.com/TheurgicDuke771/DataQ/pull/2553): `list_contracts` / `get_contract` / `export_contract`, 56 → 59 tools), then the Contracts page ([PR #2555](https://github.com/TheurgicDuke771/DataQ/pull/2555)) |
+| ✅ | [#1977](https://github.com/TheurgicDuke771/DataQ/issues/1977) feat: consumer-side data contract validation — contract entity + ODCS import/export — **ADR 0052** (Accepted 2026-10-25, [PR #2543](https://github.com/TheurgicDuke771/DataQ/pull/2543)), shipped in four PRs: backend core ([PR #2550](https://github.com/TheurgicDuke771/DataQ/pull/2550): migration `fb29a430991e`, the ODCS v3 translation table with an explicit not-enforced list, import / reconcile / export, REST; also fixed #2374), the compliance rollup, incident `contract` evidence layer and manual linking ([PR #2552](https://github.com/TheurgicDuke771/DataQ/pull/2552)), the MCP reads `list_contracts` / `get_contract` / `export_contract` ([PR #2553](https://github.com/TheurgicDuke771/DataQ/pull/2553), 56 → 59 tools), and the Contracts page ([PR #2555](https://github.com/TheurgicDuke771/DataQ/pull/2555); also fixed #2554 and #2556). Closed 2026-10-25
 | ➡️ | [#1689](https://github.com/TheurgicDuke771/DataQ/issues/1689) feat(integrations): test-management result publishing — TestRail / Xray / Zephyr behind a result-exporter seam — moved to `v1.3 Backlog` 2026-10-25 on the maintainer's decision: the issue's own pick-up gate (a concrete prospect naming a tool) is not met |
 | ⬜ | [#1690](https://github.com/TheurgicDuke771/DataQ/issues/1690) feat(catalog): governance-catalog integration — push DQ quality facets + pull classifications (DataHub / OpenMetadata-REST / Collibra seam) |
 | ✅ | [#685](https://github.com/TheurgicDuke771/DataQ/issues/685) feat(connections): purge/redact path for connection version history (immutable snapshots retain edited-out config values) | — [PR #2546](https://github.com/TheurgicDuke771/DataQ/pull/2546): config emptied, `redacted_at`/`redacted_by` columns (migration `878cff0aebbe`); connections workspace-admin, checks suite owner/admin; redacted check versions cannot be restored; ADR 0020 amended
@@ -138,6 +138,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ✅ | [#2514](https://github.com/TheurgicDuke771/DataQ/issues/2514) OpenAPI: the comparison-report download was declared as JSON, so the generated client crashed on it — [PR #2515](https://github.com/TheurgicDuke771/DataQ/pull/2515), which also adds the OpenAPI contract gate |
 | ✅ | [#2516](https://github.com/TheurgicDuke771/DataQ/issues/2516) v1.3 UI surfaces against CONTRIBUTING rule 44 (focus return, announcements, accessible names) — [PR #2517](https://github.com/TheurgicDuke771/DataQ/pull/2517) |
 | ⬜ | [#2476](https://github.com/TheurgicDuke771/DataQ/issues/2476) privacy: detections a pii_drift run records do not mask that same run's failing samples — filed from the #2478 review, milestoned 2026-10-21 |
+| ⬜ | [#2547](https://github.com/TheurgicDuke771/DataQ/issues/2547) privacy: a redacted check version's literal can survive in the check.update audit event — filed from the #685 review, needs a decision against ADR 0041's append-only rule
 
 ### v1.3 Week 7 — polish: MCP & API, performance, accessibility (due 2026-11-22)
 
@@ -184,6 +185,10 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ⬜ | [#1708](https://github.com/TheurgicDuke771/DataQ/issues/1708) security: external review — third-party pen test / audit pass before any commercial demo |
 | ⬜ | [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224) Epic: cloud live-verification — re-run once a cloud test instance is procured |
 | ⬜ | [#2520](https://github.com/TheurgicDuke771/DataQ/issues/2520) a11y: publish a WCAG 2.1 AA conformance report (ACR/VPAT) once the Week-7 audits close — filed 2026-10-21 |
+| ⬜ | [#2545](https://github.com/TheurgicDuke771/DataQ/issues/2545) Flaky test: the pipeline-run marker planner test picks another index when run after the full suite — filed 2026-10-25
+| ⬜ | [#2549](https://github.com/TheurgicDuke771/DataQ/issues/2549) Flaky E2E: the asset coverage-save focus spec fails all retries, then passes on a rerun — filed 2026-10-25
+| ⬜ | [#2551](https://github.com/TheurgicDuke771/DataQ/issues/2551) test_tamper_anchor is not hermetic: a local `.env.app` makes four anchor tests read the real vault — filed 2026-10-25
+| ⬜ | [#2557](https://github.com/TheurgicDuke771/DataQ/issues/2557) Flaky OTP E2E: the profile prompt's Skip stays visible in the sign-out spec — filed 2026-10-25
 
 **Exit gate (Week 8):** every item closed or rolled by name with a rationale, zero open PRs,
 retro-v1.3 written, this file frozen, `v1.3.0` tagged and released with the client wheel and
