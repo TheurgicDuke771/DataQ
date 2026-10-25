@@ -2879,6 +2879,11 @@
 <td>Opt-in product-usage telemetry — <strong>OpenTelemetry signals</strong> through the existing exporter seam: one <code>dataq.usage.events</code> counter (attribute <code>event</code>) and one <code>dataq.usage.&lt;event&gt;</code> log event per occurrence, on a <code>MeterProvider</code>/<code>LoggerProvider</code> of their own; <strong>default OFF behind two gates</strong>, the operator's <code>TELEMETRY_SINK</code> (<code>off</code> · <code>file</code> JSON lines · <code>otlp</code>) and the admin's audited opt-in (<code>telemetry_settings</code> singleton, Admin → Settings); a <strong>closed, code-enforced vocabulary</strong> of twelve events whose attributes are counts or fixed value sets (never a table/column name, SQL, suite name, email or free text — a value outside its set is dropped); the browser posts only <code>page_viewed</code>/<code>check_editor_abandoned</code> to the server, which is the only emitter; disclosed in <code>GET /admin/deployment</code> in both states; no third-party analytics dependency</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0051-suite-on-suite-triggers/">0051</a></td>
+<td>Suite-on-suite triggers — a suite's own success as a <strong>trigger provider</strong> (<code>provider='suite'</code>, <code>pipeline_or_dag_id</code> = the upstream suite's id, env derived from it) in the existing <code>trigger_bindings</code>, <strong>not</strong> an orchestration provider (no connection, poller, webhook or <code>pipeline_runs</code> row; the gate refuses it); fires from the worker after the run's terminal commit when the run <code>succeeded</code> with no check at fail/critical; marker <code>suite:&lt;suite&gt;:&lt;run&gt;</code> under the same dedup index; self-binding and cycles refused at authoring (disabled bindings count), chain depth capped at 5 at firing, <code>view</code> on the upstream suite required</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 

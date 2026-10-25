@@ -88,7 +88,7 @@ constraints are non-negotiable:
 | `page_viewed` | the SPA navigates (browser-reported) | `route`: a route name such as `dashboard`, `suite_detail`, `check_new`, `admin_settings`, `other` |
 | `check_created` | a check is saved, including each check of an imported suite | `kind`, `engine`, `datasource_type`, `origin` (`user` · `auto` · `suggestion` · `import`) |
 | `check_editor_abandoned` | the new-check editor is left without saving (browser-reported) | `step`: `expectation` · `config` |
-| `suite_run_triggered` | a run is dispatched | `trigger`: `manual` · `schedule` · `mcp` · `probe` · `adf` · `airflow` · `dbt` · `other` |
+| `suite_run_triggered` | a run is dispatched | `trigger`: `manual` · `schedule` · `mcp` · `probe` · `adf` · `airflow` · `dbt` · `suite` (another suite's success, ADR 0051) · `other` |
 | `run_completed` | the worker finishes a run | `outcome`, `datasource_type`, `checks` (count), `duration_ms` (omitted when the run has no start or end time) |
 | `connection_created` | a connection is saved | `type` |
 | `mcp_tool_called` | an MCP tool is called (a call naming no registered tool is not counted) | `tool` (a registered tool name), `outcome`: `ok` · `error` · `cancelled` |

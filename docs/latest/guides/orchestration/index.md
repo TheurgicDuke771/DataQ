@@ -373,6 +373,32 @@ In the UI, open a suite's **Triggers** and bind it to a `(provider, pipeline/DAG
 When that pipeline next succeeds, the suite runs automatically and you'll see the run
 correlated to the pipeline run on the **Results → Pipelines** view.
 
+## Run a suite after another suite
+
+A suite can be triggered by **another suite's success** instead of a pipeline: on the
+downstream suite's **Triggers** panel choose *Another suite (on success)*, pick the upstream
+suite, and add. The binding is the same `trigger_bindings` row every orchestrator uses, with
+`provider = suite` and the upstream suite's id as the key; its environment is the upstream
+suite's connection environment, filled in for you.
+
+It fires when the upstream run finishes `succeeded` with **no check at fail or critical** — a
+`warn` passes, and a check that errored or was skipped does not block (the run verified what it
+could). A run that failed to execute, was cancelled, or breached fires nothing: the downstream
+suite is not run against data the upstream just called bad. The downstream run shows
+*Suite — <upstream suite>* as its trigger.
+
+What it is not: an orchestrator. You cannot bind a suite to itself, a binding that would make
+two suites trigger each other in a loop is refused when you create it (disabled bindings count,
+so re-enabling one cannot close a loop), a chain stops after five hops, and the pipeline gate
+cannot wait on a suite chain. Where an orchestrator stage exists, bind both suites to it, or
+[gate the stage](#gate-a-pipeline-on-dataq); this is for the suites that have no stage — a
+landing-zone file suite, a reconciliation suite that should follow the two suites it compares.
+You need `edit` on the downstream suite and `view` on the upstream one.
+
+Over the API, `POST /api/v1/trigger-bindings` with `provider: "suite"` and
+`pipeline_or_dag_id: "<upstream suite id>"` (`env` may be omitted); the MCP tool
+`create_trigger_binding` takes the same shape.
+
 ## Gate a pipeline on DataQ
 
 A trigger binding runs suites *after* a pipeline finishes. A **gate** lets a pipeline wait for

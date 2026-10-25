@@ -1076,6 +1076,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-a-suite-after-another-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run a suite after another suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gate-a-pipeline-on-dataq" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2694,6 +2705,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-a-suite-after-another-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run a suite after another suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gate-a-pipeline-on-dataq" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3136,6 +3158,27 @@ silent-empty descents stay fake-driven — a live Enterprise account cannot prod
 <p>In the UI, open a suite's <strong>Triggers</strong> and bind it to a <code>(provider, pipeline/DAG, env)</code>.
 When that pipeline next succeeds, the suite runs automatically and you'll see the run
 correlated to the pipeline run on the <strong>Results → Pipelines</strong> view.</p>
+<h2 id="run-a-suite-after-another-suite">Run a suite after another suite<a class="headerlink" href="#run-a-suite-after-another-suite" title="Permanent link">¶</a></h2>
+<p>A suite can be triggered by <strong>another suite's success</strong> instead of a pipeline: on the
+downstream suite's <strong>Triggers</strong> panel choose <em>Another suite (on success)</em>, pick the upstream
+suite, and add. The binding is the same <code>trigger_bindings</code> row every orchestrator uses, with
+<code>provider = suite</code> and the upstream suite's id as the key; its environment is the upstream
+suite's connection environment, filled in for you.</p>
+<p>It fires when the upstream run finishes <code>succeeded</code> with <strong>no check at fail or critical</strong> — a
+<code>warn</code> passes, and a check that errored or was skipped does not block (the run verified what it
+could). A run that failed to execute, was cancelled, or breached fires nothing: the downstream
+suite is not run against data the upstream just called bad. The downstream run shows
+<em>Suite — <upstream suite=""></upstream></em> as its trigger.</p>
+<p>What it is not: an orchestrator. You cannot bind a suite to itself, a binding that would make
+two suites trigger each other in a loop is refused when you create it (disabled bindings count,
+so re-enabling one cannot close a loop), a chain stops after five hops, and the pipeline gate
+cannot wait on a suite chain. Where an orchestrator stage exists, bind both suites to it, or
+<a href="#gate-a-pipeline-on-dataq">gate the stage</a>; this is for the suites that have no stage — a
+landing-zone file suite, a reconciliation suite that should follow the two suites it compares.
+You need <code>edit</code> on the downstream suite and <code>view</code> on the upstream one.</p>
+<p>Over the API, <code>POST /api/v1/trigger-bindings</code> with <code>provider: "suite"</code> and
+<code>pipeline_or_dag_id: "&lt;upstream suite id&gt;"</code> (<code>env</code> may be omitted); the MCP tool
+<code>create_trigger_binding</code> takes the same shape.</p>
 <h2 id="gate-a-pipeline-on-dataq">Gate a pipeline on DataQ<a class="headerlink" href="#gate-a-pipeline-on-dataq" title="Permanent link">¶</a></h2>
 <p>A trigger binding runs suites <em>after</em> a pipeline finishes. A <strong>gate</strong> lets a pipeline wait for
 DataQ's verdict <em>between</em> its own stages, so bad data never reaches the stages after it.</p>

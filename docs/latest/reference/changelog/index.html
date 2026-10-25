@@ -2993,6 +2993,13 @@ section below.</p>
   existing <code>PATCH</code> endpoints, a repeatable <code>tag=</code> filter on <code>GET /suites</code> and <code>GET /assets</code>, and
   <code>GET /tags</code> / <code>DELETE /tags/{id}</code> for the vocabulary. Deleting an entity drops its
   assignments; deleting a tag detaches it everywhere.</li>
+<li><strong>A suite can run when another suite passes.</strong> The Triggers panel gains <em>Another suite (on
+  success)</em>: pick the upstream suite and the downstream one runs whenever an upstream run
+  finishes with no check at fail or critical. It is the same trigger binding the orchestrators
+  use (<code>provider: "suite"</code>, the upstream suite's id as the key, env derived from it), fired by
+  the worker after the run's terminal commit, with self-binding and loops refused when you create
+  the binding and chains capped at five hops. The downstream run is labelled <em>Suite — <upstream></upstream></em>
+  and the usage event's <code>trigger</code> vocabulary gains <code>suite</code>. ADR 0051.</li>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>

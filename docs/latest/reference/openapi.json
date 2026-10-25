@@ -12394,8 +12394,15 @@
             "type": "boolean"
           },
           "env": {
-            "title": "Env",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
           },
           "pipeline_or_dag_id": {
             "maxLength": 256,
@@ -12416,7 +12423,6 @@
         "required": [
           "provider",
           "pipeline_or_dag_id",
-          "env",
           "suite_id"
         ],
         "title": "TriggerBindingCreate",

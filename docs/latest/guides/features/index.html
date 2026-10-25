@@ -3066,6 +3066,10 @@ are <strong>not</strong> datasources (<a href="../orchestration/">Orchestration<
 </ul>
 <p>All three sit behind one provider interface; <strong>trigger bindings</strong> map
 <code>(provider, pipeline/DAG/job, env) → suite</code>.
+- <strong>Another suite</strong> — a suite can also run when <strong>another suite passes</strong> (no check at fail or
+  critical): the same binding with <code>provider = suite</code> and the upstream suite as the key. One
+  hop at a time, loops refused, chains capped at five — DataQ is still not an orchestrator
+  (<a href="../orchestration/#run-a-suite-after-another-suite">Run a suite after another suite</a>).
 A pipeline stage can also <strong>gate</strong> on DataQ (ADR 0046): <code>POST /api/v1/orchestration/gate</code>
 starts its bound suites for this run and waits for the verdict, or only reads it — DataQ
 answers, your DAG decides (<a href="../orchestration/#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a>).</p>

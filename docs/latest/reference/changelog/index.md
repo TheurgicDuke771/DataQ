@@ -177,6 +177,13 @@ section below.
   existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
   `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
   assignments; deleting a tag detaches it everywhere.
+- **A suite can run when another suite passes.** The Triggers panel gains *Another suite (on
+  success)*: pick the upstream suite and the downstream one runs whenever an upstream run
+  finishes with no check at fail or critical. It is the same trigger binding the orchestrators
+  use (`provider: "suite"`, the upstream suite's id as the key, env derived from it), fired by
+  the worker after the run's terminal commit, with self-binding and loops refused when you create
+  the binding and chains capped at five hops. The downstream run is labelled *Suite — <upstream>*
+  and the usage event's `trigger` vocabulary gains `suite`. ADR 0051.
 
 ### Changed
 
