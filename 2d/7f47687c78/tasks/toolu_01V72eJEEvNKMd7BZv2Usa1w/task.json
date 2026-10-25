@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01V72eJEEvNKMd7BZv2Usa1w",
+  "agent_id": "ad1d68845f9a97da2",
+  "subagent_type": "general-purpose",
+  "task_description": "#2255 redaction reason per column",
+  "started_at": "2026-10-25T11:59:29.931222+05:30"
+}

@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01Qu9vASPijxEqXJ56dyjzFf",
+  "agent_id": "a25e1da6022a2f554",
+  "subagent_type": "general-purpose",
+  "task_description": "#685 purge connection versions",
+  "started_at": "2026-10-25T11:59:29.929935+05:30"
+}

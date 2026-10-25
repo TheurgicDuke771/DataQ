@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "2d7f47687c78",
+  "session_id": "e9d17326-e586-41a9-b7eb-6ead06df2d2a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-25T06:34:14.230213Z",
+  "branch": "docs/adr-0052-data-contracts",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/adr/0052-data-contracts-odcs.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "e42401bbb66e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 806,
+    "cache_creation_tokens": 210744,
+    "cache_read_tokens": 4698413,
+    "output_tokens": 35299,
+    "api_call_count": 28,
+    "subagent_tokens": {
+      "input_tokens": 1990,
+      "cache_creation_tokens": 490729,
+      "cache_read_tokens": 8320565,
+      "output_tokens": 34630,
+      "api_call_count": 65
+    }
+  },
+  "session_metrics": {
+    "turn_count": 1
+  }
+}
