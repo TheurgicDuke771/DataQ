@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Dgj3iadmWdMpztqQGKgXWB",
+  "agent_id": "ac97f30d4fab8b426",
+  "subagent_type": "general-purpose",
+  "task_description": "#1613 as-of engine/dimension",
+  "token_usage": {
+    "input_tokens": 3078,
+    "cache_creation_tokens": 241046,
+    "cache_read_tokens": 18530003,
+    "output_tokens": 67006,
+    "api_call_count": 99
+  },
+  "started_at": "2026-10-25T11:59:29.948411+05:30",
+  "completed_at": "2026-10-25T12:52:37.660011+05:30"
+}

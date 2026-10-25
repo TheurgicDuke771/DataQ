@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Qu9vASPijxEqXJ56dyjzFf",
+  "agent_id": "a25e1da6022a2f554",
+  "subagent_type": "general-purpose",
+  "task_description": "#685 purge connection versions",
+  "token_usage": {
+    "input_tokens": 3914,
+    "cache_creation_tokens": 278413,
+    "cache_read_tokens": 26902541,
+    "output_tokens": 77985,
+    "api_call_count": 128
+  },
+  "started_at": "2026-10-25T11:59:29.929935+05:30",
+  "completed_at": "2026-10-25T12:52:36.906116+05:30"
+}

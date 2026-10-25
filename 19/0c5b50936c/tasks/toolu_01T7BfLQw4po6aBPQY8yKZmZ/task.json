@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01T7BfLQw4po6aBPQY8yKZmZ",
+  "agent_id": "a85c952e0b7b17ee3",
+  "subagent_type": "general-purpose",
+  "task_description": "#1977 contracts phase A backend",
+  "token_usage": {
+    "input_tokens": 2372,
+    "cache_creation_tokens": 294683,
+    "cache_read_tokens": 17479408,
+    "output_tokens": 75094,
+    "api_call_count": 77
+  },
+  "started_at": "2026-10-25T12:05:16.471896+05:30",
+  "completed_at": "2026-10-25T12:52:37.934366+05:30"
+}
