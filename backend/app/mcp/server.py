@@ -396,21 +396,16 @@ def _run_results_payload(
     # from the warehouse: an MCP read must not open a datasource connection.
     # `None` means no opinion, which is what shipped before G3.
     tags = _asset_column_tags(session, suite, run)
-    # Per-RESULT (tested_column, expectation_type) as of when each result was
-    # written (#1489) — not the check's current state, which is freely editable
-    # after the fact and would silently re-label what old results show/audit.
-    context = run_service.historical_check_context(session, results, checks)
-    # Same rule for `engine`/`kind` (#1869/#1880 review): an old result's
-    # observed_value/metric_value reflect whichever engine actually produced it, not
-    # whatever the check has since been re-pointed to, and `zero_sample_suppressed`
-    # needs both as of THIS result.
-    engine_by_result = run_service.historical_check_engine(session, results, checks)
-    kind_by_result = run_service.historical_check_kind(session, results, checks)
+    # Per-RESULT check identity as of when each result was written (#1489) — not the
+    # check's current state, which is freely editable after the fact and would
+    # silently re-label what old results show/audit. `engine`/`kind` follow the same
+    # rule (#1869/#1880 review): an old result's observed_value/metric_value reflect
+    # whichever engine actually produced it, not whatever the check has since been
+    # re-pointed to, and `zero_sample_suppressed` needs both as of THIS result; so
+    # does `dimension` (#1613). One `check_versions` read, not three.
+    as_of = run_service.historical_check_snapshots(session, results, checks)
     # Resolved once per tool call (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
-
-    def _tested_column(result_id: uuid.UUID) -> str | None:
-        return context.get(result_id, (None, None))[0]
 
     # Redact ONCE, here, and reuse below. An earlier version redacted every result
     # a second time purely to compute `exposed_ids` and then threw the result
@@ -420,17 +415,17 @@ def _run_results_payload(
             "result_id": str(r.id),
             **_redacted_sample(
                 r,
-                _tested_column(r.id),
+                as_of[r.id].column,
                 policy,
                 tags,
-                check_kind=kind_by_result.get(r.id),
-                engine=engine_by_result.get(r.id, GX_ENGINE),
+                check_kind=as_of[r.id].kind,
+                engine=as_of[r.id].engine,
                 zero_sample_mode=zero_sample_mode,
             ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
-                tested_column=_tested_column(r.id),
-                expectation_type=context.get(r.id, (None, None))[1],
+                tested_column=as_of[r.id].column,
+                expectation_type=as_of[r.id].expectation_type,
                 policy=policy,
                 tags=tags,
             ),
@@ -456,7 +451,7 @@ def _run_results_payload(
         for result, r in zip(results, rendered, strict=True)
         if r["redaction"] in {"none", "partial"}
         or run_service.observed_value_exposes_cells(
-            r["observed_value"], expectation_type=context.get(result.id, (None, None))[1]
+            r["observed_value"], expectation_type=as_of[result.id].expectation_type
         )
     ]
     rendered_by_id = {r["result_id"]: r for r in rendered}
@@ -506,10 +501,18 @@ def _run_results_payload(
                 # WHO evaluated this check (ADR 0036) — a dmf result's
                 # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
                 # GX expectation output, and the two have different semantics an
-                # LLM would otherwise conflate. Resolved AS OF this result (like
-                # `context` above): a check re-pointed gx<->dmf after this run
-                # must not have its old result mislabeled with the new engine.
-                "engine": engine_by_result.get(r.id),
+                # LLM would otherwise conflate. Resolved AS OF this result: a check
+                # re-pointed gx<->dmf after this run must not have its old result
+                # mislabeled with the new engine. Null for an unknown check — the
+                # redactors above take the `gx` default for safety, but the payload
+                # must not state an engine nothing recorded.
+                "engine": as_of[r.id].engine if as_of[r.id].resolved_from else None,
+                # The DQ dimension (ADR 0038) the check carried WHEN this result was
+                # written — null is "unclassified", a coverage gap, not an error.
+                "dimension": as_of[r.id].dimension,
+                # `version` / `later_version` / `live` / null — see
+                # `run_service.CheckAsOfSource` (#1613).
+                "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
                 # How much of the dataset this check actually saw (#595).
@@ -743,10 +746,15 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     (e.g. a passing one). Returns an empty result set if the suite has never
     run. Requires at least view access to the suite.
 
-    ``engine`` is the engine that produced this particular result, resolved from
-    the check's version history as of the result — not the check's current one, so
-    a check re-pointed to a different engine after this run still shows the old
-    engine here. ``name`` is the check's current name.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the values that applied to this particular result, resolved from the
+    check's version history as of the result — not the check's current ones, so a
+    check re-pointed or re-classified after this run still shows the old values
+    here. ``check_resolved_from`` is ``"version"`` when such a snapshot existed,
+    ``"later_version"`` when every snapshot postdates the result and the earliest
+    stands in, ``"live"`` when the check has no version history and its CURRENT
+    values stand in (they may postdate the result), and null for an unknown check
+    (``engine`` is then null too). ``name`` is the check's current name.
 
     ``check_enabled`` says whether that check is switched on **now**. ``false``
     means it was switched off after this run: the result is its last, no later run
@@ -1516,9 +1524,16 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
     was masked — ``default_mask`` means never classified, not known personal data).
 
-    ``engine`` is the check's **current** engine, not the one that produced this
-    particular result — like ``name``, it is not snapshotted per result; use
-    ``list_check_versions`` for the engine as of a specific edit.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the check's values **as of this result**, resolved from its version history
+    at the result's own timestamp — a check re-pointed or re-classified after the
+    run still reports what it was then. ``check_resolved_from`` says how far to
+    trust that: ``"version"`` is a snapshot in effect at the time; ``"later_version"``
+    means every snapshot postdates the result (clock skew) and the earliest stands
+    in; ``"live"`` means the check has no version history, so these are its CURRENT
+    values and may postdate the result; null means the check is unknown, and
+    ``engine`` is then null too rather than a default. ``name`` and ``check_enabled``
+    are always current.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and

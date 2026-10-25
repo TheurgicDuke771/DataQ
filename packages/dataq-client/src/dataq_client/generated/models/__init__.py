@@ -51,6 +51,8 @@ from .channel_read import ChannelRead
 from .channel_read_payload_template_type_0 import ChannelReadPayloadTemplateType0
 from .channel_update import ChannelUpdate
 from .channel_update_payload_template_type_0 import ChannelUpdatePayloadTemplateType0
+from .check_as_of_read import CheckAsOfRead
+from .check_as_of_read_resolved_from_type_0 import CheckAsOfReadResolvedFromType0
 from .check_baseline_read import CheckBaselineRead
 from .check_baseline_read_baseline import CheckBaselineReadBaseline
 from .check_change_read import CheckChangeRead
@@ -96,7 +98,6 @@ from .column_profile_request_file_format_type_0 import ColumnProfileRequestFileF
 from .column_trace_asset_read import ColumnTraceAssetRead
 from .column_trace_read import ColumnTraceRead
 from .columns_read import ColumnsRead
-from .comparison_check_read import ComparisonCheckRead
 from .comparison_delta_read import ComparisonDeltaRead
 from .comparison_delta_read_status_change import ComparisonDeltaReadStatusChange
 from .comparison_row_read import ComparisonRowRead
@@ -413,6 +414,8 @@ __all__ = (
     "ChannelReadPayloadTemplateType0",
     "ChannelUpdate",
     "ChannelUpdatePayloadTemplateType0",
+    "CheckAsOfRead",
+    "CheckAsOfReadResolvedFromType0",
     "CheckBaselineRead",
     "CheckBaselineReadBaseline",
     "CheckChangeRead",
@@ -456,7 +459,6 @@ __all__ = (
     "ColumnTraceAssetRead",
     "ColumnTraceRead",
     "ColumnsRead",
-    "ComparisonCheckRead",
     "ComparisonDeltaRead",
     "ComparisonDeltaReadStatusChange",
     "ComparisonRowRead",

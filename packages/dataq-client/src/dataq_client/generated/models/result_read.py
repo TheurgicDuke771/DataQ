@@ -12,6 +12,7 @@ from ..models.result_read_redaction_type_0 import ResultReadRedactionType0
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.check_as_of_read import CheckAsOfRead
     from ..models.result_read_expected_value_type_0 import ResultReadExpectedValueType0
     from ..models.result_read_observed_value_type_0 import ResultReadObservedValueType0
     from ..models.result_read_redaction_reasons import ResultReadRedactionReasons
@@ -26,6 +27,7 @@ T = TypeVar("T", bound="ResultRead")
 class ResultRead:
     """One check's result within a run. `metric_value` is the SQL-aggregatable
     badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.
+    `check` is the check's identity AS OF this result (#1613), never its current state.
 
     `redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe
     column-policy-based redaction of a REAL persisted sample; `zero_sample` means this
@@ -45,6 +47,7 @@ class ResultRead:
             observed_value (None | ResultReadObservedValueType0):
             sample_failures (None | ResultReadSampleFailuresType0):
             status (str):
+            check (CheckAsOfRead | None | Unset):
             redacted_columns (list[str] | Unset):
             redaction (None | ResultReadRedactionType0 | Unset):
             redaction_reasons (ResultReadRedactionReasons | Unset): Why each entry of `redacted_columns` was masked, keyed
@@ -63,6 +66,7 @@ class ResultRead:
     observed_value: None | ResultReadObservedValueType0
     sample_failures: None | ResultReadSampleFailuresType0
     status: str
+    check: CheckAsOfRead | None | Unset = UNSET
     redacted_columns: list[str] | Unset = UNSET
     redaction: None | ResultReadRedactionType0 | Unset = UNSET
     redaction_reasons: ResultReadRedactionReasons | Unset = UNSET
@@ -70,6 +74,7 @@ class ResultRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.check_as_of_read import CheckAsOfRead
         from ..models.result_read_expected_value_type_0 import (
             ResultReadExpectedValueType0,
         )
@@ -111,6 +116,14 @@ class ResultRead:
 
         status = self.status
 
+        check: dict[str, Any] | None | Unset
+        if isinstance(self.check, Unset):
+            check = UNSET
+        elif isinstance(self.check, CheckAsOfRead):
+            check = self.check.to_dict()
+        else:
+            check = self.check
+
         redacted_columns: list[str] | Unset = UNSET
         if not isinstance(self.redacted_columns, Unset):
             redacted_columns = self.redacted_columns
@@ -149,6 +162,8 @@ class ResultRead:
                 "status": status,
             }
         )
+        if check is not UNSET:
+            field_dict["check"] = check
         if redacted_columns is not UNSET:
             field_dict["redacted_columns"] = redacted_columns
         if redaction is not UNSET:
@@ -162,6 +177,7 @@ class ResultRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.check_as_of_read import CheckAsOfRead
         from ..models.result_read_expected_value_type_0 import (
             ResultReadExpectedValueType0,
         )
@@ -242,6 +258,23 @@ class ResultRead:
 
         status = d.pop("status")
 
+        def _parse_check(data: object) -> CheckAsOfRead | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                check_type_0 = CheckAsOfRead.from_dict(data)
+
+                return check_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CheckAsOfRead | None | Unset, data)
+
+        check = _parse_check(d.pop("check", UNSET))
+
         redacted_columns = cast(list[str], d.pop("redacted_columns", UNSET))
 
         def _parse_redaction(data: object) -> None | ResultReadRedactionType0 | Unset:
@@ -294,6 +327,7 @@ class ResultRead:
             observed_value=observed_value,
             sample_failures=sample_failures,
             status=status,
+            check=check,
             redacted_columns=redacted_columns,
             redaction=redaction,
             redaction_reasons=redaction_reasons,

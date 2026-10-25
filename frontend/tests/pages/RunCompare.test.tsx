@@ -55,6 +55,7 @@ const check = {
   expectation_type: 'expect_column_values_to_not_be_null',
   dimension: 'completeness',
   column: 'order_id',
+  resolved_from: 'version' as const,
 };
 
 const comparison: RunComparison = {
@@ -236,6 +237,32 @@ describe('RunCompare page', () => {
     expect(await r.findByText('was “id not null” in the base run')).toBeInTheDocument();
     // The engine badge is the target side's as-of value (DMF), not a current-check lookup.
     expect(r.getByText('DMF')).toBeInTheDocument();
+    // Every fixture side is a real `check_versions` snapshot — nothing is marked "(current)".
+    expect(r.queryByText('(current)')).not.toBeInTheDocument();
+  });
+
+  it('marks a side whose check has no version history as "(current)" (#1613)', async () => {
+    const [first, ...rest] = comparison.rows;
+    const live = { ...check, resolved_from: 'live' as const };
+    mockCompareRuns.mockResolvedValue({
+      ...comparison,
+      rows: [
+        {
+          ...first,
+          base: first.base && { ...first.base, check: live },
+          target: first.target && { ...first.target, check: live },
+        },
+        ...rest,
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    renderAt('r0', 'r1');
+    const r = region();
+    await r.findByText('DMF');
+    // One marker on the dimension cell and one on the engine cell of that row only.
+    const markers = r.getAllByText('(current)');
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toHaveAccessibleName(/no version history/);
   });
 
   it('filters the rows by change and announces the count, operable by keyboard', async () => {

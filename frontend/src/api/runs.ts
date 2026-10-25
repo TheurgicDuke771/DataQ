@@ -67,6 +67,10 @@ export interface Result {
   redaction_reasons?: Record<string, RedactionReason>;
   /** How much of the dataset this check saw (#595); null = a complete read. */
   sampling?: ResultSampling | null;
+  /** The check as it WAS when this result was written (#1613) — engine, dimension, type from
+   *  `check_versions` as of the result, never the check's current row. Absent on a payload that
+   *  predates the field; `null` when the check is unknown. */
+  check?: ResultCheck | null;
 }
 
 /** Which rung of the redaction ladder masked a column — mirrors `run_service.RedactionReason`. */
@@ -89,6 +93,9 @@ export const REDACTION_REASON_LABELS: Record<RedactionReason, string> = {
   classifier: 'name/value classifier',
   default_mask: 'never classified — masked as a precaution',
 };
+
+/** `ResultRead.check` — the same as-of identity the comparison sides carry. */
+export type ResultCheck = ComparisonCheck;
 
 /** Mirrors the `results.sampling` record (backend `sampling.sampling_record`). */
 export interface ResultSampling {
@@ -259,6 +266,10 @@ export interface ComparisonCheck {
   expectation_type: string | null;
   dimension: string | null;
   column: string | null;
+  /** `version`: a `check_versions` snapshot in effect at the result. `later_version`: every
+   *  snapshot postdates the result (clock skew), so the earliest stands in. `live`: the check has
+   *  no version history, so its CURRENT state stands in and may postdate the result (#1613). */
+  resolved_from: 'version' | 'later_version' | 'live' | null;
 }
 
 /** One run's result for a check; `observed_value` is redacted exactly as on the run detail. */
