@@ -71,6 +71,10 @@ section below.
   describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
   reconciles the same suites without overwriting a person's edits, and the contract exports back to
   ODCS with every check, including ones people added.
+- **A contract shows whether each clause is holding.** A contract's detail carries, per clause, what
+  its check found in the latest run, whether the check was edited since the import, and whether
+  that run has finished; an incident on a contract-derived check names the clause it broke, and
+  alerts lead with it. A suite can also be linked to a contract by hand.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a

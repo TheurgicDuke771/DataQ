@@ -2132,6 +2132,25 @@ the import is updated to the new clause, a check whose clause disappeared is **s
 deleted, so its history stays), and checks people added to the suite themselves are left alone.
 Without `suite_ids`, the new version creates fresh suites.
 
+## Compliance
+
+`GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
+state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
+`unverified` (the check errored or was skipped), `not_run` (that run has no result for it) or
+`disabled` — and a `drifted` flag when someone has edited the check since the import, so it may
+no longer say what the clause says. Each suite reports its latest run and `results_final`, which
+is false while that run is still going: the states are partial until then. The clauses DataQ
+does not enforce are counted as `not_enforced`.
+
+When a contract-derived check opens an incident, the incident's evidence names the contract and
+the clause it broke, and alerts lead with it.
+
+## Link a suite by hand
+
+To attach a suite you already have to a contract's schema object, send
+`PATCH /api/v1/suites/{id}` with `{"contract": {"contract_id": "…", "contract_object": "orders"}}`,
+or `{"contract": null}` to detach it. Linking adds no checks; importing the contract does.
+
 ## Export
 
 `GET /api/v1/contracts/{id}/export` returns the contract as an ODCS document (JSON, or YAML with
@@ -5497,6 +5516,10 @@ section below.
   describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
   reconciles the same suites without overwriting a person's edits, and the contract exports back to
   ODCS with every check, including ones people added.
+- **A contract shows whether each clause is holding.** A contract's detail carries, per clause, what
+  its check found in the latest run, whether the check was edited since the import, and whether
+  that run has finished; an incident on a contract-derived check names the clause it broke, and
+  alerts lead with it. A suite can also be linked to a contract by hand.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -20458,17 +20481,19 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   `restricted_suite_count`, as `get_asset` does (ADR 0037). A contract with no linked suite is
   visible to admins only.
-- Linking an existing suite to a contract by hand (`PATCH /suites/{id}` with `contract_id` and
-  `contract_object`, both or neither, `edit`) ships with the compliance rollup, the second build
-  phase; until then a suite is linked only by an import. `DELETE /contracts/{id}` is Member+,
+- Linking an existing suite to a contract by hand: `PATCH /suites/{id}` with
+  `contract: {contract_id, contract_object}` (`edit`; the contract must be visible and name the
+  object), or `contract: null` to unlink. Linking adds no checks; an import derives them. `DELETE /contracts/{id}` is Member+,
   needs `edit` on every linked suite, and unlinks only.
 - MCP: `list_contracts`, `get_contract`, `export_contract` — three **read-only** tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.
 - The compliance rollup is per contract: for each linked suite's latest run, each clause is
-  `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_enforced`
-  (unmapped) / `drifted`, plus the suite-level `last_run_at` and `results_final`, so a rollup
-  over a mid-run suite is never read as a verdict.
+  `pass` / `warn` / `fail` / `critical` / `unverified` (error or skipped) / `not_run` (no result
+  in that run) / `disabled` (switched off), with **`drifted`** as a separate flag (the check was
+  edited since its import — it can drift and still pass), plus the suite-level `last_run_at` and
+  `results_final`, so a rollup over a mid-run suite is never read as a verdict. The `unmapped`
+  list is the `not_enforced` half, counted beside the clauses.
 
 ### 9. UI, phase 1
 

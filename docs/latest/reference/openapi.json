@@ -3361,6 +3361,47 @@
         "title": "ClassificationDismissUpdate",
         "type": "object"
       },
+      "ClauseStateRead": {
+        "properties": {
+          "check_id": {
+            "format": "uuid",
+            "title": "Check Id",
+            "type": "string"
+          },
+          "check_name": {
+            "title": "Check Name",
+            "type": "string"
+          },
+          "clause": {
+            "additionalProperties": true,
+            "title": "Clause",
+            "type": "object"
+          },
+          "drifted": {
+            "title": "Drifted",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "check_id",
+          "check_name",
+          "clause",
+          "state",
+          "drifted"
+        ],
+        "title": "ClauseStateRead",
+        "type": "object"
+      },
       "ClientEvent": {
         "additionalProperties": false,
         "properties": {
@@ -4335,6 +4376,44 @@
         "title": "ComparisonSummaryRead",
         "type": "object"
       },
+      "ComplianceRead": {
+        "description": "Per clause, what its check found in its suite's latest run \u2014 over the suites the caller\ncan see; `restricted_suite_count` on the contract counts the rest, which are not read.",
+        "properties": {
+          "clauses": {
+            "items": {
+              "$ref": "#/components/schemas/ClauseStateRead"
+            },
+            "title": "Clauses",
+            "type": "array"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "not_enforced": {
+            "title": "Not Enforced",
+            "type": "integer"
+          },
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/SuiteComplianceRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "clauses",
+          "suites",
+          "counts",
+          "not_enforced"
+        ],
+        "title": "ComplianceRead",
+        "type": "object"
+      },
       "ComposingSuiteRead": {
         "description": "One suite the caller can see that targets the asset, with its latest run.",
         "properties": {
@@ -4965,6 +5044,107 @@
           "redacted_version_nos"
         ],
         "title": "ConnectionVersionsRedacted",
+        "type": "object"
+      },
+      "ContractDetailRead": {
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "compliance": {
+            "$ref": "#/components/schemas/ComplianceRead"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "odcs_id": {
+            "title": "Odcs Id",
+            "type": "string"
+          },
+          "restricted_suite_count": {
+            "title": "Restricted Suite Count",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/ContractSuiteRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant"
+          },
+          "unmapped": {
+            "items": {
+              "$ref": "#/components/schemas/UnmappedClauseRead"
+            },
+            "title": "Unmapped",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "odcs_id",
+          "name",
+          "version",
+          "status",
+          "domain",
+          "tenant",
+          "api_version",
+          "created_at",
+          "suites",
+          "restricted_suite_count",
+          "unmapped",
+          "compliance"
+        ],
+        "title": "ContractDetailRead",
         "type": "object"
       },
       "ContractImportRead": {
@@ -11691,6 +11871,86 @@
         "title": "SuiteCadenceRead",
         "type": "object"
       },
+      "SuiteComplianceRead": {
+        "properties": {
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "last_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run Id"
+          },
+          "last_run_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run Status"
+          },
+          "results_final": {
+            "title": "Results Final",
+            "type": "boolean"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "last_run_id",
+          "last_run_status",
+          "last_run_at",
+          "results_final"
+        ],
+        "title": "SuiteComplianceRead",
+        "type": "object"
+      },
+      "SuiteContractLink": {
+        "additionalProperties": false,
+        "description": "The data contract a suite enforces (ADR 0052) and its ODCS schema object.",
+        "properties": {
+          "contract_id": {
+            "format": "uuid",
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "contract_object": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Contract Object",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract_id",
+          "contract_object"
+        ],
+        "title": "SuiteContractLink",
+        "type": "object"
+      },
       "SuiteCreate": {
         "additionalProperties": false,
         "properties": {
@@ -12433,6 +12693,17 @@
       "SuiteUpdate": {
         "additionalProperties": false,
         "properties": {
+          "contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuiteContractLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Link the suite to a data contract's schema object, or send null to unlink. Omit to leave the link alone. Linking adds no checks \u2014 importing the contract derives them."
+          },
           "description": {
             "anyOf": [
               {
@@ -16447,7 +16718,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ContractRead"
+                  "$ref": "#/components/schemas/ContractDetailRead"
                 }
               }
             },
@@ -16464,7 +16735,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get a data contract",
+        "summary": "Get a data contract with its compliance rollup",
         "tags": [
           "contracts"
         ]

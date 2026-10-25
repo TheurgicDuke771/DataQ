@@ -1045,6 +1045,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#compliance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#link-a-suite-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link a suite by hand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2624,6 +2646,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#compliance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#link-a-suite-by-hand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link a suite by hand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2807,6 +2851,20 @@ them and reconciles their checks: clauses that are new get a check, a check nobo
 the import is updated to the new clause, a check whose clause disappeared is <strong>switched off</strong> (not
 deleted, so its history stays), and checks people added to the suite themselves are left alone.
 Without <code>suite_ids</code>, the new version creates fresh suites.</p>
+<h2 id="compliance">Compliance<a class="headerlink" href="#compliance" title="Permanent link">¶</a></h2>
+<p><code>GET /api/v1/contracts/{id}</code> carries a <code>compliance</code> block: for every clause a check enforces, the
+state that check reached in its suite's latest run — <code>pass</code>, <code>warn</code>, <code>fail</code>, <code>critical</code>,
+<code>unverified</code> (the check errored or was skipped), <code>not_run</code> (that run has no result for it) or
+<code>disabled</code> — and a <code>drifted</code> flag when someone has edited the check since the import, so it may
+no longer say what the clause says. Each suite reports its latest run and <code>results_final</code>, which
+is false while that run is still going: the states are partial until then. The clauses DataQ
+does not enforce are counted as <code>not_enforced</code>.</p>
+<p>When a contract-derived check opens an incident, the incident's evidence names the contract and
+the clause it broke, and alerts lead with it.</p>
+<h2 id="link-a-suite-by-hand">Link a suite by hand<a class="headerlink" href="#link-a-suite-by-hand" title="Permanent link">¶</a></h2>
+<p>To attach a suite you already have to a contract's schema object, send
+<code>PATCH /api/v1/suites/{id}</code> with <code>{"contract": {"contract_id": "…", "contract_object": "orders"}}</code>,
+or <code>{"contract": null}</code> to detach it. Linking adds no checks; importing the contract does.</p>
 <h2 id="export">Export<a class="headerlink" href="#export" title="Permanent link">¶</a></h2>
 <p><code>GET /api/v1/contracts/{id}/export</code> returns the contract as an ODCS document (JSON, or YAML with
 <code>?format=yaml</code>): the stored document plus <code>dataq.*</code> custom properties naming the check behind each

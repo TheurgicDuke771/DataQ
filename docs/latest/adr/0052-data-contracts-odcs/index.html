@@ -2851,17 +2851,19 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   <code>restricted_suite_count</code>, as <code>get_asset</code> does (ADR 0037). A contract with no linked suite is
   visible to admins only.</li>
-<li>Linking an existing suite to a contract by hand (<code>PATCH /suites/{id}</code> with <code>contract_id</code> and
-  <code>contract_object</code>, both or neither, <code>edit</code>) ships with the compliance rollup, the second build
-  phase; until then a suite is linked only by an import. <code>DELETE /contracts/{id}</code> is Member+,
+<li>Linking an existing suite to a contract by hand: <code>PATCH /suites/{id}</code> with
+  <code>contract: {contract_id, contract_object}</code> (<code>edit</code>; the contract must be visible and name the
+  object), or <code>contract: null</code> to unlink. Linking adds no checks; an import derives them. <code>DELETE /contracts/{id}</code> is Member+,
   needs <code>edit</code> on every linked suite, and unlinks only.</li>
 <li>MCP: <code>list_contracts</code>, <code>get_contract</code>, <code>export_contract</code> — three <strong>read-only</strong> tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.</li>
 <li>The compliance rollup is per contract: for each linked suite's latest run, each clause is
-  <code>pass</code> / <code>warn</code> / <code>fail</code> / <code>critical</code> / <code>unverified</code> (error or skipped) / <code>not_enforced</code>
-  (unmapped) / <code>drifted</code>, plus the suite-level <code>last_run_at</code> and <code>results_final</code>, so a rollup
-  over a mid-run suite is never read as a verdict.</li>
+  <code>pass</code> / <code>warn</code> / <code>fail</code> / <code>critical</code> / <code>unverified</code> (error or skipped) / <code>not_run</code> (no result
+  in that run) / <code>disabled</code> (switched off), with <strong><code>drifted</code></strong> as a separate flag (the check was
+  edited since its import — it can drift and still pass), plus the suite-level <code>last_run_at</code> and
+  <code>results_final</code>, so a rollup over a mid-run suite is never read as a verdict. The <code>unmapped</code>
+  list is the <code>not_enforced</code> half, counted beside the clauses.</li>
 </ul>
 <h3 id="9-ui-phase-1">9. UI, phase 1<a class="headerlink" href="#9-ui-phase-1" title="Permanent link">¶</a></h3>
 <p>A read-only <strong>Contracts</strong> page (list, detail with the rollup and the unmapped list, upload a
