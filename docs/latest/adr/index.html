@@ -2919,6 +2919,11 @@
 <td>Consumer-side data contracts — one <code>contracts</code> row per contract <strong>version</strong> holding the ODCS v3 document verbatim; a suite links to one contract + one schema object (N objects → N suites); a <strong>fixed translation table</strong> (schema fields, <code>library</code>/<code>sql</code>/<code>custom</code> quality rules, the <code>latency</code> SLA, <code>classification</code> → the policy rung; v3.0 vocabulary normalised, keyed on the document's <code>id</code>) with an explicit <code>unmapped</code> bucket surfaced as <em>not enforced</em>; DataQ fields travel in <code>customProperties</code> vendor <code>dataq</code>, export round-trips every check; re-import reconciles with ADR 0047's rules (disable, never delete); <code>checks.contract_ref</code> + an incident <code>contract</code> evidence layer for clause-level traceability; three read-only MCP tools, import REST-only</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0053-governance-catalog-seam/">0053</a></td>
+<td>Governance catalogs — one Admin-configured <code>CatalogProvider</code> per workspace over the catalog's HTTP API (no vendor SDK); <strong>push</strong> one assertion per check and one result per run from a Celery task off the critical path, never <code>observed_value</code> or samples, failures on a catalog health signal; <strong>pull</strong> column tags / glossary terms into <code>asset_column_classifications</code> (<code>source = 'catalog'</code>) by a <strong>fixed</strong> convention, <strong>additive-only</strong> (masks, never un-masks; above the profiler, below warehouse tags; reason <code>catalog_tag</code>); DataHub first, OpenMetadata over REST second, Collibra only on demand; first check whether OpenLineage quality facets already cover push</td>
+<td>Proposed</td>
+</tr>
 </tbody>
 </table>
 

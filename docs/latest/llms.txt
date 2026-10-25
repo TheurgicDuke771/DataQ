@@ -136,6 +136,7 @@ lists which).
 - [ADR 0050 — Opt-in product-usage telemetry over OpenTelemetry](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0050-usage-telemetry/index.md): ADR [0031](0031-oss-byol-distribution-licensing.md) (licensing, rule 40),
 - [ADR 0051 — Suite-on-suite triggers: a suite's own success as a trigger provider](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0051-suite-on-suite-triggers/index.md): A suite runs today on a schedule, by hand, or when a bound **orchestration** pipeline or DAG
 - [ADR 0052 — Consumer-side data contracts: a `contracts` entity with ODCS v3 import and export](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0052-data-contracts-odcs/index.md): A DataQ suite is a bag of checks a person authored against one target. Nothing records *why*
+- [ADR 0053 — Governance catalogs: push quality results, pull column classifications](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0053-governance-catalog-seam/index.md): Data consumers look for data in a governance catalog — DataHub, OpenMetadata, Collibra — not in
 
 ## Optional
 
