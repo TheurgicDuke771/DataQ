@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "fcb5aea3cd2c",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0053-governance-catalog",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fc/b5aea3cd2c/0/metadata.json",
+      "transcript": "/fc/b5aea3cd2c/0/full.jsonl",
+      "compact_transcript": "/fc/b5aea3cd2c/0/transcript.jsonl",
+      "content_hash": "/fc/b5aea3cd2c/0/content_hash.txt",
+      "prompt": "/fc/b5aea3cd2c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 7003,
+    "cache_read_tokens": 1825577,
+    "output_tokens": 6188,
+    "api_call_count": 2
+  }
+}
