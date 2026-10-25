@@ -62,18 +62,29 @@ def diff_schemas(
     current: list[ColumnSpec],
     *,
     ignore_columns: list[str] | None = None,
+    declared: bool = False,
 ) -> dict[str, Any]:
-    """The pure schema diff: added / removed / type_changed vs the baseline."""
+    """The pure schema diff: added / removed / type_changed vs the baseline.
+
+    A **declared** baseline (a data contract, ADR 0052) matches names case-insensitively — a
+    contract spells `order_id` where the warehouse may report `ORDER_ID` — and a declared column
+    with no type (`None`) is never `type_changed`: the contract did not say what it should be.
+    A learned baseline keeps exact names, as the warehouse reported them.
+    """
     ignore = {name.lower() for name in (ignore_columns or ())}
-    base = {c["name"]: c["type"] for c in baseline if c["name"].lower() not in ignore}
-    cur = {c["name"]: c["type"] for c in current if c["name"].lower() not in ignore}
-    added = sorted(set(cur) - set(base))
-    removed = sorted(set(base) - set(cur))
+
+    def key(name: str) -> str:
+        return name.lower() if declared else name
+
+    base = {key(c["name"]): c for c in baseline if c["name"].lower() not in ignore}
+    cur = {key(c["name"]): c for c in current if c["name"].lower() not in ignore}
+    added = sorted(cur[k]["name"] for k in set(cur) - set(base))
+    removed = sorted(base[k]["name"] for k in set(base) - set(cur))
     type_changed = sorted(
         (
-            {"column": name, "from": base[name], "to": cur[name]}
-            for name in set(base) & set(cur)
-            if base[name] != cur[name]
+            {"column": cur[k]["name"], "from": base[k]["type"], "to": cur[k]["type"]}
+            for k in set(base) & set(cur)
+            if base[k]["type"] is not None and base[k]["type"] != cur[k]["type"]
         ),
         key=lambda change: change["column"],
     )
@@ -297,7 +308,12 @@ def build_schema_drift_executor(
                 payload["dry_run"] = True
         else:
             stored = baseline_row.baseline.get("columns", [])
-            payload = diff_schemas(stored, current, ignore_columns=config.get("ignore_columns"))
+            payload = diff_schemas(
+                stored,
+                current,
+                ignore_columns=config.get("ignore_columns"),
+                declared=bool(baseline_row.baseline.get("declared")),
+            )
             payload["baseline_captured_at"] = baseline_row.captured_at.isoformat()
         return monitor_outcome(SCHEMA_DRIFT, scalar=payload, config=config, now=datetime.now(UTC))
 
