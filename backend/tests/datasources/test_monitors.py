@@ -334,12 +334,36 @@ def test_volume_above_ceiling_is_excess_pct() -> None:
 
 
 @pytest.mark.parametrize(
-    "config",
-    [{"min_rows": 1000}, {"min_rows": -1, "max_rows": 5}, {"min_rows": 10, "max_rows": 5}, {}],
+    ("config", "message"),
+    [
+        ({"min_rows": -1, "max_rows": 5}, "min_rows must be 0 or more"),
+        ({"min_rows": 10, "max_rows": 5}, "min_rows <= max_rows"),
+        ({}, "needs min_rows, max_rows, or both"),
+        ({"min_rows": True}, "min_rows must be a whole number"),
+        ({"max_rows": 2.5}, "max_rows must be a whole number"),
+        ({"min_rows": "many"}, "min_rows must be a whole number"),
+    ],
 )
-def test_volume_bad_range_raises(config: dict[str, object]) -> None:
-    with pytest.raises(MonitorConfigError):
+def test_volume_bad_range_raises_naming_the_key(config: dict[str, object], message: str) -> None:
+    with pytest.raises(MonitorConfigError, match=message):
         monitor_outcome("volume", scalar=100, config=config, now=_NOW)
+
+
+def test_volume_with_only_a_floor_is_open_above() -> None:
+    """#2374: "at least N rows" is the common case and needs no invented ceiling."""
+    passing = monitor_outcome("volume", scalar=10_000_000, config={"min_rows": 1000}, now=_NOW)
+    assert passing.success is True and passing.metric_value == 0.0
+    assert passing.expected_value == {"monitor": "volume", "min_rows": 1000}
+    short = monitor_outcome("volume", scalar=500, config={"min_rows": 1000}, now=_NOW)
+    assert short.success is False and short.metric_value == pytest.approx(50.0)
+
+
+def test_volume_with_only_a_ceiling_is_open_below() -> None:
+    empty = monitor_outcome("volume", scalar=0, config={"max_rows": 100}, now=_NOW)
+    assert empty.success is True
+    assert empty.expected_value == {"monitor": "volume", "max_rows": 100}
+    over = monitor_outcome("volume", scalar=150, config={"max_rows": 100}, now=_NOW)
+    assert over.success is False and over.metric_value == pytest.approx(50.0)
 
 
 def test_monitor_kinds_exposed() -> None:

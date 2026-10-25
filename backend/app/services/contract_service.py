@@ -297,20 +297,36 @@ def import_contract(
     existing = session.scalar(
         select(Contract).where(Contract.odcs_id == odcs_id, Contract.version == version)
     )
-    if existing is not None and not replace:
-        raise ContractVersionExistsError(
-            "this contract version is already imported; import a new version, or send "
-            "replace=true to replace it",
-            detail={"contract_id": str(existing.id), "odcs_id": odcs_id, "version": version},
-        )
-
     if existing is not None:
+        # Replacing a stored version is a write to every suite it governs: the caller must see the
+        # contract (404 otherwise — the same no-leak rule as a read) and edit each linked suite.
+        if _visible(session, existing, actor_id) is None:
+            raise ContractVersionExistsError(
+                "this contract version is already imported",
+                detail={"odcs_id": odcs_id, "version": version},
+            )
+        if not replace:
+            raise ContractVersionExistsError(
+                "this contract version is already imported; import a new version, or send "
+                "replace=true to replace it",
+                detail={"contract_id": str(existing.id), "odcs_id": odcs_id, "version": version},
+            )
+        for linked in existing.suites:
+            suite_authz.require_permission(session, linked.id, actor_id, minimum="edit")
         contract = existing
         targets = list(contract.suites)
     else:
-        contract = Contract(odcs_id=odcs_id, version=version, created_by=actor_id)
-        session.add(contract)
         targets = _suites_to_repoint(session, odcs_id, suite_ids or [], actor_id=actor_id)
+        contract = Contract(odcs_id=odcs_id, version=version, created_by=actor_id)
+    # A reconciled suite keeps its own connection; its checks were validated against the import's,
+    # so the two must be the same connection (a different engine could refuse what this accepted).
+    for linked in targets:
+        if linked.connection_id != connection.id:
+            raise ContractSuitesInvalidError(
+                "a suite this import would reconcile runs on a different connection; import "
+                "against that suite's connection",
+                detail={"suite_id": str(linked.id), "connection_id": str(linked.connection_id)},
+            )
 
     contract.name = str(spec.get("name") or odcs_id)[:256]
     contract.status = str(spec["status"])[:32] if spec.get("status") is not None else None
@@ -318,6 +334,7 @@ def import_contract(
     contract.tenant = str(spec["tenant"])[:256] if spec.get("tenant") is not None else None
     contract.api_version = str(spec["apiVersion"])
     contract.spec = spec
+    session.add(contract)
     session.flush()
 
     outcome = ImportOutcome(contract=contract, warnings=list(validated.warnings))

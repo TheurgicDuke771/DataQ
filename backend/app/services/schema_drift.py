@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -58,8 +58,8 @@ class SchemaIntrospectionError(Exception):
 
 
 def diff_schemas(
-    baseline: list[ColumnSpec],
-    current: list[ColumnSpec],
+    baseline: Sequence[Mapping[str, Any]],
+    current: Sequence[Mapping[str, Any]],
     *,
     ignore_columns: list[str] | None = None,
     declared: bool = False,

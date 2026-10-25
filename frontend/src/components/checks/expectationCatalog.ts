@@ -770,7 +770,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     thresholds: {
       // No max: a shortfall caps at 100% but a spike is unbounded (e.g. 10× the
       // ceiling = 900% deviation), so the band inputs must allow > 100.
-      help: 'Band the % the row count falls outside [min, max] (either direction; higher = worse; a spike can exceed 100%). Leave blank for a binary in-range pass/fail.',
+      help: 'Set a minimum, a maximum, or both — a blank bound is open. Band the % the row count falls outside them (higher = worse; a spike can exceed 100%). Leave the thresholds blank for a binary in-range pass/fail.',
     },
   },
   {
