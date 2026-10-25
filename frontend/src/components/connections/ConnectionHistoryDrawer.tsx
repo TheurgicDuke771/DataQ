@@ -1,4 +1,5 @@
-import { Descriptions, Tag } from 'antd';
+import { App, Descriptions, Tag } from 'antd';
+import { useState } from 'react';
 
 import {
   CONNECTION_TYPE_LABELS,
@@ -6,12 +7,15 @@ import {
   ENV_COLORS,
   envLabel,
   listConnectionVersions,
+  redactConnectionVersion,
 } from '../../api/connections';
-import { ConfigJson, HistoryDrawer } from '../HistoryDrawer';
+import { useCanMutateConnections } from '../../auth/useMe';
+import { errorMessage } from '../../utils/errors';
+import { ConfigJson, HistoryDrawer, RedactVersionButton } from '../HistoryDrawer';
 
 /**
  * Connection version history (#654) — the connection twin of the check-history drawer (#280), on
- * the shared `HistoryDrawer` shell.
+ * the shared `HistoryDrawer` shell — plus per-version redaction for admins (#685).
  */
 export function ConnectionHistoryDrawer({
   open,
@@ -23,11 +27,36 @@ export function ConnectionHistoryDrawer({
   connection: { id: string; name: string } | null;
   onClose: () => void;
 }) {
+  const { message } = App.useApp();
+  // Redaction is a connection mutation (ADR 0033): hidden from non-admins here AND refused by
+  // the route.
+  const canRedact = useCanMutateConnections();
+  const [redactingVersion, setRedactingVersion] = useState<number | null>(null);
+  // Bumped after a redaction so the list refetches while the drawer stays open.
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRedact = async (versionNo: number) => {
+    if (!connection) return;
+    setRedactingVersion(versionNo);
+    try {
+      await redactConnectionVersion(connection.id, versionNo);
+      message.success(`Redacted v${versionNo}`);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      message.error(`Redact failed: ${errorMessage(err)}`);
+      // Re-throw so antd's Popconfirm keeps the confirm OPEN on failure.
+      throw err;
+    } finally {
+      setRedactingVersion(null);
+    }
+  };
+
   return (
     <HistoryDrawer<ConnectionVersion>
       open={open}
       subject={connection}
       onClose={onClose}
+      refreshKey={refreshKey}
       // The body only mounts with a subject, so the null branch never fetches.
       fetchVersions={() =>
         connection ? listConnectionVersions(connection.id) : Promise.resolve([])
@@ -48,6 +77,20 @@ export function ConnectionHistoryDrawer({
           </Descriptions.Item>
         </Descriptions>
       )}
+      renderActions={
+        canRedact
+          ? (version, isCurrent) =>
+              // The current version IS the connection's live config (the server refuses it too).
+              !isCurrent &&
+              !version.redacted && (
+                <RedactVersionButton
+                  versionNo={version.version_no}
+                  loading={redactingVersion === version.version_no}
+                  onConfirm={() => handleRedact(version.version_no)}
+                />
+              )
+          : undefined
+      }
     />
   );
 }

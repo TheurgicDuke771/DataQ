@@ -35,7 +35,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service, credential_health, tag_service
+from backend.app.services import audit_service, credential_health, tag_service, version_redaction
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -45,6 +45,18 @@ log = get_logger(__name__)
 class ConnectionNotFoundError(DataQError):
     status_code = 404
     code = "connection_not_found"
+
+
+class ConnectionVersionNotFoundError(DataQError):
+    status_code = 404
+    code = "connection_version_not_found"
+
+
+class ConnectionVersionIsCurrentError(DataQError):
+    # The newest snapshot IS the connection's saved state, which the connection itself shows —
+    # redacting it would hide nothing. Edit the connection first (a new version), then redact.
+    status_code = 409
+    code = "connection_version_current"
 
 
 class ConnectionConfigInvalidError(DataQError):
@@ -856,10 +868,86 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
         session.scalars(
             select(ConnectionVersion)
             .where(ConnectionVersion.connection_id == connection_id)
-            .options(selectinload(ConnectionVersion.author))
+            .options(
+                selectinload(ConnectionVersion.author), selectinload(ConnectionVersion.redactor)
+            )
             .order_by(ConnectionVersion.version_no.desc())
         )
     )
+
+
+def _record_version_redaction(
+    session: Session, conn: Connection, *, version_nos: Sequence[int], actor_id: uuid.UUID | None
+) -> None:
+    # Which snapshots were redacted, never what they held — removing the values is the point.
+    audit_service.record(
+        session,
+        action="connection.version_redact",
+        entity_type="connection",
+        entity_id=conn.id,
+        actor=actor_id,
+        after={"id": str(conn.id), "name": conn.name, "version_nos": list(version_nos)},
+    )
+
+
+def redact_connection_version(
+    session: Session, connection_id: uuid.UUID, version_no: int, *, actor_id: uuid.UUID | None
+) -> ConnectionVersion:
+    """Empty one snapshot's ``config`` (#685) — for a value pasted into a
+    config field by mistake and since edited out. The row stays (history keeps its shape); the
+    newest version is refused because it IS the connection's current state, readable on the
+    connection itself; an already-redacted version is returned unchanged. Audited with the
+    version number only.
+    """
+    conn = get_connection(session, connection_id)
+    version = version_redaction.lock_connection_version(session, connection_id, version_no)
+    if version is None:
+        raise ConnectionVersionNotFoundError(
+            "connection version not found",
+            detail={"connection_id": str(connection_id), "version_no": version_no},
+        )
+    if version_no == version_redaction.latest_connection_version_no(session, connection_id):
+        raise ConnectionVersionIsCurrentError(
+            "the newest version is the connection's current state; edit the connection first, "
+            "then redact this version",
+            detail={"connection_id": str(connection_id), "version_no": version_no},
+        )
+    if version.redacted:
+        return version  # idempotent: a retried request returns the row, nothing is audited
+    version_redaction.redact(version, actor_id=actor_id)
+    _record_version_redaction(session, conn, version_nos=[version_no], actor_id=actor_id)
+    session.commit()
+    session.refresh(version)
+    log.info("connection_version_redacted", connection_id=str(connection_id), version_no=version_no)
+    return version
+
+
+def redact_connection_versions(
+    session: Session, connection_id: uuid.UUID, *, actor_id: uuid.UUID | None
+) -> list[int]:
+    """Redact every snapshot but the newest (#685); returns the version numbers redacted now.
+    Already-redacted rows are skipped, and nothing is audited when there was nothing to do.
+    """
+    conn = get_connection(session, connection_id)
+    latest = version_redaction.latest_connection_version_no(session, connection_id)
+    versions = session.scalars(
+        select(ConnectionVersion)
+        .where(ConnectionVersion.connection_id == connection_id)
+        .order_by(ConnectionVersion.version_no)
+        .with_for_update()
+    )
+    redacted: list[int] = []
+    for version in versions:
+        if version.version_no == latest or version.redacted:
+            continue
+        version_redaction.redact(version, actor_id=actor_id)
+        redacted.append(version.version_no)
+    if not redacted:
+        return []
+    _record_version_redaction(session, conn, version_nos=redacted, actor_id=actor_id)
+    session.commit()
+    log.info("connection_versions_redacted", connection_id=str(connection_id), count=len(redacted))
+    return redacted
 
 
 def _dependent_suites_detail(

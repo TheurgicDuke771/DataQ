@@ -83,7 +83,11 @@ schema-drift / anomaly / PII-drift / comparison** monitor kinds:
   datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
 - **Severity thresholds** — band a check into **warn / fail / critical** from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
-- **Check version history** — every edit is versioned and viewable per check.
+- **Check version history** — every edit is versioned and viewable per check, and any version
+  can be restored. The suite's owner or an admin can **redact** an old version whose config
+  held something it should not have (a literal pasted into custom SQL, say): the row stays,
+  its config is emptied except the tested column, and it can no longer be restored. Connections have the same history,
+  redactable by a workspace admin.
 
 ## Suites
 
@@ -195,7 +199,11 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   "passing". Operational `error`/`skip` results feed only the connection axis. Both are
   read off the runs already recorded — there is no connection-probe polling loop.
 - **Results page** — every run with its per-check outcomes; drill into a run for
-  observed-vs-expected values and **redacted failing-row samples**.
+  observed-vs-expected values and **redacted failing-row samples**. Each result is labelled
+  with the check **as it was at that run** — expectation type, engine and DQ dimension from the
+  check's version history at the result's own timestamp, never its current row — on the run
+  page, in the printed report and in the CSV/JSON exports. A check with no version history
+  falls back to its current values, marked **(current)** so they are not mistaken for history.
 - **Run comparison** — from a run, **Compare with…** any other run of the same suite
   (the earlier one becomes the base) to see what changed between them: each check's
   status on both sides and whether it **regressed**, **improved**, stayed the same, or

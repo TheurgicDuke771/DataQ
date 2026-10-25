@@ -364,6 +364,12 @@ export interface CheckVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
+  /** True once the suite's owner or an admin redacted this snapshot: `config` then keeps only its
+   *  tested `column`, every other value it held is gone and the version cannot be restored. Optional so older fixtures need
+   *  no change. */
+  redacted?: boolean;
+  redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /** A check's version history, newest first. Requires `view` on the suite. */
@@ -380,6 +386,18 @@ export async function restoreCheckVersion(
 ): Promise<Check> {
   const { data } = await api.post<Check>(
     `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}/restore`,
+  );
+  return data;
+}
+
+/** Empty one version's config (suite owner/admin; the current version is refused). */
+export async function redactCheckVersion(
+  suiteId: string,
+  checkId: string,
+  versionNo: number,
+): Promise<CheckVersion> {
+  const { data } = await api.delete<CheckVersion>(
+    `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}`,
   );
   return data;
 }

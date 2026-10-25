@@ -460,6 +460,14 @@ class ConnectionVersionRead(ApiModel):
     changed_by: uuid.UUID | None
     changed_by_name: str | None
     created_at: datetime
+    redacted: bool = Field(
+        default=False,
+        description="True when an admin redacted this snapshot: `config` is then empty and the "
+        "values it held are gone from the version history (connection audit events never "
+        "carry config, so nothing else retains them).",
+    )
+    redacted_at: datetime | None = None
+    redacted_by_name: str | None = None
 
     @field_validator("config")
     @classmethod
@@ -467,6 +475,13 @@ class ConnectionVersionRead(ApiModel):
         # A snapshot taken before the config-level guard existed can still carry a
         # credential in a URI-shaped field (#754) — never hand it back out.
         return redact_config_uris(v)
+
+
+class ConnectionVersionsRedacted(ApiModel):
+    redacted_version_nos: list[int] = Field(
+        description="The versions redacted by this call; empty when every older version "
+        "was already redacted (or there is only the current one)."
+    )
 
 
 @router.get(
@@ -483,6 +498,44 @@ def list_connection_versions(
         ConnectionVersionRead.model_validate(v)
         for v in svc.list_connection_versions(db, connection_id)
     ]
+
+
+@router.delete(
+    "/connections/{connection_id}/versions/{version_no}",
+    response_model=ConnectionVersionRead,
+    summary="Redact one version's config (empty it, keep the row)",
+)
+def redact_connection_version(
+    connection_id: uuid.UUID,
+    version_no: int,
+    current_user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ConnectionVersionRead:
+    """For a value pasted into a config field by mistake and since edited out: the snapshot's
+    `config` is emptied and the row stamped with who redacted it and when (an already-redacted
+    version is returned unchanged); the row and the rest
+    of the history stay. The newest version is refused (409) — it is the connection's current
+    state. Admin-only like every connection mutation; audited with the version number only.
+    """
+    version = svc.redact_connection_version(db, connection_id, version_no, actor_id=current_user.id)
+    return ConnectionVersionRead.model_validate(version)
+
+
+@router.delete(
+    "/connections/{connection_id}/versions",
+    response_model=ConnectionVersionsRedacted,
+    summary="Redact every version's config except the current one",
+)
+def redact_connection_versions(
+    connection_id: uuid.UUID,
+    current_user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ConnectionVersionsRedacted:
+    return ConnectionVersionsRedacted(
+        redacted_version_nos=svc.redact_connection_versions(
+            db, connection_id, actor_id=current_user.id
+        )
+    )
 
 
 # ───────────────────────── interactive browse (#466) ───────────────

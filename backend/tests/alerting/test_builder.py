@@ -11,6 +11,7 @@ import pytest
 from backend.app.alerting import builder
 from backend.app.alerting.base import CheckReport, RunReport
 from backend.app.db.models import Asset, Check, Connection, Result, Run, Suite, User
+from backend.app.services import run_service
 
 # ── pure: DTO derived properties ─────────────────────────────────────────────
 
@@ -157,6 +158,54 @@ def _suite_with_check(
     )
     db.commit()
     return suite, run
+
+
+def test_build_report_labels_and_redacts_each_result_as_of_the_result(db_session: Any) -> None:
+    """#1613 review: a check re-pointed between the run and a late delivery must not have
+    the card label its old result with the new expectation type, nor redact the
+    observed value against the new column — the alert is the one surface with no UI
+    badge to correct it. The live row here is `expect_column_max_to_be_between` on
+    `email` (whose scalar observed value is a literal cell); the result was
+    `expect_column_values_to_not_be_null` on `id`."""
+    from backend.app.db.models import CheckVersion
+
+    _suite, run = _suite_with_check(db_session, status="fail")
+    (result,) = run_service.list_results(db_session, run.id)
+    check = db_session.get(Check, result.check_id)
+    t0 = result.created_at
+    db_session.add_all(
+        [
+            CheckVersion(
+                check_id=check.id,
+                version_no=1,
+                name=check.name,
+                kind="expectation",
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": "id"},
+                created_at=t0 - timedelta(hours=1),
+            ),
+            CheckVersion(
+                check_id=check.id,
+                version_no=2,
+                name=check.name,
+                kind="expectation",
+                expectation_type="expect_column_max_to_be_between",
+                config={"column": "email"},
+                created_at=t0 + timedelta(hours=1),
+            ),
+        ]
+    )
+    check.expectation_type = "expect_column_max_to_be_between"
+    check.config = {"column": "email"}
+    result.observed_value = {"observed_value": 42}
+    db_session.commit()
+
+    (only,) = builder.build_run_report(db_session, run).checks
+
+    assert only.expectation_type == "expect_column_values_to_not_be_null"
+    # Redacted against the as-of column `id` the scalar stays visible; against the live
+    # `email` column it is masked as a PII cell.
+    assert only.observed_value == {"observed_value": 42}
 
 
 def test_build_report_maps_check_and_metric(db_session: Any) -> None:

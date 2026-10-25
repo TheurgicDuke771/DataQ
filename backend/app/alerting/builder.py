@@ -19,7 +19,6 @@ from backend.app.alerting.base import (
 from backend.app.core.config import get_settings
 from backend.app.db.models import (
     FAILING_TIERS,
-    GX_ENGINE,
     Asset,
     Check,
     Connection,
@@ -110,12 +109,11 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     # MCP read paths apply.
     tags = effective_column_tags(session, asset)
     results: list[Result] = run_service.list_results(session, run.id)
-    # Per-result `kind`/`engine` as of THIS result (#1880 review) — the same rule
-    # `zero_sample_suppressed` needs on REST/MCP applies here: a `dmf`-engine check
-    # is a pure scalar metric and never had a sample to suppress, with or without
-    # the privacy switch.
-    kind_by_result = run_service.historical_check_kind(session, results, checks)
-    engine_by_result = run_service.historical_check_engine(session, results, checks)
+    # The check as of THIS result (#1489/#1880/#1613) — the card's label, the redactors'
+    # column + type and `zero_sample_suppressed`'s kind/engine all read the same snapshot
+    # REST/MCP use, so a check re-pointed between the run and a late delivery never
+    # relabels the result or redacts it against the wrong column. One `check_versions` read.
+    as_of = run_service.historical_check_snapshots(session, results, checks)
     # Resolved once per report (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
 
@@ -124,19 +122,20 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     for result in results:
         counts[result.status] = counts.get(result.status, 0) + 1
         check = checks.get(result.check_id)
+        snap = as_of[result.id]
         check_reports.append(
             CheckReport(
                 check_id=result.check_id,
                 check_name=check.name if check is not None else "(deleted check)",
-                expectation_type=check.expectation_type if check is not None else "",
+                expectation_type=snap.expectation_type or "",
                 status=result.status,
                 metric_value=(
                     float(result.metric_value) if result.metric_value is not None else None
                 ),
                 observed_value=run_service.redact_observed_value(
                     result.observed_value,
-                    tested_column=(check.config.get("column") if check is not None else None),
-                    expectation_type=(check.expectation_type if check is not None else None),
+                    tested_column=snap.column,
+                    expectation_type=snap.expectation_type,
                     policy=suite.column_policy if suite is not None else None,
                     tags=tags,
                 ),
@@ -145,14 +144,14 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 # surface when non-PII; the suite policy + heuristics mask PII.
                 sample_summary=run_service.redact_sample_failures(
                     result.sample_failures,
-                    tested_column=(check.config.get("column") if check is not None else None),
+                    tested_column=snap.column,
                     policy=suite.column_policy if suite is not None else None,
                     tags=tags,
                 ),
                 sample_suppressed=run_service.zero_sample_suppressed(
                     status=result.status,
-                    check_kind=kind_by_result.get(result.id),
-                    engine=engine_by_result.get(result.id, GX_ENGINE),
+                    check_kind=snap.kind,
+                    engine=snap.engine,
                     zero_sample_mode=zero_sample_mode,
                 ),
             )

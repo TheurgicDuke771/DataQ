@@ -40,6 +40,12 @@ class CheckVersionRead:
             warn_threshold (float | None):
             dimension (None | str | Unset):
             enabled (bool | Unset):  Default: True.
+            redacted (bool | Unset): True when this snapshot was redacted: `config` then keeps only the tested `column` (the
+                result's identity), every other value it held is gone from the version history and the version cannot be
+                restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.
+                Default: False.
+            redacted_at (datetime.datetime | None | Unset):
+            redacted_by_name (None | str | Unset):
             source_connection_id (None | Unset | UUID):
     """
 
@@ -57,6 +63,9 @@ class CheckVersionRead:
     warn_threshold: float | None
     dimension: None | str | Unset = UNSET
     enabled: bool | Unset = True
+    redacted: bool | Unset = False
+    redacted_at: datetime.datetime | None | Unset = UNSET
+    redacted_by_name: None | str | Unset = UNSET
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -101,6 +110,22 @@ class CheckVersionRead:
 
         enabled = self.enabled
 
+        redacted = self.redacted
+
+        redacted_at: None | str | Unset
+        if isinstance(self.redacted_at, Unset):
+            redacted_at = UNSET
+        elif isinstance(self.redacted_at, datetime.datetime):
+            redacted_at = self.redacted_at.isoformat()
+        else:
+            redacted_at = self.redacted_at
+
+        redacted_by_name: None | str | Unset
+        if isinstance(self.redacted_by_name, Unset):
+            redacted_by_name = UNSET
+        else:
+            redacted_by_name = self.redacted_by_name
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -131,6 +156,12 @@ class CheckVersionRead:
             field_dict["dimension"] = dimension
         if enabled is not UNSET:
             field_dict["enabled"] = enabled
+        if redacted is not UNSET:
+            field_dict["redacted"] = redacted
+        if redacted_at is not UNSET:
+            field_dict["redacted_at"] = redacted_at
+        if redacted_by_name is not UNSET:
+            field_dict["redacted_by_name"] = redacted_by_name
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
 
@@ -210,6 +241,34 @@ class CheckVersionRead:
 
         enabled = d.pop("enabled", UNSET)
 
+        redacted = d.pop("redacted", UNSET)
+
+        def _parse_redacted_at(data: object) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                redacted_at_type_0 = datetime.datetime.fromisoformat(data)
+
+                return redacted_at_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        redacted_at = _parse_redacted_at(d.pop("redacted_at", UNSET))
+
+        def _parse_redacted_by_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        redacted_by_name = _parse_redacted_by_name(d.pop("redacted_by_name", UNSET))
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -242,6 +301,9 @@ class CheckVersionRead:
             warn_threshold=warn_threshold,
             dimension=dimension,
             enabled=enabled,
+            redacted=redacted,
+            redacted_at=redacted_at,
+            redacted_by_name=redacted_by_name,
             source_connection_id=source_connection_id,
         )
 

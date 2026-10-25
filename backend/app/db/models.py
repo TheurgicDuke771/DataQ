@@ -572,8 +572,15 @@ class ConnectionVersion(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
+    # Set by a redaction (#685), which also empties `config`; NULL on every other row. The flag is
+    # a column, not a marker inside the JSONB, so no user-supplied config can look redacted.
+    redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    redacted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
 
-    author: Mapped["User | None"] = relationship()
+    author: Mapped["User | None"] = relationship(foreign_keys=[changed_by])
+    redactor: Mapped["User | None"] = relationship(foreign_keys=[redacted_by])
 
     @property
     def changed_by_name(self) -> str | None:
@@ -581,6 +588,16 @@ class ConnectionVersion(Base):
         Callers that serialize this must `selectinload(ConnectionVersion.author)`.
         """
         return (self.author.display_name or self.author.email) if self.author else None
+
+    @property
+    def redacted(self) -> bool:
+        """True once the snapshot's ``config`` was emptied by a redaction (#685)."""
+        return self.redacted_at is not None
+
+    @property
+    def redacted_by_name(self) -> str | None:
+        """Redactor display name/email, or None for a removed user / an unredacted row."""
+        return (self.redactor.display_name or self.redactor.email) if self.redactor else None
 
 
 class Contract(Base):
@@ -859,8 +876,15 @@ class CheckVersion(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     created_at: Mapped[datetime] = _created_at()
+    # Set by a redaction (#685), which also empties `config`; NULL on every other row. The flag is
+    # a column, not a marker inside the JSONB, so no user-supplied config can look redacted.
+    redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    redacted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
 
-    author: Mapped["User | None"] = relationship()
+    author: Mapped["User | None"] = relationship(foreign_keys=[changed_by])
+    redactor: Mapped["User | None"] = relationship(foreign_keys=[redacted_by])
 
     @property
     def changed_by_name(self) -> str | None:
@@ -868,6 +892,16 @@ class CheckVersion(Base):
         Callers that serialize this must `selectinload(CheckVersion.author)`.
         """
         return (self.author.display_name or self.author.email) if self.author else None
+
+    @property
+    def redacted(self) -> bool:
+        """True once the snapshot's ``config`` was emptied by a redaction (#685)."""
+        return self.redacted_at is not None
+
+    @property
+    def redacted_by_name(self) -> str | None:
+        """Redactor display name/email, or None for a removed user / an unredacted row."""
+        return (self.redactor.display_name or self.redactor.email) if self.redactor else None
 
 
 class Run(Base):

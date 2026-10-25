@@ -396,21 +396,16 @@ def _run_results_payload(
     # from the warehouse: an MCP read must not open a datasource connection.
     # `None` means no opinion, which is what shipped before G3.
     tags = _asset_column_tags(session, suite, run)
-    # Per-RESULT (tested_column, expectation_type) as of when each result was
-    # written (#1489) — not the check's current state, which is freely editable
-    # after the fact and would silently re-label what old results show/audit.
-    context = run_service.historical_check_context(session, results, checks)
-    # Same rule for `engine`/`kind` (#1869/#1880 review): an old result's
-    # observed_value/metric_value reflect whichever engine actually produced it, not
-    # whatever the check has since been re-pointed to, and `zero_sample_suppressed`
-    # needs both as of THIS result.
-    engine_by_result = run_service.historical_check_engine(session, results, checks)
-    kind_by_result = run_service.historical_check_kind(session, results, checks)
+    # Per-RESULT check identity as of when each result was written (#1489) — not the
+    # check's current state, which is freely editable after the fact and would
+    # silently re-label what old results show/audit. `engine`/`kind` follow the same
+    # rule (#1869/#1880 review): an old result's observed_value/metric_value reflect
+    # whichever engine actually produced it, not whatever the check has since been
+    # re-pointed to, and `zero_sample_suppressed` needs both as of THIS result; so
+    # does `dimension` (#1613). One `check_versions` read, not three.
+    as_of = run_service.historical_check_snapshots(session, results, checks)
     # Resolved once per tool call (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
-
-    def _tested_column(result_id: uuid.UUID) -> str | None:
-        return context.get(result_id, (None, None))[0]
 
     # Redact ONCE, here, and reuse below. An earlier version redacted every result
     # a second time purely to compute `exposed_ids` and then threw the result
@@ -420,17 +415,17 @@ def _run_results_payload(
             "result_id": str(r.id),
             **_redacted_sample(
                 r,
-                _tested_column(r.id),
+                as_of[r.id].column,
                 policy,
                 tags,
-                check_kind=kind_by_result.get(r.id),
-                engine=engine_by_result.get(r.id, GX_ENGINE),
+                check_kind=as_of[r.id].kind,
+                engine=as_of[r.id].engine,
                 zero_sample_mode=zero_sample_mode,
             ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
-                tested_column=_tested_column(r.id),
-                expectation_type=context.get(r.id, (None, None))[1],
+                tested_column=as_of[r.id].column,
+                expectation_type=as_of[r.id].expectation_type,
                 policy=policy,
                 tags=tags,
             ),
@@ -456,7 +451,7 @@ def _run_results_payload(
         for result, r in zip(results, rendered, strict=True)
         if r["redaction"] in {"none", "partial"}
         or run_service.observed_value_exposes_cells(
-            r["observed_value"], expectation_type=context.get(result.id, (None, None))[1]
+            r["observed_value"], expectation_type=as_of[result.id].expectation_type
         )
     ]
     rendered_by_id = {r["result_id"]: r for r in rendered}
@@ -506,10 +501,18 @@ def _run_results_payload(
                 # WHO evaluated this check (ADR 0036) — a dmf result's
                 # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
                 # GX expectation output, and the two have different semantics an
-                # LLM would otherwise conflate. Resolved AS OF this result (like
-                # `context` above): a check re-pointed gx<->dmf after this run
-                # must not have its old result mislabeled with the new engine.
-                "engine": engine_by_result.get(r.id),
+                # LLM would otherwise conflate. Resolved AS OF this result: a check
+                # re-pointed gx<->dmf after this run must not have its old result
+                # mislabeled with the new engine. Null for an unknown check — the
+                # redactors above take the `gx` default for safety, but the payload
+                # must not state an engine nothing recorded.
+                "engine": as_of[r.id].engine if as_of[r.id].resolved_from else None,
+                # The DQ dimension (ADR 0038) the check carried WHEN this result was
+                # written — null is "unclassified", a coverage gap, not an error.
+                "dimension": as_of[r.id].dimension,
+                # `version` / `later_version` / `live` / null — see
+                # `run_service.CheckAsOfSource` (#1613).
+                "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
                 # How much of the dataset this check actually saw (#595).
@@ -730,10 +733,15 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     (e.g. a passing one). Returns an empty result set if the suite has never
     run. Requires at least view access to the suite.
 
-    ``engine`` is the engine that produced this particular result, resolved from
-    the check's version history as of the result — not the check's current one, so
-    a check re-pointed to a different engine after this run still shows the old
-    engine here. ``name`` is the check's current name.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the values that applied to this particular result, resolved from the
+    check's version history as of the result — not the check's current ones, so a
+    check re-pointed or re-classified after this run still shows the old values
+    here. ``check_resolved_from`` is ``"version"`` when such a snapshot existed,
+    ``"later_version"`` when every snapshot postdates the result and the earliest
+    stands in, ``"live"`` when the check has no version history and its CURRENT
+    values stand in (they may postdate the result), and null for an unknown check
+    (``engine`` is then null too). ``name`` is the check's current name.
 
     ``check_enabled`` says whether that check is switched on **now**. ``false``
     means it was switched off after this run: the result is its last, no later run
@@ -1168,8 +1176,9 @@ def list_check_versions(
     Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
     check's name, kind, expectation type, ``engine`` (ADR 0036 — ``gx`` unless it
     was pointed at a platform-native engine like ``dmf`` **as of that version**),
-    dimension, full ``config`` and the three severity thresholds **as they were
-    at that version**, plus when the change was made and who made it.
+    dimension, ``config`` (the full stored config, or only ``{"column": …}`` once
+    ``redacted`` is true) and the three severity thresholds **as they were at that version**,
+    plus when the change was made and who made it.
 
     ``total`` reports how many versions exist regardless of ``limit``, so a short
     page is not mistaken for the whole history — the oldest versions are the ones
@@ -1200,6 +1209,17 @@ def list_check_versions(
     table setting creates **no version**. So identical thresholds across versions do
     not show that the alerting level never changed. What each past run was scored
     against is on its result (``expected_value.thresholds`` in ``get_run_results``).
+
+    **A version with ``redacted: true`` has no config to show beyond its tested
+    column.** A suite owner or admin emptied the rest of its stored config
+    (``redacted_at`` and ``redacted_by_name`` say who and when), usually because
+    a value that should never have been stored — a literal in custom SQL, a
+    token — had been pasted into it. Its name, thresholds, author, time and
+    ``config.column`` are still real; the rest of ``config`` is gone, so it is
+    not what the check was, and ``restore_check_version`` refuses it. Redaction
+    cannot be undone and has no MCP tool: it is done in the app's History
+    drawer. The append-only audit log may still hold the values on the
+    ``check.update`` event that recorded the edit; only an admin reads that.
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.
@@ -1244,6 +1264,11 @@ def list_check_versions(
                     "critical_threshold": _num(v.critical_threshold),
                     "changed_at": v.created_at.isoformat(),
                     "changed_by_name": v.changed_by_name,
+                    # A redacted snapshot's `config` is `{}`; the flag is what a model should
+                    # branch on (#685).
+                    "redacted": v.redacted,
+                    "redacted_at": v.redacted_at.isoformat() if v.redacted_at else None,
+                    "redacted_by_name": v.redacted_by_name,
                 }
                 for v in versions[:limit]
             ],
@@ -1501,9 +1526,16 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     (PII-redacted; see ``get_suite_results`` for what a null sample's
     ``redaction`` states mean, including ``"zero_sample"``, #1873).
 
-    ``engine`` is the check's **current** engine, not the one that produced this
-    particular result — like ``name``, it is not snapshotted per result; use
-    ``list_check_versions`` for the engine as of a specific edit.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the check's values **as of this result**, resolved from its version history
+    at the result's own timestamp — a check re-pointed or re-classified after the
+    run still reports what it was then. ``check_resolved_from`` says how far to
+    trust that: ``"version"`` is a snapshot in effect at the time; ``"later_version"``
+    means every snapshot postdates the result (clock skew) and the earliest stands
+    in; ``"live"`` means the check has no version history, so these are its CURRENT
+    values and may postdate the result; null means the check is unknown, and
+    ``engine`` is then null too rather than a default. ``name`` and ``check_enabled``
+    are always current.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and
@@ -2685,9 +2717,9 @@ def update_check(
     For every other argument omission means "leave alone" and there is **no way
     to clear it back to empty** through this tool. Say so rather than passing an
     empty string, which would set that value, not clear it. If an earlier version
-    of the check had the field empty, ``restore_check_version`` will clear it;
-    otherwise the check must be recreated. ``kind`` cannot be changed at all;
-    recreate the check as the other kind.
+    of the check had the field empty, ``restore_check_version`` will clear it (a
+    redacted version cannot be restored); otherwise the check must be recreated.
+    ``kind`` cannot be changed at all; recreate the check as the other kind.
 
     Changing ``expectation_type`` is held to the same vetted set ``create_check``
     describes, so a type outside it is refused here too and the check keeps its
@@ -2704,7 +2736,8 @@ def update_check(
 
     Every update snapshots the new state as a check version, so the change is
     reviewable with ``list_check_versions`` and reversible with
-    ``restore_check_version``. Requires edit access to the suite.
+    ``restore_check_version`` unless that version is later redacted. Requires
+    edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -2770,10 +2803,11 @@ def restore_check_version(
     and keep everything else as it is now, use ``update_check`` with
     ``clear_thresholds`` instead; other empty fields only a restore brings back.
 
-    **Nothing is lost and nothing is renumbered.** History is additive: the
-    restore is recorded as a new version on top, so the state you are replacing
-    remains in ``list_check_versions`` and can itself be restored. Restoring the
-    version the check is already on is a no-op and records nothing.
+    **A restore itself loses nothing and renumbers nothing.** History is additive:
+    the restore is recorded as a new version on top, so the state you are
+    replacing stays in ``list_check_versions`` and can itself be restored — unless
+    a suite owner or admin has since redacted that version. Restoring the version
+    the check is already on is a no-op and records nothing.
 
     A restore never switches a check on or off. Each version records whether the
     check was ``enabled`` at the time, but that is history only: a disabled check
@@ -2784,7 +2818,11 @@ def restore_check_version(
     not simply written back, so a version created before a validation rule
     shipped may be rejected — the error names what is wrong and the check is left
     exactly as it was. That is deliberate: it prevents reinstating a definition
-    the authoring path would no longer accept.
+    the authoring path would no longer accept. **A redacted version is always
+    refused** (``redacted: true`` in ``list_check_versions``): its config was
+    emptied and is no longer stored on that version, so there is nothing to
+    restore from it — say so rather than retrying. A later version that copied
+    the same config forward is still restorable.
 
     **On an automatic baseline a restore puts back whether it inherited, not
     necessarily its numbers.** If the snapshot was taken while the check inherited

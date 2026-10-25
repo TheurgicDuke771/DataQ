@@ -15,6 +15,7 @@ import {
 } from '../api/runs';
 import { getSuite } from '../api/suites';
 import { DimensionTag, EngineTag } from '../components/checks/checkBadges';
+import { AsOfCell } from '../components/results/checkAsOf';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { formatMetricDelta, formatTimestamp } from '../components/results/resultsFormat';
@@ -290,12 +291,26 @@ function ComparisonTable({ rows }: { rows: ComparisonRow[] }) {
     {
       title: 'Dimension',
       key: 'dimension',
-      render: (_, row) => <DimensionTag dimension={(row.target ?? row.base)?.check.dimension} />,
+      render: (_, row) => {
+        const check = (row.target ?? row.base)?.check;
+        return (
+          <AsOfCell source={check?.resolved_from ?? undefined}>
+            <DimensionTag dimension={check?.dimension} />
+          </AsOfCell>
+        );
+      },
     },
     {
       title: 'Engine',
       key: 'engine',
-      render: (_, row) => <EngineTag engine={(row.target ?? row.base)?.check.engine} />,
+      render: (_, row) => {
+        const check = (row.target ?? row.base)?.check;
+        return (
+          <AsOfCell source={check?.resolved_from ?? undefined}>
+            <EngineTag engine={check?.engine} />
+          </AsOfCell>
+        );
+      },
     },
     { title: 'Base', key: 'base', render: (_, row) => <SideStatus side={row.base} /> },
     { title: 'Target', key: 'target', render: (_, row) => <SideStatus side={row.target} /> },

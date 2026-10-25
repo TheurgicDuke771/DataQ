@@ -2130,6 +2130,96 @@
         "title": "ChannelUpdate",
         "type": "object"
       },
+      "CheckAsOfRead": {
+        "description": "A check's identity as it WAS when a result was written \u2014 `engine` (ADR 0036),\n`dimension` (ADR 0038), `expectation_type`, `kind`, name and tested column resolved\nfrom `check_versions` at the result's own `created_at`, never the check's current\nrow \u2014 so a check re-pointed or re-classified after a run never relabels that run's\nresults (#1489/#1613). The two sides of a comparison row may therefore differ.\n\n`resolved_from` says how trustworthy that is: `version` = a snapshot in effect at the\nresult; `later_version` = every snapshot postdates the result (clock skew), so the\nearliest stands in; `live` = the check has no version history, so its CURRENT row\nstands in and may postdate the result. Only `version` is genuinely as-of.",
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "expectation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectation Type"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "resolved_from": {
+            "anyOf": [
+              {
+                "enum": [
+                  "version",
+                  "later_version",
+                  "live"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved From"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "engine",
+          "expectation_type",
+          "dimension",
+          "column"
+        ],
+        "title": "CheckAsOfRead",
+        "type": "object"
+      },
       "CheckBaselineRead": {
         "description": "A stateful monitor's stored baseline \u2014 `schema_drift`'s column snapshot or `anomaly`'s\nobservation window (`monitor_baselines.baseline`, kind-shaped JSONB; see\n`backend/app/services/anomaly.py` for the payload's documented shape). Returned generically:\nthis endpoint doesn't interpret `baseline`, the frontend trend chart does, keyed on `kind`.",
         "properties": {
@@ -3163,6 +3253,35 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when this snapshot was redacted: `config` then keeps only the tested `column` (the result's identity), every other value it held is gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
+          },
           "source_connection_id": {
             "anyOf": [
               {
@@ -3876,80 +3995,6 @@
         "title": "ColumnsRead",
         "type": "object"
       },
-      "ComparisonCheckRead": {
-        "description": "A check's identity as it WAS when one side's result was written (from\n`check_versions`), never its current state \u2014 the two sides of a row may differ.",
-        "properties": {
-          "column": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Column"
-          },
-          "dimension": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dimension"
-          },
-          "engine": {
-            "title": "Engine",
-            "type": "string"
-          },
-          "expectation_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expectation Type"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "engine",
-          "expectation_type",
-          "dimension",
-          "column"
-        ],
-        "title": "ComparisonCheckRead",
-        "type": "object"
-      },
       "ComparisonDeltaRead": {
         "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric. `metric_changed` is true whenever the two\nmetrics differ \u2014 including when only ONE side has one, in which case the deltas\nare null because no difference can be stated.",
         "properties": {
@@ -4190,7 +4235,7 @@
         "description": "One run's result for a check. `observed_value` is redacted exactly as on\n`GET /runs/{id}`; failing-row samples are never carried here.",
         "properties": {
           "check": {
-            "$ref": "#/components/schemas/ComparisonCheckRead"
+            "$ref": "#/components/schemas/CheckAsOfRead"
           },
           "metric_value": {
             "anyOf": [
@@ -4842,6 +4887,35 @@
             "title": "Name",
             "type": "string"
           },
+          "redacted": {
+            "default": false,
+            "description": "True when an admin redacted this snapshot: `config` is then empty and the values it held are gone from the version history (connection audit events never carry config, so nothing else retains them).",
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "redacted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted At"
+          },
+          "redacted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redacted By Name"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4862,6 +4936,23 @@
           "created_at"
         ],
         "title": "ConnectionVersionRead",
+        "type": "object"
+      },
+      "ConnectionVersionsRedacted": {
+        "properties": {
+          "redacted_version_nos": {
+            "description": "The versions redacted by this call; empty when every older version was already redacted (or there is only the current one).",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Redacted Version Nos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "redacted_version_nos"
+        ],
+        "title": "ConnectionVersionsRedacted",
         "type": "object"
       },
       "CoverageFiguresRead": {
@@ -9057,8 +9148,18 @@
         "type": "object"
       },
       "ResultRead": {
-        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
+        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n`check` is the check's identity AS OF this result (#1613), never its current state.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
         "properties": {
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckAsOfRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "check_id": {
             "format": "uuid",
             "title": "Check Id",
@@ -15704,6 +15805,47 @@
       }
     },
     "/api/v1/connections/{connection_id}/versions": {
+      "delete": {
+        "operationId": "redact_connection_versions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionsRedacted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact every version's config except the current one",
+        "tags": [
+          "connections"
+        ]
+      },
       "get": {
         "operationId": "list_connection_versions",
         "parameters": [
@@ -15745,6 +15887,59 @@
           }
         },
         "summary": "List a connection's version history (newest first)",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a value pasted into a config field by mistake and since edited out: the snapshot's\n`config` is emptied and the row stamped with who redacted it and when (an already-redacted\nversion is returned unchanged); the row and the rest\nof the history stay. The newest version is refused (409) \u2014 it is the connection's current\nstate. Admin-only like every connection mutation; audited with the version number only.",
+        "operationId": "redact_connection_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "connections"
         ]
@@ -19490,6 +19685,69 @@
           }
         },
         "summary": "List a check's version history (newest first)",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}": {
+      "delete": {
+        "description": "For a literal pasted into custom SQL or a config field by mistake and since edited out:\nthe snapshot's `config` is emptied except its tested `column`, and the row stamped with who\nredacted it and when; the row and the rest of the history stay, and the version can no longer\nbe restored. The newest version is refused (409) \u2014 it is the check's current state.\nRedacting an already-redacted version returns it unchanged (200). Destroying history is gated\nabove editing it: the suite's owner or admin (a workspace admin qualifies). Audited with the\nversion number only.",
+        "operationId": "redact_check_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_no",
+            "required": true,
+            "schema": {
+              "title": "Version No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redact one version's config (empty it, keep the row)",
         "tags": [
           "checks"
         ]

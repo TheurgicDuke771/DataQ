@@ -348,15 +348,22 @@ describe('RunDetail page', () => {
     expect(headers).toEqual([
       'check',
       'expectation',
+      'engine',
+      'dimension',
+      'check_as_of',
       'status',
       'metric_value',
       'observed',
       'sampled',
     ]);
-    // check_id → name, observed scalar JSON-stringified.
+    // check_id → name, observed scalar JSON-stringified. The payload carries no snapshot, so the
+    // live check stands in and the row says `current` rather than passing it off as history.
     expect(rows[0]).toEqual([
       'order_id not null',
       'expect_column_values_to_not_be_null',
+      'gx',
+      '',
+      'current',
       'warn',
       2,
       '{"unexpected_percent":2}',
@@ -806,8 +813,8 @@ describe('RunDetail page', () => {
     await user.click(await screen.findByRole('button', { name: /download/i }));
     await user.click(await screen.findByText('Download CSV'));
 
-    const [, , rows] = vi.mocked(downloadCsv).mock.calls[0];
-    expect(rows[0][5]).toBe('yes');
+    const [, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(rows[0][headers.indexOf('sampled')]).toBe('yes');
   });
 
   // ── PDF report export (#345) ───────────────────────────────────────────
@@ -865,11 +872,14 @@ describe('RunDetail page', () => {
       expect(within(report).getByText(/Run r1/)).toBeInTheDocument();
       expect(within(report).getByText('manual:u1')).toBeInTheDocument();
       expect(within(report).getByText('order_id not null')).toBeInTheDocument();
-      expect(within(report).getByText('expect_column_values_to_not_be_null')).toBeInTheDocument();
+      expect(
+        within(report).getByText('expect_column_values_to_not_be_null (current)'),
+      ).toBeInTheDocument();
       expect(within(report).getByText('warn')).toBeInTheDocument();
       expect(within(report).getByText('2')).toBeInTheDocument();
-      // Engine (#1551) — defaults to GX, printed as plain text (no Tag survives print).
-      expect(within(report).getByText('GX')).toBeInTheDocument();
+      // Engine (#1551) — defaults to GX, printed as plain text (no Tag survives print). The fixture
+      // payload predates #1613, so the live check is the fallback and the cell says "(current)".
+      expect(within(report).getByText('GX (current)')).toBeInTheDocument();
     });
 
     it('prints DMF distinctly from GX (#1551)', async () => {
@@ -879,8 +889,8 @@ describe('RunDetail page', () => {
       renderAt('r1');
 
       const report = await screen.findByTestId('run-report');
-      expect(within(report).getByText('DMF')).toBeInTheDocument();
-      expect(within(report).queryByText('GX')).not.toBeInTheDocument();
+      expect(within(report).getByText('DMF (current)')).toBeInTheDocument();
+      expect(within(report).queryByText(/^GX/)).not.toBeInTheDocument();
     });
 
     it('marks a snoozed check with a print-friendly "(snoozed)" suffix (#653 parity)', async () => {
@@ -1437,5 +1447,179 @@ describe('RunDetail — incident linkage (#1634)', () => {
     await region.findByText('order_id not null');
     expect(mockListIncidents).not.toHaveBeenCalled();
     expect(region.queryByText('Incident')).not.toBeInTheDocument();
+  });
+});
+
+describe('check identity as of the result (#1613)', () => {
+  const asOfDmf = {
+    name: 'order_id not null',
+    kind: 'expectation',
+    engine: 'dmf',
+    expectation_type: 'dmf:null_count',
+    dimension: 'completeness',
+    column: 'order_id',
+    resolved_from: 'version' as const,
+  };
+
+  it('prefers the result snapshot over the live check in the results table', async () => {
+    // The live check says gx / unclassified / expect_column_values_to_not_be_null — it was
+    // re-pointed and re-classified AFTER this run. The result must still read dmf / Completeness.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: asOfDmf }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([{ ...check, engine: 'gx', dimension: null }]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('order_id not null')).toBeInTheDocument();
+    expect(region.getByText('DMF')).toBeInTheDocument();
+    expect(region.queryByText('GX')).not.toBeInTheDocument();
+    expect(region.getByText('Completeness')).toBeInTheDocument();
+    expect(region.getByText('dmf:null_count')).toBeInTheDocument();
+    expect(region.queryByText('expect_column_values_to_not_be_null')).not.toBeInTheDocument();
+    expect(region.queryByText('(current)')).not.toBeInTheDocument();
+  });
+
+  it('marks a live-resolved snapshot "(current)" and explains it', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: { ...asOfDmf, resolved_from: 'live' } }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    // One marker per as-of cell: expectation, engine, dimension.
+    const markers = region.getAllByText('(current)');
+    expect(markers).toHaveLength(3);
+    expect(markers[0]).toHaveAccessibleName(/no version history/);
+  });
+
+  it('falls back to the live check, marked "(current)", when the payload carries no snapshot', async () => {
+    mockGetRun.mockResolvedValue(runDetail); // pre-#1613 payload: no `check` on the result
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([{ ...check, engine: 'dmf', dimension: 'validity' }]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    expect(region.getByText('DMF')).toBeInTheDocument();
+    expect(region.getByText('Validity')).toBeInTheDocument();
+    expect(region.getAllByText('(current)')).toHaveLength(3);
+  });
+
+  it('prints the snapshot in the report, with a "(current)" suffix and footnote only for live fallbacks', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        { ...runDetail.results[0], check: asOfDmf },
+        {
+          ...runDetail.results[0],
+          id: 'res2',
+          check_id: 'chk2',
+          check: { ...asOfDmf, engine: 'gx', dimension: null, resolved_from: 'live' },
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([{ ...check, engine: 'gx', dimension: null }]);
+    renderAt('r1');
+
+    const report = await screen.findByTestId('run-report');
+    expect(within(report).getByText('DMF')).toBeInTheDocument();
+    expect(within(report).getByText('Completeness')).toBeInTheDocument();
+    expect(within(report).getByText('GX (current)')).toBeInTheDocument();
+    expect(within(report).getByText('Unclassified (current)')).toBeInTheDocument();
+    expect(within(report).getByTestId('report-current-footnote')).toBeInTheDocument();
+  });
+
+  it('omits the report footnote when every result carries a real snapshot', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: asOfDmf }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+
+    const report = await screen.findByTestId('run-report');
+    expect(within(report).queryByTestId('report-current-footnote')).not.toBeInTheDocument();
+    expect(within(report).queryByText(/\(current\)/)).not.toBeInTheDocument();
+  });
+
+  it('exports the as-of expectation type, not the live one', async () => {
+    const user = userEvent.setup();
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: asOfDmf }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download JSON'));
+    const [, payload] = vi.mocked(downloadJson).mock.calls[0] as [
+      string,
+      {
+        checks: {
+          expectation_type: string;
+          engine: string;
+          dimension: string;
+          check_as_of: string;
+        }[];
+      },
+    ];
+    expect(payload.checks[0]).toMatchObject({
+      expectation_type: 'dmf:null_count',
+      engine: 'dmf',
+      dimension: 'completeness',
+      check_as_of: 'version',
+    });
+  });
+
+  it('exports a live fallback as `current`, never as history', async () => {
+    const user = userEvent.setup();
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: { ...asOfDmf, resolved_from: 'live' } }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    await user.click(region.getByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download CSV'));
+    const [, headers, rows] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(rows[0][headers.indexOf('check_as_of')]).toBe('current');
+  });
+
+  it('marks a later-version stand-in "(later)" in the table and the report, with its own footnote', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check: { ...asOfDmf, resolved_from: 'later_version' } }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    await region.findByText('order_id not null');
+    const markers = region.getAllByText('(later)');
+    expect(markers).toHaveLength(3);
+    expect(markers[0]).toHaveAccessibleName(/postdates this result/);
+    expect(region.queryByText('(current)')).not.toBeInTheDocument();
+    const report = screen.getByTestId('run-report');
+    expect(within(report).getByText('DMF (later)')).toBeInTheDocument();
+    expect(within(report).getByTestId('report-later-footnote')).toBeInTheDocument();
+    expect(within(report).queryByTestId('report-current-footnote')).not.toBeInTheDocument();
   });
 });

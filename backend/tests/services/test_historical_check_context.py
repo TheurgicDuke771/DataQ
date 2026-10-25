@@ -52,6 +52,7 @@ def _version(
     column: str,
     engine: str = "gx",
     kind: str | None = None,
+    dimension: str | None = None,
 ) -> CheckVersion:
     version = CheckVersion(
         check_id=check.id,
@@ -62,6 +63,7 @@ def _version(
         config={"column": column},
         created_at=created_at,
         engine=engine,
+        dimension=dimension,
     )
     db_session.add(version)
     db_session.flush()
@@ -242,3 +244,118 @@ def test_a_result_with_no_check_id_resolves_to_none() -> None:
     )
     context = run_service.historical_check_context(None, [result], {})  # type: ignore[arg-type]
     assert context[result.id] == (None, None)
+
+
+def test_historical_check_snapshots_resolve_dimension_as_of_and_name_their_source(
+    db_session: Any,
+) -> None:
+    """#1613: `dimension` (ADR 0038) is snapshotted per version like `engine`, so a check
+    re-classified after a run must not relabel that run's result; and the snapshot says it
+    came from a version row (`resolved_from == "version"`)."""
+    _suite, check = _suite_and_check(db_session)
+    check.dimension = "validity"
+    _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0,
+        expectation_type="expect_column_values_to_not_be_null",
+        column="v1_column",
+        dimension="completeness",
+    )
+    _version(
+        db_session,
+        check,
+        version_no=2,
+        created_at=_T0 + timedelta(days=1),
+        expectation_type="expect_column_values_to_not_be_null",
+        column="v1_column",
+        dimension="validity",
+    )
+    before_edit = _result(db_session, check, created_at=_T0 + timedelta(hours=1))
+    after_edit = _result(db_session, check, created_at=_T0 + timedelta(days=2))
+
+    snapshots = run_service.historical_check_snapshots(
+        db_session, [before_edit, after_edit], {check.id: check}
+    )
+
+    assert snapshots[before_edit.id].dimension == "completeness"
+    assert snapshots[after_edit.id].dimension == "validity"
+    assert {snap.resolved_from for snap in snapshots.values()} == {"version"}
+
+
+def test_historical_check_snapshots_name_the_live_fallback(db_session: Any) -> None:
+    """With no version row at all the live check is the only source, and the snapshot must
+    SAY so (`resolved_from == "live"`): its values may postdate the result, and a reader
+    with no such flag would present today's engine/dimension as history (#1613)."""
+    _suite, check = _suite_and_check(db_session)
+    check.dimension = "validity"
+    result = _result(db_session, check, created_at=_T0)
+
+    (snapshot,) = run_service.historical_check_snapshots(
+        db_session, [result], {check.id: check}
+    ).values()
+
+    assert snapshot.resolved_from == "live"
+    assert snapshot.dimension == "validity"
+    unknown = run_service.historical_check_snapshots_at(
+        db_session, {"k": (None, _T0)}, {check.id: check}
+    )
+    assert unknown["k"].resolved_from is None
+
+
+def test_historical_check_snapshots_name_the_clock_skew_branch(db_session: Any) -> None:
+    """Every version postdates the result (clock skew): the earliest stands in, and the
+    snapshot must say `later_version`, not `version` — it may not be what evaluated the
+    result, so no reader may present it as the state in effect (#1613 review)."""
+    _suite, check = _suite_and_check(db_session)
+    _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0 + timedelta(minutes=5),
+        expectation_type="expect_column_values_to_not_be_null",
+        column="v1_column",
+        dimension="completeness",
+    )
+    result = _result(db_session, check, created_at=_T0)
+
+    (snapshot,) = run_service.historical_check_snapshots(
+        db_session, [result], {check.id: check}
+    ).values()
+
+    assert snapshot.resolved_from == "later_version"
+    assert snapshot.dimension == "completeness"
+
+
+def test_a_redacted_version_still_names_the_column_its_results_tested(db_session: Any) -> None:
+    """#685 review: redaction empties the snapshot's config but keeps `column` — the masking
+    ladder and data-subject searches resolve a result's tested column from it."""
+    from backend.app.services import version_redaction
+
+    _suite, check = _suite_and_check(db_session)
+    v1 = _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0,
+        expectation_type="expect_column_values_to_not_be_null",
+        column="email",
+    )
+    v1.config = {**v1.config, "value_set": ["PASTED_LITERAL"]}
+    _version(
+        db_session,
+        check,
+        version_no=2,
+        created_at=_T0 + timedelta(days=1),
+        expectation_type="expect_column_values_to_not_be_null",
+        column="email",
+    )
+    result = _result(db_session, check, created_at=_T0 + timedelta(hours=1))
+
+    version_redaction.redact(v1, actor_id=None)
+    db_session.flush()
+
+    assert v1.config == {"column": "email"} and v1.redacted
+    context = run_service.historical_check_context(db_session, [result], {check.id: check})
+    assert context[result.id] == ("email", "expect_column_values_to_not_be_null")

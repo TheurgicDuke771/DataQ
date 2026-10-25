@@ -1,4 +1,4 @@
-import { Alert, Drawer, Empty, Flex, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Empty, Flex, Popconfirm, Spin, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import SimpleList from './SimpleList';
 
@@ -12,6 +12,11 @@ export interface HistoryVersion {
   name: string;
   changed_by_name: string | null;
   created_at: string;
+  /** Set once the snapshot's config was emptied by a redaction (#685): the row is shown with the
+   *  redaction notice instead of its details. */
+  redacted?: boolean;
+  redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /**
@@ -99,17 +104,59 @@ function HistoryBody<V extends HistoryVersion>({
             <Flex align="center" gap={8} wrap>
               <Tag color="blue">v{version.version_no}</Tag>
               {index === 0 && <Tag color="green">Current</Tag>}
+              {version.redacted && <Tag color="default">Redacted</Tag>}
               <Typography.Text strong>{version.name}</Typography.Text>
               <Typography.Text type="secondary" style={{ marginLeft: 'auto', fontSize: 12 }}>
                 {version.changed_by_name ?? 'Unknown'} · {formatTimestamp(version.created_at)}
               </Typography.Text>
             </Flex>
-            {renderDetails(version)}
+            {version.redacted ? (
+              // The config was emptied — there is nothing to show.
+              <Alert
+                type="warning"
+                showIcon
+                title="Configuration redacted"
+                description={`Redacted by ${version.redacted_by_name ?? 'a removed user'} on ${
+                  version.redacted_at ? formatTimestamp(version.redacted_at) : 'an unknown date'
+                }. The values this version held are gone; its name, author and time are kept.`}
+              />
+            ) : (
+              renderDetails(version)
+            )}
             {renderActions && <Flex justify="end">{renderActions(version, index === 0)}</Flex>}
           </Flex>
         </SimpleList.Item>
       )}
     />
+  );
+}
+
+/**
+ * "Redact this version" with its confirmation (#685), shared by both drawers. Callers render it
+ * only for a non-current, non-redacted row and only when the caller may mutate the entity — the
+ * route is gated server-side as well.
+ */
+export function RedactVersionButton({
+  versionNo,
+  loading,
+  onConfirm,
+}: {
+  versionNo: number;
+  loading: boolean;
+  onConfirm: () => Promise<void>;
+}) {
+  return (
+    <Popconfirm
+      title={`Redact v${versionNo}?`}
+      description="Empties this version's stored configuration. Its name, author and time stay; the values cannot be recovered."
+      okText="Redact"
+      okButtonProps={{ danger: true }}
+      onConfirm={onConfirm}
+    >
+      <Button size="small" danger loading={loading}>
+        Redact this version
+      </Button>
+    </Popconfirm>
   );
 }
 

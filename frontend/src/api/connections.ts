@@ -421,11 +421,25 @@ export interface ConnectionVersion {
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
+  /** True once an admin redacted this snapshot: `config` is then empty and the values it held
+   *  are gone. Optional so older fixtures need no change. */
+  redacted?: boolean;
+  redacted_at?: string | null;
+  redacted_by_name?: string | null;
 }
 
 /** A connection's version history, newest first. */
 export async function listConnectionVersions(id: string): Promise<ConnectionVersion[]> {
   const { data } = await api.get<ConnectionVersion[]>(`/connections/${id}/versions`);
+  return data;
+}
+
+/** Empty one version's config (admin-only; the current version is refused). */
+export async function redactConnectionVersion(
+  id: string,
+  versionNo: number,
+): Promise<ConnectionVersion> {
+  const { data } = await api.delete<ConnectionVersion>(`/connections/${id}/versions/${versionNo}`);
   return data;
 }
 
