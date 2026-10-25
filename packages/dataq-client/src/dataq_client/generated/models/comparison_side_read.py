@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from ..models.comparison_check_read import ComparisonCheckRead
+    from ..models.check_as_of_read import CheckAsOfRead
     from ..models.comparison_side_read_observed_value_type_0 import (
         ComparisonSideReadObservedValueType0,
     )
@@ -24,19 +24,23 @@ class ComparisonSideRead:
     `GET /runs/{id}`; failing-row samples are never carried here.
 
         Attributes:
-            check (ComparisonCheckRead): A check's identity as it WAS when one side's result was written (from
-                `check_versions`), never its current state — the two sides of a row may differ.
+            check (CheckAsOfRead): A check's identity as it WAS when a result was written — `engine` (ADR 0036),
+                `dimension` (ADR 0038), `expectation_type`, `kind`, name and tested column resolved
+                from `check_versions` at the result's own `created_at`, never the check's current
+                row — so a check re-pointed or re-classified after a run never relabels that run's
+                results (#1489/#1613). The two sides of a comparison row may therefore differ.
 
-                `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
-                the result's `created_at`; `live` = the check has NO version row, so this is its
-                current state and may postdate the result — a reader must say so.
+                `resolved_from` says how trustworthy that is: `version` = a snapshot in effect at the
+                result; `later_version` = every snapshot postdates the result (clock skew), so the
+                earliest stands in; `live` = the check has no version history, so its CURRENT row
+                stands in and may postdate the result. Only `version` is genuinely as-of.
             metric_value (float | None):
             observed_value (ComparisonSideReadObservedValueType0 | None):
             result_id (UUID):
             status (str):
     """
 
-    check: ComparisonCheckRead
+    check: CheckAsOfRead
     metric_value: float | None
     observed_value: ComparisonSideReadObservedValueType0 | None
     result_id: UUID
@@ -79,13 +83,13 @@ class ComparisonSideRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.comparison_check_read import ComparisonCheckRead
+        from ..models.check_as_of_read import CheckAsOfRead
         from ..models.comparison_side_read_observed_value_type_0 import (
             ComparisonSideReadObservedValueType0,
         )
 
         d = dict(src_dict)
-        check = ComparisonCheckRead.from_dict(d.pop("check"))
+        check = CheckAsOfRead.from_dict(d.pop("check"))
 
         def _parse_metric_value(data: object) -> float | None:
             if data is None:

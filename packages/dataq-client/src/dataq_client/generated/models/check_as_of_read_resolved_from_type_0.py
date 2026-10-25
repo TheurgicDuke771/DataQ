@@ -1,7 +1,8 @@
 from enum import StrEnum
 
 
-class ResultCheckReadResolvedFromType0(StrEnum):
+class CheckAsOfReadResolvedFromType0(StrEnum):
+    LATER_VERSION = "later_version"
     LIVE = "live"
     VERSION = "version"
 

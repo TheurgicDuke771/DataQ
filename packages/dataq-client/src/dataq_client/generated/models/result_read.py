@@ -12,7 +12,7 @@ from ..models.result_read_redaction_type_0 import ResultReadRedactionType0
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.result_check_read import ResultCheckRead
+    from ..models.check_as_of_read import CheckAsOfRead
     from ..models.result_read_expected_value_type_0 import ResultReadExpectedValueType0
     from ..models.result_read_observed_value_type_0 import ResultReadObservedValueType0
     from ..models.result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
@@ -46,7 +46,7 @@ class ResultRead:
             observed_value (None | ResultReadObservedValueType0):
             sample_failures (None | ResultReadSampleFailuresType0):
             status (str):
-            check (None | ResultCheckRead | Unset):
+            check (CheckAsOfRead | None | Unset):
             redacted_columns (list[str] | Unset):
             redaction (None | ResultReadRedactionType0 | Unset):
             sampling (None | ResultReadSamplingType0 | Unset):
@@ -60,14 +60,14 @@ class ResultRead:
     observed_value: None | ResultReadObservedValueType0
     sample_failures: None | ResultReadSampleFailuresType0
     status: str
-    check: None | ResultCheckRead | Unset = UNSET
+    check: CheckAsOfRead | None | Unset = UNSET
     redacted_columns: list[str] | Unset = UNSET
     redaction: None | ResultReadRedactionType0 | Unset = UNSET
     sampling: None | ResultReadSamplingType0 | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.result_check_read import ResultCheckRead
+        from ..models.check_as_of_read import CheckAsOfRead
         from ..models.result_read_expected_value_type_0 import (
             ResultReadExpectedValueType0,
         )
@@ -112,7 +112,7 @@ class ResultRead:
         check: dict[str, Any] | None | Unset
         if isinstance(self.check, Unset):
             check = UNSET
-        elif isinstance(self.check, ResultCheckRead):
+        elif isinstance(self.check, CheckAsOfRead):
             check = self.check.to_dict()
         else:
             check = self.check
@@ -164,7 +164,7 @@ class ResultRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.result_check_read import ResultCheckRead
+        from ..models.check_as_of_read import CheckAsOfRead
         from ..models.result_read_expected_value_type_0 import (
             ResultReadExpectedValueType0,
         )
@@ -242,7 +242,7 @@ class ResultRead:
 
         status = d.pop("status")
 
-        def _parse_check(data: object) -> None | ResultCheckRead | Unset:
+        def _parse_check(data: object) -> CheckAsOfRead | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -250,12 +250,12 @@ class ResultRead:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                check_type_0 = ResultCheckRead.from_dict(data)
+                check_type_0 = CheckAsOfRead.from_dict(data)
 
                 return check_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(None | ResultCheckRead | Unset, data)
+            return cast(CheckAsOfRead | None | Unset, data)
 
         check = _parse_check(d.pop("check", UNSET))
 

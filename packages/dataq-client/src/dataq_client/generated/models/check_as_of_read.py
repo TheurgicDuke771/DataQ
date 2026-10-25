@@ -7,20 +7,24 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
-from ..models.comparison_check_read_resolved_from_type_0 import ComparisonCheckReadResolvedFromType0
+from ..models.check_as_of_read_resolved_from_type_0 import CheckAsOfReadResolvedFromType0
 from ..types import UNSET, Unset
 
-T = TypeVar("T", bound="ComparisonCheckRead")
+T = TypeVar("T", bound="CheckAsOfRead")
 
 
 @_attrs_define
-class ComparisonCheckRead:
-    """A check's identity as it WAS when one side's result was written (from
-    `check_versions`), never its current state — the two sides of a row may differ.
+class CheckAsOfRead:
+    """A check's identity as it WAS when a result was written — `engine` (ADR 0036),
+    `dimension` (ADR 0038), `expectation_type`, `kind`, name and tested column resolved
+    from `check_versions` at the result's own `created_at`, never the check's current
+    row — so a check re-pointed or re-classified after a run never relabels that run's
+    results (#1489/#1613). The two sides of a comparison row may therefore differ.
 
-    `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
-    the result's `created_at`; `live` = the check has NO version row, so this is its
-    current state and may postdate the result — a reader must say so.
+    `resolved_from` says how trustworthy that is: `version` = a snapshot in effect at the
+    result; `later_version` = every snapshot postdates the result (clock skew), so the
+    earliest stands in; `live` = the check has no version history, so its CURRENT row
+    stands in and may postdate the result. Only `version` is genuinely as-of.
 
         Attributes:
             column (None | str):
@@ -29,7 +33,7 @@ class ComparisonCheckRead:
             expectation_type (None | str):
             kind (None | str):
             name (None | str):
-            resolved_from (ComparisonCheckReadResolvedFromType0 | None | Unset):
+            resolved_from (CheckAsOfReadResolvedFromType0 | None | Unset):
     """
 
     column: None | str
@@ -38,7 +42,7 @@ class ComparisonCheckRead:
     expectation_type: None | str
     kind: None | str
     name: None | str
-    resolved_from: ComparisonCheckReadResolvedFromType0 | None | Unset = UNSET
+    resolved_from: CheckAsOfReadResolvedFromType0 | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,7 +66,7 @@ class ComparisonCheckRead:
         resolved_from: None | str | Unset
         if isinstance(self.resolved_from, Unset):
             resolved_from = UNSET
-        elif isinstance(self.resolved_from, ComparisonCheckReadResolvedFromType0):
+        elif isinstance(self.resolved_from, CheckAsOfReadResolvedFromType0):
             resolved_from = self.resolved_from.value
         else:
             resolved_from = self.resolved_from
@@ -125,9 +129,7 @@ class ComparisonCheckRead:
 
         name = _parse_name(d.pop("name"))
 
-        def _parse_resolved_from(
-            data: object,
-        ) -> ComparisonCheckReadResolvedFromType0 | None | Unset:
+        def _parse_resolved_from(data: object) -> CheckAsOfReadResolvedFromType0 | None | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -135,16 +137,16 @@ class ComparisonCheckRead:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                resolved_from_type_0 = ComparisonCheckReadResolvedFromType0(data)
+                resolved_from_type_0 = CheckAsOfReadResolvedFromType0(data)
 
                 return resolved_from_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(ComparisonCheckReadResolvedFromType0 | None | Unset, data)
+            return cast(CheckAsOfReadResolvedFromType0 | None | Unset, data)
 
         resolved_from = _parse_resolved_from(d.pop("resolved_from", UNSET))
 
-        comparison_check_read = cls(
+        check_as_of_read = cls(
             column=column,
             dimension=dimension,
             engine=engine,
@@ -154,8 +156,8 @@ class ComparisonCheckRead:
             resolved_from=resolved_from,
         )
 
-        comparison_check_read.additional_properties = d
-        return comparison_check_read
+        check_as_of_read.additional_properties = d
+        return check_as_of_read
 
     @property
     def additional_keys(self) -> list[str]:

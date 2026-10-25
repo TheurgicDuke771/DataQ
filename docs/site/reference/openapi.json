@@ -2130,6 +2130,96 @@
         "title": "ChannelUpdate",
         "type": "object"
       },
+      "CheckAsOfRead": {
+        "description": "A check's identity as it WAS when a result was written \u2014 `engine` (ADR 0036),\n`dimension` (ADR 0038), `expectation_type`, `kind`, name and tested column resolved\nfrom `check_versions` at the result's own `created_at`, never the check's current\nrow \u2014 so a check re-pointed or re-classified after a run never relabels that run's\nresults (#1489/#1613). The two sides of a comparison row may therefore differ.\n\n`resolved_from` says how trustworthy that is: `version` = a snapshot in effect at the\nresult; `later_version` = every snapshot postdates the result (clock skew), so the\nearliest stands in; `live` = the check has no version history, so its CURRENT row\nstands in and may postdate the result. Only `version` is genuinely as-of.",
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "expectation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectation Type"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "resolved_from": {
+            "anyOf": [
+              {
+                "enum": [
+                  "version",
+                  "later_version",
+                  "live"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved From"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "engine",
+          "expectation_type",
+          "dimension",
+          "column"
+        ],
+        "title": "CheckAsOfRead",
+        "type": "object"
+      },
       "CheckBaselineRead": {
         "description": "A stateful monitor's stored baseline \u2014 `schema_drift`'s column snapshot or `anomaly`'s\nobservation window (`monitor_baselines.baseline`, kind-shaped JSONB; see\n`backend/app/services/anomaly.py` for the payload's documented shape). Returned generically:\nthis endpoint doesn't interpret `baseline`, the frontend trend chart does, keyed on `kind`.",
         "properties": {
@@ -3876,95 +3966,6 @@
         "title": "ColumnsRead",
         "type": "object"
       },
-      "ComparisonCheckRead": {
-        "description": "A check's identity as it WAS when one side's result was written (from\n`check_versions`), never its current state \u2014 the two sides of a row may differ.\n\n`resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at\nthe result's `created_at`; `live` = the check has NO version row, so this is its\ncurrent state and may postdate the result \u2014 a reader must say so.",
-        "properties": {
-          "column": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Column"
-          },
-          "dimension": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dimension"
-          },
-          "engine": {
-            "title": "Engine",
-            "type": "string"
-          },
-          "expectation_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expectation Type"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "resolved_from": {
-            "anyOf": [
-              {
-                "enum": [
-                  "version",
-                  "live"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resolved From"
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "engine",
-          "expectation_type",
-          "dimension",
-          "column"
-        ],
-        "title": "ComparisonCheckRead",
-        "type": "object"
-      },
       "ComparisonDeltaRead": {
         "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric. `metric_changed` is true whenever the two\nmetrics differ \u2014 including when only ONE side has one, in which case the deltas\nare null because no difference can be stated.",
         "properties": {
@@ -4205,7 +4206,7 @@
         "description": "One run's result for a check. `observed_value` is redacted exactly as on\n`GET /runs/{id}`; failing-row samples are never carried here.",
         "properties": {
           "check": {
-            "$ref": "#/components/schemas/ComparisonCheckRead"
+            "$ref": "#/components/schemas/CheckAsOfRead"
           },
           "metric_value": {
             "anyOf": [
@@ -9071,102 +9072,13 @@
         "title": "ReadAllResult",
         "type": "object"
       },
-      "ResultCheckRead": {
-        "description": "The check as it WAS when this result was written (#1613) \u2014 `engine` (ADR 0036),\n`dimension` (ADR 0038), `expectation_type` and `kind` resolved from `check_versions`\nas of the result's own `created_at`, not from the check's current row, so a check\nre-pointed or re-classified after a run never relabels that run's results. See\n`resolved_from` for the no-history fallback.",
-        "properties": {
-          "column": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Column"
-          },
-          "dimension": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dimension"
-          },
-          "engine": {
-            "title": "Engine",
-            "type": "string"
-          },
-          "expectation_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expectation Type"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "resolved_from": {
-            "anyOf": [
-              {
-                "enum": [
-                  "version",
-                  "live"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resolved From"
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "engine",
-          "expectation_type",
-          "dimension",
-          "column"
-        ],
-        "title": "ResultCheckRead",
-        "type": "object"
-      },
       "ResultRead": {
         "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n`check` is the check's identity AS OF this result (#1613), never its current state.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
         "properties": {
           "check": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ResultCheckRead"
+                "$ref": "#/components/schemas/CheckAsOfRead"
               },
               {
                 "type": "null"
