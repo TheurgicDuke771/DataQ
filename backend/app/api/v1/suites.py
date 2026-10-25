@@ -27,6 +27,7 @@ from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import TAG_NAME_MAX_LENGTH, Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import (
+    contract_service,
     credential_health,
     live_probe,
     orchestration_service,
@@ -245,11 +246,15 @@ def update_suite(
         description=payload.description,
         target=new_target,
         tags=payload.tags,
-        contract_link=(
+        apply_contract_link=(
             (
-                (payload.contract.contract_id, payload.contract.contract_object)
-                if payload.contract is not None
-                else (None, None)
+                lambda suite: contract_service.link_suite(
+                    db,
+                    suite,
+                    contract_id=payload.contract.contract_id if payload.contract else None,
+                    contract_object=payload.contract.contract_object if payload.contract else None,
+                    actor_id=current_user.id,
+                )
             )
             if "contract" in payload.model_fields_set
             else None
