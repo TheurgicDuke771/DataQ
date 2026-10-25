@@ -254,6 +254,10 @@ from .readyz_response_readyz import ReadyzResponseReadyz
 from .result_read import ResultRead
 from .result_read_expected_value_type_0 import ResultReadExpectedValueType0
 from .result_read_observed_value_type_0 import ResultReadObservedValueType0
+from .result_read_redaction_reasons import ResultReadRedactionReasons
+from .result_read_redaction_reasons_additional_property import (
+    ResultReadRedactionReasonsAdditionalProperty,
+)
 from .result_read_redaction_type_0 import ResultReadRedactionType0
 from .result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
 from .result_read_sampling_type_0 import ResultReadSamplingType0
@@ -608,6 +612,8 @@ __all__ = (
     "ResultRead",
     "ResultReadExpectedValueType0",
     "ResultReadObservedValueType0",
+    "ResultReadRedactionReasons",
+    "ResultReadRedactionReasonsAdditionalProperty",
     "ResultReadRedactionType0",
     "ResultReadSampleFailuresType0",
     "ResultReadSamplingType0",

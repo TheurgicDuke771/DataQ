@@ -594,6 +594,8 @@ def test_get_run_redacts_sample_failure_values(client: TestClient, db_session: A
     result = body["results"][0]
     assert result["redaction"] == "partial"
     assert result["redacted_columns"] == ["email"]
+    # #2255: and WHY — here the read-time name classifier, since no tag or policy names it.
+    assert result["redaction_reasons"] == {"email": "classifier"}
 
 
 # ── #424: the read API's `redaction` state must match reality per result ──────

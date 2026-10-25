@@ -428,6 +428,29 @@ The same list is `inherited_classifications` on `GET /api/v1/assets/{id}` and th
 tool. If the lineage is wrong, tag the downstream column `public` in the warehouse; its own tag
 wins.
 
+### Why a sample column was masked
+
+Every surface that lists the masked columns of a failing-row sample — `redacted_columns` on run
+detail (`GET /api/v1/runs/{id}`), the MCP `get_run_results` / `get_suite_results` tools, and the
+alert channels (Teams, Slack, email, the generic webhook) — also says **why**, per column, in
+`redaction_reasons` (same keys as `redacted_columns`). The run page shows the reason beside each
+masked column under *Failing rows*. The vocabulary is closed, ordered as the ladder consults it:
+
+| Reason | Which rung decided | What lifts it |
+|---|---|---|
+| `own_tag` | The column's own warehouse classification | Re-tag the column in the warehouse |
+| `inherited_tag` | `sensitive` inherited through recorded column lineage | Tag the downstream column `public`; its own tag wins (see **Masked through lineage** on the asset for the source) |
+| `policy` | The suite's `pii_columns` | Edit the suite's column policy |
+| `unclassified` | Fail-closed mode (`require_classification`) and nothing cleared the column | A `public` tag or the suite's `identifier_column` |
+| `detected` | The profiler found personal-data-shaped values at profile time | A warehouse tag, or name it as the `identifier_column` if it is a false positive |
+| `classifier` | The read-time name / value heuristic affirmatively says personal data | Nothing — an `EMAIL` column or e-mail-shaped values are direct PII whatever they are designated as |
+| `default_mask` | Nobody classified the column, so it is masked as a precaution | Name it as the `identifier_column`, or tag it `public` under fail-closed mode |
+
+`default_mask` is the one to read carefully: it does **not** mean the column holds personal data,
+only that DataQ cannot say it does not. A reason reports the highest rung that masked the column —
+the one you would have to change to show it — so a column both tagged and listed in `pii_columns`
+reads `own_tag`.
+
 ### Personal data the profiler detects
 
 Four datasource families have no warehouse tag at all (PostgreSQL and the other engine-generic

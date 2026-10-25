@@ -4501,6 +4501,10 @@ def test_run_results_report_how_much_of_the_sample_was_masked(
     row = server.get_run_results(str(run.id))["checks"][0]
     assert row["redaction"] in {"full", "partial", "none"}
     assert "EMAIL" in row["redacted_columns"]
+    # #2255: WHY, per masked column, keyed exactly like `redacted_columns` — here the suite's
+    # `pii_columns`, so a model can say "the policy hides it", not "the column is empty".
+    assert row["redaction_reasons"] == {"EMAIL": "policy"}
+    assert list(row["redaction_reasons"]) == row["redacted_columns"]
     # And the id, so the model can act on the check it just found.
     assert row["check_id"] == str(check.id)
 

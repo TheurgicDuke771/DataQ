@@ -22,6 +22,7 @@ from backend.app.lineage import columns as lineage_columns
 from backend.app.services import column_tags as ct
 from backend.app.services import run_service
 from backend.app.services.asset_service import upsert_assets
+from backend.app.services.classification_vocab import EffectiveColumnTags
 from backend.tests.lineage.test_columns import (  # noqa: F401
     _NS,
     _asset_id,
@@ -53,6 +54,15 @@ def test_a_copied_column_inherits_sensitive_across_two_hops(
     assert effective is not None and effective["customer_id"] == ct.SENSITIVE
     inherited = ct.inherited_sensitive(db_session, gold)
     assert inherited["customer_id"] == [(_asset_id(db_session, "raw", "feedback"), "customer_id")]
+    # The map carries WHERE the verdict came from (#2255), and the ladder reports it as such;
+    # a column tagged on the asset itself reads as its own tag.
+    assert isinstance(effective, EffectiveColumnTags)
+    assert effective.inherited == {"customer_id"}
+    assert run_service._tag_mask_reason("customer_id", effective) == "inherited_tag"
+    _tag(db_session, "gold", "feedback_sentiment", {"rating": ct.SENSITIVE})
+    own = ct.effective_column_tags(db_session, gold)
+    assert run_service._tag_mask_reason("rating", own) == "own_tag"
+    assert run_service._tag_mask_reason("customer_id", own) == "inherited_tag"
 
 
 def test_a_derived_column_inherits_too(db_session: Session, captured: Connection) -> None:

@@ -124,6 +124,15 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     for result in results:
         counts[result.status] = counts.get(result.status, 0) + 1
         check = checks.get(result.check_id)
+        # Column-aware redaction (#415): the tested column's failing values surface when
+        # non-PII; the suite policy + heuristics mask PII. The tracker names what was masked
+        # and why (#2255), the same pair REST and MCP return.
+        redacted = run_service.redact_sample_failures_with_state(
+            result.sample_failures,
+            tested_column=(check.config.get("column") if check is not None else None),
+            policy=suite.column_policy if suite is not None else None,
+            tags=tags,
+        )
         check_reports.append(
             CheckReport(
                 check_id=result.check_id,
@@ -141,14 +150,9 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                     tags=tags,
                 ),
                 expected_value=result.expected_value,
-                # Column-aware redaction (#415): the tested column's failing values
-                # surface when non-PII; the suite policy + heuristics mask PII.
-                sample_summary=run_service.redact_sample_failures(
-                    result.sample_failures,
-                    tested_column=(check.config.get("column") if check is not None else None),
-                    policy=suite.column_policy if suite is not None else None,
-                    tags=tags,
-                ),
+                sample_summary=redacted.sample,
+                redacted_columns=tuple(redacted.redacted_columns),
+                redaction_reasons=redacted.redaction_reasons,
                 sample_suppressed=run_service.zero_sample_suppressed(
                     status=result.status,
                     check_kind=kind_by_result.get(result.id),
