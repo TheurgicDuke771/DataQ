@@ -9,7 +9,8 @@ enforce anything inside the producer's pipeline.
 
 ## Import a contract
 
-Send the ODCS document, as YAML text or JSON, with the connection the data lives on:
+In the app, open **Contracts** in the sidebar and choose **Import contract**: pick the connection
+the data lives on and paste the document or choose the file. Over the API, send the ODCS document, as YAML text or JSON, with the connection the data lives on:
 
 ```bash
 curl -X POST "$DATAQ/api/v1/contracts/import" \
@@ -69,6 +70,8 @@ Without `suite_ids`, the new version creates fresh suites.
 
 ## Compliance
 
+A contract's page in the app shows the same rollup, with a warning when a suite's latest run has
+not finished or some suites are hidden from you, and a **Download ODCS** button. Over the API,
 `GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
 state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
 `unverified` (the check errored or was skipped), `not_run` (that run has no result for it),

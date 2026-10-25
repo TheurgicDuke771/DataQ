@@ -44,6 +44,7 @@ describe('demo route coverage', () => {
       '/suites': [{ id: 's1' }, { id: 's2' }],
       '/connections': [{ id: 'c1' }],
       '/assets': [{ id: 'a1' }],
+      '/contracts': [{ id: 'ct1' }],
       // Deliberately NOT newest first: the expansion must order by `created_at` itself. s2 has a
       // single run and so no comparison.
       '/runs': [
@@ -59,12 +60,14 @@ describe('demo route coverage', () => {
     expect(routes).toContain('/suites/s1/checks/k1/edit');
     expect(routes).toContain('/connections/c1/edit');
     expect(routes).toContain('/assets/a1');
+    expect(routes).toContain('/contracts/ct1');
     expect(routes).toContain('/results/r1');
     // The older run is the base, the newest the target — one comparison per suite with two runs.
     expect(routes).toContain('/results/r0/compare/r1');
     expect(routes.filter((r) => r.includes('/compare/'))).toHaveLength(1);
     expect(routes.some((r) => r.includes(':id'))).toBe(false);
-    // 15 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 3 runs + 1 comparison.
-    expect(routes).toHaveLength(28);
+    // 16 static + 2×3 suite pages + 1 check + 1 connection + 1 asset + 1 contract + 3 runs
+    // + 1 comparison.
+    expect(routes).toHaveLength(30);
   });
 });
