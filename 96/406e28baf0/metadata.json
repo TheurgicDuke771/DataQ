@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "96406e28baf0",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1977-contracts-mcp",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/contracts.py",
+    "backend/app/contracts/export.py",
+    "backend/app/contracts/translate.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/contract_service.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/mcp/test_mcp_contracts.py",
+    "backend/tests/services/test_contract_service.py",
+    "docs/site/adr/0052-data-contracts-odcs.md",
+    "docs/site/guides/data-contracts.md",
+    "docs/site/reference/openapi.json",
+    "packages/dataq-client/src/dataq_client/generated/api/contracts/list_contracts.py",
+    "packages/dataq-client/src/dataq_client/generated/models/clause_state_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/contract_detail_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/contract_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/96/406e28baf0/0/metadata.json",
+      "transcript": "/96/406e28baf0/0/full.jsonl",
+      "compact_transcript": "/96/406e28baf0/0/transcript.jsonl",
+      "content_hash": "/96/406e28baf0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 27997,
+    "cache_read_tokens": 15189617,
+    "output_tokens": 21082,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 34,
+      "cache_creation_tokens": 149908,
+      "cache_read_tokens": 2129248,
+      "output_tokens": 12162,
+      "api_call_count": 17
+    }
+  }
+}
