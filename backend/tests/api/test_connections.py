@@ -14,7 +14,7 @@ from sqlalchemy import select
 from backend.app.core.auth import get_current_user
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretWriteError
-from backend.app.db.models import Check, Connection, Result, Run, Suite, User
+from backend.app.db.models import AuditEvent, Check, Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import connection_service as svc
@@ -845,6 +845,93 @@ def test_list_versions_unknown_connection_404(client: tuple[TestClient, FakeSecr
     resp = api.get(f"/api/v1/connections/{uuid.uuid4()}/versions")
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "connection_not_found"
+
+
+# ───────────────────────── version redaction (#685) ─────────────────
+
+
+def _connection_with_history(api: TestClient) -> str:
+    """v1 holds a value pasted by mistake, v2 edits it out (so v2 is current)."""
+    cid = api.post(
+        "/api/v1/connections",
+        json=_create_payload(config={**_SF_CONFIG, "role": "PASTED_TOKEN"}),
+    ).json()["id"]
+    api.patch(f"/api/v1/connections/{cid}", json={"config": dict(_SF_CONFIG), "skip_test": True})
+    return str(cid)
+
+
+def test_admin_redacts_a_version_and_the_drawer_sees_a_tombstone(
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
+) -> None:
+    api, _ = client
+    cid = _connection_with_history(api)
+
+    resp = api.delete(f"/api/v1/connections/{cid}/versions/1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["version_no"] == 1
+    assert body["redacted"] is True and body["redacted_at"] is not None
+    assert set(body["config"]) == {"redacted", "redacted_at", "redacted_by"}
+
+    versions = api.get(f"/api/v1/connections/{cid}/versions").json()
+    assert [(v["version_no"], v["redacted"]) for v in versions] == [(2, False), (1, True)]
+    assert "PASTED_TOKEN" not in json.dumps(versions)
+    assert versions[0]["config"]["role"] == _SF_CONFIG["role"]
+
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "connection.version_redact",
+            AuditEvent.entity_id == uuid.UUID(cid),
+        )
+    ).all()
+    assert len(events) == 1
+    assert events[0].after["version_nos"] == [1]
+    assert "PASTED_TOKEN" not in json.dumps(events[0].after)
+
+
+def test_redacting_the_current_version_is_refused(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
+    api, _ = client
+    cid = _connection_with_history(api)
+    resp = api.delete(f"/api/v1/connections/{cid}/versions/2")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "connection_version_current"
+    resp = api.delete(f"/api/v1/connections/{cid}/versions/9")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "connection_version_not_found"
+
+
+def test_redact_all_versions_but_the_current(client: tuple[TestClient, FakeSecretStore]) -> None:
+    api, _ = client
+    cid = _connection_with_history(api)
+    api.patch(f"/api/v1/connections/{cid}", json={"name": "renamed", "skip_test": True})  # v3
+
+    resp = api.delete(f"/api/v1/connections/{cid}/versions")
+    assert resp.status_code == 200
+    assert resp.json() == {"redacted_version_nos": [1, 2]}
+    versions = api.get(f"/api/v1/connections/{cid}/versions").json()
+    assert [(v["version_no"], v["redacted"]) for v in versions] == [
+        (3, False),
+        (2, True),
+        (1, True),
+    ]
+    # Idempotent: nothing left to redact.
+    assert api.delete(f"/api/v1/connections/{cid}/versions").json() == {"redacted_version_nos": []}
+
+
+@pytest.mark.parametrize("role", ["member", "viewer"])
+def test_redaction_is_admin_only(
+    client: tuple[TestClient, FakeSecretStore], as_role: Any, role: str
+) -> None:
+    """A connection mutation (ADR 0033): a Member who can read the history cannot erase it."""
+    api, _ = client
+    cid = _connection_with_history(api)
+    _, headers = as_role(role)
+    assert api.get(f"/api/v1/connections/{cid}/versions", headers=headers).status_code == 200
+    assert api.delete(f"/api/v1/connections/{cid}/versions/1", headers=headers).status_code == 403
+    assert api.delete(f"/api/v1/connections/{cid}/versions", headers=headers).status_code == 403
+    assert not any(v["redacted"] for v in api.get(f"/api/v1/connections/{cid}/versions").json())
 
 
 def test_list_versions_requires_auth(db_session: Any) -> None:

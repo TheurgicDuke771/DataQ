@@ -14,7 +14,7 @@ from sqlalchemy import func, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core import usage_telemetry
+from backend.app.core import usage_telemetry, version_tombstone
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import FLAT_FILE_TYPES
@@ -145,6 +145,19 @@ class CheckConfigInvalidError(DataQError):
 class CheckVersionNotFoundError(DataQError):
     status_code = 404
     code = "check_version_not_found"
+
+
+class CheckVersionIsCurrentError(DataQError):
+    # The newest snapshot IS the check's saved state, which the check itself shows — redacting it
+    # would hide nothing. Edit the check first (a new version), then redact.
+    status_code = 409
+    code = "check_version_current"
+
+
+class CheckVersionRedactedError(DataQError):
+    # Raised both for a second redaction and for a restore: a tombstone is not a config.
+    status_code = 409
+    code = "check_version_redacted"
 
 
 # The unique-constraint name on `check_versions(check_id, version_no)` — the concurrency backstop a
@@ -1775,6 +1788,64 @@ def list_check_versions(
     )
 
 
+def _get_check_version(session: Session, check_id: uuid.UUID, version_no: int) -> CheckVersion:
+    version = session.scalar(
+        select(CheckVersion).where(
+            CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
+        )
+    )
+    if version is None:
+        raise CheckVersionNotFoundError(
+            "check version not found",
+            detail={"check_id": str(check_id), "version_no": version_no},
+        )
+    return version
+
+
+def redact_check_version(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    version_no: int,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> CheckVersion:
+    """Replace one snapshot's ``config`` with a tombstone (#685) — for a literal pasted into
+    custom SQL or a config field by mistake and since edited out. The row stays, the newest
+    version is refused (it IS the check's current state, readable on the check), and the audit
+    event names the version number only — never what it held.
+    """
+    check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
+    version = _get_check_version(session, check_id, version_no)
+    latest = session.scalar(
+        select(func.max(CheckVersion.version_no)).where(CheckVersion.check_id == check_id)
+    )
+    if version_no == latest:
+        raise CheckVersionIsCurrentError(
+            "the newest version is the check's current state; edit the check first, then redact "
+            "this version",
+            detail={"check_id": str(check_id), "version_no": version_no},
+        )
+    if version.redacted:
+        raise CheckVersionRedactedError(
+            "check version is already redacted",
+            detail={"check_id": str(check_id), "version_no": version_no},
+        )
+    version.config = version_tombstone.tombstone(actor_id=actor_id)
+    audit_service.record(
+        session,
+        action="check.version_redact",
+        entity_type="check",
+        entity_id=check.id,
+        actor=actor_id,
+        after={"id": str(check.id), "suite_id": str(suite_id), "version_nos": [version_no]},
+    )
+    session.commit()
+    session.refresh(version)
+    log.info("check_version_redacted", check_id=str(check_id), version_no=version_no)
+    return version
+
+
 def restore_check_version(
     session: Session,
     suite_id: uuid.UUID,
@@ -1789,14 +1860,11 @@ def restore_check_version(
     """
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     audit_before = audit_service.snapshot("check", check)
-    version = session.scalar(
-        select(CheckVersion).where(
-            CheckVersion.check_id == check_id, CheckVersion.version_no == version_no
-        )
-    )
-    if version is None:
-        raise CheckVersionNotFoundError(
-            "check version not found",
+    version = _get_check_version(session, check_id, version_no)
+    if version.redacted:
+        # A tombstone is not a config — applying it would turn a privacy action into a broken check.
+        raise CheckVersionRedactedError(
+            "check version is redacted and cannot be restored",
             detail={"check_id": str(check_id), "version_no": version_no},
         )
     assert version.kind == check.kind, "a check's kind is immutable; a version can't disagree"

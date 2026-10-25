@@ -570,6 +570,36 @@ class CheckVersionRead(ApiModel):
     changed_by: uuid.UUID | None
     changed_by_name: str | None
     created_at: datetime
+    redacted: bool = Field(
+        default=False,
+        description="True when an editor redacted this snapshot: `config` is then a tombstone "
+        "(`redacted`, `redacted_at`, `redacted_by`), the values it held are gone and the "
+        "version cannot be restored.",
+    )
+    redacted_at: datetime | None = None
+
+
+@router.delete(
+    "/suites/{suite_id}/checks/{check_id}/versions/{version_no}",
+    response_model=CheckVersionRead,
+    summary="Redact one version's config (replace it with a tombstone)",
+)
+def redact_check_version(
+    suite_id: uuid.UUID,
+    check_id: uuid.UUID,
+    version_no: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CheckVersionRead:
+    """For a literal pasted into custom SQL or a config field by mistake and since edited out:
+    the snapshot's `config` becomes a tombstone; the row and the rest of the history stay, and
+    the version can no longer be restored. The newest version is refused (409) — it is the
+    check's current state. Edit-gated like every check mutation; audited with the version
+    number only.
+    """
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    version = svc.redact_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
+    return CheckVersionRead.model_validate(version)
 
 
 @router.get(

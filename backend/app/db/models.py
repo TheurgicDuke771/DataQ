@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.app.core import version_tombstone
 from backend.app.db.base import Base
 
 # ── Status / type value sets (TEXT + CHECK; not native PG enums for migration ergonomics) ──
@@ -580,6 +581,15 @@ class ConnectionVersion(Base):
         """
         return (self.author.display_name or self.author.email) if self.author else None
 
+    @property
+    def redacted(self) -> bool:
+        """True once this snapshot's ``config`` was replaced with a tombstone (#685)."""
+        return version_tombstone.is_redacted(self.config)
+
+    @property
+    def redacted_at(self) -> datetime | None:
+        return version_tombstone.redacted_at(self.config)
+
 
 class Suite(TaggedMixin, Base):
     __tablename__ = "suites"
@@ -815,6 +825,15 @@ class CheckVersion(Base):
         Callers that serialize this must `selectinload(CheckVersion.author)`.
         """
         return (self.author.display_name or self.author.email) if self.author else None
+
+    @property
+    def redacted(self) -> bool:
+        """True once this snapshot's ``config`` was replaced with a tombstone (#685)."""
+        return version_tombstone.is_redacted(self.config)
+
+    @property
+    def redacted_at(self) -> datetime | None:
+        return version_tombstone.redacted_at(self.config)
 
 
 class Run(Base):

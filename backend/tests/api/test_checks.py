@@ -1,5 +1,6 @@
 """Check endpoint tests against a real Postgres (db_session) via TestClient."""
 
+import json
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -1316,6 +1317,87 @@ def test_editor_can_restore(client: TestClient, db_session: Any) -> None:
     resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
     assert resp.status_code == 200
     assert resp.json()["config"] == {"column": "order_id"}
+
+
+# ───────────────────────── version redaction (#685) ─────────────────
+
+
+def _check_with_history(client: TestClient, sid: str) -> str:
+    """v1 holds a literal pasted into the config by mistake, v2 edits it out (v2 is current)."""
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_payload(config={"column": "PASTED_LITERAL"})
+    ).json()["id"]
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "order_id"}})
+    return str(cid)
+
+
+def test_redact_check_version_tombstones_the_config_and_blocks_restore(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _check_with_history(client, sid)
+
+    resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["version_no"] == 1 and body["redacted"] is True
+    assert set(body["config"]) == {"redacted", "redacted_at", "redacted_by"}
+    # Everything but the config survives on the row.
+    assert body["expectation_type"] == _payload()["expectation_type"]
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [(v["version_no"], v["redacted"]) for v in versions] == [(2, False), (1, True)]
+    assert "PASTED_LITERAL" not in json.dumps(versions)
+
+    # A tombstone is not a config: the restore is refused and the check is untouched.
+    resp = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "check_version_redacted"
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["config"] == {
+        "column": "order_id"
+    }
+    assert len(client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()) == 2
+
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "check.version_redact", AuditEvent.entity_id == uuid.UUID(cid)
+        )
+    ).all()
+    assert len(events) == 1
+    assert events[0].after["version_nos"] == [1]
+    assert "PASTED_LITERAL" not in json.dumps(events[0].after)
+
+
+def test_redact_check_version_refuses_current_and_unknown(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _check_with_history(client, sid)
+    resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/2")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "check_version_current"
+    resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/9")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "check_version_not_found"
+    client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+    resp = client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "check_version_redacted"
+
+
+def test_redact_check_version_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = _check_with_history(client, sid)
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+    assert client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").status_code == 200
+    assert client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1").status_code == 403
+    _as(e)  # not owner, not shared — existence is hidden
+    assert client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1").status_code == 404
+    _grant(client, owner, sid, e, "edit")
+    _as(e)
+    assert client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1").status_code == 200
 
 
 def test_legacy_unvetted_type_stays_editable_and_restorable(

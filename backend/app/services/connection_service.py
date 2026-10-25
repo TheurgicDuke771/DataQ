@@ -14,7 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core import usage_telemetry
+from backend.app.core import usage_telemetry, version_tombstone
 from backend.app.core.errors import DataQError, SafeMonitorError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
@@ -45,6 +45,23 @@ log = get_logger(__name__)
 class ConnectionNotFoundError(DataQError):
     status_code = 404
     code = "connection_not_found"
+
+
+class ConnectionVersionNotFoundError(DataQError):
+    status_code = 404
+    code = "connection_version_not_found"
+
+
+class ConnectionVersionIsCurrentError(DataQError):
+    # The newest snapshot IS the connection's saved state, which the connection itself shows —
+    # redacting it would hide nothing. Edit the connection first (a new version), then redact.
+    status_code = 409
+    code = "connection_version_current"
+
+
+class ConnectionVersionRedactedError(DataQError):
+    status_code = 409
+    code = "connection_version_redacted"
 
 
 class ConnectionConfigInvalidError(DataQError):
@@ -860,6 +877,94 @@ def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list
             .order_by(ConnectionVersion.version_no.desc())
         )
     )
+
+
+def _latest_version_no(session: Session, connection_id: uuid.UUID) -> int | None:
+    return session.scalar(
+        select(func.max(ConnectionVersion.version_no)).where(
+            ConnectionVersion.connection_id == connection_id
+        )
+    )
+
+
+def _record_version_redaction(
+    session: Session, conn: Connection, *, version_nos: Sequence[int], actor_id: uuid.UUID | None
+) -> None:
+    # Which snapshots were redacted, never what they held — removing the values is the point.
+    audit_service.record(
+        session,
+        action="connection.version_redact",
+        entity_type="connection",
+        entity_id=conn.id,
+        actor=actor_id,
+        after={"id": str(conn.id), "name": conn.name, "version_nos": list(version_nos)},
+    )
+
+
+def redact_connection_version(
+    session: Session, connection_id: uuid.UUID, version_no: int, *, actor_id: uuid.UUID | None
+) -> ConnectionVersion:
+    """Replace one snapshot's ``config`` with a tombstone (#685) — for a value pasted into a
+    config field by mistake and since edited out. The row stays (history keeps its shape); the
+    newest version is refused because it IS the connection's current state, readable on the
+    connection itself. Audited with the version number only.
+    """
+    conn = get_connection(session, connection_id)
+    version = session.scalar(
+        select(ConnectionVersion).where(
+            ConnectionVersion.connection_id == connection_id,
+            ConnectionVersion.version_no == version_no,
+        )
+    )
+    if version is None:
+        raise ConnectionVersionNotFoundError(
+            "connection version not found",
+            detail={"connection_id": str(connection_id), "version_no": version_no},
+        )
+    if version_no == _latest_version_no(session, connection_id):
+        raise ConnectionVersionIsCurrentError(
+            "the newest version is the connection's current state; edit the connection first, "
+            "then redact this version",
+            detail={"connection_id": str(connection_id), "version_no": version_no},
+        )
+    if version.redacted:
+        raise ConnectionVersionRedactedError(
+            "connection version is already redacted",
+            detail={"connection_id": str(connection_id), "version_no": version_no},
+        )
+    version.config = version_tombstone.tombstone(actor_id=actor_id)
+    _record_version_redaction(session, conn, version_nos=[version_no], actor_id=actor_id)
+    session.commit()
+    session.refresh(version)
+    log.info("connection_version_redacted", connection_id=str(connection_id), version_no=version_no)
+    return version
+
+
+def redact_connection_versions(
+    session: Session, connection_id: uuid.UUID, *, actor_id: uuid.UUID | None
+) -> list[int]:
+    """Redact every snapshot but the newest (#685); returns the version numbers redacted now.
+    Already-redacted rows are skipped, and nothing is audited when there was nothing to do.
+    """
+    conn = get_connection(session, connection_id)
+    latest = _latest_version_no(session, connection_id)
+    versions = session.scalars(
+        select(ConnectionVersion)
+        .where(ConnectionVersion.connection_id == connection_id)
+        .order_by(ConnectionVersion.version_no)
+    )
+    redacted: list[int] = []
+    for version in versions:
+        if version.version_no == latest or version.redacted:
+            continue
+        version.config = version_tombstone.tombstone(actor_id=actor_id)
+        redacted.append(version.version_no)
+    if not redacted:
+        return []
+    _record_version_redaction(session, conn, version_nos=redacted, actor_id=actor_id)
+    session.commit()
+    log.info("connection_versions_redacted", connection_id=str(connection_id), count=len(redacted))
+    return redacted
 
 
 def _dependent_suites_detail(
