@@ -209,3 +209,133 @@ def test_values_cannot_change_a_detected_columns_masking_unless_it_is_the_identi
     assert value_signal_decides("field_7", None, None) is True, "precondition"
     assert value_signal_decides("field_7", None, _DETECTED) is False
     assert value_signal_decides("field_7", _SHOW_IT, _DETECTED) is True
+
+
+# ── every rung's decision, pinned as one table (#2255) ───────────────────────
+#
+# The reason-per-column work refactors the ladder to report WHICH rung decided. The refactor is
+# allowed to change nothing about what is masked, so each rung's boolean verdict is pinned here
+# first, on both gates, before the ladder is touched. A row is
+# (column, values, policy, tags, known_sensitive, may_show_incidental).
+
+from backend.app.services.run_service import (  # noqa: E402
+    _redact_comparison_row,
+    redact_sample_failures_with_state,
+)
+
+_UUIDS = ["0f8fafd4-9a1e-4b2e-9a4e-1b2c3d4e5f60", "1f8fafd4-9a1e-4b2e-9a4e-1b2c3d4e5f61"]
+_FAIL_CLOSED: dict[str, object] = {"require_classification": True}
+
+_RUNG_MATRIX: list[
+    tuple[str, list[str], dict[str, object] | None, dict[str, str] | None, bool, bool]
+] = [
+    # own warehouse tag: masked on both gates, whatever the policy says
+    ("field_7", ["v"], None, {"field_7": "sensitive"}, True, False),
+    ("field_7", ["v"], {"identifier_column": "field_7"}, {"field_7": "pii"}, True, False),
+    # an inherited tag arrives in the effective map as plain `sensitive` — same verdict
+    ("field_7", ["v"], {"identifier_column": "field_7"}, {"field_7": "sensitive"}, True, False),
+    # suite policy `pii_columns`: masked on both gates, beats `identifier_column`
+    ("field_7", ["v"], {"pii_columns": ["field_7"]}, None, True, False),
+    (
+        "field_7",
+        ["v"],
+        {"pii_columns": ["FIELD_7"], "identifier_column": "field_7"},
+        None,
+        True,
+        False,
+    ),
+    # persisted profiler detection (ADR 0049): masked unless THIS column is the identifier
+    ("field_7", _UUIDS, None, {"field_7": DETECTED}, True, False),
+    ("field_7", ["v1", "v2"], _SHOW_IT, {"field_7": DETECTED}, False, True),
+    # read-time classifier — by name
+    ("email", ["v"], None, None, True, False),
+    ("email", ["v"], {"identifier_column": "email"}, None, True, False),
+    # read-time classifier — by value
+    ("field_7", ["a@b.com", "c@d.com"], None, None, True, False),
+    ("field_7", ["a@b.com", "c@d.com"], _SHOW_IT, None, True, False),
+    # default mask: an unclassifiable incidental column masks; the tested column shows
+    ("field_7", ["v1", "v2"], None, None, False, False),
+    ("field_7", ["v1", "v2"], {"pii_columns": []}, None, False, False),
+    # affirmatively safe / identifier-shaped values: shown on both gates
+    ("field_7", _UUIDS, None, None, False, True),
+    ("order_id", ["1", "2"], None, None, False, True),
+    ("field_7", ["v1", "v2"], _SHOW_IT, None, False, True),
+    # a `public` tag is consulted only in fail-closed mode; the default mode still default-masks
+    ("field_7", ["v1", "v2"], None, {"field_7": "public"}, False, False),
+    # fail-closed: masked without clearance, shown with it, classifier still wins
+    ("field_7", ["v1"], _FAIL_CLOSED, None, True, False),
+    ("field_7", ["v1"], _FAIL_CLOSED, {"field_7": "internal"}, True, False),
+    ("field_7", ["v1"], _FAIL_CLOSED, {"field_7": DETECTED}, True, False),
+    ("field_7", ["v1"], _FAIL_CLOSED, {"field_7": "public"}, False, True),
+    ("field_7", ["v1"], {**_FAIL_CLOSED, "identifier_column": "field_7"}, None, False, True),
+    ("field_7", ["a@b.com"], _FAIL_CLOSED, {"field_7": "public"}, True, False),
+    (
+        "field_7",
+        ["v1"],
+        {**_FAIL_CLOSED, "pii_columns": ["field_7"]},
+        {"field_7": "public"},
+        True,
+        False,
+    ),
+    # the column-less scalar path runs the ladder under an empty name
+    ("", ["42"], None, None, False, False),
+    ("", ["42"], _FAIL_CLOSED, None, True, False),
+]
+
+
+@pytest.mark.parametrize(("column", "values", "policy", "tags", "known", "shown"), _RUNG_MATRIX)
+def test_every_rung_decision_is_pinned(
+    column: str,
+    values: list[str],
+    policy: dict[str, object] | None,
+    tags: dict[str, str] | None,
+    known: bool,
+    shown: bool,
+) -> None:
+    assert _known_sensitive(column, values, policy, tags) is known
+    assert _may_show_incidental(column, values, policy, tags) is shown
+
+
+def test_comparison_rows_pin_the_suffixed_hard_mask() -> None:
+    """Both sides of a policy column mask on the SUFFIX-STRIPPED name; a suffixed raw name
+    that is itself tagged hard-masks; the join key shows."""
+    row = {"order_id": 7, "email_src": "a@b.com", "email_tgt": "a@b.com", "notes_src": "x"}
+    vbc = {k: [v] for k, v in row.items()}
+    out = _redact_comparison_row(
+        row,
+        policy={"pii_columns": ["notes"]},
+        tags={"email_src": "sensitive"},
+        values_by_column=vbc,
+    )
+    assert out == {
+        "order_id": 7,
+        "email_src": "<redacted>",
+        "email_tgt": "<redacted>",
+        "notes_src": "<redacted>",
+    }
+
+
+def test_the_redacted_column_set_of_a_mixed_row_is_pinned() -> None:
+    sample = {
+        "unexpected_count": 2,
+        "unexpected_index_list": [
+            {"order_id": "ORD-1", "email": "a@b.com", "field_7": "v1", "ssn_hash": "x", "amt": 1},
+            {"order_id": "ORD-2", "email": "c@d.com", "field_7": "v2", "ssn_hash": "y", "amt": 2},
+        ],
+    }
+    redacted, state, columns = redact_sample_failures_with_state(
+        sample,
+        tested_column="amt",
+        policy={"identifier_column": "order_id", "pii_columns": ["ssn_hash"]},
+        tags={"field_7": DETECTED},
+    )[:3]
+    assert state == "partial"
+    assert columns == ["email", "field_7", "ssn_hash"]
+    assert redacted is not None
+    assert redacted["unexpected_index_list"][0] == {
+        "order_id": "ORD-1",
+        "email": "<redacted>",
+        "field_7": "<redacted>",
+        "ssn_hash": "<redacted>",
+        "amt": 1,
+    }
