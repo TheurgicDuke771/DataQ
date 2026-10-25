@@ -1213,6 +1213,10 @@ class CheckAsOf:
     expectation_type: str | None
     dimension: str | None
     column: str | None
+    #: Where the snapshot came from (#1613): `version` = a `check_versions` row in effect at the
+    #: instant; `live` = the check's CURRENT row, because no version row exists for it — the
+    #: reader must say so, since the values may then postdate the result; None = unknown check.
+    resolved_from: Literal["version", "live"] | None = None
 
     @property
     def context(self) -> tuple[str | None, str | None]:
@@ -1252,6 +1256,7 @@ def historical_check_snapshots_at[K: Hashable](
             expectation_type=source.expectation_type,
             dimension=source.dimension,
             column=source.config.get("column"),
+            resolved_from="version" if effective is not None else "live",
         )
 
     return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}

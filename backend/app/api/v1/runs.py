@@ -22,7 +22,6 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import (
     COMPARISON_KIND,
-    GX_ENGINE,
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
     Check,
@@ -86,9 +85,37 @@ class RunRead(ApiModel):
     queued_reason: str | None = None
 
 
+class ComparisonCheckRead(ApiModel):
+    """A check's identity as it WAS when one side's result was written (from
+    `check_versions`), never its current state — the two sides of a row may differ.
+
+    `resolved_from` (#1613) says which: `version` = a `check_versions` row in effect at
+    the result's `created_at`; `live` = the check has NO version row, so this is its
+    current state and may postdate the result — a reader must say so.
+    """
+
+    name: str | None
+    kind: str | None
+    engine: str
+    expectation_type: str | None
+    dimension: str | None
+    column: str | None
+    resolved_from: Literal["version", "live"] | None = None
+
+
+class ResultCheckRead(ComparisonCheckRead):
+    """The check as it WAS when this result was written (#1613) — `engine` (ADR 0036),
+    `dimension` (ADR 0038), `expectation_type` and `kind` resolved from `check_versions`
+    as of the result's own `created_at`, not from the check's current row, so a check
+    re-pointed or re-classified after a run never relabels that run's results. See
+    `resolved_from` for the no-history fallback.
+    """
+
+
 class ResultRead(ApiModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
     badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.
+    `check` is the check's identity AS OF this result (#1613), never its current state.
 
     `redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe
     column-policy-based redaction of a REAL persisted sample; `zero_sample` means this
@@ -113,6 +140,7 @@ class ResultRead(ApiModel):
     redaction: Literal["full", "partial", "none", "zero_sample"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
     sampling: dict[str, Any] | None = None
+    check: ResultCheckRead | None = None
 
 
 class RunDetailRead(RunRead):
@@ -172,19 +200,6 @@ class PipelineRunRead(ApiModel):
     #: colliding `triggered_by` marker fails closed to `[]` instead of claiming another
     #: row's run (#1728). Visibility-scoped like `/runs`.
     triggered_run_ids: list[uuid.UUID] = Field(default_factory=list)
-
-
-class ComparisonCheckRead(ApiModel):
-    """A check's identity as it WAS when one side's result was written (from
-    `check_versions`), never its current state — the two sides of a row may differ.
-    """
-
-    name: str | None
-    kind: str | None
-    engine: str
-    expectation_type: str | None
-    dimension: str | None
-    column: str | None
 
 
 class ComparisonSideRead(ApiModel):
@@ -360,19 +375,20 @@ def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, st
 def _result_read(
     result: Any,
     *,
-    tested_column: str | None = None,
-    expectation_type: str | None = None,
-    check_kind: str | None = None,
-    engine: str = GX_ENGINE,
+    as_of: svc.CheckAsOf,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
     zero_sample_mode: bool,
 ) -> ResultRead:
-    """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`."""
+    """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`. `as_of` is the
+    check's identity when THIS result was written (#1489/#1613) — it drives the redactors
+    (column, type), `zero_sample_suppressed` (kind, engine) and the `check` block alike.
+    """
+    tested_column, expectation_type = as_of.context
     zero_sample = svc.zero_sample_suppressed(
         status=result.status,
-        check_kind=check_kind,
-        engine=engine,
+        check_kind=as_of.kind,
+        engine=as_of.engine,
         zero_sample_mode=zero_sample_mode,
     )
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
@@ -402,6 +418,11 @@ def _result_read(
         # Passed through verbatim (#595): the record holds a strategy name, three counts and an
         # optional seed — DataQ-authored metadata about the READ, not target data.
         sampling=result.sampling,
+        check=(
+            ResultCheckRead.model_validate(as_of, from_attributes=True)
+            if as_of.resolved_from is not None
+            else None
+        ),
     )
 
 
@@ -464,25 +485,20 @@ def get_run(
     # current state. `kind`/`engine` follow the same rule (#1880 review): `CheckVersion`
     # snapshots both so a stale result is never re-labeled by a later edit, and
     # `zero_sample_suppressed` needs the engine as of THIS result — a `dmf`-engine check never
-    # had a row-level sample regardless of the privacy setting. One `check_versions` read.
+    # had a row-level sample regardless of the privacy setting. The same snapshot is what the
+    # payload's `check` block shows (#1613). One `check_versions` read.
     as_of = svc.historical_check_snapshots(db, results, checks)
-    context = {r_id: snap.context for r_id, snap in as_of.items()}
-    kind_by_result = {r_id: snap.kind for r_id, snap in as_of.items()}
-    engine_by_result = {r_id: snap.engine for r_id, snap in as_of.items()}
     # Resolved once per request (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(db)
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
     outcomes = svc.check_outcome_counts(db, [run.id])
-    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
+    expectation_types = {r.id: as_of[r.id].expectation_type for r in results}
     reads = [
         _result_read(
             r,
-            tested_column=context.get(r.id, (None, None))[0],
-            expectation_type=expectation_types[r.id],
-            check_kind=kind_by_result.get(r.id),
-            engine=engine_by_result.get(r.id, GX_ENGINE),
+            as_of=as_of[r.id],
             policy=policy,
             tags=tags,
             zero_sample_mode=zero_sample_mode,

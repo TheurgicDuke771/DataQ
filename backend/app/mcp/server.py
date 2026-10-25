@@ -396,16 +396,17 @@ def _run_results_payload(
     # from the warehouse: an MCP read must not open a datasource connection.
     # `None` means no opinion, which is what shipped before G3.
     tags = _asset_column_tags(session, suite, run)
-    # Per-RESULT (tested_column, expectation_type) as of when each result was
-    # written (#1489) — not the check's current state, which is freely editable
-    # after the fact and would silently re-label what old results show/audit.
-    context = run_service.historical_check_context(session, results, checks)
-    # Same rule for `engine`/`kind` (#1869/#1880 review): an old result's
-    # observed_value/metric_value reflect whichever engine actually produced it, not
-    # whatever the check has since been re-pointed to, and `zero_sample_suppressed`
-    # needs both as of THIS result.
-    engine_by_result = run_service.historical_check_engine(session, results, checks)
-    kind_by_result = run_service.historical_check_kind(session, results, checks)
+    # Per-RESULT check identity as of when each result was written (#1489) — not the
+    # check's current state, which is freely editable after the fact and would
+    # silently re-label what old results show/audit. `engine`/`kind` follow the same
+    # rule (#1869/#1880 review): an old result's observed_value/metric_value reflect
+    # whichever engine actually produced it, not whatever the check has since been
+    # re-pointed to, and `zero_sample_suppressed` needs both as of THIS result; so
+    # does `dimension` (#1613). One `check_versions` read, not three.
+    as_of = run_service.historical_check_snapshots(session, results, checks)
+    context = {r_id: snap.context for r_id, snap in as_of.items()}
+    engine_by_result = {r_id: snap.engine for r_id, snap in as_of.items()}
+    kind_by_result = {r_id: snap.kind for r_id, snap in as_of.items()}
     # Resolved once per tool call (#1887), not per result.
     zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
 
@@ -510,6 +511,14 @@ def _run_results_payload(
                 # `context` above): a check re-pointed gx<->dmf after this run
                 # must not have its old result mislabeled with the new engine.
                 "engine": engine_by_result.get(r.id),
+                # The DQ dimension (ADR 0038) the check carried WHEN this result was
+                # written — null is "unclassified", a coverage gap, not an error.
+                "dimension": as_of[r.id].dimension,
+                # Whether `engine`/`dimension` came from a `check_versions` row in
+                # effect at the time (`version`) or, because the check has no version
+                # history, from its CURRENT row (`live`) — in which case they may
+                # postdate the result (#1613).
+                "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
                 # How much of the dataset this check actually saw (#595).
@@ -730,10 +739,13 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     (e.g. a passing one). Returns an empty result set if the suite has never
     run. Requires at least view access to the suite.
 
-    ``engine`` is the engine that produced this particular result, resolved from
-    the check's version history as of the result — not the check's current one, so
-    a check re-pointed to a different engine after this run still shows the old
-    engine here. ``name`` is the check's current name.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the values that applied to this particular result, resolved from the
+    check's version history as of the result — not the check's current ones, so a
+    check re-pointed or re-classified after this run still shows the old values
+    here. ``check_resolved_from`` is ``"version"`` when such a snapshot existed and
+    ``"live"`` when the check has no version history, in which case the two are its
+    CURRENT values and may postdate the result. ``name`` is the check's current name.
 
     ``check_enabled`` says whether that check is switched on **now**. ``false``
     means it was switched off after this run: the result is its last, no later run
@@ -1501,9 +1513,13 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     (PII-redacted; see ``get_suite_results`` for what a null sample's
     ``redaction`` states mean, including ``"zero_sample"``, #1873).
 
-    ``engine`` is the check's **current** engine, not the one that produced this
-    particular result — like ``name``, it is not snapshotted per result; use
-    ``list_check_versions`` for the engine as of a specific edit.
+    ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
+    are the check's values **as of this result**, resolved from its version history
+    at the result's own timestamp — a check re-pointed or re-classified after the
+    run still reports what it was then. ``check_resolved_from`` says where that came
+    from: ``"version"`` is a snapshot in effect at the time; ``"live"`` means the
+    check has no version history, so these are its CURRENT values and may postdate
+    the result. ``name`` and ``check_enabled`` are always current.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and

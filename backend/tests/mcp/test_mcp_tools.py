@@ -1578,6 +1578,63 @@ def test_get_run_results_reports_the_engine_as_of_the_run_not_current(
     assert check["engine"] == "dmf"
 
 
+def test_get_run_results_reports_dimension_as_of_the_run_and_names_its_source(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1613: `dimension` follows the same as-of rule as `engine`, and
+    `check_resolved_from` tells the model whether it is reading a snapshot in effect
+    at the time (`version`) or the check's current row because none exists (`live`).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from backend.app.db.models import CheckVersion
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="email present",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        dimension="completeness",
+    )
+    check_id = uuid.UUID(created["id"])
+    t0 = datetime.now(UTC)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check_id, status="pass", created_at=t0))
+    db_session.commit()
+
+    # Re-classify the check AFTER the result was written.
+    server.update_check(str(suite.id), created["id"], dimension="validity")
+    latest = db_session.query(CheckVersion).filter_by(check_id=check_id, version_no=2).one()
+    latest.created_at = t0 + timedelta(seconds=1)
+    db_session.commit()
+
+    (check,) = server.get_run_results(str(run.id))["checks"]
+    assert check["dimension"] == "completeness"
+    assert check["check_resolved_from"] == "version"
+
+    # A check written straight to the table has no version history: the payload falls
+    # back to its live row and must say so.
+    bare = Check(
+        suite_id=suite.id,
+        name="bare",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        dimension="validity",
+    )
+    db_session.add(bare)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=bare.id, status="pass", created_at=t0))
+    db_session.commit()
+    by_name = {c["name"]: c for c in server.get_run_results(str(run.id))["checks"]}
+    assert by_name["bare"]["dimension"] == "validity"
+    assert by_name["bare"]["check_resolved_from"] == "live"
+
+
 def test_get_run_results_withholds_an_incomplete_runs_partial_results(
     db_session: Any, monkeypatch: Any
 ) -> None:
