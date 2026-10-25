@@ -284,13 +284,16 @@ def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
 
 
 def _contract_clause(layer: Any) -> str:
-    """``contract seller_payments 1.1.0 · orders.customer_id required`` — or ``""``."""
+    """``contract seller_payments 1.1.0 · orders.customer_id required`` — or ``""``. Missing
+    parts are left out rather than printed as ``None`` or as doubled spaces."""
     if not isinstance(layer, dict):
         return ""
     clause = layer.get("clause") or {}
     where = ".".join(str(p) for p in (clause.get("object"), clause.get("property")) if p)
-    what = clause.get("rule_id") or clause.get("field") or "clause"
-    return f"contract {layer.get('name')} {layer.get('version')} · {where} {what}".rstrip()
+    what = clause.get("rule_id") or clause.get("field")
+    head = " ".join(str(p) for p in ("contract", layer.get("name"), layer.get("version")) if p)
+    tail = " ".join(str(p) for p in (where, what) if p)
+    return f"{head} · {tail}" if tail else head
 
 
 #: A stored narrative's `summary`/`cause` can each run to hundreds of characters

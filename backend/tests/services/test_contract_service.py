@@ -680,6 +680,16 @@ def test_link_suite_sets_both_fields_and_refuses_half_a_link(db_session: Any) ->
     other = Suite(name="mine", connection_id=conn.id, created_by=actor.id)
     db_session.add(other)
     db_session.commit()
+    imported = _suite(db_session, outcome, "orders")
+    with pytest.raises(svc.ContractSuitesInvalidError, match="already stands"):
+        svc.link_suite(
+            db_session,
+            other,
+            contract_id=outcome.contract.id,
+            contract_object="orders",
+            actor_id=actor.id,
+        )
+    svc.link_suite(db_session, imported, contract_id=None, contract_object=None, actor_id=actor.id)
     svc.link_suite(
         db_session,
         other,
@@ -759,3 +769,90 @@ def test_the_evidence_card_names_the_contract_clause(db_session: Any) -> None:
     db_session.commit()
     assert _contract_layer(db_session, hand) is None
     assert _contract_clause(None) == ""
+
+
+def test_linking_needs_edit_on_every_suite_already_linked_and_the_same_connection(
+    db_session: Any,
+) -> None:
+    owner = _user(db_session)
+    conn = _connection(db_session, owner)
+    outcome = _import(db_session, owner, conn, _doc())
+    bob = _user(db_session)
+    refunds = _suite(db_session, outcome, "refunds")
+    db_session.add(Share(suite_id=refunds.id, user_id=bob.id, permission="view"))
+    bobs = Suite(name="bob's", connection_id=conn.id, created_by=bob.id)
+    db_session.add(bobs)
+    db_session.commit()
+    imported = _suite(db_session, outcome, "orders")
+    svc.link_suite(db_session, imported, contract_id=None, contract_object=None, actor_id=owner.id)
+    db_session.commit()
+    # Bob can see the contract but cannot edit its other suite, so he cannot attach his own suite
+    # (which would lock the owner out of replacing or deleting it).
+    from backend.app.services.suite_authz import SuiteForbiddenError
+
+    with pytest.raises(SuiteForbiddenError):
+        svc.link_suite(
+            db_session,
+            bobs,
+            contract_id=outcome.contract.id,
+            contract_object="orders",
+            actor_id=bob.id,
+        )
+    elsewhere = Suite(
+        name="elsewhere", connection_id=_connection(db_session, owner).id, created_by=owner.id
+    )
+    db_session.add(elsewhere)
+    db_session.commit()
+    with pytest.raises(svc.ContractSuitesInvalidError, match="different connection"):
+        svc.link_suite(
+            db_session,
+            elsewhere,
+            contract_id=outcome.contract.id,
+            contract_object="orders",
+            actor_id=owner.id,
+        )
+
+
+def test_a_relinked_suite_keeps_its_old_clauses_out_of_the_new_contract(db_session: Any) -> None:
+    from backend.app.services.incident_evidence import _contract_layer
+
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    first = _import(db_session, actor, conn, _doc())
+    other = _import(db_session, actor, conn, _doc(id="other-contract"))
+    orders = _suite(db_session, first, "orders")
+    floor = _rule_check(orders, "row-floor")
+    other_orders = _suite(db_session, other, "orders")
+    svc.link_suite(
+        db_session, other_orders, contract_id=None, contract_object=None, actor_id=actor.id
+    )
+    svc.link_suite(
+        db_session,
+        orders,
+        contract_id=other.contract.id,
+        contract_object="orders",
+        actor_id=actor.id,
+    )
+    db_session.commit()
+    assert _contract_layer(db_session, floor) is None  # A's clause is not B's
+    result = svc.compliance(db_session, svc.get_contract(db_session, other.contract.id, actor.id))
+    assert floor.id not in {c.check_id for c in result.clauses}
+
+
+def test_a_failed_run_is_not_final(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    _run_with(db_session, orders, "cancelled", {_rule_check(orders, "row-floor").id: "pass"})
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    assert next(x for x in result.suites if x.suite_id == orders.id).results_final is False
+
+
+def test_the_alert_clause_leaves_missing_parts_out() -> None:
+    from backend.app.alerting.render import _contract_clause
+
+    assert _contract_clause({"name": "c", "version": "1", "clause": {"field": "quality"}}) == (
+        "contract c 1 · quality"
+    )
+    assert _contract_clause({"clause": {}}) == "contract"

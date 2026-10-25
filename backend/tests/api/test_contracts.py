@@ -229,9 +229,15 @@ def test_patch_links_and_unlinks_a_suite_and_audits_it(
 
     from backend.app.db.models import AuditEvent, Suite
 
-    member, headers = as_role("member")
+    # An admin: once the imported suite is unlinked the contract has no linked suite, and only a
+    # workspace admin can see (and so relink into) such a contract.
+    member, headers = as_role("admin")
     conn = _connection(db_session, member)
     contract_id = _import(client, headers, conn).json()["contract"]["id"]
+    imported_id = client.get(f"/api/v1/contracts/{contract_id}", headers=headers).json()["suites"][
+        0
+    ]["id"]
+    client.patch(f"/api/v1/suites/{imported_id}", json={"contract": None}, headers=headers)
     suite = Suite(name="hand-made", connection_id=conn.id, created_by=member.id)
     db_session.add(suite)
     db_session.commit()

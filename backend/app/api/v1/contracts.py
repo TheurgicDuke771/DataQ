@@ -93,18 +93,22 @@ class ContractRead(ApiModel):
 
     @classmethod
     def of(cls, visible: svc.VisibleContract) -> ContractRead:
+        return cls(**cls.fields_of(visible))
+
+    @staticmethod
+    def fields_of(visible: svc.VisibleContract) -> dict[str, Any]:
         c = visible.contract
-        return cls(
-            id=c.id,
-            odcs_id=c.odcs_id,
-            name=c.name,
-            version=c.version,
-            status=c.status,
-            domain=c.domain,
-            tenant=c.tenant,
-            api_version=c.api_version,
-            created_at=c.created_at,
-            suites=[
+        return {
+            "id": c.id,
+            "odcs_id": c.odcs_id,
+            "name": c.name,
+            "version": c.version,
+            "status": c.status,
+            "domain": c.domain,
+            "tenant": c.tenant,
+            "api_version": c.api_version,
+            "created_at": c.created_at,
+            "suites": [
                 ContractSuiteRead(
                     id=s.id,
                     name=s.name,
@@ -113,8 +117,8 @@ class ContractRead(ApiModel):
                 )
                 for s in visible.suites
             ],
-            restricted_suite_count=visible.restricted_suite_count,
-            unmapped=[
+            "restricted_suite_count": visible.restricted_suite_count,
+            "unmapped": [
                 UnmappedClauseRead(
                     object=u.get("object"),
                     property=u.get("property"),
@@ -125,7 +129,7 @@ class ContractRead(ApiModel):
                 )
                 for u in c.unmapped or []
             ],
-        )
+        }
 
 
 class ClauseStateRead(ApiModel):
@@ -135,8 +139,8 @@ class ClauseStateRead(ApiModel):
     #: `{object, property, rule_id, field}` — the clause the check enforces.
     clause: dict[str, Any]
     #: `pass` / `warn` / `fail` / `critical` from the suite's latest run; `unverified` when the
-    #: check errored or was skipped; `not_run` when that run has no result for it (it was added
-    #: since, or the run is still going); `disabled` when the check is switched off.
+    #: check errored or was skipped; `not_run` when that run has no result for it (added since,
+    #: or the run is still going or stopped early); `disabled` when the check is switched off.
     state: str
     #: The check was edited since its import, so it may no longer say what the clause says.
     drifted: bool
@@ -147,7 +151,8 @@ class SuiteComplianceRead(ApiModel):
     last_run_id: uuid.UUID | None
     last_run_status: str | None
     last_run_at: datetime | None
-    #: False while the latest run is queued or running — the clause states are partial then.
+    #: True only when the latest run completed (`succeeded`); while it is queued or running, or
+    #: when it failed or was cancelled, its results are partial and the states are no verdict.
     results_final: bool
 
 
@@ -280,9 +285,9 @@ def get_contract(
     db: Annotated[Session, Depends(get_db)],
 ) -> ContractDetailRead:
     visible = svc.get_contract(db, contract_id, current_user.id)
-    base = ContractRead.of(visible)
     return ContractDetailRead(
-        **base.model_dump(), compliance=ComplianceRead.of(svc.compliance(db, visible))
+        **ContractRead.fields_of(visible),
+        compliance=ComplianceRead.of(svc.compliance(db, visible)),
     )
 
 

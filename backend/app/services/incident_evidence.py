@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_logger
 from backend.app.datasources import monitors
 from backend.app.db.models import (
+    CONTRACT_CHECK_ORIGIN,
     ORCHESTRATION_PROVIDERS,
     Asset,
     Check,
+    Contract,
     PipelineRun,
     Result,
     Run,
@@ -153,17 +155,16 @@ def _check_layer(check: Check | None) -> dict[str, Any] | None:
 
 def _contract_layer(session: Session, check: Check | None) -> dict[str, Any] | None:
     """The data-contract clause the failing check enforces (ADR 0052 §7), or ``None`` when the
-    check is not contract-derived or its suite is no longer linked. Read from the check at
-    evidence time, never copied by hand."""
-    from backend.app.db.models import CONTRACT_CHECK_ORIGIN, Contract, Suite
-
+    check is not contract-derived, or its suite now links a DIFFERENT contract (the clause names
+    the contract it came from by `odcs_id`; reporting it under another's name would invent a
+    clause). Read from the check at evidence time, never copied by hand."""
     if check is None or check.origin != CONTRACT_CHECK_ORIGIN or not check.contract_ref:
         return None
     suite = session.get(Suite, check.suite_id)
     contract = session.get(Contract, suite.contract_id) if suite and suite.contract_id else None
-    if contract is None:
-        return None
     ref = check.contract_ref
+    if contract is None or contract.odcs_id != ref.get("odcs_id"):
+        return None
     return {
         "contract_id": str(contract.id),
         "odcs_id": contract.odcs_id,
