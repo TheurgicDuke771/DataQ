@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.12.0",
+  "checkpoint_id": "582e69517c6d",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0052-data-contracts",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md",
+    "docs/site/adr/0052-data-contracts-odcs.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/58/2e69517c6d/0/metadata.json",
+      "transcript": "/58/2e69517c6d/0/full.jsonl",
+      "compact_transcript": "/58/2e69517c6d/0/transcript.jsonl",
+      "content_hash": "/58/2e69517c6d/0/content_hash.txt",
+      "prompt": "/58/2e69517c6d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 25533,
+    "cache_read_tokens": 1301146,
+    "output_tokens": 5464,
+    "api_call_count": 5,
+    "subagent_tokens": {
+      "input_tokens": 4356,
+      "cache_creation_tokens": 158231,
+      "cache_read_tokens": 32662894,
+      "output_tokens": 80107,
+      "api_call_count": 138
+    }
+  }
+}
