@@ -207,3 +207,80 @@ def test_delete_unlinks_and_keeps_the_suites(
     assert gone.status_code == 404
     suite = client.get(f"/api/v1/suites/{body['created_suite_ids'][0]}", headers=headers)
     assert suite.status_code == 200
+
+
+def test_get_contract_carries_the_compliance_rollup(
+    client: TestClient, db_session: Any, as_role: AsRole
+) -> None:
+    member, headers = as_role("member")
+    conn = _connection(db_session, member)
+    contract_id = _import(client, headers, conn).json()["contract"]["id"]
+    body = client.get(f"/api/v1/contracts/{contract_id}", headers=headers).json()
+    compliance = body["compliance"]
+    assert compliance["not_enforced"] == 1
+    assert {c["state"] for c in compliance["clauses"]} == {"not_run"}  # nothing has run yet
+    assert compliance["suites"][0]["results_final"] is False
+
+
+def test_patch_links_and_unlinks_a_suite_and_audits_it(
+    client: TestClient, db_session: Any, as_role: AsRole
+) -> None:
+    from sqlalchemy import select
+
+    from backend.app.db.models import AuditEvent, Suite
+
+    member, headers = as_role("member")
+    conn = _connection(db_session, member)
+    contract_id = _import(client, headers, conn).json()["contract"]["id"]
+    suite = Suite(name="hand-made", connection_id=conn.id, created_by=member.id)
+    db_session.add(suite)
+    db_session.commit()
+    url = f"/api/v1/suites/{suite.id}"
+
+    linked = client.patch(
+        url,
+        json={"contract": {"contract_id": contract_id, "contract_object": "orders"}},
+        headers=headers,
+    )
+    assert linked.status_code == 200, linked.text
+    assert (linked.json()["contract_id"], linked.json()["contract_object"]) == (
+        contract_id,
+        "orders",
+    )
+    renamed = client.patch(url, json={"name": "still linked"}, headers=headers)
+    assert renamed.json()["contract_id"] == contract_id  # omitted = untouched
+    unknown = client.patch(
+        url,
+        json={"contract": {"contract_id": contract_id, "contract_object": "nope"}},
+        headers=headers,
+    )
+    assert unknown.status_code == 422
+    unlinked = client.patch(url, json={"contract": None}, headers=headers)
+    assert (unlinked.json()["contract_id"], unlinked.json()["contract_object"]) == (None, None)
+
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "suite.update", AuditEvent.entity_id == suite.id
+        )
+    ).all()
+    assert any((e.after or {}).get("contract_object") == "orders" for e in events)
+
+
+def test_linking_to_a_contract_the_caller_cannot_see_is_a_404(
+    client: TestClient, db_session: Any, as_role: AsRole
+) -> None:
+    from backend.app.db.models import Suite
+
+    owner, owner_headers = as_role("member")
+    conn = _connection(db_session, owner)
+    contract_id = _import(client, owner_headers, conn).json()["contract"]["id"]
+    stranger, stranger_headers = as_role("member")
+    theirs = Suite(name="theirs", connection_id=conn.id, created_by=stranger.id)
+    db_session.add(theirs)
+    db_session.commit()
+    resp = client.patch(
+        f"/api/v1/suites/{theirs.id}",
+        json={"contract": {"contract_id": contract_id, "contract_object": "orders"}},
+        headers=stranger_headers,
+    )
+    assert resp.status_code == 404

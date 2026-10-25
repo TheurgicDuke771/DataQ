@@ -208,9 +208,12 @@ def update_suite(
     description: str | None = None,
     target: dict[str, Any] | None = None,
     tags: Sequence[str] | None = None,
+    contract_link: tuple[uuid.UUID | None, str | None] | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Suite:
-    """Partial update of name / description / target / tags. `connection_id` is immutable."""
+    """Partial update of name / description / target / tags / contract link. `connection_id` is
+    immutable. ``contract_link`` is ``(contract_id, contract_object)`` — both set, or both
+    ``None`` to unlink; omitted (``None``) leaves the link alone."""
     suite = get_suite(session, suite_id)
     # Before ANY field is mutated — a snapshot taken later would record the new
     # state as the old one, which is worse than no `before` at all.
@@ -234,6 +237,19 @@ def update_suite(
             suite.asset_id = resolve_and_upsert_asset(session, connection, target)
     if tags is not None:
         tag_service.set_tags(session, suite, tags)
+    if contract_link is not None:
+        if actor_id is None:  # pragma: no cover - every caller is a principal
+            raise ValueError("a contract link change needs an actor")
+        # Lazy: contract_service builds on suite import, which builds on this module.
+        from backend.app.services import contract_service
+
+        contract_service.link_suite(
+            session,
+            suite,
+            contract_id=contract_link[0],
+            contract_object=contract_link[1],
+            actor_id=actor_id,
+        )
     audit_service.record_entity_change(
         session,
         action="suite.update",

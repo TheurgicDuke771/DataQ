@@ -9,6 +9,7 @@ from typing_extensions import Self
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.suite_contract_link import SuiteContractLink
     from ..models.suite_target import SuiteTarget
 
 
@@ -19,6 +20,8 @@ T = TypeVar("T", bound="SuiteUpdate")
 class SuiteUpdate:
     """
     Attributes:
+        contract (None | SuiteContractLink | Unset): Link the suite to a data contract's schema object, or send null to
+            unlink. Omit to leave the link alone. Linking adds no checks — importing the contract derives them.
         description (None | str | Unset):
         name (None | str | Unset):
         tags (list[str] | None | Unset): Replaces the entity's tags. Names are normalized (lower-case, trimmed) and a
@@ -26,13 +29,23 @@ class SuiteUpdate:
         target (None | SuiteTarget | Unset):
     """
 
+    contract: None | SuiteContractLink | Unset = UNSET
     description: None | str | Unset = UNSET
     name: None | str | Unset = UNSET
     tags: list[str] | None | Unset = UNSET
     target: None | SuiteTarget | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.suite_contract_link import SuiteContractLink
         from ..models.suite_target import SuiteTarget
+
+        contract: dict[str, Any] | None | Unset
+        if isinstance(self.contract, Unset):
+            contract = UNSET
+        elif isinstance(self.contract, SuiteContractLink):
+            contract = self.contract.to_dict()
+        else:
+            contract = self.contract
 
         description: None | str | Unset
         if isinstance(self.description, Unset):
@@ -66,6 +79,8 @@ class SuiteUpdate:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
+        if contract is not UNSET:
+            field_dict["contract"] = contract
         if description is not UNSET:
             field_dict["description"] = description
         if name is not UNSET:
@@ -79,9 +94,27 @@ class SuiteUpdate:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.suite_contract_link import SuiteContractLink
         from ..models.suite_target import SuiteTarget
 
         d = dict(src_dict)
+
+        def _parse_contract(data: object) -> None | SuiteContractLink | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                contract_type_0 = SuiteContractLink.from_dict(data)
+
+                return contract_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | SuiteContractLink | Unset, data)
+
+        contract = _parse_contract(d.pop("contract", UNSET))
 
         def _parse_description(data: object) -> None | str | Unset:
             if data is None:
@@ -136,6 +169,7 @@ class SuiteUpdate:
         target = _parse_target(d.pop("target", UNSET))
 
         suite_update = cls(
+            contract=contract,
             description=description,
             name=name,
             tags=tags,

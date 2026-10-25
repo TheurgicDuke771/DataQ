@@ -20,6 +20,8 @@ from backend.app.db.models import (
     Connection,
     Contract,
     MonitorBaseline,
+    Result,
+    Run,
     Schedule,
     Share,
     Suite,
@@ -586,3 +588,174 @@ def test_a_learned_baseline_still_reports_a_type_appearing_where_none_was_record
     assert diff_schemas(learned, current)["type_changed"] == [
         {"column": "a", "from": None, "to": "INT"}
     ]
+
+
+# ───────────────────────────── compliance (phase B) ─────────────────────────────
+
+
+def _run_with(db: Any, suite: Suite, status: str, results: dict[uuid.UUID, str]) -> Run:
+    run = Run(suite_id=suite.id, status=status)
+    db.add(run)
+    db.flush()
+    for check_id, result_status in results.items():
+        db.add(Result(run_id=run.id, check_id=check_id, status=result_status))
+    db.commit()
+    return run
+
+
+def test_compliance_reports_each_clause_from_the_latest_run(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    floor = _rule_check(orders, "row-floor")
+    nulls = _rule_check(orders, "amount-nulls")
+    _run_with(db_session, orders, "succeeded", {floor.id: "pass", nulls.id: "fail"})
+    # An older run never counts: only the newest per suite.
+    visible = svc.get_contract(db_session, outcome.contract.id, actor.id)
+    result = svc.compliance(db_session, visible)
+
+    states = {(c.clause["rule_id"], c.state) for c in result.clauses if c.clause["rule_id"]}
+    assert ("row-floor", "pass") in states and ("amount-nulls", "fail") in states
+    orders_suite = next(x for x in result.suites if x.suite_id == orders.id)
+    assert orders_suite.results_final is True
+    refunds = next(x for x in result.suites if x.suite_id != orders.id)
+    assert refunds.last_run_id is None and refunds.results_final is False
+    assert result.counts["pass"] == 1 and result.counts["fail"] == 1
+    assert result.not_enforced == 1  # the retention SLA
+
+
+def test_a_running_suite_is_not_a_verdict(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    _run_with(db_session, orders, "running", {_rule_check(orders, "row-floor").id: "pass"})
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    orders_suite = next(x for x in result.suites if x.suite_id == orders.id)
+    assert orders_suite.results_final is False
+    assert {c.state for c in result.clauses if c.suite_id == orders.id} >= {"pass", "not_run"}
+
+
+def test_errored_disabled_and_edited_clauses_say_so(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    floor = _rule_check(orders, "row-floor")
+    nulls = _rule_check(orders, "amount-nulls")
+    nulls.enabled = False
+    floor.config = {"min_rows": 500}  # a person's edit
+    db_session.commit()
+    _run_with(db_session, orders, "succeeded", {floor.id: "error"})
+    result = svc.compliance(db_session, svc.get_contract(db_session, outcome.contract.id, actor.id))
+    by_rule = {c.clause["rule_id"]: c for c in result.clauses if c.clause["rule_id"]}
+    assert by_rule["row-floor"].state == "unverified" and by_rule["row-floor"].drifted is True
+    assert by_rule["amount-nulls"].state == "disabled" and by_rule["amount-nulls"].drifted is False
+
+
+def test_compliance_reads_only_the_suites_the_caller_can_see(db_session: Any) -> None:
+    owner = _user(db_session)
+    conn = _connection(db_session, owner)
+    outcome = _import(db_session, owner, conn, _doc())
+    viewer = _user(db_session)
+    db_session.add(
+        Share(suite_id=outcome.created_suite_ids[0], user_id=viewer.id, permission="view")
+    )
+    db_session.commit()
+    result = svc.compliance(
+        db_session, svc.get_contract(db_session, outcome.contract.id, viewer.id)
+    )
+    assert {c.suite_id for c in result.clauses} == {outcome.created_suite_ids[0]}
+    assert [x.suite_id for x in result.suites] == [outcome.created_suite_ids[0]]
+
+
+# ───────────────────────────── linking (phase B) ─────────────────────────────
+
+
+def test_link_suite_sets_both_fields_and_refuses_half_a_link(db_session: Any) -> None:
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    other = Suite(name="mine", connection_id=conn.id, created_by=actor.id)
+    db_session.add(other)
+    db_session.commit()
+    svc.link_suite(
+        db_session,
+        other,
+        contract_id=outcome.contract.id,
+        contract_object="orders",
+        actor_id=actor.id,
+    )
+    assert (other.contract_id, other.contract_object) == (outcome.contract.id, "orders")
+    with pytest.raises(svc.ContractSuitesInvalidError, match="together"):
+        svc.link_suite(
+            db_session,
+            other,
+            contract_id=outcome.contract.id,
+            contract_object=None,
+            actor_id=actor.id,
+        )
+    with pytest.raises(svc.ContractSuitesInvalidError, match="no schema object"):
+        svc.link_suite(
+            db_session,
+            other,
+            contract_id=outcome.contract.id,
+            contract_object="nope",
+            actor_id=actor.id,
+        )
+    svc.link_suite(db_session, other, contract_id=None, contract_object=None, actor_id=actor.id)
+    assert (other.contract_id, other.contract_object) == (None, None)
+
+
+def test_link_suite_refuses_a_contract_the_caller_cannot_see(db_session: Any) -> None:
+    owner = _user(db_session)
+    conn = _connection(db_session, owner)
+    outcome = _import(db_session, owner, conn, _doc())
+    stranger = _user(db_session)
+    theirs = Suite(name="theirs", connection_id=conn.id, created_by=stranger.id)
+    db_session.add(theirs)
+    db_session.commit()
+    with pytest.raises(svc.ContractNotFoundError):
+        svc.link_suite(
+            db_session,
+            theirs,
+            contract_id=outcome.contract.id,
+            contract_object="orders",
+            actor_id=stranger.id,
+        )
+
+
+# ───────────────────────────── evidence (phase B) ─────────────────────────────
+
+
+def test_the_evidence_card_names_the_contract_clause(db_session: Any) -> None:
+    from backend.app.alerting.render import _contract_clause
+    from backend.app.services.incident_evidence import _contract_layer
+
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    layer = _contract_layer(db_session, _rule_check(orders, "row-floor"))
+    assert layer is not None
+    assert (layer["name"], layer["version"]) == ("seller_payments", "1.0.0")
+    assert layer["clause"] == {
+        "object": "orders",
+        "property": None,
+        "rule_id": "row-floor",
+        "field": "quality",
+    }
+    assert _contract_clause(layer) == "contract seller_payments 1.0.0 · orders row-floor"
+
+    hand = Check(
+        suite_id=orders.id,
+        name="mine",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "email"},
+    )
+    db_session.add(hand)
+    db_session.commit()
+    assert _contract_layer(db_session, hand) is None
+    assert _contract_clause(None) == ""

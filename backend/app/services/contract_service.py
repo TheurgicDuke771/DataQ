@@ -26,6 +26,7 @@ from backend.app.db.models import (
     CONTRACT_CHECK_ORIGIN,
     Check,
     Contract,
+    Result,
     Schedule,
     Suite,
 )
@@ -33,6 +34,7 @@ from backend.app.services import audit_service, cron, suite_authz
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import record_check_version
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
+from backend.app.services.rollup import latest_runs_per_suite_stmt
 from backend.app.services.run_target import SuiteTargetInvalidError, validate_target
 from backend.app.services.suite_io_service import (
     EXPORT_VERSION,
@@ -635,3 +637,139 @@ def delete_contract(session: Session, contract_id: uuid.UUID, user_id: uuid.UUID
     )
     session.delete(visible.contract)
     session.commit()
+
+
+# ───────────────────────────── compliance ───────────────────────────
+
+
+#: A clause's state in the rollup — the result its check produced in the suite's latest run, or why
+#: there is none. `not_enforced` clauses are the contract's `unmapped` list, reported beside these.
+CLAUSE_STATES = ("pass", "warn", "fail", "critical", "unverified", "not_run", "disabled")
+_FINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+_RESULT_STATE = {"pass": "pass", "warn": "warn", "fail": "fail", "critical": "critical"}
+
+
+@dataclass
+class ClauseState:
+    suite_id: uuid.UUID
+    check_id: uuid.UUID
+    check_name: str
+    clause: dict[str, Any]
+    state: str
+    #: The check was edited since its import, so it may no longer say what the clause says.
+    drifted: bool
+
+
+@dataclass
+class SuiteCompliance:
+    suite_id: uuid.UUID
+    last_run_id: uuid.UUID | None
+    last_run_status: str | None
+    last_run_at: Any
+    #: False while the latest run is still queued or running: its results are partial, and the
+    #: states below are not a verdict yet.
+    results_final: bool
+
+
+@dataclass
+class Compliance:
+    clauses: list[ClauseState]
+    suites: list[SuiteCompliance]
+    counts: dict[str, int]
+    not_enforced: int
+
+
+def compliance(session: Session, visible: VisibleContract) -> Compliance:
+    """Per clause, what the check that enforces it found in its suite's latest run — over the
+    suites the caller can see only (the restricted ones are counted on the contract, never
+    read). One query for the latest runs and one for their results."""
+    suite_ids = [s.id for s in visible.suites]
+    runs = (
+        {r.suite_id: r for r in session.scalars(latest_runs_per_suite_stmt(suite_ids))}
+        if suite_ids
+        else {}
+    )
+    run_ids = [r.id for r in runs.values()]
+    by_check: dict[uuid.UUID, str] = {}
+    if run_ids:
+        for result in session.scalars(select(Result).where(Result.run_id.in_(run_ids))):
+            by_check[result.check_id] = result.status
+    clauses: list[ClauseState] = []
+    suites: list[SuiteCompliance] = []
+    for suite in visible.suites:
+        run = runs.get(suite.id)
+        suites.append(
+            SuiteCompliance(
+                suite_id=suite.id,
+                last_run_id=run.id if run else None,
+                last_run_status=run.status if run else None,
+                last_run_at=(run.finished_at or run.created_at) if run else None,
+                results_final=run is not None and run.status in _FINAL_RUN_STATUSES,
+            )
+        )
+        for check in suite.checks:
+            if check.origin != CONTRACT_CHECK_ORIGIN or not check.contract_ref:
+                continue
+            ref = check.contract_ref
+            if not check.enabled:
+                state = "disabled"
+            elif check.id not in by_check:
+                state = "not_run"
+            else:
+                state = _RESULT_STATE.get(by_check[check.id], "unverified")
+            stored = ref.get("fingerprint")
+            clauses.append(
+                ClauseState(
+                    suite_id=suite.id,
+                    check_id=check.id,
+                    check_name=check.name,
+                    clause={k: ref.get(k) for k in ("object", "property", "rule_id", "field")},
+                    state=state,
+                    drifted=stored is not None and stored != _current_fingerprint(check),
+                )
+            )
+    counts = dict.fromkeys(CLAUSE_STATES, 0)
+    for clause in clauses:
+        counts[clause.state] += 1
+    return Compliance(
+        clauses=clauses,
+        suites=suites,
+        counts=counts,
+        not_enforced=len(visible.contract.unmapped or []),
+    )
+
+
+# ───────────────────────────── linking ──────────────────────────────
+
+
+def link_suite(
+    session: Session,
+    suite: Suite,
+    *,
+    contract_id: uuid.UUID | None,
+    contract_object: str | None,
+    actor_id: uuid.UUID,
+) -> None:
+    """Set or clear a suite's contract link — both fields together, never one (ADR 0052 §2).
+    The contract must be visible to the caller and name the object; the caller already holds
+    `edit` on the suite (the route checked). Adds no checks: an import is what derives them."""
+    if (contract_id is None) != (contract_object is None):
+        raise ContractSuitesInvalidError(
+            "send contract_id and contract_object together, or both null to unlink",
+            detail={"suite_id": str(suite.id)},
+        )
+    if contract_id is None:
+        suite.contract_id = None
+        suite.contract_object = None
+        return
+    visible = get_contract(session, contract_id, actor_id)
+    objects = {
+        o.get("name") for o in visible.contract.spec.get("schema") or () if isinstance(o, dict)
+    }
+    if contract_object not in objects:
+        raise ContractSuitesInvalidError(
+            "the contract has no schema object of that name",
+            detail={"contract_id": str(contract_id), "contract_object": contract_object},
+        )
+    suite.contract_id = contract_id
+    suite.contract_object = contract_object

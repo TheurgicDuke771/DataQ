@@ -7,7 +7,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.contract_read import ContractRead
+from ...models.contract_detail_read import ContractDetailRead
 from ...models.http_validation_error import HTTPValidationError
 from ...types import Response
 
@@ -28,9 +28,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ContractRead | HTTPValidationError | None:
+) -> ContractDetailRead | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = ContractRead.from_dict(response.json())
+        response_200 = ContractDetailRead.from_dict(response.json())
 
         return response_200
 
@@ -47,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ContractRead | HTTPValidationError]:
+) -> Response[ContractDetailRead | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,8 +60,8 @@ def sync_detailed(
     contract_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ContractRead | HTTPValidationError]:
-    """Get a data contract
+) -> Response[ContractDetailRead | HTTPValidationError]:
+    """Get a data contract with its compliance rollup
 
     Args:
         contract_id (UUID):
@@ -71,7 +71,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ContractRead | HTTPValidationError]
+        Response[ContractDetailRead | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -89,8 +89,8 @@ def sync(
     contract_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> ContractRead | HTTPValidationError | None:
-    """Get a data contract
+) -> ContractDetailRead | HTTPValidationError | None:
+    """Get a data contract with its compliance rollup
 
     Args:
         contract_id (UUID):
@@ -100,7 +100,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ContractRead | HTTPValidationError
+        ContractDetailRead | HTTPValidationError
     """
 
     return sync_detailed(
@@ -113,8 +113,8 @@ async def asyncio_detailed(
     contract_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ContractRead | HTTPValidationError]:
-    """Get a data contract
+) -> Response[ContractDetailRead | HTTPValidationError]:
+    """Get a data contract with its compliance rollup
 
     Args:
         contract_id (UUID):
@@ -124,7 +124,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ContractRead | HTTPValidationError]
+        Response[ContractDetailRead | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -140,8 +140,8 @@ async def asyncio(
     contract_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> ContractRead | HTTPValidationError | None:
-    """Get a data contract
+) -> ContractDetailRead | HTTPValidationError | None:
+    """Get a data contract with its compliance rollup
 
     Args:
         contract_id (UUID):
@@ -151,7 +151,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ContractRead | HTTPValidationError
+        ContractDetailRead | HTTPValidationError
     """
 
     return (
