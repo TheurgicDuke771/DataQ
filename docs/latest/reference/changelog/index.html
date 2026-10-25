@@ -755,6 +755,8 @@
       
         
       
+        
+      
     
     
     
@@ -908,6 +910,34 @@
     
   
     Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/data-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data contracts (ODCS)
   
 
     
@@ -2882,6 +2912,11 @@ section below.</p>
   <code>unclassified</code> (fail-closed mode), <code>detected</code> (the profiler), <code>classifier</code>, or <code>default_mask</code> — the
   column was never classified, so masking is precautionary. The run page shows the reason beside
   each masked column; the in-app notification feed links to it. What is masked is unchanged.</li>
+<li><strong>Data contracts in the Open Data Contract Standard.</strong> Import an ODCS v3 document and DataQ
+  creates one suite per schema object with the checks its schema, quality rules and latency promise
+  describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
+  reconciles the same suites without overwriting a person's edits, and the contract exports back to
+  ODCS with every check, including ones people added.</li>
 <li><strong>Promote a suite's old inline webhook to a channel.</strong> A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin <strong>Promote to channel</strong> on the suite's notification panel. It creates a
@@ -3045,6 +3080,8 @@ section below.</p>
 <li><strong>The bulk "Set thresholds" dropdowns no longer open as a sliver.</strong> Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.</li>
+<li><strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
+  invented ceiling, and a refused volume check now names the key that is wrong or missing.</li>
 <li><strong>Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.</strong> The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to

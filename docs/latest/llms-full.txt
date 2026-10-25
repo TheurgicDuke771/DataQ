@@ -2061,6 +2061,100 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 
 ---
 
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/data-contracts/ -->
+
+# Data contracts (ODCS)
+
+A data contract is a team's written promise about a dataset: its columns, the quality rules it
+keeps and how fresh it stays. DataQ reads contracts in the
+[Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/) (ODCS) v3
+and turns them into ordinary suites and checks that run, alert and score like any other. This is
+the **consumer** side: DataQ checks data that has already landed against the contract. It does not
+enforce anything inside the producer's pipeline.
+
+## Import a contract
+
+Send the ODCS document, as YAML text or JSON, with the connection the data lives on:
+
+```bash
+curl -X POST "$DATAQ/api/v1/contracts/import" \
+  -H "Authorization: Bearer $DATAQ_TOKEN" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg yaml "$(cat orders.odcs.yaml)" --arg conn "$CONNECTION_ID" \
+        '{connection_id: $conn, document_yaml: $yaml}')"
+```
+
+DataQ validates the document against the ODCS JSON Schema for its `apiVersion` (v3.0.0 to
+v3.2.0; a newer v3 minor is accepted with a warning; v2 and v4 are refused), stores it exactly as
+sent, and creates **one suite per schema object**, targeted at the object's `physicalName`
+(`schema.table`, `catalog.schema.table` on Unity Catalog, a path on object stores). The response
+lists the suites it created, any object whose name did not resolve to a table on that connection
+(its suite exists but cannot run until you set a target), and every clause it could not enforce.
+
+Importing requires the Member role. Each version of a contract is stored once; importing the same
+`id` and `version` again is refused unless you send `replace: true`.
+
+## What becomes a check
+
+| In the contract | In DataQ |
+|---|---|
+| `required: true` | not-null check |
+| `unique: true`, a single `primaryKey` | uniqueness check |
+| several `primaryKey` properties | compound uniqueness |
+| `logicalTypeOptions` minimum / maximum (exclusive too), length, pattern | range, length and regex checks |
+| `enum` / `invalidValues` with `validValues` or `pattern` | value-set or regex check |
+| `nullValues`, `missingValues`, `duplicateValues` | not-null, not-in-set, uniqueness checks; a `percent` bound becomes the fail threshold |
+| `rowCount` | a volume monitor; a one-sided bound stays one-sided |
+| the object's property list | a schema-drift check whose baseline is the declared columns |
+| `type: sql` rules | a custom SQL check that fails when the query's result breaks the operator, or is empty |
+| `type: custom` with `engine: great-expectations` | that expectation, if DataQ allows it |
+| `slaProperties` `latency` on a timestamp column | a freshness monitor |
+| `classification` of `confidential`, `restricted`, `pii`, `sensitive` or `secret` | the column joins the suite's PII columns, so failing samples mask it |
+| `severity` `info` / `warning` / `error` / `critical` | warn / warn / fail / critical; no severity means fail |
+| `dimension` | DataQ's dimension (`conformity` reads as validity; `coverage` stays unclassified) |
+
+A schedule for an object's suite comes from a `dataq.schedule` cron in the object's
+`customProperties`, and `dataq.maxAgeHours` (with `dataq.freshnessColumn`) adds a freshness
+ceiling.
+
+### Not enforced
+
+Everything else is kept on the contract as **not enforced**, with the reason, and never silently
+dropped. That includes `frequency` (a refresh cadence is not a staleness limit; state the limit as
+`latency`), `retention` and the other service-level properties, `text` rules, rules for another
+engine such as Soda, a `rows` bound on `nullValues`, `multipleOf`, and any check DataQ's own
+validators refuse for that datasource.
+
+## A new version
+
+Import the new version with `suite_ids` set to the suites the old version created. DataQ re-points
+them and reconciles their checks: clauses that are new get a check, a check nobody has edited since
+the import is updated to the new clause, a check whose clause disappeared is **switched off** (not
+deleted, so its history stays), and checks people added to the suite themselves are left alone.
+Without `suite_ids`, the new version creates fresh suites.
+
+## Export
+
+`GET /api/v1/contracts/{id}/export` returns the contract as an ODCS document (JSON, or YAML with
+`?format=yaml`): the stored document plus `dataq.*` custom properties naming the check behind each
+rule, and every check people added to the suites as a `type: custom, engine: dataq` rule.
+Importing the export recreates every check.
+
+## Who sees a contract
+
+You see a contract when you can view at least one of its suites; the response counts the linked
+suites you cannot see without naming them. Workspace admins also see contracts with no linked
+suite. Deleting a contract needs edit on all of its suites, and only unlinks them: no suite, check
+or result is deleted.
+
+## Contracts and comparison checks
+
+A [comparison check](datasources-checks.md) reconciles two datasets against each other. A contract
+describes one dataset against a written promise. They answer different questions and can be used
+together.
+
+
+---
+
 <!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/ -->
 
 # Datasources & checks
@@ -5398,6 +5492,11 @@ section below.
   `unclassified` (fail-closed mode), `detected` (the profiler), `classifier`, or `default_mask` — the
   column was never classified, so masking is precautionary. The run page shows the reason beside
   each masked column; the in-app notification feed links to it. What is masked is unchanged.
+- **Data contracts in the Open Data Contract Standard.** Import an ODCS v3 document and DataQ
+  creates one suite per schema object with the checks its schema, quality rules and latency promise
+  describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
+  reconciles the same suites without overwriting a person's edits, and the contract exports back to
+  ODCS with every check, including ones people added.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -5561,6 +5660,8 @@ section below.
 - **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.
+- **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
+  invented ceiling, and a refused volume check now names the key that is wrong or missing.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
@@ -8668,6 +8769,18 @@ erDiagram
         jsonb column_policy "failing-sample redaction policy"
         string origin "user / auto — auto = owned by the coverage loop, one per asset (ADR 0047)"
         jsonb auto_state "coverage-loop bookkeeping: deleted checks, recorded gaps"
+        uuid contract_id FK "the data contract it enforces (ADR 0052; SET NULL)"
+        string contract_object "the ODCS schema object — set and cleared with contract_id"
+        uuid created_by FK
+    }
+    contracts {
+        uuid id PK
+        string odcs_id "the document's own id — identity with version (ADR 0052)"
+        string version
+        string name "display only"
+        string api_version "the ODCS apiVersion the document declared"
+        jsonb spec "the ODCS document, verbatim"
+        jsonb unmapped "clauses no check enforces, with the reason"
         uuid created_by FK
     }
     checks {
@@ -8676,7 +8789,8 @@ erDiagram
         string name
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
-        string origin "user / auto / suggestion (ADR 0047)"
+        string origin "user / auto / suggestion (ADR 0047) / contract (ADR 0052)"
+        jsonb contract_ref "the contract clause a contract-origin check enforces"
         string engine "gx / dmf / dqx / dataplex — per-check evaluator, default gx (ADR 0036)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
@@ -8973,6 +9087,7 @@ erDiagram
     connections ||--o{ lineage_edges : "refreshed by (CASCADE)"
 
     suites ||--o{ checks : "contains (CASCADE)"
+    contracts |o--o{ suites : "enforced by (SET NULL)"
     connections |o--o{ checks : "comparison source (ADR 0015, RESTRICT)"
     suites ||--o{ runs : "executed as (CASCADE)"
     suites ||--o{ shares : "shared via (CASCADE)"
@@ -13654,7 +13769,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0049](0049-profiler-pii-classification-source.md) | Profiler-detected PII as a classification source — one `asset_column_classifications` table (`source = 'profiler'` now, the catalog pull next) holding **additive-only** `sensitive` verdicts from the two existing value detectors (email, encoded), overlaid on `effective_column_tags` as `detected`: a warehouse tag, inherited `sensitive` and the suite's `pii_columns` outrank it, the suite's `identifier_column` clears it, it never satisfies fail-closed clearance and never travels along lineage; cleared only by an audited Admin dismissal that survives re-detection; written on every profile of the suite's own target | Accepted |
 | [0050](0050-usage-telemetry.md) | Opt-in product-usage telemetry — **OpenTelemetry signals** through the existing exporter seam: one `dataq.usage.events` counter (attribute `event`) and one `dataq.usage.<event>` log event per occurrence, on a `MeterProvider`/`LoggerProvider` of their own; **default OFF behind two gates**, the operator's `TELEMETRY_SINK` (`off` · `file` JSON lines · `otlp`) and the admin's audited opt-in (`telemetry_settings` singleton, Admin → Settings); a **closed, code-enforced vocabulary** of twelve events whose attributes are counts or fixed value sets (never a table/column name, SQL, suite name, email or free text — a value outside its set is dropped); the browser posts only `page_viewed`/`check_editor_abandoned` to the server, which is the only emitter; disclosed in `GET /admin/deployment` in both states; no third-party analytics dependency | Accepted |
 | [0051](0051-suite-on-suite-triggers.md) | Suite-on-suite triggers — a suite's own success as a **trigger provider** (`provider='suite'`, `pipeline_or_dag_id` = the upstream suite's id, env derived from it) in the existing `trigger_bindings`, **not** an orchestration provider (no connection, poller, webhook or `pipeline_runs` row; the gate refuses it); fires from the worker after the run's terminal commit when the run `succeeded` with no check at fail/critical; marker `suite:<suite>:<run>` under the same dedup index; self-binding and cycles refused at authoring (disabled bindings count), chain depth capped at 5 at firing, `view` on the upstream suite required | Accepted |
-| [0052](0052-data-contracts-odcs.md) | Consumer-side data contracts — one `contracts` row per contract **version** holding the ODCS v3 document verbatim; a suite links to one contract + one schema object (N objects → N suites); a **fixed translation table** (schema fields, `library`/`sql`/`custom` quality rules, the `latency` SLA, `classification` → the policy rung; v3.0 vocabulary normalised, keyed on the document's `id`) with an explicit `unmapped` bucket surfaced as *not enforced*; DataQ fields travel in `customProperties` vendor `dataq`, export round-trips every check; re-import reconciles with ADR 0047's rules (disable, never delete); `checks.contract_ref` + an incident `contract` evidence layer for clause-level traceability; three read-only MCP tools, import REST-only | Proposed |
+| [0052](0052-data-contracts-odcs.md) | Consumer-side data contracts — one `contracts` row per contract **version** holding the ODCS v3 document verbatim; a suite links to one contract + one schema object (N objects → N suites); a **fixed translation table** (schema fields, `library`/`sql`/`custom` quality rules, the `latency` SLA, `classification` → the policy rung; v3.0 vocabulary normalised, keyed on the document's `id`) with an explicit `unmapped` bucket surfaced as *not enforced*; DataQ fields travel in `customProperties` vendor `dataq`, export round-trips every check; re-import reconciles with ADR 0047's rules (disable, never delete); `checks.contract_ref` + an incident `contract` evidence layer for clause-level traceability; three read-only MCP tools, import REST-only | Accepted |
 
 
 ---
@@ -20183,7 +20298,7 @@ event came from.
 
 # ADR 0052 — Consumer-side data contracts: a `contracts` entity with ODCS v3 import and export
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-25)
 - **Date:** 2026-10-25
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds the SLA block maps onto), [0016](0016-severity-derivation-semantics.md) (thresholds band the unexpected-%), [0014](0014-reconciliation-comparison-check-kind.md) / [0015](0015-two-connection-comparison-check-model.md) (the adjacent `comparison` kind — two datasets, not one contract), [0019](0019-custom-sql-check-kind.md) (custom SQL, which ODCS `sql` rules ride), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (the grants a contract inherits), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (incidents and their evidence card), [0037](0037-workspace-visible-asset-identity.md) (`restricted_suite_count` on a grant-filtered rollup), [0036](0036-connection-anchored-check-engines.md) / [0038](0038-dq-dimension-classification.md) (engine and dimension on a check), [0041](0041-history-audit-strategy.md) (audit of the import), [0047](0047-automated-coverage-loop.md) (the reconciler shape re-used here), [0049](0049-profiler-pii-classification-source.md) (where a contract's `classification` lands). CONTRIBUTING rule 45 names ODCS as the required format.
@@ -20271,7 +20386,7 @@ ends in exactly one of: a check it created, or an entry in the contract's **`unm
 | `missingValues` (`arguments.missingValues`) | `expect_column_values_to_not_be_in_set` over the listed values (plus `not_be_null` when the list contains null) |
 | `duplicateValues` at property level / at object level with `arguments.properties` | `expect_column_values_to_be_unique` / `expect_compound_columns_to_be_unique` |
 | `rowCount` with operators | a **`volume`** monitor (`min_rows` / `max_rows`) — the monitor kind, not the GX table expectation, so `metric_value` trends and the anomaly baseline see it. The monitor gains **one-sided bounds** (at least one of `min_rows` / `max_rows`, which also fixes the standing refusal of a min-only volume check), so `mustBeGreaterThan: 1000` never invents a ceiling |
-| the schema object's property list | one **`schema_drift`** check whose baseline is **declared** from the contract (column names, `physicalType` when given) instead of learned from the first run; a declared column with no type is never reported as `type_changed` until a run records one |
+| the schema object's property list | one **`schema_drift`** check whose baseline is **declared** from the contract (column names, `physicalType` when given) instead of learned from the first run; declared names match the warehouse's case-insensitively, and a declared column with no type is never reported as `type_changed` |
 | `type: sql` with `query` + operator | a custom-SQL check (ADR 0019, SQL datasources only) built as `SELECT 1 WHERE NOT COALESCE((<query>) <operator>, FALSE)` — one unexpected row when the scalar breaches **or is NULL** (an empty table must not pass a `mustBeGreaterThan`); `{object}` / `{property}` substituted with the suite target and the property name; the validator still has the last word and a refused query goes to `unmapped` |
 | `type: custom`, `engine` ∈ {`great-expectations`, `greatExpectations`, `dataq`} | the `implementation` parsed as `{expectation_type, kwargs}` (GX) or as a DataQ check document (`dataq`); anything outside `ALLOWED_EXPECTATIONS` goes to `unmapped` |
 | `type: custom` with another engine; `type: text` | `unmapped` (reason: engine not executable here / prose) |
@@ -20343,8 +20458,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   `restricted_suite_count`, as `get_asset` does (ADR 0037). A contract with no linked suite is
   visible to admins only.
-- `PATCH /suites/{id}` accepts `contract_id` / `contract_object` (`edit`); `DELETE /contracts/{id}`
-  is Member+, unlinks only.
+- Linking an existing suite to a contract by hand (`PATCH /suites/{id}` with `contract_id` and
+  `contract_object`, both or neither, `edit`) ships with the compliance rollup, the second build
+  phase; until then a suite is linked only by an import. `DELETE /contracts/{id}` is Member+,
+  needs `edit` on every linked suite, and unlinks only.
 - MCP: `list_contracts`, `get_contract`, `export_contract` — three **read-only** tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.

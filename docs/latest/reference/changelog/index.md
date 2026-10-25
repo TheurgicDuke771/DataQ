@@ -66,6 +66,11 @@ section below.
   `unclassified` (fail-closed mode), `detected` (the profiler), `classifier`, or `default_mask` — the
   column was never classified, so masking is precautionary. The run page shows the reason beside
   each masked column; the in-app notification feed links to it. What is masked is unchanged.
+- **Data contracts in the Open Data Contract Standard.** Import an ODCS v3 document and DataQ
+  creates one suite per schema object with the checks its schema, quality rules and latency promise
+  describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
+  reconciles the same suites without overwriting a person's edits, and the contract exports back to
+  ODCS with every check, including ones people added.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -229,6 +234,8 @@ section below.
 - **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.
+- **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
+  invented ceiling, and a refused volume check now names the key that is wrong or missing.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to

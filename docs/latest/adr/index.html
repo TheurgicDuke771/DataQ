@@ -755,6 +755,8 @@
       
         
       
+        
+      
     
     
     
@@ -908,6 +910,34 @@
     
   
     Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/data-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data contracts (ODCS)
   
 
     
@@ -2887,7 +2917,7 @@
 <tr>
 <td><a href="0052-data-contracts-odcs/">0052</a></td>
 <td>Consumer-side data contracts — one <code>contracts</code> row per contract <strong>version</strong> holding the ODCS v3 document verbatim; a suite links to one contract + one schema object (N objects → N suites); a <strong>fixed translation table</strong> (schema fields, <code>library</code>/<code>sql</code>/<code>custom</code> quality rules, the <code>latency</code> SLA, <code>classification</code> → the policy rung; v3.0 vocabulary normalised, keyed on the document's <code>id</code>) with an explicit <code>unmapped</code> bucket surfaced as <em>not enforced</em>; DataQ fields travel in <code>customProperties</code> vendor <code>dataq</code>, export round-trips every check; re-import reconciles with ADR 0047's rules (disable, never delete); <code>checks.contract_ref</code> + an incident <code>contract</code> evidence layer for clause-level traceability; three read-only MCP tools, import REST-only</td>
-<td>Proposed</td>
+<td>Accepted</td>
 </tr>
 </tbody>
 </table>

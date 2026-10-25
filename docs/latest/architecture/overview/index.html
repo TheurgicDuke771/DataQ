@@ -755,6 +755,8 @@
       
         
       
+        
+      
     
     
     
@@ -908,6 +910,34 @@
     
   
     Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/data-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data contracts (ODCS)
   
 
     
@@ -3000,6 +3030,18 @@ flowchart LR
         jsonb column_policy "failing-sample redaction policy"
         string origin "user / auto — auto = owned by the coverage loop, one per asset (ADR 0047)"
         jsonb auto_state "coverage-loop bookkeeping: deleted checks, recorded gaps"
+        uuid contract_id FK "the data contract it enforces (ADR 0052; SET NULL)"
+        string contract_object "the ODCS schema object — set and cleared with contract_id"
+        uuid created_by FK
+    }
+    contracts {
+        uuid id PK
+        string odcs_id "the document's own id — identity with version (ADR 0052)"
+        string version
+        string name "display only"
+        string api_version "the ODCS apiVersion the document declared"
+        jsonb spec "the ODCS document, verbatim"
+        jsonb unmapped "clauses no check enforces, with the reason"
         uuid created_by FK
     }
     checks {
@@ -3008,7 +3050,8 @@ flowchart LR
         string name
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
-        string origin "user / auto / suggestion (ADR 0047)"
+        string origin "user / auto / suggestion (ADR 0047) / contract (ADR 0052)"
+        jsonb contract_ref "the contract clause a contract-origin check enforces"
         string engine "gx / dmf / dqx / dataplex — per-check evaluator, default gx (ADR 0036)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
@@ -3305,6 +3348,7 @@ flowchart LR
     connections ||--o{ lineage_edges : "refreshed by (CASCADE)"
 
     suites ||--o{ checks : "contains (CASCADE)"
+    contracts |o--o{ suites : "enforced by (SET NULL)"
     connections |o--o{ checks : "comparison source (ADR 0015, RESTRICT)"
     suites ||--o{ runs : "executed as (CASCADE)"
     suites ||--o{ shares : "shared via (CASCADE)"

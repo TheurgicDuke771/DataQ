@@ -749,6 +749,8 @@
       
         
       
+        
+      
     
     
     
@@ -902,6 +904,34 @@
     
   
     Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/data-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data contracts (ODCS)
   
 
     
@@ -2600,7 +2630,7 @@
 
 <h1 id="adr-0052-consumer-side-data-contracts-a-contracts-entity-with-odcs-v3-import-and-export">ADR 0052 — Consumer-side data contracts: a <code>contracts</code> entity with ODCS v3 import and export<a class="headerlink" href="#adr-0052-consumer-side-data-contracts-a-contracts-entity-with-odcs-v3-import-and-export" title="Permanent link">¶</a></h1>
 <ul>
-<li><strong>Status:</strong> Proposed</li>
+<li><strong>Status:</strong> Accepted (2026-10-25)</li>
 <li><strong>Date:</strong> 2026-10-25</li>
 <li><strong>Deciders:</strong> @TheurgicDuke771</li>
 <li><strong>Related:</strong> ADR <a href="../0012-monitor-kind-seam/">0012</a> (monitor kinds the SLA block maps onto), <a href="../0016-severity-derivation-semantics/">0016</a> (thresholds band the unexpected-%), <a href="../0014-reconciliation-comparison-check-kind/">0014</a> / <a href="../0015-two-connection-comparison-check-model/">0015</a> (the adjacent <code>comparison</code> kind — two datasets, not one contract), <a href="../0019-custom-sql-check-kind/">0019</a> (custom SQL, which ODCS <code>sql</code> rules ride), <a href="../0027-suite-permission-model-workspace-admin/">0027</a> / <a href="../0033-workspace-roles-rbac/">0033</a> (the grants a contract inherits), <a href="../0034-asset-entity-openlineage-identity-lineage-pull/">0034</a> (incidents and their evidence card), <a href="../0037-workspace-visible-asset-identity/">0037</a> (<code>restricted_suite_count</code> on a grant-filtered rollup), <a href="../0036-connection-anchored-check-engines/">0036</a> / <a href="../0038-dq-dimension-classification/">0038</a> (engine and dimension on a check), <a href="../0041-history-audit-strategy/">0041</a> (audit of the import), <a href="../0047-automated-coverage-loop/">0047</a> (the reconciler shape re-used here), <a href="../0049-profiler-pii-classification-source/">0049</a> (where a contract's <code>classification</code> lands). CONTRIBUTING rule 45 names ODCS as the required format.</li>
@@ -2722,7 +2752,7 @@ ends in exactly one of: a check it created, or an entry in the contract's <stron
 </tr>
 <tr>
 <td>the schema object's property list</td>
-<td>one <strong><code>schema_drift</code></strong> check whose baseline is <strong>declared</strong> from the contract (column names, <code>physicalType</code> when given) instead of learned from the first run; a declared column with no type is never reported as <code>type_changed</code> until a run records one</td>
+<td>one <strong><code>schema_drift</code></strong> check whose baseline is <strong>declared</strong> from the contract (column names, <code>physicalType</code> when given) instead of learned from the first run; declared names match the warehouse's case-insensitively, and a declared column with no type is never reported as <code>type_changed</code></td>
 </tr>
 <tr>
 <td><code>type: sql</code> with <code>query</code> + operator</td>
@@ -2821,8 +2851,10 @@ check name. The layer is built from the check at evidence time, never copied by 
   linked suite or is a workspace admin; the rollup covers the visible suites and reports
   <code>restricted_suite_count</code>, as <code>get_asset</code> does (ADR 0037). A contract with no linked suite is
   visible to admins only.</li>
-<li><code>PATCH /suites/{id}</code> accepts <code>contract_id</code> / <code>contract_object</code> (<code>edit</code>); <code>DELETE /contracts/{id}</code>
-  is Member+, unlinks only.</li>
+<li>Linking an existing suite to a contract by hand (<code>PATCH /suites/{id}</code> with <code>contract_id</code> and
+  <code>contract_object</code>, both or neither, <code>edit</code>) ships with the compliance rollup, the second build
+  phase; until then a suite is linked only by an import. <code>DELETE /contracts/{id}</code> is Member+,
+  needs <code>edit</code> on every linked suite, and unlinks only.</li>
 <li>MCP: <code>list_contracts</code>, <code>get_contract</code>, <code>export_contract</code> — three <strong>read-only</strong> tools (ADR
   0008 amendment, 56 → 59). Import stays REST-only: it creates suites and checks under a
   connection and is the kind of bulk write an assistant should hand to a person.</li>
