@@ -71,7 +71,9 @@ event came from.
 7. **What the user sees.** The Triggers panel offers "Another suite (on success)" beside the
    orchestrators, with a suite picker (suites the user can see) in place of the free-text
    pipeline id and the env filled from the chosen suite. A triggered run's label reads
-   "Suite — <upstream suite name>" and links to the upstream run. MCP `create_trigger_binding`
+   "Suite — <upstream suite name>" when the viewer can see that suite, and "Suite" alone when
+   they cannot (a run they may read must not leak a suite name they hold no grant on). MCP
+   `create_trigger_binding`
    / `list_trigger_bindings` accept and return `provider='suite'`, with the docstrings saying
    what fires it and what never does.
 
@@ -88,6 +90,12 @@ event came from.
   a `suite:` marker yields no pipeline layer, which is correct — there is no pipeline.
 - Env near-miss detection (the ambiguous-URL warning on orchestrator bindings) does not apply:
   the env is derived, never typed.
+- The key is stored as the canonical `str(uuid)` whatever spelling was sent, since firing and
+  the cycle walk compare against that form; and because the key is text rather than a foreign
+  key, deleting the upstream suite removes the suite bindings keyed on it — nothing is left
+  behind that is enabled and can never fire.
+- Suite-binding creates serialise on a transaction-scoped advisory lock, so two concurrent
+  creates cannot both pass the cycle check and commit a loop.
 
 ## Alternatives considered
 
