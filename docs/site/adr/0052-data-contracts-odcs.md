@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-10-25
 - **Deciders:** @TheurgicDuke771
-- **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds the SLA block maps onto), [0014](0014-reconciliation-comparison-check-kind.md) / [0015](0015-two-connection-comparison-check-model.md) (the adjacent `comparison` kind — two datasets, not one contract), [0019](0019-custom-sql-check-kind.md) (custom SQL, which ODCS `sql` rules ride), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (the grants a contract inherits), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (incidents and their evidence card), [0036](0036-connection-anchored-check-engines.md) / [0038](0038-dq-dimension-classification.md) (engine and dimension on a check), [0041](0041-history-audit-strategy.md) (audit of the import), [0047](0047-automated-coverage-loop.md) (the reconciler shape re-used here), [0049](0049-profiler-pii-classification-source.md) (where a contract's `classification` lands). CONTRIBUTING rule 45 names ODCS as the required format.
+- **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds the SLA block maps onto), [0016](0016-severity-derivation-semantics.md) (thresholds band the unexpected-%), [0014](0014-reconciliation-comparison-check-kind.md) / [0015](0015-two-connection-comparison-check-model.md) (the adjacent `comparison` kind — two datasets, not one contract), [0019](0019-custom-sql-check-kind.md) (custom SQL, which ODCS `sql` rules ride), [0027](0027-suite-permission-model-workspace-admin.md) / [0033](0033-workspace-roles-rbac.md) (the grants a contract inherits), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (incidents and their evidence card), [0037](0037-workspace-visible-asset-identity.md) (`restricted_suite_count` on a grant-filtered rollup), [0036](0036-connection-anchored-check-engines.md) / [0038](0038-dq-dimension-classification.md) (engine and dimension on a check), [0041](0041-history-audit-strategy.md) (audit of the import), [0047](0047-automated-coverage-loop.md) (the reconciler shape re-used here), [0049](0049-profiler-pii-classification-source.md) (where a contract's `classification` lands). CONTRIBUTING rule 45 names ODCS as the required format.
 
 ## Context
 
@@ -45,8 +45,11 @@ What ODCS carries and what DataQ can execute do not line up one-to-one:
 
 ### 1. One `contracts` row per contract **version**; the document is stored verbatim
 
-`contracts` (`id`, `name`, `version`, `status`, `domain`, `tenant`, `spec` JSONB, `api_version`,
-`created_by`, timestamps; unique `(lower(name), version)`). `spec` is the ODCS document **as
+`contracts` (`id`, `odcs_id` — the document's required `id` —, `name`, `version`, `status`,
+`domain`, `tenant`, `spec` JSONB, `unmapped` JSONB, `api_version`, `created_by`, timestamps;
+unique `(odcs_id, version)`). The standard's `id` is the identity: two domains may each publish
+an `orders` contract, and a renamed contract keeps its `id`, so re-import, versioning and the
+reconciliation in §6 key on `(odcs_id, version)` and `name` is display only. `spec` is the ODCS document **as
 imported**, every field preserved, including ones DataQ does not understand — the standard
 says tools must preserve unknown `customProperties`, and the same courtesy is extended to the
 whole document so a round-trip through DataQ loses nothing the producer wrote. `status` mirrors
@@ -60,6 +63,9 @@ as the standard does). A new version of a contract is a **new row**; nothing is 
 Importing a contract with N schema objects creates (or reconciles) N suites on the connection
 the caller names, one per object, each targeted at the object's `physicalName` (falling back to
 `name`) resolved against the connection's namespace by the existing run-target resolver.
+`contract_id` and `contract_object` are set and cleared **together** — the service clears both
+when a contract is deleted (the FK's `SET NULL` is the backstop, not the mechanism) and
+`PATCH /suites/{id}` accepts both or neither, so an object name never outlives its contract.
 Deleting a contract unlinks its suites; it never deletes a suite, a check or a result.
 
 ### 3. The translation is a **fixed, documented mapping** with an explicit "not enforced" bucket
@@ -73,25 +79,27 @@ ends in exactly one of: a check it created, or an entry in the contract's **`unm
 | property `required: true` | `expect_column_values_to_not_be_null` |
 | property `unique: true`; `primaryKey: true` on one property | `expect_column_values_to_be_unique` |
 | `primaryKey: true` on several properties | `expect_compound_columns_to_be_unique` |
-| `logicalTypeOptions.minimum` / `maximum` | `expect_column_values_to_be_between` |
+| `logicalTypeOptions.minimum` / `maximum`; `exclusiveMinimum` / `exclusiveMaximum` | `expect_column_values_to_be_between`, the exclusive forms as `strict_min` / `strict_max`; `multipleOf` → `unmapped` |
 | `logicalTypeOptions.minLength` / `maxLength` | `expect_column_value_lengths_to_be_between` |
 | `logicalTypeOptions.pattern` | `expect_column_values_to_match_regex` |
-| property `enum` / `invalidValues` with `validValues` | `expect_column_values_to_be_in_set` |
+| property `enum` (v3.2.0+, an array of `{value, …}` objects — the `value`s are taken) / `invalidValues` with `validValues` | `expect_column_values_to_be_in_set` |
 | `invalidValues` with `pattern` | `expect_column_values_to_match_regex` |
 | `nullValues` with an operator | `expect_column_values_to_not_be_null`; a `percent` bound becomes the check's `fail_threshold` (ADR 0016 bands the unexpected-%), a `rows` bound is not expressible and goes to `unmapped` |
 | `missingValues` (`arguments.missingValues`) | `expect_column_values_to_not_be_in_set` over the listed values (plus `not_be_null` when the list contains null) |
 | `duplicateValues` at property level / at object level with `arguments.properties` | `expect_column_values_to_be_unique` / `expect_compound_columns_to_be_unique` |
-| `rowCount` with operators | a **`volume`** monitor (`min_rows` / `max_rows`) — the monitor kind, not the GX table expectation, so `metric_value` trends and the anomaly baseline see it |
+| `rowCount` with operators | a **`volume`** monitor (`min_rows` / `max_rows`) — the monitor kind, not the GX table expectation, so `metric_value` trends and the anomaly baseline see it. The monitor gains **one-sided bounds** (at least one of `min_rows` / `max_rows`, which also fixes the standing refusal of a min-only volume check), so `mustBeGreaterThan: 1000` never invents a ceiling |
 | the schema object's property list | one **`schema_drift`** check whose baseline is **declared** from the contract (column names, `physicalType` when given) instead of learned from the first run; a declared column with no type is never reported as `type_changed` until a run records one |
-| `type: sql` with `query` + operator | a custom-SQL check (ADR 0019, SQL datasources only) built as `SELECT 1 WHERE NOT ((<query>) <operator>)` — one unexpected row when the scalar breaches; `{object}` / `{property}` substituted with the suite target and the property name; the validator still has the last word and a refused query goes to `unmapped` |
+| `type: sql` with `query` + operator | a custom-SQL check (ADR 0019, SQL datasources only) built as `SELECT 1 WHERE NOT COALESCE((<query>) <operator>, FALSE)` — one unexpected row when the scalar breaches **or is NULL** (an empty table must not pass a `mustBeGreaterThan`); `{object}` / `{property}` substituted with the suite target and the property name; the validator still has the last word and a refused query goes to `unmapped` |
 | `type: custom`, `engine` ∈ {`great-expectations`, `greatExpectations`, `dataq`} | the `implementation` parsed as `{expectation_type, kwargs}` (GX) or as a DataQ check document (`dataq`); anything outside `ALLOWED_EXPECTATIONS` goes to `unmapped` |
 | `type: custom` with another engine; `type: text` | `unmapped` (reason: engine not executable here / prose) |
-| `slaProperties` `frequency` or `latency` with a time `unit` and an `element` naming a column | a **`freshness`** monitor on that column, `max_age_hours` from value + unit; without an `element` the suite's arrival-time freshness where the datasource supports it, else `unmapped` |
+| `slaProperties` `latency` with a time `unit` and an `element` naming a column | a **`freshness`** monitor on that column, `max_age_hours` from value + unit; without an `element` the suite's arrival-time freshness where the datasource supports it, else `unmapped` |
+| `slaProperties` `frequency` | `unmapped` (reason: a refresh cadence is not a staleness ceiling — a daily feed checked at 24h flaps on every run); a producer who wants a ceiling states it as `latency` or as `customProperties[dataq.maxAgeHours]` on the object, which maps to the same freshness monitor |
 | every other SLA property (`retention`, `availability`, `timeToRepair`, …) | `unmapped` (reason: not a data-quality check) |
 | property `classification` ∈ {`confidential`, `restricted`, `pii`, `sensitive`, `secret`} | the suite's `column_policy.pii_columns` — the **policy** rung of the redaction ladder, so a contract's classification masks samples from the first run |
 | rule `dimension` | `conformity` → `validity`; `coverage` → unclassified (NULL, ADR 0038's honest gap); the other five map by name; absent → DataQ's own derivation |
-| rule `severity` | `info` → `warn`, `warning` → `fail`, `error` → `critical`; absent or unknown → `fail`; overridable per rule by `customProperties[dataq.severity]` |
-| rule `schedule` / `scheduler: cron` on an object | one `schedules` row on the suite (the first cron wins; others `unmapped`) |
+| rule `severity` | `info` → `warn`, `warning` → `warn`, `error` → `fail`, `critical` / `blocker` → `critical`; absent or unknown → `fail` — a contract clause is an assertion, and a producer who wants less says `warning`; overridable per rule by `customProperties[dataq.severity]` |
+| `customProperties[dataq.schedule]` (a cron) on a schema object | one `schedules` row on the suite |
+| rule-level `schedule` / `scheduler` | `unmapped` (reason: DataQ schedules a suite, not a rule; the rule's cron is recorded on the clause so the rollup can show it) |
 
 ### 4. DataQ-specific fields travel in `customProperties`, vendor `dataq`
 
@@ -109,7 +117,11 @@ never saw DataQ imports cleanly.
 ### 5. Versions of the standard
 
 The importer accepts `apiVersion` **v3.0.0 through the newest v3 minor it knows** (v3.2.0 today),
-validated against the vendored ODCS JSON Schema for that version (Apache-2.0, pinned under
+validated against the vendored ODCS JSON Schema for that version. The mapping in §3 is written in
+v3.1+ vocabulary; a v3.0.x document is **normalised first** — the deprecated `rule` names
+(`duplicateCount` → `duplicateValues`, `validValues` → `invalidValues` + `validValues`, `rowCount`)
+become `metric`s and the `${object}` / `${property}` placeholders become `{object}` /
+`{property}` — in the translation step only, never in the stored `spec` (Apache-2.0, pinned under
 `backend/app/contracts/schema/`, bumped by hand like GX). A newer v3 minor than the vendored
 schema is accepted with a warning and validated against the newest known schema — ODCS minors
 are additive and unknown fields are preserved anyway. A **v2** document is refused with a
