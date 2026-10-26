@@ -14,6 +14,13 @@ section below.
 
 - **Dependency security updates.** `fastmcp` moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own `/mcp` server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). `dompurify`, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.
 - **Dependency security updates.** The CA bundle (`certifi`) moves to 2026.10.19 for PYSEC-2026-4320. `follow-redirects`, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+- **Dependency security updates.** `databricks-sql-connector` moves to 4.8.0, which allows
+  `oauthlib` 4, and `oauthlib` moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
+  as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP
+  callback injection in the token-revocation endpoint. Both are in oauthlib's
+  authorization-server code, which DataQ never runs (it only acts as an OAuth client), so
+  neither reached the product. The connector's new geospatial and catalog-name-escaping
+  options are opt-in and off by default, so Unity Catalog connections behave as before.
 
 ### Added
 
