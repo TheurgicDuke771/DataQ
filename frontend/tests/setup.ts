@@ -8,7 +8,11 @@ if (!window.matchMedia) {
       matches: false,
       media: query,
       onchange: null,
+      // Legacy MediaQueryList API: deprecated, but antd's Carousel (via @ant-design/react-slick) still
+      // calls mql.addListener/removeListener, so the stub must keep them or a responsive render throws.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       addListener: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       removeListener: () => {},
       addEventListener: () => {},
       removeEventListener: () => {},
