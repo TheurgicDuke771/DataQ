@@ -176,6 +176,7 @@ Per-functionality workflow, in order:
 - Branch names: `feature/<desc>`, `fix/issue-<N>-<desc>`, `chore/<desc>`, `docs/<desc>`.
 - `main` is protected: PR + passing CI + no force-push. (≥1 approving review is disabled during solo-dev phase; re-enable before onboarding a second contributor.)
 - **Squash-merge only into `main`.**
+- **Stack dependent PRs** (CONTRIBUTING rule 9a): when PRs build on each other (feat → its docs, backend → UI, migration → code), cut each branch from the previous PR's branch and open it with `--base <parent-branch>`. Merge bottom-up with `gh pr merge --squash --delete-branch` (GitHub retargets the next PR to `main`), then merge `origin/main` into the next branch, keep the branch's side of any conflict, check `git diff origin/main...HEAD --stat` shows only its own files, and push normally — never rebase + force-push. Unrelated work still branches from a freshly pulled `main`.
 - **Conventional commits** (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
 
 ### CI/CD quality gates (block merge)
