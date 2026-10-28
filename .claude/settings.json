@@ -3,129 +3,138 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
-            "type": "command",
-            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; case \"$file_path\" in *.py) if command -v black >/dev/null 2>&1; then black --quiet \"$file_path\"; fi; if command -v ruff >/dev/null 2>&1; then ruff check --fix --quiet \"$file_path\" || true; fi ;; esac"
+            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; case \"$file_path\" in *.py) if command -v black \u003e/dev/null 2\u003e\u00261; then black --quiet \"$file_path\"; fi; if command -v ruff \u003e/dev/null 2\u003e\u00261; then ruff check --fix --quiet \"$file_path\" || true; fi ;; esac",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); cwd=$(printf '%s' \"$input\" | jq -r '.cwd // empty'); case \"$fp\" in *.ts|*.tsx|*.css) ;; *) exit 0 ;; esac; command -v pnpm >/dev/null 2>&1 || exit 0; here=$(git -C \"$(dirname \"$fp\")\" rev-parse --show-toplevel 2>/dev/null); there=$(git -C \"${cwd:-.}\" rev-parse --show-toplevel 2>/dev/null); [ -n \"$here\" ] && [ \"$here\" = \"$there\" ] || exit 0; d=$(dirname \"$fp\"); while [ \"$d\" != \"/\" ] && [ ! -f \"$d/package.json\" ]; do d=$(dirname \"$d\"); done; [ -f \"$d/package.json\" ] || exit 0; cd \"$d\" || exit 0; pnpm exec prettier --write --log-level error \"$fp\" >/dev/null 2>&1; case \"$fp\" in *.ts|*.tsx) pnpm exec eslint --fix --no-warn-ignored \"$fp\" >/dev/null 2>&1 ;; esac; exit 0"
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); cwd=$(printf '%s' \"$input\" | jq -r '.cwd // empty'); case \"$fp\" in *.ts|*.tsx|*.css) ;; *) exit 0 ;; esac; command -v pnpm \u003e/dev/null 2\u003e\u00261 || exit 0; here=$(git -C \"$(dirname \"$fp\")\" rev-parse --show-toplevel 2\u003e/dev/null); there=$(git -C \"${cwd:-.}\" rev-parse --show-toplevel 2\u003e/dev/null); [ -n \"$here\" ] \u0026\u0026 [ \"$here\" = \"$there\" ] || exit 0; d=$(dirname \"$fp\"); while [ \"$d\" != \"/\" ] \u0026\u0026 [ ! -f \"$d/package.json\" ]; do d=$(dirname \"$d\"); done; [ -f \"$d/package.json\" ] || exit 0; cd \"$d\" || exit 0; pnpm exec prettier --write --log-level error \"$fp\" \u003e/dev/null 2\u003e\u00261; case \"$fp\" in *.ts|*.tsx) pnpm exec eslint --fix --no-warn-ignored \"$fp\" \u003e/dev/null 2\u003e\u00261 ;; esac; exit 0",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress-v1.md|*/docs/progress-v1.1.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"This file is a FROZEN cycle archive (banner says do not update) - the live tracker is docs/progress.md. Make sure this edit is intentional archive maintenance (e.g. link-path repair), not a task tick that belongs in progress.md.\"}}';; */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - keep the Snapshot counts (open PRs/issues) consistent with GitHub, and if a tracked cycle epic exists (label:epic, currently #1518 for v1.2), tick/untick its checklist to match. Frozen ledgers: docs/progress-v1.md (v1) and docs/progress-v1.1.md (v1.1) - task ticks never go there.\"}}';; esac"
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */docs/progress-v1.md|*/docs/progress-v1.1.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"This file is a FROZEN cycle archive (banner says do not update) - the live tracker is docs/progress.md. Make sure this edit is intentional archive maintenance (e.g. link-path repair), not a task tick that belongs in progress.md.\"}}';; */docs/progress.md) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"docs/progress.md changed - keep the Snapshot counts (open PRs/issues) consistent with GitHub, and if a tracked cycle epic exists (label:epic, currently #1518 for v1.2), tick/untick its checklist to match. Frozen ledgers: docs/progress-v1.md (v1) and docs/progress-v1.1.md (v1.1) - task ticks never go there.\"}}';; esac",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */backend/app/mcp/server.py) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"backend/app/mcp/server.py changed - before merge, run the mcp-honesty-reviewer agent on this diff. This surface has produced 50+ honesty defects (partial-as-final, unknown-as-zero, one null meaning two things, false-not-thin docstrings, inert params, mutation-completion gaps, scope conflation) and adding a tool routinely falsifies a sibling docstring that named its absence as the workaround - both are things a normal review pass tends to miss on this file specifically. The agent also runs a generic MCP-tool-quality pass (safety annotations, unit ambiguity, unverified/forwarded data) independent of this repos own issue history.\"}}';; esac"
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); case \"$fp\" in */backend/app/mcp/server.py) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"backend/app/mcp/server.py changed - before merge, run the mcp-honesty-reviewer agent on this diff. This surface has produced 50+ honesty defects (partial-as-final, unknown-as-zero, one null meaning two things, false-not-thin docstrings, inert params, mutation-completion gaps, scope conflation) and adding a tool routinely falsifies a sibling docstring that named its absence as the workaround - both are things a normal review pass tends to miss on this file specifically. The agent also runs a generic MCP-tool-quality pass (safety annotations, unit ambiguity, unverified/forwarded data) independent of this repos own issue history.\"}}';; esac",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Write|Edit|MultiEdit"
       },
       {
-        "matcher": "Bash",
         "hooks": [
           {
-            "type": "command",
-            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -Eq '(^|[[:space:];&|])[[:space:]]*gh pr merge([[:space:]]|$)'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}'; fi"
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -Eq '(^|[[:space:];\u0026|])[[:space:]]*gh pr merge([[:space:]]|$)'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"PR merged - per the PR-template checkbox, update docs/progress.md now: flip the cycle-plan / carried-over rows this PR implements and refresh the Snapshot counts (open PRs/issues); touch CLAUDE.md section 13 only if the headline changed. Tooling/docs PRs that ticked the N/A checkbox need no update.\"}}'; fi",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | tr '\\n;&|' '\\n\\n\\n\\n' | sed 's/^[[:space:]]*//' | grep -Eq '^(az[[:space:]]+containerapp([[:space:]]+job)?[[:space:]]+(start|stop)([[:space:]]|$)|az[[:space:]]+containerapp[[:space:]]+update([[:space:]].*)?--min-replicas|az[[:space:]]+keyvault[[:space:]]+secret[[:space:]]+set([[:space:]]|$)|aws[[:space:]]+ecs[[:space:]]+(update-service|run-task)([[:space:]]|$)|aws[[:space:]]+secretsmanager[[:space:]]+(put-secret-value|create-secret|rotate-secret)([[:space:]]|$)|([^[:space:]]*/)?harness_window\\.sh([[:space:]]|$))'; then printf '%s' '{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"Harness/credential/deployment state just changed - append an entry to docs/ops-log.md NOW (append-only, git-tracked on purpose). Harness or service start/stop/roll (Azure OR AWS): record UTC timestamp, the service(s), the action, who, and the EXPECTED state afterwards - 'stopped' alone does not answer the question asked later ('was this deliberate?'), which cost real time on 2026-07-26. Credential rotation: record the date, the credential, EVERY secret-store key written from it (Key Vault or Secrets Manager), and the new expiry - a partial rotation left two Snowflake connections dead for three weeks. Never record a secret VALUE, only identifiers and dates.\"}}'; fi"
+            "command": "input=$(cat); cmd=$(printf '%s' \"$input\" | jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | tr '\\n;\u0026|' '\\n\\n\\n\\n' | sed 's/^[[:space:]]*//' | grep -Eq '^(az[[:space:]]+containerapp([[:space:]]+job)?[[:space:]]+(start|stop)([[:space:]]|$)|az[[:space:]]+containerapp[[:space:]]+update([[:space:]].*)?--min-replicas|az[[:space:]]+keyvault[[:space:]]+secret[[:space:]]+set([[:space:]]|$)|aws[[:space:]]+ecs[[:space:]]+(update-service|run-task)([[:space:]]|$)|aws[[:space:]]+secretsmanager[[:space:]]+(put-secret-value|create-secret|rotate-secret)([[:space:]]|$)|([^[:space:]]*/)?harness_window\\.sh([[:space:]]|$))'; then printf '%s' '{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"Harness/credential/deployment state just changed - append an entry to docs/ops-log.md NOW (append-only, git-tracked on purpose). Harness or service start/stop/roll (Azure OR AWS): record UTC timestamp, the service(s), the action, who, and the EXPECTED state afterwards - 'stopped' alone does not answer the question asked later ('was this deliberate?'), which cost real time on 2026-07-26. Credential rotation: record the date, the credential, EVERY secret-store key written from it (Key Vault or Secrets Manager), and the new expiry - a partial rotation left two Snowflake connections dead for three weeks. Never record a secret VALUE, only identifiers and dates.\"}}'; fi",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Bash"
       },
       {
-        "matcher": "Agent",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code post-task'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code post-task'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Agent"
       },
       {
-        "matcher": "TaskCreate|TaskUpdate",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code post-todo'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code post-todo'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "TaskCreate|TaskUpdate"
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
-            "type": "command",
-            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' && ! printf '%s' \"$file_path\" | grep -qE '\\.env(\\.[^/]+)?\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' >&2; exit 2; fi"
+            "command": "input=$(cat); file_path=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // empty'); if [ -z \"$file_path\" ]; then exit 0; fi; if printf '%s' \"$file_path\" | grep -qE '(^|/)\\.env($|\\.)' \u0026\u0026 ! printf '%s' \"$file_path\" | grep -qE '\\.env(\\.[^/]+)?\\.example$'; then echo 'Blocked: .env files must not be created or edited (public repo). Use .env.example as the template.' \u003e\u00262; exit 2; fi",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Write|Edit|MultiEdit"
       },
       {
-        "matcher": "Bash",
         "hooks": [
           {
-            "type": "command",
-            "command": "python3 -c 'import json, shlex, sys\nd = json.load(sys.stdin)\ncmd = (d.get(\"tool_input\") or {}).get(\"command\") or \"\"\ncmd = cmd.split(\"<<\")[0]          # a heredoc BODY is data, not argv\ntry:\n    toks = shlex.split(cmd)       # shell-aware: a flag inside a quoted message is one token\nexcept ValueError:\n    toks = cmd.split()\nbad = \"--no-verify\" in toks\nfor i in range(len(toks) - 2):\n    if toks[i] == \"git\" and toks[i + 1] == \"commit\":\n        f = toks[i + 2]\n        if f.startswith(\"-\") and not f.startswith(\"--\") and \"n\" in f[1:]:\n            bad = True\nif bad:\n    sys.stderr.write(\n        \"Blocked: pre-commit bypass. CLAUDE.md section 11 forbids committing or pushing \"\n        \"past the hooks (betterleaks secret scan, Black, Ruff, mypy). \"\n        \"Fix the failing hook instead - a secret that reaches branch history cannot be \"\n        \"removed by a fixup commit, and force-push is blocked on this repo.\"\n    )\n    sys.exit(2)\n'"
+            "command": "python3 -c 'import json, shlex, sys\nd = json.load(sys.stdin)\ncmd = (d.get(\"tool_input\") or {}).get(\"command\") or \"\"\ncmd = cmd.split(\"\u003c\u003c\")[0]          # a heredoc BODY is data, not argv\ntry:\n    toks = shlex.split(cmd)       # shell-aware: a flag inside a quoted message is one token\nexcept ValueError:\n    toks = cmd.split()\nbad = \"--no-verify\" in toks\nfor i in range(len(toks) - 2):\n    if toks[i] == \"git\" and toks[i + 1] == \"commit\":\n        f = toks[i + 2]\n        if f.startswith(\"-\") and not f.startswith(\"--\") and \"n\" in f[1:]:\n            bad = True\nif bad:\n    sys.stderr.write(\n        \"Blocked: pre-commit bypass. CLAUDE.md section 11 forbids committing or pushing \"\n        \"past the hooks (betterleaks secret scan, Black, Ruff, mypy). \"\n        \"Fix the failing hook instead - a secret that reaches branch history cannot be \"\n        \"removed by a fixup commit, and force-push is blocked on this repo.\"\n    )\n    sys.exit(2)\n'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Bash"
       },
       {
-        "matcher": "Agent",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code pre-task'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code pre-task'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Agent"
+      },
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'if command -v entire-brain \u003e/dev/null 2\u003e\u00261; then exec entire-brain hook pre-edit --claude-hook; fi; if command -v entire \u003e/dev/null 2\u003e\u00261; then exec entire brain hook pre-edit --claude-hook; fi; exit 0'",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit"
       }
     ],
     "SessionEnd": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code session-end'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code session-end'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ],
     "SessionStart": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then printf \"%s\\n\" \"{\\\"systemMessage\\\":\\\"\\\\n\\\\nEntire CLI is enabled but not installed or not on PATH.\\\\nInstallation guide: https://docs.entire.io/cli/installation#installation-methods\\\"}\"; exit 0; fi; exec entire hooks claude-code session-start'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then printf \"%s\\n\" \"{\\\"systemMessage\\\":\\\"\\\\n\\\\nEntire CLI is enabled but not installed or not on PATH.\\\\nInstallation guide: https://docs.entire.io/cli/installation#installation-methods\\\"}\"; exit 0; fi; exec entire hooks claude-code session-start'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ],
     "Stop": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code stop'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code stop'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ],
     "UserPromptSubmit": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "sh -c 'if ! command -v entire >/dev/null 2>&1; then exit 0; fi; exec entire hooks claude-code user-prompt-submit'"
+            "command": "sh -c 'if ! command -v entire \u003e/dev/null 2\u003e\u00261; then exit 0; fi; exec entire hooks claude-code user-prompt-submit'",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ]
   },
