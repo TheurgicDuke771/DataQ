@@ -1,0 +1,1 @@
+function e(e,t){return e.status===`ok`?{...e,data:t(e.data)}:e}export{e as t};

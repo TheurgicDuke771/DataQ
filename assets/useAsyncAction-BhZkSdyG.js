@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime-XKyaHtl9.js";import{H as t,un as n}from"./antd-2OwpiV_w.js";import{v as r}from"./index-AwQruEiw.js";var i=e(n(),1);function a(e=`Action failed`){let{message:n}=t.useApp(),[a,o]=(0,i.useState)(!1);return{run:(0,i.useCallback)(async t=>{o(!0);try{await t()}catch(t){n.error(`${e}: ${r(t)}`)}finally{o(!1)}},[n,e]),loading:a}}export{a as t};

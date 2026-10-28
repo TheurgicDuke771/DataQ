@@ -1,0 +1,1 @@
+import{n as e}from"./antd-2OwpiV_w.js";import{t}from"./react-Dxq4VBMK.js";import{m as n}from"./index-AwQruEiw.js";var r=t();function i({value:t}){return t==null?(0,r.jsx)(r.Fragment,{children:`—`}):(0,r.jsx)(e.Text,{code:!0,children:n(t)})}export{i as t};

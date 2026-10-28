@@ -1,0 +1,1 @@
+import{y as e}from"./antd-2OwpiV_w.js";import{t}from"./react-Dxq4VBMK.js";var n=t(),r={wide:1200,picker:880,form:720};function i({width:t=`wide`,gap:i=24,children:a}){let o=typeof t==`number`?t:r[t];return(0,n.jsx)(e,{vertical:!0,gap:i,style:{width:`100%`,maxWidth:o,marginInline:`auto`},children:a})}export{i as t};

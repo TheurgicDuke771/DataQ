@@ -1,0 +1,1 @@
+import{F as e}from"./index-AwQruEiw.js";import{n as t}from"./adapter-DkuWi6Cu.js";var n=`demo-fixtures.json`;function r(r=`/DataQ/demo/`){let i,a=()=>(i??=fetch(`${r}${n}`).then(e=>{if(!e.ok)throw Error(`demo fixtures failed to load (${e.status})`);return e.json()}).catch(e=>{throw i=void 0,e}),i);e.defaults.adapter=t(a)}export{r as installDemo};

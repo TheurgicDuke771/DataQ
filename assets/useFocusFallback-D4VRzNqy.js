@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime-XKyaHtl9.js";import{un as t}from"./antd-2OwpiV_w.js";var n=e(t(),1);function r(){let e=(0,n.useRef)(null);return{ref:e,restore:(0,n.useCallback)(()=>{requestAnimationFrame(()=>{let t=document.activeElement;t&&t!==document.body&&t.isConnected||e.current?.focus()})},[])}}export{r as t};

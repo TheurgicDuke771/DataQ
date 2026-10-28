@@ -1,0 +1,1 @@
+import{n as e}from"./antd-2OwpiV_w.js";import{t}from"./react-Dxq4VBMK.js";var n=t();function r(){return(0,n.jsx)(e.Text,{type:`secondary`,style:{fontSize:12,display:`block`},children:`AI-generated — it can be wrong. Review before you rely on it.`})}export{r as t};

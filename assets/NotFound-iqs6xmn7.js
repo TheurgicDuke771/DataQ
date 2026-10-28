@@ -1,0 +1,1 @@
+import{t as e}from"./react-Dxq4VBMK.js";import{P as t}from"./index-AwQruEiw.js";var n=e();function r(){return(0,n.jsx)(t,{code:404})}export{r as NotFound};
