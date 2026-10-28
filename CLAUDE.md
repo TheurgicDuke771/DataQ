@@ -431,3 +431,8 @@ Distinct from DataQ's **own** FastMCP server at `/mcp` (ADR 0008 — the 59 tool
 - **`azure` caveats (deliberate, re-check before relying on it):** `@azure/mcp`'s only dist-tag is a **beta** (`3.0.0-beta.29`) — Microsoft-published, but pre-stable, so treat tool-surface changes as expected. **This is the one entry pinned to an exact version, not a major**, and deliberately so: npm excludes prereleases from a bare major range, so `@azure/mcp@3` resolves to *nothing* (`E404 No match found for version 3`) and the server would fail to launch. The "pin majors" rule assumes a package with a stable major; this one has none, so the version moves only on a conscious bump. It authenticates through the **local `az` CLI credential**, so it inherits whatever that identity can do — use it for reading state, and keep the Key Vault rule intact: **never surface or print a secret value**. Microsoft telemetry is disabled via `AZURE_MCP_COLLECT_TELEMETRY=false` in the server env. It is only useful while the Azure estate is up — drop the entry if the wind-down completes.
 
 **Not added, and why** (so the decision isn't re-litigated): a **Postgres MCP** was evaluated for run/result triage and rejected on supply-chain grounds. The reference `@modelcontextprotocol/server-postgres` is **deprecated**; the npm `postgres-mcp` is published by a single unaffiliated maintainer; the PyPI `postgres-mcp` declares **no license**, which CONTRIBUTING rule 40 / ADR 0031 forbids outright. `psql` over Bash already covers the need with zero added surface.
+
+<!-- entire-agent:begin -->
+Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.
+@.entire/agent-guide.md
+<!-- entire-agent:end -->
