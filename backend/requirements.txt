@@ -77,7 +77,7 @@ sqlalchemy-bigquery==1.17.3       # the `bigquery` SQLAlchemy dialect GX's BigQu
 adlfs==2026.8.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 # SQL Server / T-SQL (#1679, ADR 0044). Both pure Python + MIT (License field verified from the installed metadata); both single-maintainer — exact pins, quarterly audit (rule 39). NEVER pyodbc/msodbcsql18 or mssql-python here: the ODBC driver is proprietary-EULA (the ODBC lane is user-installed only)
 python-tds==1.17.1                # the TDS driver. datasources/mssql_tds.py REPLACES its hostname check (broken on current pyOpenSSL) and patches named-instance routing — re-verify both, and install()'s shape guard, before any bump
-sqlalchemy-pytds==1.0.2           # the `mssql+pytds` SQLAlchemy dialect (~360 lines; vendorable if it goes unmaintained)
+sqlalchemy-pytds==1.0.3           # the `mssql+pytds` SQLAlchemy dialect (~360 lines; vendorable if it goes unmaintained)
 pyOpenSSL==26.4.0                 # python-tds's TLS; was a snowflake-connector transitive, now imported directly. Apache-2.0
 certifi==2026.10.19               # the CA bundle every python-tds SQL Server connection verifies against (TLS is always on; a private cafile replaces it). MPL-2.0 (weak copyleft, unmodified — OK under rule 40)
 
