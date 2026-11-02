@@ -2,7 +2,7 @@
 # Build-only — installed by the `docs` GitHub Actions workflow, NOT by the app /
 # backend (kept off the backend pip-audit + runtime surface, like the mutation tooling).
 # mkdocs-material pulls mkdocs + pymdown-extensions transitively.
-mkdocs-material==9.7.7
+mkdocs-material==9.8.0
 # Click-to-zoom on screenshots (MIT).
 mkdocs-glightbox==0.5.2
 # Old-URL redirects after the 2026-09 site reorganisation (MIT). Pinned BELOW
