@@ -34,6 +34,7 @@ import {
 } from '../charts/chartTheme';
 import type { ResultStatus } from '../../api/runs';
 import { formatTimestamp } from '../results/resultsFormat';
+import { formatTick } from '../../utils/formatNumber';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
 import { ResultStatusTag } from '../shared/StatusTag';
@@ -390,10 +391,10 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
 
   return (
     <ResponsiveChart height={180} isEmpty={data.length === 0} emptyText="No metric history yet">
-      <LineChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
         <CartesianGrid {...GRID_PROPS} vertical={false} />
         <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
-        <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
+        <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
         <Tooltip contentStyle={TOOLTIP_STYLE} />
         {bands.map((band) => (
           <ReferenceLine
@@ -544,10 +545,10 @@ function AnomalyBaselinePanel({
           isEmpty={data.length === 0}
           emptyText="No baseline observations recorded yet"
         >
-          <LineChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+          <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid {...GRID_PROPS} vertical={false} />
             <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
-            <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
+            <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
             <Tooltip contentStyle={TOOLTIP_STYLE} />
             {stats && (
               <ReferenceArea
