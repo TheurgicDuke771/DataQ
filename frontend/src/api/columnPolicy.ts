@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { FileFormat } from './suites';
+import { apiPath } from './path';
 
 /**
  * Per-suite failing-sample redaction policy (#415): the shown `identifier_column` (a non-PII row
@@ -23,7 +24,7 @@ export interface ColumnPolicySuggestTarget {
 }
 
 export async function getColumnPolicy(suiteId: string): Promise<ColumnPolicy> {
-  const { data } = await api.get<ColumnPolicy>(`/suites/${suiteId}/column-policy`);
+  const { data } = await api.get<ColumnPolicy>(apiPath`/suites/${suiteId}/column-policy`);
   return data;
 }
 
@@ -31,7 +32,7 @@ export async function setColumnPolicy(
   suiteId: string,
   payload: ColumnPolicy,
 ): Promise<ColumnPolicy> {
-  const { data } = await api.put<ColumnPolicy>(`/suites/${suiteId}/column-policy`, payload);
+  const { data } = await api.put<ColumnPolicy>(apiPath`/suites/${suiteId}/column-policy`, payload);
   return data;
 }
 
@@ -39,6 +40,9 @@ export async function suggestColumnPolicy(
   suiteId: string,
   target: ColumnPolicySuggestTarget,
 ): Promise<ColumnPolicy> {
-  const { data } = await api.post<ColumnPolicy>(`/suites/${suiteId}/column-policy/suggest`, target);
+  const { data } = await api.post<ColumnPolicy>(
+    apiPath`/suites/${suiteId}/column-policy/suggest`,
+    target,
+  );
   return data;
 }

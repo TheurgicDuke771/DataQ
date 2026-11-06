@@ -1,6 +1,7 @@
 import { api } from './client';
 import { toListPage, type ListPage } from './listPage';
 import type { CoverageDocument } from './coverage';
+import { apiPath } from './path';
 
 /** Assets API — the read-only browse/reason surface over `assets` (ADR 0034, #760). */
 
@@ -279,7 +280,7 @@ export async function listAssets(
 }
 
 export async function getAsset(assetId: string): Promise<AssetDetail> {
-  const { data } = await api.get<AssetDetail>(`/assets/${assetId}`);
+  const { data } = await api.get<AssetDetail>(apiPath`/assets/${assetId}`);
   return data;
 }
 
@@ -288,7 +289,7 @@ export async function traceColumn(
   column: string,
   direction: TraceDirection = 'both',
 ): Promise<ColumnTrace> {
-  const { data } = await api.get<ColumnTrace>(`/assets/${assetId}/column-lineage`, {
+  const { data } = await api.get<ColumnTrace>(apiPath`/assets/${assetId}/column-lineage`, {
     params: { column, direction },
   });
   return data;
@@ -299,7 +300,7 @@ export async function updateAsset(
   assetId: string,
   payload: AssetMetadataUpdate,
 ): Promise<AssetSummary> {
-  const { data } = await api.patch<AssetSummary>(`/assets/${assetId}`, payload);
+  const { data } = await api.patch<AssetSummary>(apiPath`/assets/${assetId}`, payload);
   return data;
 }
 
@@ -313,9 +314,12 @@ export async function setAssetClassificationDismissed(
   dismissed: boolean,
 ): Promise<DetectedClassification> {
   // The column travels in the body: a name may hold `/`, which a path segment cannot carry.
-  const { data } = await api.patch<DetectedClassification>(`/assets/${assetId}/classifications`, {
-    column,
-    dismissed,
-  });
+  const { data } = await api.patch<DetectedClassification>(
+    apiPath`/assets/${assetId}/classifications`,
+    {
+      column,
+      dismissed,
+    },
+  );
   return data;
 }

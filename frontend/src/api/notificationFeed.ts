@@ -1,5 +1,6 @@
 import { api } from './client';
 import { type ListPage, toListPage } from './listPage';
+import { apiPath } from './path';
 
 /**
  * The signed-in user's in-app notification feed: every run outcome the alerting layer
@@ -41,7 +42,7 @@ export async function getUnreadCount(signal?: AbortSignal): Promise<number> {
 }
 
 export async function markNotificationRead(id: string): Promise<FeedNotification> {
-  const { data } = await api.post<FeedNotification>(`/notifications/${id}/read`);
+  const { data } = await api.post<FeedNotification>(apiPath`/notifications/${id}/read`);
   return data;
 }
 

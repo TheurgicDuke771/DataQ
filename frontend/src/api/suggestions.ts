@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** A proposed rule in the automatic-coverage review queue (ADR 0047). */
 export interface Suggestion {
@@ -17,16 +18,16 @@ export interface Suggestion {
 }
 
 export async function listSuggestions(suiteId: string): Promise<Suggestion[]> {
-  const { data } = await api.get<Suggestion[]>(`/suites/${suiteId}/suggestions`);
+  const { data } = await api.get<Suggestion[]>(apiPath`/suites/${suiteId}/suggestions`);
   return data;
 }
 
 export async function acceptSuggestion(id: string): Promise<Suggestion> {
-  const { data } = await api.post<Suggestion>(`/suggestions/${id}/accept`);
+  const { data } = await api.post<Suggestion>(apiPath`/suggestions/${id}/accept`);
   return data;
 }
 
 export async function rejectSuggestion(id: string): Promise<Suggestion> {
-  const { data } = await api.post<Suggestion>(`/suggestions/${id}/reject`);
+  const { data } = await api.post<Suggestion>(apiPath`/suggestions/${id}/reject`);
   return data;
 }

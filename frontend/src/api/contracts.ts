@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** A clause DataQ cannot enforce, and why — shown as "not enforced", never dropped. */
 export interface UnmappedClause {
@@ -93,7 +94,7 @@ export async function listContracts(signal?: AbortSignal): Promise<Contract[]> {
 }
 
 export async function getContract(id: string, signal?: AbortSignal): Promise<ContractDetail> {
-  const { data } = await api.get<ContractDetail>(`/contracts/${id}`, { signal });
+  const { data } = await api.get<ContractDetail>(apiPath`/contracts/${id}`, { signal });
   return data;
 }
 
@@ -110,7 +111,7 @@ export async function importContract(body: {
 
 /** The contract as an ODCS YAML document. */
 export async function exportContractYaml(id: string): Promise<string> {
-  const { data } = await api.get<string>(`/contracts/${id}/export`, {
+  const { data } = await api.get<string>(apiPath`/contracts/${id}/export`, {
     params: { format: 'yaml' },
     responseType: 'text',
   });

@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Personal access tokens (PATs) — the caller's own DataQ-issued API keys (ADR 0026 phase 1, #461). */
 
@@ -36,5 +37,5 @@ export async function createApiKey(payload: {
 }
 
 export async function revokeApiKey(keyId: string): Promise<void> {
-  await api.delete(`/me/api-keys/${keyId}`);
+  await api.delete(apiPath`/me/api-keys/${keyId}`);
 }

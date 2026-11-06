@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Connections API — every configurable connection type (CLAUDE.md §4). */
 
@@ -323,13 +324,13 @@ export async function listConnections(params?: {
 
 /** Fetch one connection by id (e.g. to learn a suite's datasource type). */
 export async function getConnection(id: string): Promise<Connection> {
-  const { data } = await api.get<Connection>(`/connections/${id}`);
+  const { data } = await api.get<Connection>(apiPath`/connections/${id}`);
   return data;
 }
 
 /** Live connectivity test — a green result means the credential authenticates. */
 export async function testConnection(id: string): Promise<{ ok: boolean }> {
-  const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/test`);
+  const { data } = await api.post<{ ok: boolean }>(apiPath`/connections/${id}/test`);
   return data;
 }
 
@@ -384,12 +385,12 @@ export interface ConnectionUpdate {
 }
 
 export async function updateConnection(id: string, payload: ConnectionUpdate): Promise<Connection> {
-  const { data } = await api.patch<Connection>(`/connections/${id}`, payload);
+  const { data } = await api.patch<Connection>(apiPath`/connections/${id}`, payload);
   return data;
 }
 
 export async function deleteConnection(id: string): Promise<void> {
-  await api.delete(`/connections/${id}`);
+  await api.delete(apiPath`/connections/${id}`);
 }
 
 /**
@@ -401,10 +402,13 @@ export async function reauthConnection(
   secret: string,
   skipTest = false,
 ): Promise<{ ok: boolean; tested?: boolean }> {
-  const { data } = await api.post<{ ok: boolean; tested?: boolean }>(`/connections/${id}/reauth`, {
-    secret,
-    skip_test: skipTest,
-  });
+  const { data } = await api.post<{ ok: boolean; tested?: boolean }>(
+    apiPath`/connections/${id}/reauth`,
+    {
+      secret,
+      skip_test: skipTest,
+    },
+  );
   return data;
 }
 
@@ -430,7 +434,7 @@ export interface ConnectionVersion {
 
 /** A connection's version history, newest first. */
 export async function listConnectionVersions(id: string): Promise<ConnectionVersion[]> {
-  const { data } = await api.get<ConnectionVersion[]>(`/connections/${id}/versions`);
+  const { data } = await api.get<ConnectionVersion[]>(apiPath`/connections/${id}/versions`);
   return data;
 }
 
@@ -439,7 +443,9 @@ export async function redactConnectionVersion(
   id: string,
   versionNo: number,
 ): Promise<ConnectionVersion> {
-  const { data } = await api.delete<ConnectionVersion>(`/connections/${id}/versions/${versionNo}`);
+  const { data } = await api.delete<ConnectionVersion>(
+    apiPath`/connections/${id}/versions/${versionNo}`,
+  );
   return data;
 }
 
@@ -467,7 +473,7 @@ export async function browseCatalog(
   params: { catalog?: string; schema?: string; limit?: number },
   signal?: AbortSignal,
 ): Promise<CatalogBrowse> {
-  const { data } = await api.get<CatalogBrowse>(`/connections/${id}/browse/catalog`, {
+  const { data } = await api.get<CatalogBrowse>(apiPath`/connections/${id}/browse/catalog`, {
     params,
     signal,
   });
@@ -497,7 +503,7 @@ export async function browseFiles(
   params: { prefix?: string; limit?: number },
   signal?: AbortSignal,
 ): Promise<FileBrowse> {
-  const { data } = await api.get<FileBrowse>(`/connections/${id}/browse/files`, {
+  const { data } = await api.get<FileBrowse>(apiPath`/connections/${id}/browse/files`, {
     params,
     signal,
   });

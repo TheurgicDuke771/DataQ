@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Reusable notification channels (#1514/#1662/#1663/#1761) — a destination defined once and
  *  linked to many suites, admin-gated CRUD (backend `channel_service` + `/notification-channels`).
@@ -66,7 +67,7 @@ export async function listChannels(): Promise<NotificationChannel[]> {
 }
 
 export async function getChannel(id: string): Promise<NotificationChannel> {
-  const { data } = await api.get<NotificationChannel>(`/notification-channels/${id}`);
+  const { data } = await api.get<NotificationChannel>(apiPath`/notification-channels/${id}`);
   return data;
 }
 
@@ -79,28 +80,33 @@ export async function updateChannel(
   id: string,
   payload: ChannelUpdatePayload,
 ): Promise<NotificationChannel> {
-  const { data } = await api.patch<NotificationChannel>(`/notification-channels/${id}`, payload);
+  const { data } = await api.patch<NotificationChannel>(
+    apiPath`/notification-channels/${id}`,
+    payload,
+  );
   return data;
 }
 
 /** May reject with a `channel_in_use` 409 (backend `ChannelInUseError`) — the caller
  *  should surface `detail.total` / `detail.suites`, not a generic failure toast. */
 export async function deleteChannel(id: string): Promise<void> {
-  await api.delete(`/notification-channels/${id}`);
+  await api.delete(apiPath`/notification-channels/${id}`);
 }
 
 export async function listSuiteChannels(suiteId: string): Promise<NotificationChannel[]> {
-  const { data } = await api.get<NotificationChannel[]>(`/suites/${suiteId}/notification-channels`);
+  const { data } = await api.get<NotificationChannel[]>(
+    apiPath`/suites/${suiteId}/notification-channels`,
+  );
   return data;
 }
 
 /** Idempotent link (backend no-ops if already linked). */
 export async function linkSuiteChannel(suiteId: string, channelId: string): Promise<void> {
-  await api.put(`/suites/${suiteId}/notification-channels/${channelId}`);
+  await api.put(apiPath`/suites/${suiteId}/notification-channels/${channelId}`);
 }
 
 export async function unlinkSuiteChannel(suiteId: string, channelId: string): Promise<void> {
-  await api.delete(`/suites/${suiteId}/notification-channels/${channelId}`);
+  await api.delete(apiPath`/suites/${suiteId}/notification-channels/${channelId}`);
 }
 
 /** The three per-suite destinations that predate channels (backend `PromoteDestination`). */
@@ -119,9 +125,12 @@ export async function promoteSuiteDestination(
   destination: LegacyDestination,
   name: string,
 ): Promise<PromotedChannel> {
-  const { data } = await api.post<PromotedChannel>(`/suites/${suiteId}/notifications/promote`, {
-    destination,
-    name,
-  });
+  const { data } = await api.post<PromotedChannel>(
+    apiPath`/suites/${suiteId}/notifications/promote`,
+    {
+      destination,
+      name,
+    },
+  );
   return data;
 }
