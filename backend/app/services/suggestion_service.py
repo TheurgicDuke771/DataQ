@@ -9,16 +9,18 @@ again either.
 Profiling is the deterministic source: a column never null in a meaningful sample, an id-like
 column that is fully distinct, a low-cardinality column's value set. Columns the suite's policy
 or the warehouse classifies as sensitive are never proposed as a value set, since that would copy
-their values into the check.
+their values into the check. A column classified after its value set was queued is caught at read
+time (``present``): the values are withheld and the rule cannot be accepted.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -37,6 +39,9 @@ from backend.app.services import (
 )
 from backend.app.services.suggestion_claims import fingerprint
 from backend.app.services.suite_authz import require_permission
+
+if TYPE_CHECKING:
+    from backend.app.services.run_service import RedactionReason
 
 __all__ = ["fingerprint"]
 
@@ -58,6 +63,11 @@ class SuggestionNotFoundError(DataQError):
 class SuggestionDecidedError(DataQError):
     status_code = 409
     code = "suggestion_already_decided"
+
+
+class SuggestionSensitiveError(DataQError):
+    status_code = 409
+    code = "suggestion_values_sensitive"
 
 
 def propose(
@@ -88,21 +98,29 @@ def propose(
     return inserted is not None
 
 
-def value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
+def value_set_sensitivity(
+    session: Session, suite: Suite
+) -> Callable[[str, list[Any]], RedactionReason | None]:
     """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
     a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
     or an affirmative name/value PII signal. A value set shown in a check is held to the same
-    bar as a failing sample of that column."""
-    from backend.app.services.run_service import _known_sensitive
+    bar as a failing sample of that column. Answers which rung decided; ``None`` = not sensitive."""
+    from backend.app.services.run_service import _known_sensitive_reason
 
     asset = session.get(Asset, suite.asset_id) if suite.asset_id else None
     tags = column_tags.effective_column_tags(session, asset)
     policy = suite.column_policy
 
-    def sensitive(column: str, values: list[Any]) -> bool:
-        return _known_sensitive(column, values, policy, tags)
+    def reason(column: str, values: list[Any]) -> RedactionReason | None:
+        return _known_sensitive_reason(column, values, policy, tags)
 
-    return sensitive
+    return reason
+
+
+def value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
+    """``value_set_sensitivity`` as a yes/no, for the proposal paths."""
+    reason = value_set_sensitivity(session, suite)
+    return lambda column, values: reason(column, values) is not None
 
 
 def rules_from_profile(
@@ -245,6 +263,91 @@ def list_suggestions(
     return list(session.scalars(query.order_by(CheckSuggestion.created_at, CheckSuggestion.name)))
 
 
+@dataclass(frozen=True)
+class SuggestionView:
+    """A suggestion as every read surface (REST and MCP) returns it, re-screened NOW: a value
+    set over a column the ladder classifies as sensitive today is masked, whatever it was when
+    proposed. ``redacted_columns`` / ``redaction_reasons`` follow the results surfaces' fields."""
+
+    id: uuid.UUID
+    suite_id: uuid.UUID
+    source: str
+    status: str
+    name: str
+    expectation_type: str
+    config: dict[str, Any]
+    rationale: str | None
+    check_id: uuid.UUID | None
+    decided_by: uuid.UUID | None
+    decided_at: datetime | None
+    created_at: datetime
+    redacted_columns: list[str] = field(default_factory=list)
+    redaction_reasons: dict[str, RedactionReason] = field(default_factory=dict)
+
+
+def _withheld(
+    session: Session,
+    suggestion: CheckSuggestion,
+    cache: dict[uuid.UUID, Callable[[str, list[Any]], RedactionReason | None]],
+) -> tuple[str, RedactionReason] | None:
+    """The column and rung that make this suggestion's stored value set sensitive now, if any.
+    Any type that stores a ``value_set`` counts, as on the proposal side."""
+    config = suggestion.config or {}
+    values = config.get("value_set")
+    if not isinstance(values, list):
+        return None
+    if suggestion.suite_id not in cache:
+        suite = session.get(Suite, suggestion.suite_id)
+        if suite is None:
+            return None
+        cache[suggestion.suite_id] = value_set_sensitivity(session, suite)
+    column = str(config.get("column"))
+    reason = cache[suggestion.suite_id](column, values)
+    return (column, reason) if reason is not None else None
+
+
+def present(session: Session, suggestions: Sequence[CheckSuggestion]) -> list[SuggestionView]:
+    """Every suggestion as a caller may see it (see ``SuggestionView``). A withheld value set
+    keeps its length; an AI-proposed rule's name and rationale are the model's own wording and
+    may quote the values, so they are replaced too."""
+    from backend.app.services.run_service import _redact_sample_value
+
+    cache: dict[uuid.UUID, Callable[[str, list[Any]], RedactionReason | None]] = {}
+    views = []
+    for s in suggestions:
+        config = dict(s.config or {})
+        name, rationale = s.name, s.rationale
+        redacted: list[str] = []
+        reasons: dict[str, RedactionReason] = {}
+        withheld = _withheld(session, s, cache)
+        if withheld is not None:
+            column, reason = withheld
+            config["value_set"] = _redact_sample_value(config["value_set"])
+            redacted, reasons = [column], {column: reason}
+            if s.source != "profile":
+                name = f"{column}: value set withheld"
+                rationale = None
+        views.append(
+            SuggestionView(
+                id=s.id,
+                suite_id=s.suite_id,
+                source=s.source,
+                status=s.status,
+                name=name,
+                expectation_type=s.expectation_type,
+                config=config,
+                rationale=rationale,
+                check_id=s.check_id,
+                decided_by=s.decided_by,
+                decided_at=s.decided_at,
+                created_at=s.created_at,
+                redacted_columns=redacted,
+                redaction_reasons=reasons,
+            )
+        )
+    return views
+
+
 def _pending(session: Session, suggestion_id: uuid.UUID, user_id: uuid.UUID) -> CheckSuggestion:
     suggestion = session.get(CheckSuggestion, suggestion_id, with_for_update=True)
     if suggestion is None:
@@ -263,9 +366,20 @@ def accept(session: Session, suggestion_id: uuid.UUID, *, user_id: uuid.UUID) ->
 
     The suggestion is claimed under its row lock BEFORE the check is created, so the claim and
     the check commit together (``create_check`` commits): a concurrent accept waiting on the lock
-    then sees ``accepted`` and gets 409 instead of creating a second check.
+    then sees ``accepted`` and gets 409 instead of creating a second check. A value set over a
+    column classified as sensitive since it was proposed is refused (409), as ``present`` withholds
+    it.
     """
     suggestion = _pending(session, suggestion_id, user_id)
+    withheld = _withheld(session, suggestion, {})
+    if withheld is not None:
+        column, reason = withheld
+        session.rollback()  # release the row lock; the suggestion stays pending
+        raise SuggestionSensitiveError(
+            f"the value set is over column {column!r}, which is now classified as sensitive; "
+            "accepting would copy its values into a check — reject this suggestion instead",
+            detail={"column": column, "reason": reason},
+        )
     suggestion.status = "accepted"
     suggestion.decided_by = user_id
     suggestion.decided_at = datetime.now(UTC)

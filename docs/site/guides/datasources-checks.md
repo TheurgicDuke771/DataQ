@@ -820,7 +820,9 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   so they are still there after you close the panel. DataQ does not call the model on its own:
   that happens only when someone runs Suggest checks. A column the suite's policy or the warehouse
   marks sensitive is never proposed as a value set, because that would copy its values into the
-  check.
+  check. If a column is marked sensitive after its value set was proposed, the suggestion is
+  shown with its values hidden and marked **Values withheld**, and it can only be rejected:
+  accepting it is refused.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
   is not added back.

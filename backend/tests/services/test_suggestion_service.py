@@ -9,7 +9,15 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.core.errors import DataQError
-from backend.app.db.models import AuditEvent, Check, CheckSuggestion, Connection, Suite, User
+from backend.app.db.models import (
+    Asset,
+    AuditEvent,
+    Check,
+    CheckSuggestion,
+    Connection,
+    Suite,
+    User,
+)
 from backend.app.services import profile_service
 from backend.app.services import suggestion_service as svc
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
@@ -185,3 +193,96 @@ def test_an_ordinary_value_set_is_proposed(db_session: Any, suite: tuple[Suite, 
     )
     rules = svc.rules_from_profile(profile, sensitive=svc.value_set_is_sensitive(db_session, row))
     assert [r["config"]["value_set"] for r in rules] == [["gold", "silver"]]
+
+
+# ── a value set re-screened at read time (#2383) ──────────────────────────────
+
+
+def _propose_value_set(
+    db_session: Any, suite: Suite, *, source: str = "profile"
+) -> CheckSuggestion:
+    svc.propose(
+        db_session,
+        suite,
+        source=source,
+        name="tier is gold or silver" if source == "llm" else "tier is one of 2 values",
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "tier", "value_set": ["gold", "silver"]},
+        rationale="only gold and silver seen" if source == "llm" else "Only these 2 values.",
+    )
+    db_session.commit()
+    suggestion: CheckSuggestion | None = db_session.scalar(
+        select(CheckSuggestion).where(
+            CheckSuggestion.suite_id == suite.id, CheckSuggestion.source == source
+        )
+    )
+    assert suggestion is not None
+    return suggestion
+
+
+def _classify_later(db_session: Any, suite: Suite, how: str) -> None:
+    if how == "policy":
+        suite.column_policy = {"pii_columns": ["tier"]}
+    else:
+        asset = Asset(
+            namespace="postgres://h/shop",
+            name="public.orders",
+            column_tags={"tier": "pii"},
+        )
+        db_session.add(asset)
+        db_session.flush()
+        suite.asset_id = asset.id
+    db_session.commit()
+
+
+@pytest.mark.parametrize(("how", "reason"), [("policy", "policy"), ("tag", "own_tag")])
+def test_a_value_set_classified_after_it_was_proposed_is_withheld(
+    db_session: Any, suite: tuple[Suite, User], how: str, reason: str
+) -> None:
+    row, owner = suite
+    suggestion = _propose_value_set(db_session, row)
+    [before] = svc.present(db_session, [suggestion])
+    assert before.config["value_set"] == ["gold", "silver"] and before.redacted_columns == []
+
+    _classify_later(db_session, row, how)
+    [view] = svc.present(db_session, svc.list_suggestions(db_session, row.id, user_id=owner.id))
+    assert view.config == {"column": "tier", "value_set": ["<redacted>", "<redacted>"]}
+    assert (view.redacted_columns, view.redaction_reasons) == (
+        ["tier"],
+        {"tier": reason},
+    )
+    assert (view.name, view.rationale) == (
+        "tier is one of 2 values",
+        "Only these 2 values.",
+    )
+    # The stored row is untouched; only the read is masked.
+    db_session.refresh(suggestion)
+    assert suggestion.config["value_set"] == ["gold", "silver"]
+
+
+def test_an_ai_rules_wording_is_withheld_with_its_values(
+    db_session: Any, suite: tuple[Suite, User]
+) -> None:
+    row, _ = suite
+    suggestion = _propose_value_set(db_session, row, source="llm")
+    _classify_later(db_session, row, "policy")
+    [view] = svc.present(db_session, [suggestion])
+    assert (view.name, view.rationale) == ("tier: value set withheld", None)
+    assert "gold" not in repr(view)
+
+
+def test_accepting_a_now_sensitive_value_set_is_refused(
+    db_session: Any, suite: tuple[Suite, User]
+) -> None:
+    row, owner = suite
+    suggestion = _propose_value_set(db_session, row)
+    _classify_later(db_session, row, "tag")
+    with pytest.raises(svc.SuggestionSensitiveError) as exc:
+        svc.accept(db_session, suggestion.id, user_id=owner.id)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {"column": "tier", "reason": "own_tag"}
+    assert db_session.scalar(select(Check).where(Check.suite_id == row.id)) is None
+    db_session.refresh(suggestion)
+    assert suggestion.status == "pending"
+    # Rejecting it is still possible.
+    assert svc.reject(db_session, suggestion.id, user_id=owner.id).status == "rejected"

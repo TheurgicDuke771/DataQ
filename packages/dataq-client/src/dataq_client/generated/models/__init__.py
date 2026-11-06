@@ -323,6 +323,10 @@ from .source_connection_ref_in import SourceConnectionRefIn
 from .sql_generation_request import SqlGenerationRequest
 from .suggestion_read import SuggestionRead
 from .suggestion_read_config import SuggestionReadConfig
+from .suggestion_read_redaction_reasons import SuggestionReadRedactionReasons
+from .suggestion_read_redaction_reasons_additional_property import (
+    SuggestionReadRedactionReasonsAdditionalProperty,
+)
 from .suite_apply_read import SuiteApplyRead
 from .suite_apply_request import SuiteApplyRequest
 from .suite_cadence_read import SuiteCadenceRead
@@ -698,6 +702,8 @@ __all__ = (
     "SqlGenerationRequest",
     "SuggestionRead",
     "SuggestionReadConfig",
+    "SuggestionReadRedactionReasons",
+    "SuggestionReadRedactionReasonsAdditionalProperty",
     "SuiteApplyRead",
     "SuiteApplyRequest",
     "SuiteCadenceRead",

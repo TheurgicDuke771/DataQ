@@ -101,3 +101,38 @@ def test_an_unknown_suggestion_is_404(client: TestClient, db_session: Any) -> No
     _as(db_session, "admin")
     resp = client.post(f"/api/v1/suggestions/{uuid.uuid4()}/reject")
     assert resp.status_code == 404
+
+
+def test_a_value_set_classified_after_it_was_queued_is_withheld_and_cannot_be_accepted(
+    client: TestClient, db_session: Any, queued: Suite
+) -> None:
+    """The read re-screens the stored value set against today's classification."""
+    suggestion_service.propose(
+        db_session,
+        queued,
+        source="profile",
+        name="tier is one of 2 known values",
+        expectation_type="expect_column_values_to_be_in_set",
+        config={"column": "tier", "value_set": ["gold", "silver"]},
+        rationale="Only these 2 values in 500 rows.",
+    )
+    queued.column_policy = {"pii_columns": ["tier"]}
+    db_session.commit()
+    _as(db_session, "admin")
+
+    listed = client.get(f"/api/v1/suites/{queued.id}/suggestions").json()
+    [tier] = [s for s in listed if s["config"]["column"] == "tier"]
+    assert tier["config"]["value_set"] == ["<redacted>", "<redacted>"]
+    assert (tier["redacted_columns"], tier["redaction_reasons"]) == (
+        ["tier"],
+        {"tier": "policy"},
+    )
+    assert all(s["redacted_columns"] == [] for s in listed if s is not tier)
+
+    refused = client.post(f"/api/v1/suggestions/{tier['id']}/accept")
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "suggestion_values_sensitive"
+
+    rejected = client.post(f"/api/v1/suggestions/{tier['id']}/reject").json()
+    assert rejected["status"] == "rejected"
+    assert rejected["config"]["value_set"] == ["<redacted>", "<redacted>"]

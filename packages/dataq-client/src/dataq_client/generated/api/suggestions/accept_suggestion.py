@@ -63,6 +63,9 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | SuggestionRead]:
     """Accept a proposed rule: it becomes a check in the suite
 
+     Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
+    as sensitive since it was proposed; reject it instead.
+
     Args:
         suggestion_id (UUID):
 
@@ -92,6 +95,9 @@ def sync(
 ) -> HTTPValidationError | SuggestionRead | None:
     """Accept a proposed rule: it becomes a check in the suite
 
+     Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
+    as sensitive since it was proposed; reject it instead.
+
     Args:
         suggestion_id (UUID):
 
@@ -115,6 +121,9 @@ async def asyncio_detailed(
     client: AuthenticatedClient | Client,
 ) -> Response[HTTPValidationError | SuggestionRead]:
     """Accept a proposed rule: it becomes a check in the suite
+
+     Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
+    as sensitive since it was proposed; reject it instead.
 
     Args:
         suggestion_id (UUID):
@@ -142,6 +151,9 @@ async def asyncio(
     client: AuthenticatedClient | Client,
 ) -> HTTPValidationError | SuggestionRead | None:
     """Accept a proposed rule: it becomes a check in the suite
+
+     Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
+    as sensitive since it was proposed; reject it instead.
 
     Args:
         suggestion_id (UUID):

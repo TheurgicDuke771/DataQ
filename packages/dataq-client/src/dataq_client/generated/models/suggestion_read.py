@@ -9,8 +9,11 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.suggestion_read_config import SuggestionReadConfig
+    from ..models.suggestion_read_redaction_reasons import SuggestionReadRedactionReasons
 
 
 T = TypeVar("T", bound="SuggestionRead")
@@ -32,6 +35,12 @@ class SuggestionRead:
         source (str):
         status (str):
         suite_id (UUID):
+        redacted_columns (list[str] | Unset): Columns whose stored `config.value_set` is withheld (each value
+            `<redacted>`) because the column is classified as sensitive now, by its warehouse tag, the suite's policy or the
+            classifier. Such a suggestion cannot be accepted (409). For an AI-proposed rule the name and rationale are
+            replaced too, as the model's wording may quote values.
+        redaction_reasons (SuggestionReadRedactionReasons | Unset): Why each entry of `redacted_columns` is withheld,
+            keyed by column.
     """
 
     check_id: None | UUID
@@ -46,6 +55,8 @@ class SuggestionRead:
     source: str
     status: str
     suite_id: UUID
+    redacted_columns: list[str] | Unset = UNSET
+    redaction_reasons: SuggestionReadRedactionReasons | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -86,6 +97,14 @@ class SuggestionRead:
 
         suite_id = str(self.suite_id)
 
+        redacted_columns: list[str] | Unset = UNSET
+        if not isinstance(self.redacted_columns, Unset):
+            redacted_columns = self.redacted_columns
+
+        redaction_reasons: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.redaction_reasons, Unset):
+            redaction_reasons = self.redaction_reasons.to_dict()
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -104,12 +123,19 @@ class SuggestionRead:
                 "suite_id": suite_id,
             }
         )
+        if redacted_columns is not UNSET:
+            field_dict["redacted_columns"] = redacted_columns
+        if redaction_reasons is not UNSET:
+            field_dict["redaction_reasons"] = redaction_reasons
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.suggestion_read_config import SuggestionReadConfig
+        from ..models.suggestion_read_redaction_reasons import (
+            SuggestionReadRedactionReasons,
+        )
 
         d = dict(src_dict)
 
@@ -181,6 +207,15 @@ class SuggestionRead:
 
         suite_id = UUID(d.pop("suite_id"))
 
+        redacted_columns = cast(list[str], d.pop("redacted_columns", UNSET))
+
+        _redaction_reasons = d.pop("redaction_reasons", UNSET)
+        redaction_reasons: SuggestionReadRedactionReasons | Unset
+        if isinstance(_redaction_reasons, Unset):
+            redaction_reasons = UNSET
+        else:
+            redaction_reasons = SuggestionReadRedactionReasons.from_dict(_redaction_reasons)
+
         suggestion_read = cls(
             check_id=check_id,
             config=config,
@@ -194,6 +229,8 @@ class SuggestionRead:
             source=source,
             status=status,
             suite_id=suite_id,
+            redacted_columns=redacted_columns,
+            redaction_reasons=redaction_reasons,
         )
 
         suggestion_read.additional_properties = d
