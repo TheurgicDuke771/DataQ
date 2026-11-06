@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "0fc6d938477e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2424-settings-singleton",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/ea0a2ff2bf6b_settings_singleton_checks.py",
+    "backend/app/db/models.py",
+    "backend/tests/db/test_settings_singleton_migration.py",
+    "changelog.d/2424.fixed.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0f/c6d938477e/0/metadata.json",
+      "transcript": "/0f/c6d938477e/0/full.jsonl",
+      "compact_transcript": "/0f/c6d938477e/0/transcript.jsonl",
+      "content_hash": "/0f/c6d938477e/0/content_hash.txt",
+      "prompt": "/0f/c6d938477e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 160883,
+    "cache_read_tokens": 5352394,
+    "output_tokens": 24443,
+    "api_call_count": 37,
+    "subagent_tokens": {
+      "input_tokens": 194,
+      "cache_creation_tokens": 571441,
+      "cache_read_tokens": 11571948,
+      "output_tokens": 50814,
+      "api_call_count": 97
+    }
+  },
+  "redaction": {
+    "replacements": 6,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 4,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
