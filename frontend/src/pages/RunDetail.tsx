@@ -57,6 +57,7 @@ import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
+import { formatSig, fullNumber } from '../utils/formatNumber';
 import { PageError } from '../components/feedback/PageError';
 import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
 
@@ -544,7 +545,11 @@ function SampleFailures({
         Failing rows{' '}
         <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
           {count !== null && `· ${count} row${count === 1 ? '' : 's'}`}
-          {percent !== null && ` · ${percent}%`}
+          {percent !== null && (
+            <span title={`${fullNumber(percent)}%`} data-testid="failing-percent">
+              {` · ${formatSig(percent)}%`}
+            </span>
+          )}
           {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
@@ -717,7 +722,14 @@ function ResultsTable({
       title: 'Metric',
       dataIndex: 'metric_value',
       width: 90,
-      render: (v: number | null) => (v === null ? '—' : v),
+      render: (v: number | null) =>
+        v === null ? (
+          '—'
+        ) : (
+          <span title={fullNumber(v)} data-testid="metric-value">
+            {formatSig(v)}
+          </span>
+        ),
     },
     {
       // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out didn't hold for

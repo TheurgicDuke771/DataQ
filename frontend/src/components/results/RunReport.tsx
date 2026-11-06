@@ -7,6 +7,7 @@ import { isSnoozed } from '../checks/snooze';
 import { checkAsOf, currentSuffix } from './checkAsOf';
 import { isSampled, sampledCoverage } from './samplingFormat';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
+import { formatSig } from '../../utils/formatNumber';
 
 /**
  * PDF report export (#345) — a print-only, chrome-free rendering of a run, parallel to the
@@ -131,7 +132,7 @@ export function RunReport({
                 <td>{engineLabel(r)}</td>
                 <td>{dimensionLabel(r)}</td>
                 <td>{r.status}</td>
-                <td>{r.metric_value ?? '—'}</td>
+                <td>{r.metric_value === null ? '—' : formatSig(r.metric_value)}</td>
                 <td>{formatScalar(r.observed_value)}</td>
               </tr>
             ))}
