@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getIncident, type Incident, listIncidents } from '../../src/api/incidents';
@@ -1672,5 +1672,44 @@ describe('check identity as of the result (#1613)', () => {
     expect(within(report).getByText('DMF (later)')).toBeInTheDocument();
     expect(within(report).getByTestId('report-later-footnote')).toBeInTheDocument();
     expect(within(report).queryByTestId('report-current-footnote')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunDetail on a run-to-run navigation', () => {
+  // The command palette opens any run from any page, so the router keeps this element mounted
+  // from /results/r1 to /results/r2; the page must load and show r2, not keep r1.
+  it('loads the new run when the id changes on the same mounted route', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    const r2: RunDetailType = {
+      ...runDetail,
+      id: 'r2',
+      status: 'failed',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
+      failure_reason: 'warehouse unreachable on r2',
+      results: [],
+    };
+    mockGetRun.mockImplementation(async (id: string) => (id === 'r2' ? r2 : runDetail));
+
+    render(
+      <MemoryRouter initialEntries={['/results/r1']}>
+        <Link to="/results/r2">open r2</Link>
+        <Routes>
+          <Route path="/results/:runId" element={<RunDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screenRegion().getByText('warn')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('link', { name: 'open r2' }));
+
+    await waitFor(() =>
+      expect(screenRegion().getByText('warehouse unreachable on r2')).toBeInTheDocument(),
+    );
+    expect(mockGetRun).toHaveBeenLastCalledWith('r2');
+    expect(screenRegion().queryByText('warn')).not.toBeInTheDocument();
   });
 });
