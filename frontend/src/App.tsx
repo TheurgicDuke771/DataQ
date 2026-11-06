@@ -304,14 +304,7 @@ export function App() {
                       </RequireRole>
                     }
                   />
-                  <Route
-                    path="/suites"
-                    element={
-                      <RequireUuidParams>
-                        <Suites />
-                      </RequireUuidParams>
-                    }
-                  />
+                  <Route path="/suites" element={<Suites />} />
                   <Route
                     path="/suites/new"
                     element={
@@ -323,7 +316,14 @@ export function App() {
                       </RequireRole>
                     }
                   />
-                  <Route path="/suites/:suiteId" element={<Suites />} />
+                  <Route
+                    path="/suites/:suiteId"
+                    element={
+                      <RequireUuidParams>
+                        <Suites />
+                      </RequireUuidParams>
+                    }
+                  />
                   <Route
                     path="/suites/:suiteId/edit"
                     element={
