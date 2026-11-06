@@ -15,6 +15,13 @@ export interface Suggestion {
   decided_by: string | null;
   decided_at: string | null;
   created_at: string;
+  /**
+   * Columns whose `config.value_set` is withheld (each value `<redacted>`): the column is
+   * classified as sensitive now, so the rule cannot be accepted. Empty when nothing was withheld.
+   */
+  redacted_columns: string[];
+  /** Why each entry of `redacted_columns` is withheld, keyed by column. */
+  redaction_reasons: Record<string, string>;
 }
 
 export async function listSuggestions(suiteId: string): Promise<Suggestion[]> {

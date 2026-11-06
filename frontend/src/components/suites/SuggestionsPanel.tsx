@@ -8,7 +8,7 @@ import {
   rejectSuggestion,
 } from '../../api/suggestions';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { errorMessage } from '../../utils/errors';
+import { errorMessage, fetchFailure } from '../../utils/errors';
 
 /**
  * Rules automatic coverage proposes for this table (ADR 0047): each asserts something about the
@@ -42,6 +42,9 @@ export function SuggestionsPanel({
       reload();
     } catch (err) {
       message.error(errorMessage(err, 'Could not record the decision.'));
+      // A conflict means the rule changed under us (decided elsewhere, or its column is now
+      // classified as sensitive): show its current state.
+      if (fetchFailure(err).status === 409) reload();
     } finally {
       setBusy(undefined);
     }
@@ -64,45 +67,66 @@ export function SuggestionsPanel({
       <List
         size="small"
         dataSource={state.data}
-        renderItem={(item) => (
-          <List.Item
-            actions={
-              canDecide
-                ? [
-                    <Button
-                      key="accept"
-                      size="small"
-                      type="primary"
-                      loading={busy === item.id}
-                      onClick={() => void decide(item, true)}
-                    >
-                      Accept
-                    </Button>,
-                    <Button
-                      key="reject"
-                      size="small"
-                      disabled={busy === item.id}
-                      onClick={() => void decide(item, false)}
-                    >
-                      Reject
-                    </Button>,
-                  ]
-                : []
-            }
-          >
-            <List.Item.Meta
-              title={
-                <Flex gap={8} align="center" wrap>
-                  <span>{item.name}</span>
-                  {/* An AI-proposed rule passed the same validator, but its reason is the
-                      model's wording, not a measured fact like the profile's. */}
-                  {item.source === 'llm' && <Tag>AI-suggested</Tag>}
-                </Flex>
+        renderItem={(item) => {
+          const withheld = item.redacted_columns.length > 0;
+          return (
+            <List.Item
+              actions={
+                canDecide
+                  ? [
+                      <Button
+                        key="accept"
+                        size="small"
+                        type="primary"
+                        loading={busy === item.id}
+                        // The visible description says why; a check made from it would hold the
+                        // sensitive values, and the server refuses it anyway.
+                        disabled={withheld}
+                        onClick={() => void decide(item, true)}
+                      >
+                        Accept
+                      </Button>,
+                      <Button
+                        key="reject"
+                        size="small"
+                        disabled={busy === item.id}
+                        onClick={() => void decide(item, false)}
+                      >
+                        Reject
+                      </Button>,
+                    ]
+                  : []
               }
-              description={item.rationale ?? item.expectation_type}
-            />
-          </List.Item>
-        )}
+            >
+              <List.Item.Meta
+                title={
+                  <Flex gap={8} align="center" wrap>
+                    <span>{item.name}</span>
+                    {/* An AI-proposed rule passed the same validator, but its reason is the
+                      model's wording, not a measured fact like the profile's. */}
+                    {item.source === 'llm' && <Tag>AI-suggested</Tag>}
+                    {withheld && <Tag color="warning">Values withheld</Tag>}
+                  </Flex>
+                }
+                description={
+                  withheld ? (
+                    <Flex vertical gap={2}>
+                      <span>{item.rationale ?? item.expectation_type}</span>
+                      <span>
+                        {item.redacted_columns.join(', ')}{' '}
+                        {item.redacted_columns.length === 1 ? 'is' : 'are'} now classified as
+                        sensitive, so the values are hidden and this rule cannot be accepted. Reject
+                        it to clear it from the queue.
+                      </span>
+                    </Flex>
+                  ) : (
+                    (item.rationale ?? item.expectation_type)
+                  )
+                }
+              />
+            </List.Item>
+          );
+        }}
       />
     </Card>
   );
