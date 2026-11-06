@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01JzwfjVj8nThvpWkG12xcKP",
+  "agent_id": "ad8c661bb05760e9b",
+  "subagent_type": "general-purpose",
+  "task_description": "Fix #2496 per-query timeout",
+  "started_at": "2026-11-07T01:49:12.256908+05:30"
+}
