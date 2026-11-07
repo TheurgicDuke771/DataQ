@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -25,7 +25,7 @@ from backend.app.db.models import (
     Suite,
     TriggerBinding,
 )
-from backend.app.orchestration.base import OrchestrationProvider, RunUpdate
+from backend.app.orchestration.base import AlertPing, OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import run_dispatch, workspace_health_service
 from backend.app.services.connection_lock import lock_connection as _lock_connection
@@ -363,6 +363,24 @@ def dispatch_immediate_poll(provider: str, resource_name: str | None) -> str | N
         log.exception("orchestration_immediate_poll_dispatch_failed", provider=provider)
         return None
     return str(getattr(result, "id", None) or "")
+
+
+# Clock skew tolerated on an alert dated slightly ahead of this server.
+_ALERT_FUTURE_SKEW = timedelta(minutes=5)
+
+
+def stale_alert_reason(ping: AlertPing, *, now: datetime, max_age: timedelta) -> str | None:
+    """Why a run-anonymous alert must not start a poll (#2311), or None when it is fresh. A
+    replayed alert can only cost an extra provider poll (ingestion is idempotent), so an alert
+    with no readable timestamp is refused too: the regular poll still covers it."""
+    if ping.fired_at is None:
+        return "no_timestamp"
+    fired = ping.fired_at if ping.fired_at.tzinfo else ping.fired_at.replace(tzinfo=UTC)
+    if fired > now + _ALERT_FUTURE_SKEW:
+        return "future"
+    if now - fired > max_age:
+        return "too_old"
+    return None
 
 
 def request_immediate_poll(provider: str, resource_name: str | None) -> bool:

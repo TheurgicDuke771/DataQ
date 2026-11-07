@@ -3,6 +3,7 @@
 import json
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -199,6 +200,21 @@ _COMMON_ALERT = {
 }
 
 
+def _alert_fired(at: datetime | None) -> dict[str, Any]:
+    """The common alert, fired at `at` (None drops the timestamp)."""
+    event: dict[str, Any] = json.loads(json.dumps(_COMMON_ALERT))
+    essentials = event["data"]["essentials"]
+    if at is None:
+        del essentials["firedDateTime"]
+    else:
+        essentials["firedDateTime"] = at.isoformat().replace("+00:00", "Z")
+    return event
+
+
+def _fresh_alert() -> dict[str, Any]:
+    return _alert_fired(datetime.now(UTC) - timedelta(minutes=2))
+
+
 def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -212,7 +228,7 @@ def test_common_alert_fired_acks_reconciling_and_enqueues_poll(
     monkeypatch.setattr(
         celery_app, "send_task", lambda name, **kw: sent.append((name, kw.get("kwargs")))
     )
-    resp = api.post(_URL, params={"token": _SECRET}, json=_COMMON_ALERT)
+    resp = api.post(_URL, params={"token": _SECRET}, json=_fresh_alert())
     assert resp.status_code == 200
     assert resp.json() == {"status": "reconciling", "triggered": 0}
     # The poll is TARGETED: the alerting provider + the factory from the alert.
@@ -229,7 +245,7 @@ def test_common_alert_resolved_is_ignored_without_poll(
     from backend.app.worker.celery_app import celery_app
 
     monkeypatch.setattr(celery_app, "send_task", lambda name, **kw: sent.append(name))
-    event = json.loads(json.dumps(_COMMON_ALERT))
+    event = _fresh_alert()
     event["data"]["essentials"]["monitorCondition"] = "Resolved"
     resp = api.post(_URL, params={"token": _SECRET}, json=event)
     assert resp.status_code == 200
@@ -239,7 +255,7 @@ def test_common_alert_resolved_is_ignored_without_poll(
 
 def test_common_alert_requires_auth(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
-    resp = api.post(_URL, json=_COMMON_ALERT)
+    resp = api.post(_URL, json=_fresh_alert())
     assert resp.status_code == 401
 
 
@@ -254,6 +270,47 @@ def test_common_alert_fired_acks_ignored_when_broker_down(
         raise RuntimeError("broker down")
 
     monkeypatch.setattr(celery_app, "send_task", _boom)
-    resp = api.post(_URL, params={"token": _SECRET}, json=_COMMON_ALERT)
+    resp = api.post(_URL, params={"token": _SECRET}, json=_fresh_alert())
     assert resp.status_code == 200  # never a retry-storm error (ADR 0006)
     assert resp.json() == {"status": "ignored", "triggered": 0}
+
+
+@pytest.mark.parametrize(
+    ("label", "fired"),
+    [
+        ("too old", lambda now: now - timedelta(minutes=61)),
+        ("future", lambda now: now + timedelta(minutes=6)),
+        ("no timestamp", lambda now: None),
+    ],
+)
+def test_a_stale_or_undated_fired_alert_starts_no_poll(
+    client: tuple[TestClient, FakeSecretStore],
+    monkeypatch: pytest.MonkeyPatch,
+    label: str,
+    fired: Any,
+) -> None:
+    """#2311: a replayed alert is acknowledged (200, so Azure Monitor does not retry) but must
+    not trigger a provider poll; the regular poll still picks the run up."""
+    api, _ = client
+    sent: list[str] = []
+    from backend.app.worker.celery_app import celery_app
+
+    monkeypatch.setattr(celery_app, "send_task", lambda name, **kw: sent.append(name))
+    resp = api.post(_URL, params={"token": _SECRET}, json=_alert_fired(fired(datetime.now(UTC))))
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ignored", "triggered": 0}, label
+    assert sent == [], label
+
+
+def test_an_alert_inside_the_window_still_polls(
+    client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api, _ = client
+    sent: list[str] = []
+    from backend.app.worker.celery_app import celery_app
+
+    monkeypatch.setattr(celery_app, "send_task", lambda name, **kw: sent.append(name))
+    edge = _alert_fired(datetime.now(UTC) - timedelta(minutes=59))
+    resp = api.post(_URL, params={"token": _SECRET}, json=edge)
+    assert resp.json() == {"status": "reconciling", "triggered": 0}
+    assert sent == ["poll_orchestration_runs"]
