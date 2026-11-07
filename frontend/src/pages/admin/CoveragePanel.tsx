@@ -1,5 +1,5 @@
 import { Alert, App, Card, Flex, Tag, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -24,11 +24,17 @@ export function CoveragePanel() {
   const current = saved ?? (state.status === 'ok' ? state.data : null);
   const { message } = App.useApp();
   const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
+  // After the commit that remounts the form (keyed on `updated_at`), so the focused button is
+  // already gone when the check runs; called from the save itself it could run first.
+  const [saves, setSaves] = useState(0);
+  useEffect(() => {
+    if (saves > 0) restoreFocus();
+  }, [saves, restoreFocus]);
   const apply = (request: () => Promise<CoverageSettings>, done: string) =>
     void run(async () => {
       setSaved(await request());
       message.success(done);
-      restoreFocus();
+      setSaves((n) => n + 1);
     });
 
   return (

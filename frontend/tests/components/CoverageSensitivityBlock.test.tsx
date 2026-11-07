@@ -104,6 +104,39 @@ describe('CoverageSensitivityBlock (ADR 0047)', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps focus in the block after a save even when the frame fires before the remount', async () => {
+    // The race behind a flaky keyboard spec: the focus check ran one frame after the save, and
+    // when that frame came before React committed the form's remount, the check saw the old
+    // Save button still focused, did nothing, and the remount then dropped focus to the page.
+    mockAsset.mockResolvedValueOnce(NO_OVERRIDE).mockResolvedValue(OVERRIDDEN);
+    await open();
+    await userEvent.click(
+      screen.getByRole('switch', { name: 'Set for this table: Row count thresholds' }),
+    );
+    const save = screen.getByRole('button', { name: 'Save' });
+    save.focus();
+    // A microtask runs before React's scheduler task commits the remount: the frame "wins".
+    let frame = 0;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      queueMicrotask(() => cb(performance.now()));
+      frame += 1;
+      return frame;
+    });
+    try {
+      fireEvent.click(save);
+      expect(
+        await screen.findByText('Set for this table', { selector: '.ant-tag' }),
+      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(
+          document.activeElement?.closest('[data-testid="coverage-sensitivity"]'),
+        ).not.toBeNull(),
+      );
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   it('removing the override sends null', async () => {
     mockAsset.mockResolvedValueOnce(OVERRIDDEN).mockResolvedValue(NO_OVERRIDE);
     await open();
