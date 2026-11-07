@@ -22,6 +22,9 @@ section below.
   saved.** Such a run now publishes all its results together when it finishes, so a column the
   run's profile detects for the first time is already masked when its samples can be read. The
   run-progress view of these suites shows their checks completing together at the end.
+- **Stale or replayed Azure Monitor alerts no longer start a pipeline poll.** A fired alert older
+  than `ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the future, or without a fired
+  time is acknowledged and ignored. The regular ten-minute poll still records the run.
 - **Dependency security updates.** `databricks-sql-connector` moves to 4.8.0, which allows
   `oauthlib` 4, and `oauthlib` moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
   as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP

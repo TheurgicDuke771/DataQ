@@ -58,6 +58,21 @@ The transport is constrained by Azure Monitor itself:
 - **Logic App intermediary that injects a signed header** — rejected. Would let ADF and Airflow share an `X-DataQ-Signature` HMAC design (symmetric), but adds a Logic App resource + an operational hop to pay for and monitor.
 - **Dual-secret overlap rotation** — rejected for v1. Zero-downtime rotation, but the polling fallback already covers the small cutover gap, so the extra validation branch isn't worth it yet.
 
+## Amendment — alert freshness enforced (2026-11-07)
+
+The replay hardening candidate above is now enforced for run-anonymous alerts (the Azure Monitor
+common alert schema), the channel where a replay is not neutralised by the idempotent upsert: a
+replayed "fired" alert starts a provider poll each time it arrives.
+
+- A fired alert whose `firedDateTime` is older than `ORCHESTRATION_ALERT_MAX_AGE_MINUTES`
+  (default 60), more than five minutes in the future, or missing, is acknowledged with
+  `status: ignored` and starts no poll. It still answers 200, so Azure Monitor does not retry.
+- The check sits in the provider-agnostic alert tail and reads only `AlertPing.fired_at`, so any
+  provider that reports a run-anonymous alert gets the same rule.
+- A refused alert costs at most a delay: the 10-minute poll still picks the run up.
+- Run-identified events (`RunUpdate`) are unchanged: a replay updates the same row and triggers
+  nothing new. The Secure-Webhook (Entra bearer) revisit stays deferred.
+
 ## Related
 
 - [ADR 0004](0004-orchestration-abstraction.md) — the unified `OrchestrationProvider` abstraction this webhook plugs into; `AdfProvider.parse_event` consumes the authenticated payload.

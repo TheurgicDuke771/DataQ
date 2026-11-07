@@ -2527,6 +2527,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#amendment-alert-freshness-enforced-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — alert freshness enforced (2026-11-07)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2636,6 +2647,20 @@
 <li><strong>Secure Webhook (Azure AD bearer token)</strong> — rejected for v1. Strongest option and avoids secret-in-URL, but costs an extra app registration + AAD validation path and revises ADR 0004's shared-secret framing. Revisit if the security review before Week 7 deploy flags secret-in-URL as unacceptable.</li>
 <li><strong>Logic App intermediary that injects a signed header</strong> — rejected. Would let ADF and Airflow share an <code>X-DataQ-Signature</code> HMAC design (symmetric), but adds a Logic App resource + an operational hop to pay for and monitor.</li>
 <li><strong>Dual-secret overlap rotation</strong> — rejected for v1. Zero-downtime rotation, but the polling fallback already covers the small cutover gap, so the extra validation branch isn't worth it yet.</li>
+</ul>
+<h2 id="amendment-alert-freshness-enforced-2026-11-07">Amendment — alert freshness enforced (2026-11-07)<a class="headerlink" href="#amendment-alert-freshness-enforced-2026-11-07" title="Permanent link">¶</a></h2>
+<p>The replay hardening candidate above is now enforced for run-anonymous alerts (the Azure Monitor
+common alert schema), the channel where a replay is not neutralised by the idempotent upsert: a
+replayed "fired" alert starts a provider poll each time it arrives.</p>
+<ul>
+<li>A fired alert whose <code>firedDateTime</code> is older than <code>ORCHESTRATION_ALERT_MAX_AGE_MINUTES</code>
+  (default 60), more than five minutes in the future, or missing, is acknowledged with
+  <code>status: ignored</code> and starts no poll. It still answers 200, so Azure Monitor does not retry.</li>
+<li>The check sits in the provider-agnostic alert tail and reads only <code>AlertPing.fired_at</code>, so any
+  provider that reports a run-anonymous alert gets the same rule.</li>
+<li>A refused alert costs at most a delay: the 10-minute poll still picks the run up.</li>
+<li>Run-identified events (<code>RunUpdate</code>) are unchanged: a replay updates the same row and triggers
+  nothing new. The Secure-Webhook (Entra bearer) revisit stays deferred.</li>
 </ul>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">¶</a></h2>
 <ul>
