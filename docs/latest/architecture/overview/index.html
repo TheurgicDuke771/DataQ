@@ -3138,6 +3138,10 @@ flowchart LR
         string triggered_by "manual / schedule / provider:pipeline:run_id"
         string celery_task_id
         string failure_reason "operational failure classification"
+        int recorded_results_total "outcome as of completion; NULL = not recorded"
+        int recorded_checks_total
+        int recorded_checks_passed
+        string recorded_worst_severity "warn / fail / critical"
         timestamptz started_at
         timestamptz finished_at
     }
