@@ -65,13 +65,13 @@ async function expectAccessible(page: Page, selector: string) {
  *  no layout, so only a real browser can see a tick label clipped at the svg's left edge. */
 async function expectYTicksVisible(scope: Locator) {
   await expect(
-    scope.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value').first(),
+    scope.locator('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value').first(),
   ).toBeVisible();
   const ticks = await scope.evaluate((root) =>
     Array.from(root.querySelectorAll('svg.recharts-surface')).flatMap((svg) => {
       const box = svg.getBoundingClientRect();
       return Array.from(
-        svg.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'),
+        svg.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value'),
       ).map((t) => ({
         text: t.textContent ?? '',
         gap: t.getBoundingClientRect().left - box.left,
@@ -81,7 +81,9 @@ async function expectYTicksVisible(scope: Locator) {
   expect(ticks.length).toBeGreaterThan(0);
   for (const t of ticks) {
     expect(t.text, 'tick text').toMatch(/^\d+(\.\d+)?[KMB]?$/);
-    expect(t.gap, `tick "${t.text}" left edge vs svg`).toBeGreaterThanOrEqual(0);
+    // An auto-sized axis hugs its widest label, so glyph overhang can read a fraction of a pixel
+    // negative; the clipping this guards against cut whole characters (about 16px).
+    expect(t.gap, `tick "${t.text}" left edge vs svg`).toBeGreaterThanOrEqual(-1);
   }
   // The baseline observations run 1000-5009: a clipped axis would read "00".
   expect(ticks.some((t) => /^\d(\.\d+)?K$/.test(t.text))).toBe(true);
