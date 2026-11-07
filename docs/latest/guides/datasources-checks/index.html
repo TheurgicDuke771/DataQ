@@ -4337,9 +4337,10 @@ checks and a daily schedule. After its first run it adds <em>Data is fresh</em> 
 </ul>
 <h3 id="flat-files-formats-and-csv-delimiters">Flat files: formats and CSV delimiters<a class="headerlink" href="#flat-files-formats-and-csv-delimiters" title="Permanent link">¶</a></h3>
 <p>Flat-file connections (ADLS Gen2 / S3 / GCS) read <code>.csv</code>, <code>.parquet</code>/<code>.pq</code>, and JSON as
-<code>.jsonl</code>/<code>.ndjson</code>/<code>.json</code> (see <a href="#json-files">JSON files</a> below). The run reads the
-format from the file's <strong>extension</strong>; a target's <em>File format</em> choice is used by the
-profiler and column listing. <strong>The CSV
+<code>.jsonl</code>/<code>.ndjson</code>/<code>.json</code> (see <a href="#json-files">JSON files</a> below). A target's <em>File format</em>
+choice decides how every read treats the file (checks, monitors, schema drift, the profiler and
+column listing), so a key with another extension, such as <code>orders.dat</code>, works once you pick
+its format. Left on <em>Infer from extension</em>, the format comes from the file's extension. <strong>The CSV
 delimiter is detected per file, not per connection</strong> — a connection is a whole
 bucket/container and the files under it need not agree, so DataQ sniffs each file's
 header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide

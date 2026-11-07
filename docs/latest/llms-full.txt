@@ -3045,9 +3045,10 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3 / GCS) read `.csv`, `.parquet`/`.pq`, and JSON as
-`.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
-format from the file's **extension**; a target's *File format* choice is used by the
-profiler and column listing. **The CSV
+`.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). A target's *File format*
+choice decides how every read treats the file (checks, monitors, schema drift, the profiler and
+column listing), so a key with another extension, such as `orders.dat`, works once you pick
+its format. Left on *Infer from extension*, the format comes from the file's extension. **The CSV
 delimiter is detected per file, not per connection** — a connection is a whole
 bucket/container and the files under it need not agree, so DataQ sniffs each file's
 header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
@@ -5733,6 +5734,10 @@ section below.
   suite page marks it **Values withheld** and disables **Accept**.
 - **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- **A flat-file target's chosen file format now applies to its runs.** The *File format* picked on
+  a suite's target was used only by the profiler and column listing; checks, monitors, schema
+  drift and memory admission still read the format from the file's extension, so a target like
+  `exports/orders.dat` set to CSV profiled fine and failed every run.
 - **Opening another run from a run's page shows that run.** Picking a run in the command palette
   while a run detail page was open changed the address but kept showing the first run.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future

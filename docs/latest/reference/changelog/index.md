@@ -282,6 +282,10 @@ section below.
   suite page marks it **Values withheld** and disables **Accept**.
 - **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- **A flat-file target's chosen file format now applies to its runs.** The *File format* picked on
+  a suite's target was used only by the profiler and column listing; checks, monitors, schema
+  drift and memory admission still read the format from the file's extension, so a target like
+  `exports/orders.dat` set to CSV profiled fine and failed every run.
 - **Opening another run from a run's page shows that run.** Picking a run in the command palette
   while a run detail page was open changed the address but kept showing the first run.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future
