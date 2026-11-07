@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import SEVERITY_RANK, Result, Run
-from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES, run_evaluated_a_check
 
 # Dedup ranks failing checks by the single shared severity order (`SEVERITY_RANK`, #386/#655) so it
 # can't drift from the rest of the alerting layer (routing, suppression) or run-outcome rollups.
@@ -32,12 +32,16 @@ def _failing_ranks(session: Session, run: Run) -> dict[str, int]:
 
 
 def _previous_terminal_run(session: Session, run: Run) -> Run | None:
-    """The suite's most recent executed run before ``run`` (succeeded/failed)."""
+    """The suite's most recent executed run before ``run`` (succeeded/failed).
+
+    A succeeded run that evaluated no check is passed over (#2416): it says nothing about the
+    data, so it must not read as the recovery that makes the next failure a new alert.
+    """
     return session.scalars(
         select(Run)
         .where(
             Run.suite_id == run.suite_id,
-            Run.status.in_(("succeeded", "failed")),
+            or_(Run.status == "failed", and_(Run.status == "succeeded", run_evaluated_a_check())),
             tuple_(Run.created_at, Run.id) < (run.created_at, run.id),
         )
         .order_by(Run.created_at.desc(), Run.id.desc())

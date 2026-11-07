@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from backend.app.db.models import Asset, Check, Connection, Incident, Run, Suite, User
+from backend.app.db.models import Asset, Check, Connection, Incident, Result, Run, Suite, User
 from backend.app.services import coverage_service as cov
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
@@ -52,16 +52,31 @@ def _suite(db: Any, conn: Connection, asset: Asset, *, origin: str) -> Suite:
     return suite
 
 
-def _run(db: Any, suite: Suite, *, days_ago: float, status: str = "succeeded") -> None:
-    db.add(
-        Run(
-            suite_id=suite.id,
-            status=status,
-            triggered_by="manual",
-            created_at=NOW - timedelta(days=days_ago),
-        )
+def _run(
+    db: Any,
+    suite: Suite,
+    *,
+    days_ago: float,
+    status: str = "succeeded",
+    result: str | None = "pass",
+) -> None:
+    """A run with one result of status ``result`` (``None``: a run that evaluated no check)."""
+    run = Run(
+        suite_id=suite.id,
+        status=status,
+        triggered_by="manual",
+        created_at=NOW - timedelta(days=days_ago),
     )
+    db.add(run)
     db.flush()
+    if result is not None:
+        check = Check(
+            suite_id=suite.id, name=f"c-{uuid.uuid4().hex[:6]}", expectation_type="x", config={}
+        )
+        db.add(check)
+        db.flush()
+        db.add(Result(run_id=run.id, check_id=check.id, status=result))
+        db.flush()
 
 
 def _resolved(
@@ -102,8 +117,9 @@ def _resolved(
 def test_coverage_counts_assets_with_a_recent_completed_run_and_splits_them(
     db_session: Any, conn: Connection
 ) -> None:
-    authored, both, auto_only, stale, failed_only, unwatched = (
-        _asset(db_session, n) for n in ("authored", "both", "auto", "stale", "failed", "none")
+    authored, both, auto_only, stale, failed_only, unwatched, empty, skipped = (
+        _asset(db_session, n)
+        for n in ("authored", "both", "auto", "stale", "failed", "none", "empty", "skipped")
     )
     _run(db_session, _suite(db_session, conn, authored, origin="user"), days_ago=1)
     _run(db_session, _suite(db_session, conn, both, origin="user"), days_ago=2)
@@ -117,14 +133,17 @@ def test_coverage_counts_assets_with_a_recent_completed_run_and_splits_them(
         days_ago=1,
         status="failed",
     )
+    # Succeeded having evaluated no check (#2416): nothing runnable, or every check skipped.
+    _run(db_session, _suite(db_session, conn, empty, origin="user"), days_ago=1, result=None)
+    _run(db_session, _suite(db_session, conn, skipped, origin="auto"), days_ago=1, result="skip")
     assert unwatched.id is not None
 
     figures = cov.coverage_figures(db_session, now=NOW)
 
-    assert figures.assets_total == 6
+    assert figures.assets_total == 8
     assert figures.assets_watched == 3
     assert (figures.assets_watched_authored, figures.assets_watched_auto_only) == (2, 1)
-    assert figures.coverage_pct == 50.0
+    assert figures.coverage_pct == 37.5
     assert figures.coverage_window_days == 7
 
 
@@ -301,3 +320,16 @@ def test_connections_with_the_same_false_positives_are_ordered_by_stated_then_na
         "alpha (dev)",
         "beta (dev)",
     ]
+
+
+def test_a_run_that_recorded_evaluated_checks_still_watches_after_they_are_deleted(
+    db_session: Any, conn: Connection
+) -> None:
+    # The recorded count (#2348) answers, not the rows: its checks were deleted since.
+    asset = _asset(db_session, "kept")
+    _run(db_session, _suite(db_session, conn, asset, origin="user"), days_ago=1, result=None)
+    run = db_session.query(Run).one()
+    run.recorded_results_total, run.recorded_checks_total, run.recorded_checks_passed = 2, 2, 2
+    db_session.flush()
+
+    assert cov.coverage_figures(db_session, now=NOW).assets_watched == 1

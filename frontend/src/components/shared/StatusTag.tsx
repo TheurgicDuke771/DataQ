@@ -9,10 +9,10 @@ import {
   SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Tag } from 'antd';
+import { Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 
-import type { ResultStatus, RunStatus } from '../../api/runs';
+import type { ResultStatus, Run, RunStatus } from '../../api/runs';
 import { RESULT_STATUS_COLORS, RUN_STATUS_COLORS } from '../results/resultsFormat';
 
 /** Each status has its own glyph, so severity reads without colour (WCAG 1.4.1). Hidden from
@@ -79,4 +79,26 @@ export function ChecksOutcomeTag({
       <span className="dq-sr-only"> checks passed, worst result {severity}</span>
     </Tag>
   );
+}
+
+/** A runs table's "Checks" cell. A `succeeded` run that evaluated no check (none was enabled, or
+ *  every one skipped) verified nothing, and says so rather than a bare dash beside a green status. */
+export function RunChecksCell({
+  run,
+}: {
+  run: Pick<Run, 'status' | 'checks_total' | 'checks_passed' | 'worst_severity'>;
+}) {
+  if (run.checks_total > 0) {
+    return (
+      <ChecksOutcomeTag
+        passed={run.checks_passed}
+        total={run.checks_total}
+        worst={run.worst_severity}
+      />
+    );
+  }
+  if (run.status === 'succeeded') {
+    return <Typography.Text type="warning">Nothing evaluated</Typography.Text>;
+  }
+  return <Typography.Text type="secondary">—</Typography.Text>;
 }

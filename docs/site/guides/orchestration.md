@@ -413,7 +413,7 @@ The pipeline calls `POST /api/v1/orchestration/gate` with its `provider`, pipeli
 | `awaiting_trigger` | status-only mode, and no run exists yet for this pipeline run |
 | `passed` | every bound suite finished below `fail_on` (default `fail`) |
 | `failed` | some check finished at or above `fail_on` |
-| `error` | a run failed or was cancelled, or a check couldn't be evaluated |
+| `error` | a run failed or was cancelled, a check couldn't be evaluated, or the run evaluated no check (none was enabled and runnable, or every one skipped) |
 
 - **Trigger-and-wait** (the default): the first call starts one run of every enabled bound
   suite for this pipeline run, and later calls never start another. The pipeline's own
