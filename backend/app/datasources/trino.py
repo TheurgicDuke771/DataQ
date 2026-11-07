@@ -37,6 +37,7 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
+from backend.app.datasources.query_timeout import query_timeout_s
 
 #: How a request authenticates. ``password`` is HTTP basic (Trino's PASSWORD authenticator: a
 #: file, LDAP, …), ``jwt`` a bearer token, ``none`` a cluster that trusts the user name it is sent.
@@ -173,6 +174,9 @@ def _connect_args(
         # the worker's local zone unless told otherwise; the freshness math reads naive as UTC.
         "timezone": "UTC",
         "source": "dataq",
+        # The cluster cancels a query past the limit (#2496); a lower cluster-wide
+        # `query.max-execution-time` still wins.
+        "session_properties": {"query_max_execution_time": f"{query_timeout_s()}s"},
     }
     if tls:
         args["verify"] = _ca_bundle_path(config.ca_bundle) if config.ca_bundle else True

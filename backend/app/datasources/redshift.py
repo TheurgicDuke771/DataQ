@@ -27,6 +27,7 @@ from typing import Any, ClassVar
 
 from backend.app.datasources.generic_sql import ColumnCaps, SqlCatalog, SqlEngineSpec
 from backend.app.datasources.postgres import PostgresConfig
+from backend.app.datasources.query_timeout import query_timeout_s
 
 # `<cluster>.<id>.<region>.redshift.amazonaws.com` and
 # `<workgroup>.<account>.<region>.redshift-serverless.amazonaws.com`.
@@ -54,6 +55,7 @@ def _connect_args(
     options = f"-c search_path=pg_catalog,{config.default_schema}"
     if config.default_schema != "public":
         options += ",public"
+    options += f" -c statement_timeout={query_timeout_s() * 1000}"  # ms; the query limit (#2496)
     if read_only:
         options = f"-c default_transaction_read_only=on {options}"
     args: dict[str, Any] = {

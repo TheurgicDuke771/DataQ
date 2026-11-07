@@ -338,6 +338,11 @@ class Settings(BaseSettings):
     # UC SQL pushdown (#1532).
     uc_sql_pushdown: bool = True
 
+    # Wall-clock limit on ONE query DataQ sends a SQL datasource (#2496), applied through each
+    # engine's own mechanism. Under `stuck_run_threshold_minutes`, so a slow query fails its run
+    # with a timeout before the reaper would call the run stuck. Positive: no engine is unbounded.
+    datasource_query_timeout_s: int = Field(default=1800, ge=1, le=86_400)
+
     # Row cap per comparison side (ADR 0015) — a memory guardrail: both sides materialise for the
     # diff; over-cap fails fast, never a truncated diff.
     comparison_max_rows: int = 100_000

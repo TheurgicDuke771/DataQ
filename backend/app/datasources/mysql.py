@@ -74,6 +74,23 @@ def _session_statements(read_only: bool) -> tuple[str, ...]:
     return statements
 
 
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """The per-query limit (#2496), spelled for the server actually connected. MySQL's
+    `max_execution_time` (milliseconds, SELECT only) does not exist on MariaDB (error 1193), whose
+    `max_statement_time` (seconds) MySQL in turn lacks. Both kill the statement, not the session.
+    """
+    version = str(getattr(dbapi_connection, "server_version", "") or "")
+    if "mariadb" in version.lower():
+        statement = f"SET SESSION max_statement_time = {int(seconds)}"
+    else:
+        statement = f"SET SESSION max_execution_time = {int(seconds) * 1000}"
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute(statement)
+    finally:
+        cursor.close()
+
+
 def _add_gx_datasource(
     context: Any, name: str, connection_string: str, engine_kwargs: dict[str, Any]
 ) -> Any:
@@ -115,5 +132,6 @@ MYSQL = SqlEngineSpec(
     # the guard — which also needs the CREATE TEMPORARY TABLES grant (live-found).
     temp_table_types=frozenset({"expect_column_values_to_be_unique"}),
     session_statements=_session_statements,
+    query_timeout_setup=_query_timeout_setup,
     exact_median=False,
 )

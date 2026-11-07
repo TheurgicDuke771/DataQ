@@ -39,6 +39,7 @@ from backend.app.datasources.monitors import (
     STATEFUL_MONITOR_KINDS,
     monitor_expectation_type,
 )
+from backend.app.datasources.query_timeout import is_query_timeout_message, query_timeout_message
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
@@ -120,6 +121,8 @@ def _build_result(
     if outcome.errored:
         # One funnel to `observed_value` for every kind, so the #1203 strip can't diverge.
         error_message = strip_statement_echo(outcome.error_message)
+        if is_query_timeout_message(error_message):  # the engine's text → the fixed reason (#2496)
+            error_message = query_timeout_message()
         observed = {"error": error_message} if error_message else None
         # The provoking cell (#989) rides separately so the read layer can redact it — under
         # zero-sample mode it never leaves the runner at all, not even redacted.

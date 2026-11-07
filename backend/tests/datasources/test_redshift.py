@@ -54,9 +54,10 @@ def test_the_session_is_read_only_and_scoped_to_the_schema() -> None:
     _, args = REDSHIFT.engine_args(_config(), _PASSWORD)
     assert args["options"] == (
         "-c default_transaction_read_only=on -c search_path=pg_catalog,sales,public"
+        " -c statement_timeout=1800000"
     )
     _, writable = REDSHIFT.engine_args(_config(schema=None), _PASSWORD, read_only=False)
-    assert writable["options"] == "-c search_path=pg_catalog,public"
+    assert writable["options"] == "-c search_path=pg_catalog,public -c statement_timeout=1800000"
 
 
 @pytest.mark.parametrize("sslmode", ["require", "verify-ca", "verify-full"])

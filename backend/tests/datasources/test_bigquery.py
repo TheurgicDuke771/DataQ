@@ -162,6 +162,18 @@ def test_the_url_carries_project_and_dataset_but_never_the_key(key: str) -> None
     connect_args["client"].close()
 
 
+def test_the_client_job_config_carries_the_query_limit(
+    key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #2496: BigQuery stops a job past the limit, so a slow scan stops billing too.
+    monkeypatch.setenv("DATASOURCE_QUERY_TIMEOUT_S", "7")
+    client = BIGQUERY.session_connect_args(_config(), key, 10)["client"]
+    try:
+        assert int(client.default_query_job_config.job_timeout_ms) == 7000  # int64 as a string
+    finally:
+        client.close()
+
+
 def test_without_a_dataset_the_url_names_only_the_project(key: str) -> None:
     url, connect_args = BIGQUERY.engine_args(_config(schema=None), key)
     assert url == f"bigquery://{_PROJECT}?user_supplied_client=true"

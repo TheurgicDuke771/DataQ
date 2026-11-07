@@ -12,6 +12,7 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
+from backend.app.datasources.query_timeout import query_timeout_s
 
 
 class PostgresConfig(GenericSqlConfig):
@@ -30,7 +31,10 @@ def _connect_args(
 ) -> dict[str, Any]:
     # `default_transaction_read_only` makes every transaction DataQ opens READ ONLY — the
     # server refuses a write however it was smuggled into a query.
-    options = f"-c search_path={_search_path(config)}"
+    # `statement_timeout` (ms) cancels any one statement past the query limit (#2496).
+    options = (
+        f"-c search_path={_search_path(config)} -c statement_timeout={query_timeout_s() * 1000}"
+    )
     if read_only:
         options = f"-c default_transaction_read_only=on {options}"
     args: dict[str, Any] = {

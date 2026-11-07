@@ -36,6 +36,7 @@ from backend.app.datasources.base import (
     ValueSignalGate,
 )
 from backend.app.datasources.monitors import AGGREGATE, FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.query_timeout import query_timeout_s
 from backend.app.datasources.sql import LazyEngine, is_sql_identifier, object_type
 
 if TYPE_CHECKING:
@@ -297,6 +298,10 @@ class SqlEngineSpec:
     #: whose driver can only carry ONE init statement (PyMySQL's `init_command`) but needs two,
     #: each spelled in the syntax every server version accepts. ``None`` = `connect_args` does it.
     session_statements: Callable[[bool], tuple[str, ...]] | None = None
+    #: ``(dbapi_connection, seconds)`` → applies the per-query limit (#2496) on a new session, for
+    #: an engine that can only set it once connected — MySQL and MariaDB name the variable
+    #: differently, so the server must be known first. ``None`` = `connect_args` does it.
+    query_timeout_setup: Callable[[Any, int], None] | None = None
     #: ``(config, secret)`` → the DBAPI ``connect_args`` that authenticate, for an engine whose
     #: driver takes an auth OBJECT rather than a URL password (Trino: basic or a JWT bearer).
     #: When set, the secret is never put in the URL. ``None`` = the password rides the URL.
@@ -414,19 +419,23 @@ class SqlEngineSpec:
         """Run `session_statements` on every connection ``engine`` opens from now on. Returns
         ``engine``. Connections already pooled predate the hook — dispose them first.
         """
-        if self.session_statements is None:
+        if self.session_statements is None and self.query_timeout_setup is None:
             return engine
         from sqlalchemy import event
 
-        statements = self.session_statements(read_only)
+        statements = self.session_statements(read_only) if self.session_statements else ()
+        timeout_setup = self.query_timeout_setup
 
         def _setup(dbapi_connection: Any, _record: Any) -> None:
-            cursor = dbapi_connection.cursor()
-            try:
-                for statement in statements:
-                    cursor.execute(statement)
-            finally:
-                cursor.close()
+            if statements:
+                cursor = dbapi_connection.cursor()
+                try:
+                    for statement in statements:
+                        cursor.execute(statement)
+                finally:
+                    cursor.close()
+            if timeout_setup is not None:
+                timeout_setup(dbapi_connection, query_timeout_s())
 
         event.listen(engine, "connect", _setup)
         return engine
