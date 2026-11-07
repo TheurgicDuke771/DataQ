@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "781959d8e448",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2424-settings-singleton",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_settings_singleton_migration.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/1959d8e448/0/metadata.json",
+      "transcript": "/78/1959d8e448/0/full.jsonl",
+      "compact_transcript": "/78/1959d8e448/0/transcript.jsonl",
+      "content_hash": "/78/1959d8e448/0/content_hash.txt",
+      "prompt": "/78/1959d8e448/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 279202,
+    "cache_read_tokens": 3295647,
+    "output_tokens": 8484,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 70,
+      "cache_creation_tokens": 327689,
+      "cache_read_tokens": 7398974,
+      "output_tokens": 21822,
+      "api_call_count": 38
+    }
+  },
+  "redaction": {
+    "replacements": 11,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 0,
+      "entropy": 2,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
