@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "2bce1757546f",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2549-coverage-save-focus-race",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "changelog.d/2549.fixed.md",
+    "frontend/src/components/assets/CoverageSensitivityBlock.tsx",
+    "frontend/src/pages/admin/CoveragePanel.tsx",
+    "frontend/tests/components/CoverageSensitivityBlock.test.tsx",
+    "frontend/tests/pages/admin/CoveragePanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2b/ce1757546f/0/metadata.json",
+      "transcript": "/2b/ce1757546f/0/full.jsonl",
+      "compact_transcript": "/2b/ce1757546f/0/transcript.jsonl",
+      "content_hash": "/2b/ce1757546f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 22996,
+    "cache_read_tokens": 9739257,
+    "output_tokens": 12418,
+    "api_call_count": 20
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 45,
+      "credentialed_uri": 0,
+      "entropy": 18,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
