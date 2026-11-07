@@ -77,6 +77,9 @@ class RunRead(ApiModel):
     checks_total: int = 0
     checks_passed: int = 0
     worst_severity: str | None = None  # warn | fail | critical | None (all passed)
+    # Result rows deleted with their checks since the run finished (#2348). The outcome above is
+    # the one recorded at completion, so it still counts them; the run's result list does not.
+    results_removed: int = 0
     # A redaction-safe reason for a `failed` run (#605) — a fixed classified
     # message (never raw adapter text). NULL for non-failed runs and older rows.
     failure_reason: str | None = None
@@ -311,11 +314,13 @@ def run_reads(
         viewer_id=viewer.id if viewer else None,
         include_all=is_workspace_admin(viewer) if viewer else False,
     )
+    removed = svc.removed_result_counts(db, [r.id for r in runs]) if outcomes is not None else {}
     reads = []
     for run in runs:
         update: dict[str, object] = {"triggered_by_label": labels.get(run.triggered_by or "")}
         if outcomes is not None:
             update |= _outcome_update(outcomes.get(run.id))
+            update["results_removed"] = removed.get(run.id, 0)
         reads.append(RunRead.model_validate(run).model_copy(update=update))
     return reads
 

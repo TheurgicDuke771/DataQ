@@ -41,6 +41,7 @@ import {
   checkExportName,
   checkLabel,
   noResultsMessage,
+  removedResultsNotice,
 } from '../components/results/runResultLabels';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
@@ -62,8 +63,6 @@ import { formatSig, fullNumber } from '../utils/formatNumber';
 import { PageError } from '../components/feedback/PageError';
 import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
 
-/** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
-const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
 /** Tiers a result must breach for an incident to exist at all (`db.models.FAILING_TIERS`) — warn
  *  included, not just fail/critical (`incident_service._sync_incidents_for_run` opens/attaches on
  *  any of the three). */
@@ -231,10 +230,9 @@ function RunDetailBody({
   }, [incidents]);
   const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
 
-  // "Checks passed" counts only evaluated (severity-tier) results — skip/error didn't evaluate a
-  // severity, so they're excluded from the denominator.
-  const evaluated = run.results.filter((r) => SEVERITY_STATUSES.has(r.status));
-  const passed = evaluated.filter((r) => r.status === 'pass').length;
+  // The outcome recorded when the run finished, not one counted from `run.results`: results are
+  // deleted with their checks, so a count of the rows would shrink with every deletion.
+  const removedNotice = removedResultsNotice(run.results_removed);
 
   return (
     <Flex vertical gap={16}>
@@ -270,7 +268,7 @@ function RunDetailBody({
           <RunStatusTag status={run.status} />
         </Stat>
         <Stat label="Checks passed">
-          {evaluated.length === 0 ? '—' : `${passed} / ${evaluated.length}`}
+          {run.checks_total === 0 ? '—' : `${run.checks_passed} / ${run.checks_total}`}
         </Stat>
         <Stat label="Triggered by">{triggeredByText(run)}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
@@ -281,6 +279,10 @@ function RunDetailBody({
           run header rather than inside the table — a reader who scans the
           "6 / 7 passed" card must not walk away without it (#595/#1325). */}
       <SampledRunNotice results={run.results} />
+
+      {removedNotice && (
+        <Alert type="warning" showIcon title="Results removed" description={removedNotice} />
+      )}
 
       {run.status === 'failed' && run.failure_reason && (
         <Alert
@@ -294,6 +296,7 @@ function RunDetailBody({
       <ResultsTable
         results={run.results}
         runStatus={run.status}
+        resultsRemoved={run.results_removed}
         checksKnown={checksKnown}
         checks={checksById}
         suiteId={run.suite_id}
@@ -611,6 +614,7 @@ function SampleFailures({
 function ResultsTable({
   results,
   runStatus,
+  resultsRemoved,
   checksKnown,
   checks,
   suiteId,
@@ -620,6 +624,7 @@ function ResultsTable({
 }: {
   results: Result[];
   runStatus: RunStatus;
+  resultsRemoved?: number;
   checksKnown: boolean;
   checks: Map<string, Check>;
   suiteId: string;
@@ -629,7 +634,7 @@ function ResultsTable({
   onViewIncident: (incidentId: string) => void;
 }) {
   if (results.length === 0) {
-    return <Empty description={noResultsMessage(runStatus)} />;
+    return <Empty description={noResultsMessage(runStatus, resultsRemoved)} />;
   }
   const columns: ColumnsType<Result> = [
     {

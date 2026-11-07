@@ -31,6 +31,7 @@ class ComparisonRunRead:
         checks_total (int | Unset):  Default: 0.
         failure_reason (None | str | Unset):
         queued_reason (None | str | Unset):
+        results_removed (int | Unset):  Default: 0.
         triggered_by_label (None | str | Unset):
         worst_severity (None | str | Unset):
     """
@@ -48,6 +49,7 @@ class ComparisonRunRead:
     checks_total: int | Unset = 0
     failure_reason: None | str | Unset = UNSET
     queued_reason: None | str | Unset = UNSET
+    results_removed: int | Unset = 0
     triggered_by_label: None | str | Unset = UNSET
     worst_severity: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -102,6 +104,8 @@ class ComparisonRunRead:
         else:
             queued_reason = self.queued_reason
 
+        results_removed = self.results_removed
+
         triggered_by_label: None | str | Unset
         if isinstance(self.triggered_by_label, Unset):
             triggered_by_label = UNSET
@@ -138,6 +142,8 @@ class ComparisonRunRead:
             field_dict["failure_reason"] = failure_reason
         if queued_reason is not UNSET:
             field_dict["queued_reason"] = queued_reason
+        if results_removed is not UNSET:
+            field_dict["results_removed"] = results_removed
         if triggered_by_label is not UNSET:
             field_dict["triggered_by_label"] = triggered_by_label
         if worst_severity is not UNSET:
@@ -234,6 +240,8 @@ class ComparisonRunRead:
 
         queued_reason = _parse_queued_reason(d.pop("queued_reason", UNSET))
 
+        results_removed = d.pop("results_removed", UNSET)
+
         def _parse_triggered_by_label(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -266,6 +274,7 @@ class ComparisonRunRead:
             checks_total=checks_total,
             failure_reason=failure_reason,
             queued_reason=queued_reason,
+            results_removed=results_removed,
             triggered_by_label=triggered_by_label,
             worst_severity=worst_severity,
         )
