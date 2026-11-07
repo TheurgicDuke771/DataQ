@@ -100,7 +100,7 @@ def test_prepare_engine_runs_the_session_statements_on_every_new_connection() ->
         guard = ("PRAGMA query_only = ON",)
         return guard if read_only else guard[:0]
 
-    spec = replace(MYSQL, session_statements=statements)
+    spec = replace(MYSQL, session_statements=statements, query_timeout_setup=None)
     guarded = spec.prepare_engine(create_engine("sqlite://"), read_only=True)
     with guarded.connect() as conn:
         with pytest.raises(OperationalError, match="readonly"):
@@ -109,7 +109,8 @@ def test_prepare_engine_runs_the_session_statements_on_every_new_connection() ->
     with writable.connect() as conn:
         conn.execute(text("CREATE TABLE t (i INTEGER)"))
     # An engine with no session statements is handed back untouched.
-    assert replace(MYSQL, session_statements=None).prepare_engine("engine") == "engine"
+    bare = replace(MYSQL, session_statements=None, query_timeout_setup=None)
+    assert bare.prepare_engine("engine") == "engine"
 
 
 def test_tls_is_required_unless_explicitly_disabled() -> None:

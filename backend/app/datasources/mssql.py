@@ -41,6 +41,7 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
+from backend.app.datasources.query_timeout import query_timeout_s
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import URL
@@ -296,6 +297,7 @@ def _connect_args(config: MssqlConfig, timeout: int | None, **_: Any) -> dict[st
     if config.driver == "odbc":
         # pyodbc's `timeout` is the login timeout; a run waits out a slow first login (a Fabric
         # SQL endpoint or a paused serverless database — live-found), a Test does not.
+        # The per-query limit is the connection's `timeout` attribute, set once connected.
         return {"timeout": 60 if timeout is None else timeout}
     from backend.app.datasources import mssql_tds
 
@@ -309,7 +311,18 @@ def _connect_args(config: MssqlConfig, timeout: int | None, **_: Any) -> dict[st
         # An Azure SQL serverless database resumes from auto-pause on the first login, which
         # takes up to a minute; a run waits for it, a Test Connection does not.
         "login_timeout": 60 if timeout is None else timeout,
+        # python-tds's `timeout` bounds each wait for the server's reply (#2496): a query that
+        # sends nothing for that long is cancelled (a TDS attention) and fails. It is not a cap on
+        # a result that keeps streaming.
+        "timeout": query_timeout_s(),
     }
+
+
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """The ODBC lane's per-query limit (#2496): pyodbc's `Connection.timeout`, which it applies
+    to every statement as SQL_ATTR_QUERY_TIMEOUT. python-tds took it as a connect arg."""
+    if type(dbapi_connection).__module__.split(".")[0] == "pyodbc":
+        dbapi_connection.timeout = int(seconds)
 
 
 def _odbc_value(value: str) -> str:
@@ -481,6 +494,7 @@ MSSQL = MssqlEngineSpec(
     drivername="mssql+pytds",
     gx_datasource=_add_gx_datasource,
     connect_args=_connect_args,
+    query_timeout_setup=_query_timeout_setup,
     namespace_scheme="mssql",
     database_in_name=True,
     catalog=SqlCatalog(

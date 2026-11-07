@@ -42,6 +42,7 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
+from backend.app.datasources.query_timeout import query_timeout_s
 
 #: The default cap on the bytes one query may bill: 10 GiB.
 DEFAULT_MAXIMUM_BYTES_BILLED = 10 * 1024**3
@@ -196,7 +197,11 @@ def bigquery_client(config: BigQueryConfig, secret: str | None) -> Any:
         raise GcsKeyInvalidError(
             "the service-account key file's private_key could not be read"
         ) from exc
-    job_config = bigquery.QueryJobConfig(maximum_bytes_billed=config.maximum_bytes_billed)
+    job_config = bigquery.QueryJobConfig(
+        maximum_bytes_billed=config.maximum_bytes_billed,
+        # BigQuery stops a job past the query limit (#2496), so a slow scan stops billing too.
+        job_timeout_ms=query_timeout_s() * 1000,
+    )
     if config.schema_ is not None:
         job_config.default_dataset = bigquery.DatasetReference(config.database, config.schema_)
     options = (

@@ -109,7 +109,7 @@ def test_regex_expectations_compile_to_regexp_like_on_athena() -> None:
 
     import backend.app.datasources.gx_metrics  # noqa: F401  (installs the override)
 
-    dialect = AthenaRestDialect()  # type: ignore[no-untyped-call]
+    dialect = AthenaRestDialect()
     column: sa.ColumnClause[Any] = sa.column("email")
     compile_regex = column_values_match_regex.get_dialect_regex_expression
     match = compile_regex(column, "@x$", dialect, True)

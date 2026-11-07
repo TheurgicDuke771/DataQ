@@ -74,6 +74,34 @@ def _session_statements(read_only: bool) -> tuple[str, ...]:
     return statements
 
 
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """The per-query limit (#2496), spelled for the server actually connected. MySQL's
+    `max_execution_time` (milliseconds, SELECT only) does not exist on MariaDB (error 1193), whose
+    `max_statement_time` (seconds) MySQL in turn lacks. Both kill the statement, not the session.
+
+    A lower limit the session inherited (the server's global value, or a MariaDB per-user
+    `MAX_STATEMENT_TIME`) is kept: 0 means none, so only then does DataQ's apply outright.
+    """
+    version = str(getattr(dbapi_connection, "server_version", "") or "")
+    variable, limit = (
+        ("max_statement_time", int(seconds))
+        if "mariadb" in version.lower()
+        else ("max_execution_time", int(seconds) * 1000)
+    )
+    cursor = dbapi_connection.cursor()
+    try:
+        # Read, then set a literal: MySQL rejects an IF()/LEAST() expression here (error 1232).
+        cursor.execute(f"SELECT @@SESSION.{variable}")
+        row = cursor.fetchone()
+        inherited = float(row[0]) if row and row[0] is not None else 0.0
+        value = limit if inherited <= 0 else min(inherited, limit)
+        # MySQL's is whole milliseconds; MariaDB's is seconds and takes a fraction.
+        literal = str(int(value)) if variable == "max_execution_time" else f"{value:.6f}"
+        cursor.execute(f"SET SESSION {variable} = {literal}")
+    finally:
+        cursor.close()
+
+
 def _add_gx_datasource(
     context: Any, name: str, connection_string: str, engine_kwargs: dict[str, Any]
 ) -> Any:
@@ -115,5 +143,6 @@ MYSQL = SqlEngineSpec(
     # the guard — which also needs the CREATE TEMPORARY TABLES grant (live-found).
     temp_table_types=frozenset({"expect_column_values_to_be_unique"}),
     session_statements=_session_statements,
+    query_timeout_setup=_query_timeout_setup,
     exact_median=False,
 )

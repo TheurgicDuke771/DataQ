@@ -21,12 +21,18 @@ Athena is not a server DataQ opens a session on, which shapes this spec:
 from __future__ import annotations
 
 import re
+import time
+from functools import cache
 from typing import Any, ClassVar
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 
+from backend.app.core.logging import get_logger
 from backend.app.datasources.generic_sql import GenericSqlConfig, SqlCatalog, SqlEngineSpec
+from backend.app.datasources.query_timeout import QueryTimeoutError, query_timeout_s
 from backend.app.datasources.trino import _column_caps
+
+log = get_logger(__name__)
 
 _REGION = re.compile(r"[a-z]{2}(-[a-z]+)+-\d")
 _S3_URI = re.compile(r"s3://[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9](/[^\s@?#]*)?")
@@ -144,11 +150,43 @@ def _connect_args(
 ) -> dict[str, Any]:
     # `read_only` cannot be honoured: Athena has no read-only session (module docstring).
     del read_only
-    if timeout is None:
-        return {}
-    from botocore.config import Config
+    args: dict[str, Any] = {"cursor_class": limited_cursor_class()}
+    if timeout is not None:
+        from botocore.config import Config
 
-    return {"config": Config(connect_timeout=timeout, retries={"max_attempts": 3})}
+        args["config"] = Config(connect_timeout=timeout, retries={"max_attempts": 3})
+    return args
+
+
+@cache
+def limited_cursor_class() -> type[Any]:
+    """pyathena's cursor, stopping and CANCELLING a query past the query limit (#2496).
+
+    Athena has no per-query limit a client can set (a workgroup's is the admin's), and pyathena
+    polls a query to its end however long it runs — billed for every byte it scans. This
+    overrides the poll loop of the pinned pyathena (a test holds the method it replaces).
+    """
+    from pyathena.cursor import Cursor
+    from pyathena.model import AthenaQueryExecution
+
+    class LimitedCursor(Cursor):  # type: ignore[misc]  # pyathena is Any to mypy
+        def _poll_until_terminal(self, query_id: str) -> Any:
+            deadline = time.monotonic() + query_timeout_s()
+            while True:
+                execution = self._get_query_execution(query_id)
+                if self._on_poll:
+                    self._on_poll(execution)
+                if execution.state in AthenaQueryExecution.TERMINAL_STATES:
+                    return execution
+                if time.monotonic() >= deadline:
+                    try:
+                        self._cancel(query_id)
+                    except Exception as exc:  # the limit still fails the query, cancelled or not
+                        log.warning("athena_query_cancel_failed", error_type=type(exc).__name__)
+                    raise QueryTimeoutError()
+                self._wait_poll_interval()
+
+    return LimitedCursor
 
 
 def _auth_connect_args(config: AthenaConfig, secret: str | None) -> dict[str, Any]:

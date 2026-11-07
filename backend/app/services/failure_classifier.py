@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from backend.app.core.errors import SafeMonitorError
 from backend.app.core.secrets import SecretStoreUnavailableError
+from backend.app.datasources.query_timeout import is_query_timeout, query_timeout_message
 
 
 class FailureCategory(StrEnum):
@@ -124,11 +125,15 @@ def classify_failure_category(exc: BaseException) -> FailureCategory:
 
 def classify_failure_reason(exc: BaseException) -> str:
     """The fixed, secret-free user-facing reason for a failed run/dry-run (#605)."""
+    if is_query_timeout(exc):  # before the markers, whose "timeout" would call it connectivity
+        return query_timeout_message()
     return _MESSAGES[classify_failure_category(exc)]
 
 
 def safe_failure_reason(exc: BaseException) -> str:
     """The user-facing reason: verbatim when SAFE-marked, classified otherwise."""
+    if is_query_timeout(exc):
+        return query_timeout_message()
     if isinstance(exc, SafeMonitorError) and str(exc):
         return str(exc)
     return classify_failure_reason(exc)
