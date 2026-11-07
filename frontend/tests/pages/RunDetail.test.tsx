@@ -1024,6 +1024,32 @@ describe('RunDetail page', () => {
       expect(screen.queryByText('manual:u1')).not.toBeInTheDocument();
     });
 
+    it('formats the failing-rows percent and the Metric cell, keeping the full value in a title', async () => {
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        results: [
+          {
+            ...runDetail.results[0],
+            metric_value: 0.11474469305794606,
+            sample_failures: { unexpected_count: 1, unexpected_percent: 0.05875440658049354 },
+          },
+        ],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+      const region = screenRegion();
+      const user = userEvent.setup();
+
+      await region.findByText('0.115');
+      expect(region.getByTestId('metric-value')).toHaveAttribute('title', '0.11474469305794606');
+      await user.click(region.getByRole('button', { name: /expand row/i }));
+      const percent = await region.findByTestId('failing-percent');
+      expect(percent).toHaveTextContent('0.0588%');
+      expect(percent).toHaveAttribute('title', '0.05875440658049354%');
+      expect(region.queryByText(/0\.058754/)).not.toBeInTheDocument();
+    });
+
     it('em-dashes a null triggered_by / metric_value in the report', async () => {
       mockGetRun.mockResolvedValue({
         ...runDetail,

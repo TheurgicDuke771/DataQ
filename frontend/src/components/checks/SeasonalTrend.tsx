@@ -25,6 +25,7 @@ import { useFocusFallback } from '../../hooks/useFocusFallback';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError } from '../../utils/fieldErrors';
 import { SEVERITY_SCALE } from '../../theme';
+import { formatTick } from '../../utils/formatNumber';
 import { AXIS_TICK, CHART_COLORS, GRID_PROPS, TOOLTIP_STYLE } from '../charts/chartTheme';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { Modal } from '../shared/Modal';
@@ -126,7 +127,7 @@ export function PeriodBaselineChart({
     >
       <ComposedChart
         data={data}
-        margin={{ top: 14, right: 12, left: -16, bottom: 0 }}
+        margin={{ top: 14, right: 12, left: 0, bottom: 0 }}
         title="Stored periods and the band each judged period was scored against"
         desc="The caption above describes the band, the expected line and the shaded periods; the Table view lists every value."
       >
@@ -141,7 +142,7 @@ export function PeriodBaselineChart({
           minTickGap={24}
           tickFormatter={tick}
         />
-        <YAxis tick={AXIS_TICK} tickLine={false} width={40} />
+        <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
         <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={(ms) => tick(Number(ms))} />
         {declaredAreas.map((a) => (
           <ReferenceArea
