@@ -512,6 +512,9 @@ class _DownCounterStore:
     def incr_window(self, key: str, ttl_seconds: int) -> int | None:
         return None
 
+    def refund_window(self, key: str) -> None:
+        pass
+
 
 def _wire_working_preflight(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_auth_email_env(monkeypatch)

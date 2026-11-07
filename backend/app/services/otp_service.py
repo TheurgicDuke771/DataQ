@@ -91,6 +91,10 @@ class OtpCounterStore(Protocol):
 
     def incr_window(self, key: str, ttl_seconds: int) -> int | None: ...
 
+    def refund_window(self, key: str) -> None:
+        """Take back one increment, if the window still exists. Best effort, never raises."""
+        ...
+
 
 # This store's breaker tuning — the shared defaults (#1135), named locally so the contract is
 # stated where the store is, and so a test can read it without reaching into
@@ -116,6 +120,10 @@ class InMemoryOtpCounterStore:
     def incr_window(self, key: str, ttl_seconds: int) -> int | None:
         self._counts[key] = self._counts.get(key, 0) + 1
         return self._counts[key]
+
+    def refund_window(self, key: str) -> None:
+        if self._counts.get(key, 0) > 0:
+            self._counts[key] -= 1
 
 
 class RedisOtpCounterStore:
@@ -161,6 +169,20 @@ class RedisOtpCounterStore:
         self._breaker.record_success()
         return counted
 
+    # DECR only an existing window: a bare DECR on an expired key would create it at -1 with no
+    # TTL, a permanent credit of one request.
+    _REFUND = "if redis.call('EXISTS', KEYS[1]) == 1 then return redis.call('DECR', KEYS[1]) end"
+
+    def refund_window(self, key: str) -> None:
+        if self._breaker.is_open():
+            return
+        try:
+            self._get_client().eval(self._REFUND, 1, key)  # type: ignore[attr-defined]
+        except Exception:
+            self._breaker.record_failure()
+            return
+        self._breaker.record_success()
+
 
 _counter_store: OtpCounterStore | None = None
 _counter_unavailable_warned = False
@@ -192,23 +214,23 @@ def _email_bucket_key(email: str, *, now: float) -> str:
     return f"otp:req:{digest}:{window}"
 
 
-def _within_email_quota(email: str, settings: Settings) -> bool:
-    """False when this address has already spent its window's requests."""
+def _charge_email_quota(email: str, settings: Settings) -> tuple[bool, str | None]:
+    """Count one request against this address's window → (within quota, the key it was counted
+    under, or None when nothing was counted)."""
     global _counter_unavailable_warned
     limit = settings.auth_otp_request_per_email_per_10min
     if limit <= 0:
-        return True
-    count = get_counter_store().incr_window(
-        _email_bucket_key(email, now=time.time()), EMAIL_WINDOW_SECONDS * 2
-    )
+        return True, None
+    key = _email_bucket_key(email, now=time.time())
+    count = get_counter_store().incr_window(key, EMAIL_WINDOW_SECONDS * 2)
     if count is None:
         if not _counter_unavailable_warned:
             _counter_unavailable_warned = True
             # NO email, and no key (the key contains the address's digest, which is a stable per-
             # person identifier even though it is not readable).
             log.warning("otp_email_counter_store_unavailable", window_seconds=EMAIL_WINDOW_SECONDS)
-        return True  # fail open
-    return count <= limit
+        return True, None  # fail open
+    return count <= limit, key
 
 
 # ── Code lifecycle ───────────────────────────────────────────────────────────
@@ -264,7 +286,8 @@ def request_code(
         log.info("otp_request_ineligible")
         return RequestOutcome(sent=False, reason="ineligible")
 
-    if not _within_email_quota(normalized, s):
+    within_quota, quota_key = _charge_email_quota(normalized, s)
+    if not within_quota:
         log.warning("otp_request_throttled", limit=s.auth_otp_request_per_email_per_10min)
         return RequestOutcome(sent=False, reason="throttled")
 
@@ -293,6 +316,10 @@ def request_code(
     except Exception as exc:
         # No exc_info: a traceback would carry the address and the code in its frames.
         log.error("otp_request_dispatch_failed", error_type=type(exc).__name__)
+        # A request whose code never left the building does not spend the caller's quota: a
+        # member retrying through a broker blip would otherwise be throttled with no email.
+        if quota_key is not None:
+            get_counter_store().refund_window(quota_key)
         return RequestOutcome(sent=False, reason="dispatch_failed")
     log.info("otp_request_queued", expires_in_minutes=CODE_TTL_MINUTES)
     return RequestOutcome(sent=True, reason="queued")
