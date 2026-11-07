@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "8d1f3d25b5d1",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2392-docs-publish-watchdog",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/docs-watchdog.yml",
+    "backend/tests/scripts/test_docs_publish_watchdog.py",
+    "scripts/ci/docs_publish_watchdog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8d/1f3d25b5d1/0/metadata.json",
+      "transcript": "/8d/1f3d25b5d1/0/full.jsonl",
+      "compact_transcript": "/8d/1f3d25b5d1/0/transcript.jsonl",
+      "content_hash": "/8d/1f3d25b5d1/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 31719,
+    "cache_read_tokens": 8739295,
+    "output_tokens": 18323,
+    "api_call_count": 31
+  },
+  "redaction": {
+    "replacements": 14,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 7,
+      "credentialed_uri": 0,
+      "entropy": 4,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
