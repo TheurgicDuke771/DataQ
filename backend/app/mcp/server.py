@@ -333,7 +333,9 @@ def _page_window(timestamps: list[datetime | None]) -> dict[str, Any]:
     }
 
 
-def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -> dict[str, Any]:
+def _run_outcome_fields(
+    run: Run, outcome: tuple[int, int, str | None] | None, results_removed: int = 0
+) -> dict[str, Any]:
     """A run's data-quality verdict for `list_runs`, or nulls when it has none yet.
 
     The same #318 rule `_run_results_payload` enforces, applied to the aggregate
@@ -354,6 +356,7 @@ def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -
             "checks_total": None,
             "checks_passed": None,
             "worst_severity": None,
+            "results_removed": None,
         }
     total, passed, worst = outcome
     return {
@@ -361,6 +364,7 @@ def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -
         "checks_total": total,
         "checks_passed": passed,
         "worst_severity": worst,
+        "results_removed": results_removed,
     }
 
 
@@ -487,6 +491,13 @@ def _run_results_payload(
             "results_final": final,
             # A `queued` run is not necessarily waiting on the broker (#1998).
             "queued_reason": run.queued_reason,
+            # Results deleted with their checks since the run finished (#2348): `checks` below
+            # is then not the whole run. Null when the run is not final.
+            "results_removed": (
+                run_service.removed_result_counts(session, [run.id]).get(run.id, 0)
+                if final
+                else None
+            ),
         },
         "checks": [
             {
@@ -516,7 +527,7 @@ def _run_results_payload(
                 # `run_service.CheckAsOfSource` (#1613).
                 "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
-                "metric_value": _num(r.metric_value),
+                **_redacted_metric(r, as_of[r.id], policy, tags),
                 # How much of the dataset this check actually saw (#595).
                 # `None` = a complete read. Without it an AI client reads a
                 # green board from a 2% sample and reports full-dataset
@@ -596,6 +607,26 @@ def _redacted_sample(
         # Why each one was (#2255): the same keys as `redacted_columns`, a closed vocabulary.
         "redaction_reasons": redacted.redaction_reasons,
     }
+
+
+def _redacted_metric(
+    result: Any,
+    as_of: run_service.CheckAsOf,
+    policy: dict[str, Any] | None,
+    tags: dict[str, str] | None,
+) -> dict[str, Any]:
+    """`metric_value` plus `metric_value_redaction` (#2240): a min/max aggregate's metric is one
+    cell of the tested column, so on a sensitive column it is withheld (null) and the reason
+    names the rung — a withheld metric must never read as "this check records no metric"."""
+    metric = run_service.redact_metric_value(
+        result.metric_value,
+        as_of=as_of,
+        policy=policy,
+        tags=tags,
+        observed=result.observed_value,
+        expected=result.expected_value,
+    )
+    return {"metric_value": _num(metric.value), "metric_value_redaction": metric.redaction}
 
 
 # ─────────────────────────────── read tools ────────────────────────────────
@@ -748,8 +779,13 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     "zero_sample"`` (#1873) is a THIRD reading of a null sample: this
     deployment's zero-sample privacy mode never persisted one for this
     failing/erroring result at all, distinct from a genuinely sample-free check
-    (e.g. a passing one). Returns an empty result set if the suite has never
-    run. Requires at least view access to the suite.
+    (e.g. a passing one). A null ``metric_value`` beside a non-null
+    ``metric_value_redaction`` means the metric was WITHHELD, not absent: an
+    ``aggregate`` min/max measures one literal cell of its column, so on a
+    sensitive column it is masked on the same ladder as ``observed_value`` (the
+    reason uses the ``redaction_reasons`` vocabulary) — say it was masked, never
+    that the check measured nothing. Returns an empty result set if the suite has
+    never run. Requires at least view access to the suite.
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the values that applied to this particular result, resolved from the
@@ -772,8 +808,9 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     never produced a complete account. Report the run's status in that case; do
     not describe the suite's quality from it. A third case: `checks` empty with
     `run.results_final` true means the run finished having evaluated nothing —
-    the suite has no checks, or every one is switched off (``list_checks``). That
-    is not a clean bill of health. If it is ``queued``, read
+    the suite has no checks, or every one is switched off (``list_checks``) — unless
+    ``run.results_removed`` is above 0, in which case the checks it evaluated have since
+    been deleted, with their results. Neither is a clean bill of health. If it is ``queued``, read
     ``run.queued_reason``: ``awaiting_worker_memory`` means worker-memory
     admission control is holding it back, not that it is stuck (see
     ``get_run_results`` for the full explanation).
@@ -1141,7 +1178,12 @@ def get_check_history(
     the run id, the run's timestamp, the check's status on that run
     (pass / warn / fail / critical / skip / error) and its ``metric_value`` — the
     number the check measured, when it measures one (row count, hours since the
-    last row, z-score…), or null for a check that records no metric.
+    last row, z-score…), or null for a check that records no metric. A null
+    ``metric_value`` with a non-null ``metric_value_redaction`` is different: an
+    ``aggregate`` min/max measures one literal cell of its column, so on a
+    sensitive column the value is withheld (the reason uses the
+    ``redaction_reasons`` vocabulary of ``get_run_results``). Its status still
+    trends; its number does not, so do not describe a masked point as "no metric".
 
     This is *result* history, not edit history: it says how the check performed,
     not how its definition changed. **For how the check's definition changed —
@@ -1185,6 +1227,7 @@ def get_check_history(
                     "at": p.created_at.isoformat(),
                     "status": p.status,
                     "metric_value": p.metric_value,
+                    "metric_value_redaction": p.metric_value_redaction,
                 }
                 for p in points
             ],
@@ -1435,6 +1478,13 @@ def list_runs(
     Those two statuses answer different questions and should not be merged: a run
     is ``succeeded`` when DataQ executed it, even if every check inside it failed.
 
+    The outcome is the one recorded when the run finished, so deleting a check later
+    does not change it. ``results_removed`` counts the result rows deleted with their
+    checks since; when it is above 0, ``get_run_results`` lists fewer checks than
+    ``checks_total`` says ran. A result deleted before the run's outcome was recorded
+    (a run that finished before DataQ recorded outcomes) is not counted, so 0 means
+    none is known to be missing.
+
     A run that has not finished successfully reports ``results_final: false`` and
     a **null** outcome (no counts, no severity) — it is still executing, or it
     failed without producing a complete account. Describe such a run by its
@@ -1491,6 +1541,7 @@ def list_runs(
         # One grouped query for the whole page's outcomes, not one per run — the
         # N+1 an LLM caller cannot see the cost of (#947).
         outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
+        removed = run_service.removed_result_counts(session, [r.id for r in runs])
         total = run_service.count_runs(
             session,
             user_id=user.id,
@@ -1524,7 +1575,7 @@ def list_runs(
                     "failure_reason": r.failure_reason,
                     # Why a `queued` run is still queued (#1998).
                     "queued_reason": r.queued_reason,
-                    **_run_outcome_fields(r, outcomes.get(r.id)),
+                    **_run_outcome_fields(r, outcomes.get(r.id), removed.get(r.id, 0)),
                 }
                 for r in runs
             ],
@@ -1554,7 +1605,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     (PII-redacted; see ``get_suite_results`` for what a null sample's
     ``redaction`` states mean, including ``"zero_sample"``, #1873, and for the
     ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
-    was masked — ``default_mask`` means never classified, not known personal data).
+    was masked — ``default_mask`` means never classified, not known personal data,
+    and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
+    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
@@ -1566,6 +1619,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     values and may postdate the result; null means the check is unknown, and
     ``engine`` is then null too rather than a default. ``name`` and ``check_enabled``
     are always current.
+
+    ``run.results_removed`` counts results deleted with their checks since the run
+    finished: ``checks`` then omits them, so it is not the whole run. Say so rather
+    than describing the remaining checks as everything the run evaluated.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and
@@ -3067,19 +3124,30 @@ def dryrun_check(
             detail={"expectation_type": expectation_type, "kind": kind},
             actor_kind="user",
         )
+        # The governance floor applies to a PREVIEW too (G3, #433). A dry-run reads
+        # live warehouse data and hands it to a model, so a tag honoured on the
+        # results path and not here would mask the column in the record and expose
+        # it in the rehearsal.
+        tags = _asset_column_tags(session, suite)
+        metric_redaction = run_service.metric_value_redaction(
+            outcome.metric_value,
+            tested_column=(config or {}).get("column"),
+            expectation_type=expectation_type,
+            observed=outcome.observed_value,
+            expected=outcome.expected_value,
+            policy=suite.column_policy,
+            tags=tags,
+        )
         return {
             "status": outcome.status,
-            "metric_value": _num(outcome.metric_value),
+            "metric_value": None if metric_redaction else _num(outcome.metric_value),
+            "metric_value_redaction": metric_redaction,
             "observed_value": live_probe.redact_probe_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
                 expectation_type=expectation_type,
                 policy=suite.column_policy,
-                # The governance floor applies to a PREVIEW too (G3, #433). A
-                # dry-run reads live warehouse data and hands it to a model, so a
-                # tag honoured on the results path and not here would mask the
-                # column in the record and expose it in the rehearsal.
-                tags=_asset_column_tags(session, suite),
+                tags=tags,
             ),
             "expected_value": outcome.expected_value,
         }
@@ -4578,10 +4646,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     the table that carries a detection, that run's or a retained earlier one,
     and that nothing classified — so it can exceed `columns_detected`),
     `aggregate`/`column`/`breached_bound` for
-    aggregate — its measured value is `failing_result.metric_value`, which is NOT
-    column-masked the way
-    `observed_value` is, so on a min/max over a policy-sensitive column it is one
-    real cell) instead of making you parse `failing_result.observed_value`'s
+    aggregate — its measured value is `failing_result.metric_value`; a min/max is
+    one real cell, so on a sensitive column it is null beside a non-null
+    `metric_value_redaction`, and so is every `metric_trend` and
+    `same_asset_siblings` entry measuring such a cell — a withheld number, not a
+    missing one) instead of making you parse `failing_result.observed_value`'s
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
     a comparison check — the common case, where `observed_value` already IS the
     shape. For a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly`/`pii_drift`

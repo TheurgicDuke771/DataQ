@@ -218,6 +218,48 @@ describe('RunDetail page', () => {
     expect(region.queryByText(/Deleted check/)).not.toBeInTheDocument();
   });
 
+  it('keeps the recorded outcome and says how many results were removed with deleted checks', async () => {
+    // The run recorded 3 evaluated checks, 1 passing; two of its results went with their checks.
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      checks_total: 3,
+      checks_passed: 1,
+      worst_severity: 'fail',
+      results_removed: 2,
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('1 / 3')).toBeInTheDocument();
+    expect(region.getByText(/2 results were removed with checks deleted/)).toBeInTheDocument();
+    expect(screen.getByTestId('report-removed-notice')).toHaveTextContent('2 results were removed');
+  });
+
+  it('says a run whose every result was removed lost them to deleted checks', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, results: [], results_removed: 1 });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText(/checks have been deleted since it ran/)).toBeInTheDocument();
+    expect(region.getByText(/1 result was removed/)).toBeInTheDocument();
+  });
+
+  it('shows no removal notice when nothing was removed', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, results_removed: 0 });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('0 / 1')).toBeInTheDocument();
+    expect(region.queryByText(/removed with checks deleted/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('report-removed-notice')).not.toBeInTheDocument();
+  });
+
   it('says a completed run with no results lost them to deleted checks (#1931)', async () => {
     mockGetRun.mockResolvedValue({ ...runDetail, status: 'succeeded', results: [] });
     mockGetSuite.mockResolvedValue(suite);
@@ -1064,6 +1106,23 @@ describe('RunDetail page', () => {
       const emDashes = within(report).getAllByText('—');
       // One for "Triggered by", one for the check row's "Metric" cell.
       expect(emDashes.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('marks a withheld min/max metric Masked in the table and the report, never as a dash', async () => {
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        results: [
+          { ...runDetail.results[0], metric_value: null, metric_value_redaction: 'policy' },
+        ],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByText('Masked')).toBeInTheDocument();
+      // The report's own Masked badge, plus the results table's.
+      expect(screen.getAllByText('Masked')).toHaveLength(2);
     });
 
     it('omits sample failing rows from the report (redaction parity with CSV/JSON, #226)', async () => {

@@ -123,6 +123,15 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         counts[result.status] = counts.get(result.status, 0) + 1
         check = checks.get(result.check_id)
         snap = as_of[result.id]
+        policy = suite.column_policy if suite is not None else None
+        metric = run_service.redact_metric_value(
+            result.metric_value,
+            as_of=snap,
+            policy=policy,
+            tags=tags,
+            observed=result.observed_value,
+            expected=result.expected_value,
+        )
         # Column-aware redaction (#415): the tested column (as of the result, #1613) surfaces when
         # non-PII; the suite policy + heuristics mask PII. The tracker names what was masked and
         # why (#2255), the same pair REST and MCP return.
@@ -138,9 +147,8 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 check_name=check.name if check is not None else "(deleted check)",
                 expectation_type=snap.expectation_type or "",
                 status=result.status,
-                metric_value=(
-                    float(result.metric_value) if result.metric_value is not None else None
-                ),
+                metric_value=float(metric.value) if metric.value is not None else None,
+                metric_value_redaction=metric.redaction,
                 observed_value=run_service.redact_observed_value(
                     result.observed_value,
                     tested_column=snap.column,

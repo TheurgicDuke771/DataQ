@@ -512,10 +512,11 @@ def execute_run(
 def _mark_succeeded(session: Session, run: Run) -> bool:
     """Flip a still-``running`` run to ``succeeded``; return whether it won (#318 G4)."""
     finished = _now()
+    recorded = recorded_outcome_values(session, run.id)
     result = session.execute(
         update(Run)
         .where(Run.id == run.id, Run.status == "running")
-        .values(status="succeeded", finished_at=finished, failure_reason=None)
+        .values(status="succeeded", finished_at=finished, failure_reason=None, **recorded)
     )
     won = cast("CursorResult[Any]", result).rowcount == 1
     session.commit()
@@ -525,7 +526,26 @@ def _mark_succeeded(session: Session, run: Run) -> bool:
     run.status = "succeeded"
     run.finished_at = finished
     run.failure_reason = None
+    for name, value in recorded.items():
+        setattr(run, name, value)
     return True
+
+
+def recorded_outcome_values(session: Session, run_id: uuid.UUID) -> dict[str, Any]:
+    """The `Run.recorded_*` values for a run's result rows as they stand now (#2348).
+
+    Called as a run succeeds, so the outcome survives a later check deletion, which
+    CASCADE-deletes that check's results.
+    """
+    session.flush()
+    by_status = status_histograms(session, [run_id]).get(run_id, {})
+    total, passed, worst = outcome_from_histogram(by_status)
+    return {
+        "recorded_results_total": sum(by_status.values()),
+        "recorded_checks_total": total,
+        "recorded_checks_passed": passed,
+        "recorded_worst_severity": worst,
+    }
 
 
 def _discard_results_if_any(session: Session, run: Run, *, published: bool) -> None:
@@ -548,6 +568,8 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
     session.add_all(rows)
     run.status = "succeeded"
     run.finished_at = _now()
+    for name, value in recorded_outcome_values(session, run.id).items():
+        setattr(run, name, value)
     session.commit()
     log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
     return run
@@ -693,7 +715,37 @@ def check_outcome_counts(
     warn/fail/critical present, else ``None`` (all passed / only operational).
     """
     histograms = status_histograms(session, run_ids, complete_runs_only=complete_runs_only)
-    return {run_id: outcome_from_histogram(by_status) for run_id, by_status in histograms.items()}
+    outcomes = {
+        run_id: outcome_from_histogram(by_status) for run_id, by_status in histograms.items()
+    }
+    # A recorded outcome wins (#2348): the rows behind a derived one shrink when a check is
+    # deleted. Only a succeeded run records one, so `complete_runs_only` needs no filter here.
+    if run_ids:
+        for run_id, total, passed, worst in session.execute(
+            select(
+                Run.id,
+                Run.recorded_checks_total,
+                Run.recorded_checks_passed,
+                Run.recorded_worst_severity,
+            ).where(Run.id.in_(run_ids), Run.recorded_checks_total.is_not(None))
+        ):
+            outcomes[run_id] = (int(total), int(passed or 0), worst)
+    return outcomes
+
+
+def removed_result_counts(session: Session, run_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Per run, how many of the result rows it recorded have since been deleted with their
+    check (#2348). Runs with nothing removed, or no recorded outcome, are absent.
+    """
+    if not run_ids:
+        return {}
+    present = select(func.count()).where(Result.run_id == Run.id).correlate(Run).scalar_subquery()
+    rows = session.execute(
+        select(Run.id, Run.recorded_results_total - present).where(
+            Run.id.in_(run_ids), Run.recorded_results_total.is_not(None)
+        )
+    )
+    return {run_id: int(removed) for run_id, removed in rows if removed > 0}
 
 
 def outcome_from_histogram(by_status: Mapping[str, int]) -> tuple[int, int, str | None]:
@@ -1352,6 +1404,8 @@ class CheckAsOf:
     column: str | None
     #: Where the snapshot came from (#1613) — see `CheckAsOfSource`; None = unknown check.
     resolved_from: CheckAsOfSource | None = None
+    #: An `aggregate` check's configured function (`min`, `max`, …), else None (#2240).
+    aggregate: str | None = None
 
     @property
     def context(self) -> tuple[str | None, str | None]:
@@ -1360,6 +1414,11 @@ class CheckAsOf:
 
 
 _UNKNOWN_CHECK = CheckAsOf(None, None, GX_ENGINE, None, None, None)
+
+
+def _config_aggregate(config: Mapping[str, Any] | None) -> str | None:
+    value = config.get("aggregate") if isinstance(config, Mapping) else None
+    return value if isinstance(value, str) else None
 
 
 def historical_check_snapshots_at[K: Hashable](
@@ -1399,6 +1458,7 @@ def historical_check_snapshots_at[K: Hashable](
             dimension=source.dimension,
             column=source.config.get("column"),
             resolved_from=resolved_from,
+            aggregate=_config_aggregate(source.config),
         )
 
     return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
@@ -1487,6 +1547,93 @@ def is_cell_scalar(expectation_type: str | None, observed: Mapping[str, Any] | N
         and observed is not None
         and observed.get("aggregate") in AGGREGATE_CELL_VALUES
     )
+
+
+def metric_is_cell(
+    expectation_type: str | None,
+    *,
+    aggregate: str | None = None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether a result's `metric_value` is one literal cell of the tested column (#2240): an
+    `aggregate` monitor measuring MIN or MAX. Every source that names the function is consulted
+    — the check as of the result (`aggregate`) and the result's own `observed_value` /
+    `expected_value` — and any one of them saying min/max is enough; an aggregate result that
+    nothing names fails closed. GX's own min/max expectations never put the cell in
+    `metric_value`, which holds their unexpected percent.
+    """
+    docs = [doc for doc in (observed, expected) if isinstance(doc, Mapping)]
+    if expectation_type is None:
+        if not any(doc.get("monitor") == AGGREGATE or "aggregate" in doc for doc in docs):
+            return False
+    elif expectation_type != _AGGREGATE_EXPECTATION_TYPE:
+        return False
+    named = [aggregate, *(doc.get("aggregate") for doc in docs)]
+    known = [name for name in named if name is not None]
+    return not known or any(name in AGGREGATE_CELL_VALUES for name in known)
+
+
+def metric_value_redaction(
+    metric_value: Any,
+    *,
+    tested_column: str | None,
+    expectation_type: str | None,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    aggregate: str | None = None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> RedactionReason | None:
+    """Why a result's `metric_value` must be withheld, or None when it may be shown (#2240).
+
+    Only a cell-valued metric (`metric_is_cell`) is ever withheld, and then on exactly the
+    ladder `redact_observed_value` applies to the same value under `observed_value`, so the two
+    fields always agree. A cell with no tested column fails closed (`default_mask`).
+    """
+    if metric_value is None:
+        return None
+    if not metric_is_cell(
+        expectation_type, aggregate=aggregate, observed=observed, expected=expected
+    ):
+        return None
+    if not tested_column:
+        return "default_mask"
+    value = float(metric_value) if isinstance(metric_value, Decimal) else metric_value
+    return _known_sensitive_reason(tested_column, [value], policy, tags)
+
+
+class RedactedMetric(NamedTuple):
+    """A `metric_value` as a read surface may emit it: `value` is None whenever `redaction`
+    names why it was withheld."""
+
+    value: Any
+    redaction: RedactionReason | None
+
+
+def redact_metric_value(
+    metric_value: Any,
+    *,
+    as_of: CheckAsOf,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> RedactedMetric:
+    """`metric_value` for a read surface, masked per `metric_value_redaction` against the check
+    as of the result (`historical_check_snapshots`) — the ONE helper every surface that emits a
+    result's metric goes through."""
+    reason = metric_value_redaction(
+        metric_value,
+        tested_column=as_of.column,
+        expectation_type=as_of.expectation_type,
+        aggregate=as_of.aggregate,
+        observed=observed,
+        expected=expected,
+        policy=policy,
+        tags=tags,
+    )
+    return RedactedMetric(None if reason else metric_value, reason)
 
 
 def _strip_row_level_observed_value(

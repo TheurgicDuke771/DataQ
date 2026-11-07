@@ -102,7 +102,7 @@ def build_evidence(
     `resolve_redaction_contexts` when building cards for a whole run, #1792).
     """
     now = datetime.now(UTC)
-    return {
+    card = {
         "generated_at": now.isoformat(),
         "check": _layer("check", lambda: _check_layer(check)),
         "contract": _layer("contract", lambda: _contract_layer(session, check)),
@@ -140,6 +140,131 @@ def build_evidence(
         # cheap. Documented null placeholder (see module docstring).
         "profile_diff": None,
     }
+    if context is not None:
+        policy, tags = context.policy, context.tags
+    else:
+        suite = session.get(Suite, run.suite_id)
+        policy = suite.column_policy if suite is not None else None
+        tags = effective_column_tags(session, asset)
+    try:
+        return mask_cell_metrics(
+            session,
+            card,
+            check_id=result.check_id,
+            at=result.created_at or now,
+            policy=policy,
+            tags=tags,
+        )
+    except Exception:
+        # Never store a value that could not be classified: drop the metric-bearing layers.
+        log.warning("incident_evidence_layer_failed", layer="metric_masking", exc_info=True)
+        return {**card, "failing_result": None, "metric_trend": None, "same_asset_siblings": None}
+
+
+_METRIC_LIST_LAYERS = ("metric_trend", "same_asset_siblings")
+
+
+def _entry_time(value: Any, fallback: datetime) -> datetime:
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return fallback
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return fallback
+
+
+def _entry_uuid(value: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
+def mask_cell_metrics(
+    session: Session,
+    evidence: dict[str, Any],
+    *,
+    check_id: uuid.UUID,
+    at: datetime,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    """Withhold every `metric_value` on the card that is one literal cell of a sensitive column
+    (#2240) — `failing_result`, each `metric_trend` point and each `same_asset_siblings` entry —
+    via `run_service.metric_value_redaction`, each against its check AS OF that reading. A
+    withheld metric becomes null beside `metric_value_redaction`; an already-withheld one is left
+    as is, so this is idempotent and can only ADD masking. ``policy`` is the incident suite's; a
+    sibling is masked under its OWN suite's policy and this asset's ``tags``.
+    """
+    # (layer, index) -> the entry and the check reading it measured.
+    entries: dict[tuple[str, int], dict[str, Any]] = {}
+    subjects: dict[tuple[str, int], tuple[uuid.UUID | None, datetime]] = {}
+    failing = evidence.get("failing_result")
+    if isinstance(failing, dict) and failing.get("metric_value") is not None:
+        entries[("failing_result", 0)] = failing
+        subjects[("failing_result", 0)] = (check_id, at)
+    for layer in _METRIC_LIST_LAYERS:
+        layer_entries = evidence.get(layer)
+        for i, entry in enumerate(layer_entries if isinstance(layer_entries, list) else []):
+            if not isinstance(entry, dict) or entry.get("metric_value") is None:
+                continue
+            sibling = layer == "same_asset_siblings"
+            entries[(layer, i)] = entry
+            subjects[(layer, i)] = (
+                _entry_uuid(entry.get("check_id")) if sibling else check_id,
+                _entry_time(entry.get("created_at"), at),
+            )
+    if not subjects:
+        return evidence
+    check_ids = {cid for cid, _at in subjects.values() if cid is not None}
+    checks = {c.id: c for c in session.scalars(select(Check).where(Check.id.in_(check_ids)))}
+    as_of = run_service.historical_check_snapshots_at(session, subjects, checks)
+    sibling_suite_ids = {
+        sid
+        for (layer, _i), entry in entries.items()
+        if layer == "same_asset_siblings" and (sid := _entry_uuid(entry.get("suite_id")))
+    }
+    sibling_policies: dict[uuid.UUID | None, Any] = {
+        s.id: s.column_policy
+        for s in session.scalars(select(Suite).where(Suite.id.in_(sibling_suite_ids)))
+    }
+
+    out = dict(evidence)
+    for key, entry in entries.items():
+        layer, i = key
+        snap = as_of[key]
+        if layer == "failing_result":
+            entry_policy = policy
+            observed, expected = entry.get("observed_value"), entry.get("expected_value")
+        else:
+            entry_policy = (
+                sibling_policies.get(_entry_uuid(entry.get("suite_id")))
+                if layer == "same_asset_siblings"
+                else policy
+            )
+            # A sibling whose check is gone resolves to no snapshot; its stored kind still names it.
+            observed, expected = {"monitor": entry.get("kind")}, None
+        reason = run_service.metric_value_redaction(
+            entry["metric_value"],
+            tested_column=snap.column,
+            expectation_type=snap.expectation_type,
+            aggregate=snap.aggregate,
+            observed=observed if isinstance(observed, dict) else None,
+            expected=expected if isinstance(expected, dict) else None,
+            policy=entry_policy,
+            tags=tags,
+        )
+        if reason is None:
+            continue
+        masked = {**entry, "metric_value": None, "metric_value_redaction": reason}
+        if layer == "failing_result":
+            out[layer] = masked
+        else:
+            if out[layer] is evidence[layer]:
+                out[layer] = list(evidence[layer])
+            out[layer][i] = masked
+    return out
 
 
 def _check_layer(check: Check | None) -> dict[str, Any] | None:

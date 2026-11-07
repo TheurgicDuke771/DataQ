@@ -1,11 +1,12 @@
 import { triggeredByText, type RunDetail as RunDetailType } from '../../api/runs';
-import { checkLabel, noResultsMessage } from './runResultLabels';
+import { checkLabel, noResultsMessage, removedResultsNotice } from './runResultLabels';
 import type { Check } from '../../api/suites';
 import { DIMENSION_LABEL, type DqDimension } from '../checks/expectationCatalog';
 import { engineShortLabel } from '../checks/checkBadges';
 import { isSnoozed } from '../checks/snooze';
 import { checkAsOf, currentSuffix } from './checkAsOf';
 import { isSampled, sampledCoverage } from './samplingFormat';
+import { MetricValue } from './MetricValue';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 import { formatSig } from '../../utils/formatNumber';
 
@@ -59,6 +60,7 @@ export function RunReport({
   };
   // The same parity rule, applied to sampled-ness (#595/#1325).
   const { sampled, evaluated } = sampledCoverage(run.results);
+  const removedNotice = removedResultsNotice(run.results_removed);
 
   return (
     <div className="print-only rd-report" data-testid="run-report">
@@ -85,6 +87,12 @@ export function RunReport({
             <th scope="row">Duration</th>
             <td>{formatDuration(run.started_at, run.finished_at)}</td>
           </tr>
+          {removedNotice && (
+            <tr>
+              <th scope="row">Removed results</th>
+              <td data-testid="report-removed-notice">{removedNotice}</td>
+            </tr>
+          )}
           {sampled > 0 && (
             <tr>
               <th scope="row">Coverage</th>
@@ -106,7 +114,7 @@ export function RunReport({
       )}
 
       {run.results.length === 0 ? (
-        <p>{noResultsMessage(run.status)}</p>
+        <p>{noResultsMessage(run.status, run.results_removed)}</p>
       ) : (
         <table className="rd-report-table" aria-label="Per-check results">
           <thead>
@@ -132,7 +140,13 @@ export function RunReport({
                 <td>{engineLabel(r)}</td>
                 <td>{dimensionLabel(r)}</td>
                 <td>{r.status}</td>
-                <td>{r.metric_value === null ? '—' : formatSig(r.metric_value)}</td>
+                <td>
+                  <MetricValue
+                    value={r.metric_value}
+                    redaction={r.metric_value_redaction}
+                    format={formatSig}
+                  />
+                </td>
                 <td>{formatScalar(r.observed_value)}</td>
               </tr>
             ))}

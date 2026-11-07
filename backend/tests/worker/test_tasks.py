@@ -1,15 +1,17 @@
 """Tests for the run_suite Celery task orchestration."""
 
 import uuid
+from collections import Counter
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
 from backend.app.datasources.base import CheckOutcome, CheckSpec, SuiteOutcome
 from backend.app.datasources.flatfile import BatchNotFoundError
-from backend.app.db.models import Check, Connection, Run, Suite
+from backend.app.db.models import Check, Connection, Result, Run, Suite
 from backend.app.lineage import dispatch as lineage_dispatch
 from backend.app.services import run_service, run_target
 from backend.app.worker import tasks
@@ -56,7 +58,13 @@ class FakeSession:
         agree or the double describes a state the DB could not be in.
         """
         self.executed.append(_stmt)
+        if isinstance(_stmt, Select):  # the status histogram a succeeded run records (#2348)
+            counts = Counter((r.run_id, r.status) for r in self.added if isinstance(r, Result))
+            return SimpleNamespace(all=lambda: [(rid, st, n) for (rid, st), n in counts.items()])
         return SimpleNamespace(rowcount=1)
+
+    def flush(self) -> None:
+        pass
 
     def add_all(self, rows: list[Any]) -> None:
         self.added.extend(rows)

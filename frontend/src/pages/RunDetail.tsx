@@ -41,6 +41,7 @@ import {
   checkExportName,
   checkLabel,
   noResultsMessage,
+  removedResultsNotice,
 } from '../components/results/runResultLabels';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
@@ -53,6 +54,7 @@ import { Page } from '../components/layout/Page';
 import { RunReport } from '../components/results/RunReport';
 import { SampledRunNotice, SampledTag } from '../components/results/sampling';
 import { isSampled } from '../components/results/samplingFormat';
+import { MetricValue, metricMaskedText } from '../components/results/MetricValue';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -61,8 +63,6 @@ import { formatSig, fullNumber } from '../utils/formatNumber';
 import { PageError } from '../components/feedback/PageError';
 import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
 
-/** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
-const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
 /** Tiers a result must breach for an incident to exist at all (`db.models.FAILING_TIERS`) — warn
  *  included, not just fail/critical (`incident_service._sync_incidents_for_run` opens/attaches on
  *  any of the three). */
@@ -230,10 +230,9 @@ function RunDetailBody({
   }, [incidents]);
   const [evidenceIncidentId, setEvidenceIncidentId] = useState<string | null>(null);
 
-  // "Checks passed" counts only evaluated (severity-tier) results — skip/error didn't evaluate a
-  // severity, so they're excluded from the denominator.
-  const evaluated = run.results.filter((r) => SEVERITY_STATUSES.has(r.status));
-  const passed = evaluated.filter((r) => r.status === 'pass').length;
+  // The outcome recorded when the run finished, not one counted from `run.results`: results are
+  // deleted with their checks, so a count of the rows would shrink with every deletion.
+  const removedNotice = removedResultsNotice(run.results_removed);
 
   return (
     <Flex vertical gap={16}>
@@ -269,7 +268,7 @@ function RunDetailBody({
           <RunStatusTag status={run.status} />
         </Stat>
         <Stat label="Checks passed">
-          {evaluated.length === 0 ? '—' : `${passed} / ${evaluated.length}`}
+          {run.checks_total === 0 ? '—' : `${run.checks_passed} / ${run.checks_total}`}
         </Stat>
         <Stat label="Triggered by">{triggeredByText(run)}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
@@ -280,6 +279,10 @@ function RunDetailBody({
           run header rather than inside the table — a reader who scans the
           "6 / 7 passed" card must not walk away without it (#595/#1325). */}
       <SampledRunNotice results={run.results} />
+
+      {removedNotice && (
+        <Alert type="warning" showIcon title="Results removed" description={removedNotice} />
+      )}
 
       {run.status === 'failed' && run.failure_reason && (
         <Alert
@@ -293,6 +296,7 @@ function RunDetailBody({
       <ResultsTable
         results={run.results}
         runStatus={run.status}
+        resultsRemoved={run.results_removed}
         checksKnown={checksKnown}
         checks={checksById}
         suiteId={run.suite_id}
@@ -372,7 +376,7 @@ function DownloadMenu({
         asOf(r)?.dimension ?? '',
         exportSource(asOf(r)?.source),
         r.status,
-        r.metric_value,
+        r.metric_value_redaction ? metricMaskedText(r.metric_value_redaction) : r.metric_value,
         exportScalar(r.observed_value),
         isSampled(r) ? 'yes' : 'no',
       ]),
@@ -402,6 +406,7 @@ function DownloadMenu({
         check_as_of: exportSource(asOf(r)?.source) || null,
         status: r.status,
         metric_value: r.metric_value,
+        metric_value_redaction: r.metric_value_redaction ?? null,
         observed_value: r.observed_value,
         expected_value: r.expected_value,
         // The whole record here, not just a flag: JSON is the machine-readable artifact most likely
@@ -609,6 +614,7 @@ function SampleFailures({
 function ResultsTable({
   results,
   runStatus,
+  resultsRemoved,
   checksKnown,
   checks,
   suiteId,
@@ -618,6 +624,7 @@ function ResultsTable({
 }: {
   results: Result[];
   runStatus: RunStatus;
+  resultsRemoved?: number;
   checksKnown: boolean;
   checks: Map<string, Check>;
   suiteId: string;
@@ -627,7 +634,7 @@ function ResultsTable({
   onViewIncident: (incidentId: string) => void;
 }) {
   if (results.length === 0) {
-    return <Empty description={noResultsMessage(runStatus)} />;
+    return <Empty description={noResultsMessage(runStatus, resultsRemoved)} />;
   }
   const columns: ColumnsType<Result> = [
     {
@@ -728,9 +735,9 @@ function ResultsTable({
       title: 'Metric',
       dataIndex: 'metric_value',
       width: 90,
-      render: (v: number | null) =>
-        v === null ? (
-          '—'
+      render: (v: number | null, record: Result) =>
+        v === null || record.metric_value_redaction ? (
+          <MetricValue value={v} redaction={record.metric_value_redaction} />
         ) : (
           <span title={fullNumber(v)} data-testid="metric-value">
             {formatSig(v)}

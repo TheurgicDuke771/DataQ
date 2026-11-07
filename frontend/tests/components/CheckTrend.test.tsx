@@ -409,6 +409,38 @@ describe('CheckTrend', () => {
     expect(within(rows[2]).getByText('pass')).toBeInTheDocument();
   });
 
+  it('says a masked min/max reading is masked — on the chart and in the table — never "no metric"', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 1, created_at: '2026-06-10T00:00:00Z' },
+      {
+        run_id: 'r2',
+        status: 'fail',
+        metric_value: null,
+        metric_value_redaction: 'policy',
+        created_at: '2026-06-11T00:00:00Z',
+      },
+    ]);
+    render(<CheckTrend suiteId="s1" check={expectationCheck} />);
+
+    expect(await screen.findByTestId('metric-masked-note')).toHaveTextContent(
+      '1 reading(s) not plotted',
+    );
+    const { default: userEvent } = await import('@testing-library/user-event');
+    await userEvent.setup().click(screen.getByText('Table'));
+    const rows = within(await screen.findByRole('table')).getAllByRole('row');
+    expect(within(rows[1]).getByText('Masked')).toBeInTheDocument();
+    expect(within(rows[1]).queryByText('—')).not.toBeInTheDocument();
+  });
+
+  it('shows no masked note when nothing is masked', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 1, created_at: '2026-06-10T00:00:00Z' },
+    ]);
+    render(<CheckTrend suiteId="s1" check={expectationCheck} />);
+    await screen.findByText('Chart');
+    expect(screen.queryByTestId('metric-masked-note')).not.toBeInTheDocument();
+  });
+
   it('table fallback also lists anomaly baseline observations when present', async () => {
     mockHistory.mockResolvedValue([
       { run_id: 'r1', status: 'pass', metric_value: 0.2, created_at: '2026-06-10T00:00:00Z' },
