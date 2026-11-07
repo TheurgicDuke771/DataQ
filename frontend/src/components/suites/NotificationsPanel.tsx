@@ -22,7 +22,7 @@ import { useIsWorkspaceAdmin } from '../../auth/useMe';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { useFocusFallback } from '../../hooks/useFocusFallback';
-import { errorMessage } from '../../utils/errors';
+import { errorMessage, fetchFailure } from '../../utils/errors';
 import { Modal } from '../shared/Modal';
 
 const ALERT_ON_OPTIONS: { value: AlertOn; label: string }[] = [
@@ -124,7 +124,7 @@ export function NotificationsPanel({
             setPromoting(undefined);
             restoreFocus();
           }}
-          onPromoted={() => {
+          onChanged={() => {
             setChannelsEpoch((n) => n + 1);
             refocusAfterReload.current = true;
             reload();
@@ -387,7 +387,7 @@ function PromoteModal({
   label,
   onClose,
   afterClose,
-  onPromoted,
+  onChanged,
 }: {
   open: boolean;
   afterClose: () => void;
@@ -395,7 +395,8 @@ function PromoteModal({
   destination: LegacyDestination;
   label: string;
   onClose: () => void;
-  onPromoted: () => void;
+  /** Reload after a promote, or after one refused because the suite changed. */
+  onChanged: () => void;
 }) {
   const { message } = App.useApp();
   const [name, setName] = useState('');
@@ -405,7 +406,19 @@ function PromoteModal({
   const onOk = () => {
     if (loading) return; // Enter held down, or pressed again before the first call returns
     void run(async () => {
-      const result = await promoteSuiteDestination(suiteId, destination, trimmed);
+      let result;
+      try {
+        result = await promoteSuiteDestination(suiteId, destination, trimmed);
+      } catch (err) {
+        // 409: the legacy value changed underneath (another admin promoted or cleared it).
+        // Close and reload, so the card shows the suite's current state beside the error
+        // instead of offering an action that can no longer succeed.
+        if (fetchFailure(err).status === 409) {
+          onClose();
+          onChanged();
+        }
+        throw err;
+      }
       if (result.workspace_default_now_applies) {
         message.warning(
           `Promoted to "${result.channel.name}". A workspace default is configured for ` +
@@ -416,7 +429,7 @@ function PromoteModal({
         message.success(`Promoted to "${result.channel.name}"`);
       }
       onClose();
-      onPromoted();
+      onChanged();
     });
   };
 

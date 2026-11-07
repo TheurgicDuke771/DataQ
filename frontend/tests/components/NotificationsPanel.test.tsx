@@ -1,3 +1,4 @@
+import { AxiosError, AxiosHeaders } from 'axios';
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -238,6 +239,33 @@ describe('NotificationsPanel', () => {
     expect(await screen.findByText(/Could not promote the destination: boom/)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Channel name' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes and reloads when the promote is refused because the suite changed', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    // Another admin cleared the value first: the reload shows no legacy destination.
+    mockGet.mockResolvedValueOnce({ ...CONFIG, has_webhook: true }).mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockPromote.mockRejectedValue(
+      new AxiosError('Request failed with status code 409', 'ERR_BAD_REQUEST', undefined, null, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { error: { code: 'nothing_to_promote', message: 'nothing to promote' } },
+      }),
+    );
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: /^Promote to channel/ }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
+    await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
+
+    expect(await screen.findByText(/Could not promote the destination/)).toBeInTheDocument();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByText('Legacy inline destinations')).not.toBeInTheDocument(),
+    );
   });
 
   it('surfaces a save failure', async () => {
