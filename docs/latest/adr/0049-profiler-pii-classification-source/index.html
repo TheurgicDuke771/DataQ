@@ -2487,6 +2487,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-a-runs-own-detection-and-its-own-samples-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — a run's own detection and its own samples (2026-11-07)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2671,6 +2682,32 @@ DataQ can hold.</p>
 <li><strong>Adding new detectors in this change:</strong> each is new detection with its own false-positive
   surface, in a cycle scoped to no net-new features.</li>
 </ul>
+<h2 id="amendment-a-runs-own-detection-and-its-own-samples-2026-11-07">Amendment — a run's own detection and its own samples (2026-11-07)<a class="headerlink" href="#amendment-a-runs-own-detection-and-its-own-samples-2026-11-07" title="Permanent link">¶</a></h2>
+<p>A run of a suite with a <code>pii_drift</code> check detects in its last phase (the stateful monitors), and
+that detection commits with the run. Every earlier phase used to commit as it finished, so
+another reader (the results API, MCP) could read that run's failing samples while the detection
+that masks them was not yet saved. Alerts and incident cards were never affected: they are built
+after the run's terminal commit.</p>
+<p><strong>Decision:</strong> a run whose checks include a <code>pii_drift</code> check commits nothing before its terminal
+commit, so its samples and its detections become visible together. Other suites keep publishing
+each phase as it finishes.</p>
+<p><strong>What was checked and is not changed.</strong> The worker stores failing samples unmasked on every run;
+every read path masks them with the policy, tags and detections current at the time of the read
+(the column-aware ladder). So no run's stored row is masked at rest, and run 1's stored row is
+no different from run 2's. The run's value-signal gate is built before the detection, which only
+means that run takes the population sample for the column: the gate errs towards more evidence.</p>
+<p><strong>Considered and rejected:</strong></p>
+<ul>
+<li><strong>Re-masking the stored samples after the stateful phase.</strong> There is no capture-time masker
+  to re-apply, and masking only the first run's rows at rest would leave every later run's
+  rows unmasked. It would also not close the gap, because the rows were already readable.</li>
+<li><strong>Running the profile before the other phases.</strong> Its detections would be committed by the
+  next phase's commit, with its baseline, which breaks the rule that stateful writes ride the
+  terminal commit.</li>
+<li><strong>Documenting the gap and keeping it.</strong> It was a real exposure, and closing it costs only
+  per-phase progress on the suites that run this check.</li>
+</ul>
+<p><strong>Cost:</strong> for those suites the run-progress view shows the checks completing together at the end.</p>
 
 
 

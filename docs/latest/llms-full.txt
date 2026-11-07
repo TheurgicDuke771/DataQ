@@ -5469,6 +5469,10 @@ section below.
   Snowflake connector takes around its OCSP-response and CRL caches. The Snowflake connector moves
   to 4.8.1 (a patch release) to allow it; no configuration change is needed.
 - **Dependency security updates.** The CA bundle (`certifi`) moves to 2026.10.19 for PYSEC-2026-4320. `follow-redirects`, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+- **A run with a PII drift check no longer shows failing samples before that run's detections are
+  saved.** Such a run now publishes all its results together when it finishes, so a column the
+  run's profile detects for the first time is already masked when its samples can be read. The
+  run-progress view of these suites shows their checks completing together at the end.
 - **Dependency security updates.** `databricks-sql-connector` moves to 4.8.0, which allows
   `oauthlib` 4, and `oauthlib` moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
   as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP
@@ -11616,6 +11620,12 @@ stops masking is a **workspace admin dismissing it** on the asset page (**Detect
 data**), which is recorded in the audit log with the column and both states; a dismissal survives
 a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
 carries the values stays visible. There is no MCP tool for dismissal.
+
+A suite with a **PII drift** check profiles its table during every run, and that profile can
+detect a column for the first time. Such a run publishes all its results together when it
+finishes, rather than check by check, so none of its failing samples can be read before the
+detection that masks them is saved. The run-progress view of that suite therefore shows its
+checks completing all at once, at the end.
 
 The asset detail (`GET /api/v1/assets/{id}`, MCP `get_asset`) lists every detection, dismissed
 ones included, each with its **effect**: `masks`, `overridden_by_tag` (the column's own warehouse
@@ -20125,6 +20135,37 @@ DataQ can hold.
   reached by changing six call sites and every future one, instead of one function.
 - **Adding new detectors in this change:** each is new detection with its own false-positive
   surface, in a cycle scoped to no net-new features.
+
+## Amendment — a run's own detection and its own samples (2026-11-07)
+
+A run of a suite with a `pii_drift` check detects in its last phase (the stateful monitors), and
+that detection commits with the run. Every earlier phase used to commit as it finished, so
+another reader (the results API, MCP) could read that run's failing samples while the detection
+that masks them was not yet saved. Alerts and incident cards were never affected: they are built
+after the run's terminal commit.
+
+**Decision:** a run whose checks include a `pii_drift` check commits nothing before its terminal
+commit, so its samples and its detections become visible together. Other suites keep publishing
+each phase as it finishes.
+
+**What was checked and is not changed.** The worker stores failing samples unmasked on every run;
+every read path masks them with the policy, tags and detections current at the time of the read
+(the column-aware ladder). So no run's stored row is masked at rest, and run 1's stored row is
+no different from run 2's. The run's value-signal gate is built before the detection, which only
+means that run takes the population sample for the column: the gate errs towards more evidence.
+
+**Considered and rejected:**
+
+- **Re-masking the stored samples after the stateful phase.** There is no capture-time masker
+  to re-apply, and masking only the first run's rows at rest would leave every later run's
+  rows unmasked. It would also not close the gap, because the rows were already readable.
+- **Running the profile before the other phases.** Its detections would be committed by the
+  next phase's commit, with its baseline, which breaks the rule that stateful writes ride the
+  terminal commit.
+- **Documenting the gap and keeping it.** It was a real exposure, and closing it costs only
+  per-phase progress on the suites that run this check.
+
+**Cost:** for those suites the run-progress view shows the checks completing together at the end.
 
 
 ---

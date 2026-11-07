@@ -3866,6 +3866,11 @@ stops masking is a <strong>workspace admin dismissing it</strong> on the asset p
 data</strong>), which is recorded in the audit log with the column and both states; a dismissal survives
 a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
 carries the values stays visible. There is no MCP tool for dismissal.</p>
+<p>A suite with a <strong>PII drift</strong> check profiles its table during every run, and that profile can
+detect a column for the first time. Such a run publishes all its results together when it
+finishes, rather than check by check, so none of its failing samples can be read before the
+detection that masks them is saved. The run-progress view of that suite therefore shows its
+checks completing all at once, at the end.</p>
 <p>The asset detail (<code>GET /api/v1/assets/{id}</code>, MCP <code>get_asset</code>) lists every detection, dismissed
 ones included, each with its <strong>effect</strong>: <code>masks</code>, <code>overridden_by_tag</code> (the column's own warehouse
 tag decides instead, either way) or <code>dismissed</code>. It also carries the time a <strong>full</strong> profile

@@ -130,3 +130,34 @@ DataQ can hold.
   reached by changing six call sites and every future one, instead of one function.
 - **Adding new detectors in this change:** each is new detection with its own false-positive
   surface, in a cycle scoped to no net-new features.
+
+## Amendment — a run's own detection and its own samples (2026-11-07)
+
+A run of a suite with a `pii_drift` check detects in its last phase (the stateful monitors), and
+that detection commits with the run. Every earlier phase used to commit as it finished, so
+another reader (the results API, MCP) could read that run's failing samples while the detection
+that masks them was not yet saved. Alerts and incident cards were never affected: they are built
+after the run's terminal commit.
+
+**Decision:** a run whose checks include a `pii_drift` check commits nothing before its terminal
+commit, so its samples and its detections become visible together. Other suites keep publishing
+each phase as it finishes.
+
+**What was checked and is not changed.** The worker stores failing samples unmasked on every run;
+every read path masks them with the policy, tags and detections current at the time of the read
+(the column-aware ladder). So no run's stored row is masked at rest, and run 1's stored row is
+no different from run 2's. The run's value-signal gate is built before the detection, which only
+means that run takes the population sample for the column: the gate errs towards more evidence.
+
+**Considered and rejected:**
+
+- **Re-masking the stored samples after the stateful phase.** There is no capture-time masker
+  to re-apply, and masking only the first run's rows at rest would leave every later run's
+  rows unmasked. It would also not close the gap, because the rows were already readable.
+- **Running the profile before the other phases.** Its detections would be committed by the
+  next phase's commit, with its baseline, which breaks the rule that stateful writes ride the
+  terminal commit.
+- **Documenting the gap and keeping it.** It was a real exposure, and closing it costs only
+  per-phase progress on the suites that run this check.
+
+**Cost:** for those suites the run-progress view shows the checks completing together at the end.

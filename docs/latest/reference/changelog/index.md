@@ -18,6 +18,10 @@ section below.
   Snowflake connector takes around its OCSP-response and CRL caches. The Snowflake connector moves
   to 4.8.1 (a patch release) to allow it; no configuration change is needed.
 - **Dependency security updates.** The CA bundle (`certifi`) moves to 2026.10.19 for PYSEC-2026-4320. `follow-redirects`, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+- **A run with a PII drift check no longer shows failing samples before that run's detections are
+  saved.** Such a run now publishes all its results together when it finishes, so a column the
+  run's profile detects for the first time is already masked when its samples can be read. The
+  run-progress view of these suites shows their checks completing together at the end.
 - **Dependency security updates.** `databricks-sql-connector` moves to 4.8.0, which allows
   `oauthlib` 4, and `oauthlib` moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
   as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP
