@@ -41,6 +41,8 @@ def _check_payload(check: CheckReport) -> dict[str, Any]:
         "expectation_type": check.expectation_type,
         "status": check.status,
         "metric_value": check.metric_value,
+        # Non-null when `metric_value` was withheld (sent as null) — #2240.
+        "metric_value_redaction": check.metric_value_redaction,
         # Already redacted upstream (builder.py, via the same column-aware ladder
         # every other alert surface uses) — the webhook payload does no
         # redaction of its own, it just carries what RunReport already carries.

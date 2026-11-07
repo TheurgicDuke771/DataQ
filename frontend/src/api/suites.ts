@@ -1,6 +1,7 @@
 import { api } from './client';
 import type { CoverageLevel } from './coverage';
 import { apiPath } from './path';
+import type { RedactionReason } from './runs';
 
 /** Suites API — a suite is a named bundle of DQ checks bound to one connection. */
 
@@ -433,6 +434,9 @@ export interface CheckResultPoint {
   run_id: string;
   status: string;
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   created_at: string;
   /** A per-period anomaly result's period and what it was scored against. */
   seasonal?: SeasonalPoint | null;
@@ -543,6 +547,9 @@ export interface CheckDryRunRequest {
 export interface CheckDryRunResult {
   status: string; // pass | warn | fail | critical
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
 }

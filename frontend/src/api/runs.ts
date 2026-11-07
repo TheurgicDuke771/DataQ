@@ -54,6 +54,9 @@ export interface Result {
   check_id: string;
   status: ResultStatus;
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   duration_ms: number | null;
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
@@ -281,13 +284,16 @@ export interface ComparisonSide {
   result_id: string;
   status: ResultStatus;
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   observed_value: Record<string, unknown> | null;
   check: ComparisonCheck;
 }
 
 export interface ComparisonDelta {
   status_change: StatusChange;
-  /** Target minus base; null when either side has no metric. */
+  /** Target minus base; null when either side has no metric or withholds it. */
   metric_delta: number | null;
   /** Relative to a non-zero base; null otherwise. */
   metric_delta_pct: number | null;

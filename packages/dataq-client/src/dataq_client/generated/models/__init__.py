@@ -67,12 +67,18 @@ from .check_dry_run_request import CheckDryRunRequest
 from .check_dry_run_request_config import CheckDryRunRequestConfig
 from .check_dry_run_result import CheckDryRunResult
 from .check_dry_run_result_expected_value_type_0 import CheckDryRunResultExpectedValueType0
+from .check_dry_run_result_metric_value_redaction_type_0 import (
+    CheckDryRunResultMetricValueRedactionType0,
+)
 from .check_dry_run_result_observed_value_type_0 import CheckDryRunResultObservedValueType0
 from .check_progress_read import CheckProgressRead
 from .check_read import CheckRead
 from .check_read_config import CheckReadConfig
 from .check_read_contract_ref_type_0 import CheckReadContractRefType0
 from .check_result_point_read import CheckResultPointRead
+from .check_result_point_read_metric_value_redaction_type_0 import (
+    CheckResultPointReadMetricValueRedactionType0,
+)
 from .check_snooze_request import CheckSnoozeRequest
 from .check_suggestion_request import CheckSuggestionRequest
 from .check_update import CheckUpdate
@@ -106,6 +112,9 @@ from .comparison_delta_read_status_change import ComparisonDeltaReadStatusChange
 from .comparison_row_read import ComparisonRowRead
 from .comparison_run_read import ComparisonRunRead
 from .comparison_side_read import ComparisonSideRead
+from .comparison_side_read_metric_value_redaction_type_0 import (
+    ComparisonSideReadMetricValueRedactionType0,
+)
 from .comparison_side_read_observed_value_type_0 import ComparisonSideReadObservedValueType0
 from .comparison_summary_read import ComparisonSummaryRead
 from .compliance_read import ComplianceRead
@@ -270,6 +279,7 @@ from .read_all_result import ReadAllResult
 from .readyz_response_readyz import ReadyzResponseReadyz
 from .result_read import ResultRead
 from .result_read_expected_value_type_0 import ResultReadExpectedValueType0
+from .result_read_metric_value_redaction_type_0 import ResultReadMetricValueRedactionType0
 from .result_read_observed_value_type_0 import ResultReadObservedValueType0
 from .result_read_redaction_reasons import ResultReadRedactionReasons
 from .result_read_redaction_reasons_additional_property import (
@@ -454,12 +464,14 @@ __all__ = (
     "CheckDryRunRequestConfig",
     "CheckDryRunResult",
     "CheckDryRunResultExpectedValueType0",
+    "CheckDryRunResultMetricValueRedactionType0",
     "CheckDryRunResultObservedValueType0",
     "CheckProgressRead",
     "CheckRead",
     "CheckReadConfig",
     "CheckReadContractRefType0",
     "CheckResultPointRead",
+    "CheckResultPointReadMetricValueRedactionType0",
     "CheckSnoozeRequest",
     "CheckSuggestionRequest",
     "CheckUpdate",
@@ -491,6 +503,7 @@ __all__ = (
     "ComparisonRowRead",
     "ComparisonRunRead",
     "ComparisonSideRead",
+    "ComparisonSideReadMetricValueRedactionType0",
     "ComparisonSideReadObservedValueType0",
     "ComparisonSummaryRead",
     "ComplianceRead",
@@ -651,6 +664,7 @@ __all__ = (
     "ReadyzResponseReadyz",
     "ResultRead",
     "ResultReadExpectedValueType0",
+    "ResultReadMetricValueRedactionType0",
     "ResultReadObservedValueType0",
     "ResultReadRedactionReasons",
     "ResultReadRedactionReasonsAdditionalProperty",

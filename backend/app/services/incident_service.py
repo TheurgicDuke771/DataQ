@@ -29,6 +29,7 @@ from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.incident_evidence import (
     RedactionContext,
     build_evidence,
+    mask_cell_metrics,
     resolve_redaction_contexts,
 )
 from backend.app.services.run_service import list_results
@@ -207,31 +208,40 @@ def redact_stale_evidence(session: Session) -> int:
     # One lineage walk per asset, not per incident.
     tags_by_asset: dict[Any, dict[str, str] | None] = {}
     for incident in incidents:
-        evidence = incident.evidence
-        if not evidence:
+        stored = incident.evidence
+        if not stored:
             continue
-        failing = evidence.get("failing_result")
-        if not isinstance(failing, dict) or "observed_value" not in failing:
-            continue
-        observed = failing["observed_value"]
         suite = suites.get(incident.suite_id)
         asset = assets.get(incident.asset_id)
-        tested_column, expectation_type = context.get(incident.id, (None, None))
+        policy = suite.column_policy if suite is not None else None
         if incident.asset_id not in tags_by_asset:
             tags_by_asset[incident.asset_id] = effective_column_tags(session, asset)
-        redacted = run_service.redact_observed_value(
-            observed,
-            tested_column=tested_column,
-            expectation_type=expectation_type,
-            policy=suite.column_policy if suite is not None else None,
-            tags=tags_by_asset[incident.asset_id],
+        tags = tags_by_asset[incident.asset_id]
+        # #2240: the card's cell-valued metrics, then (#1772) the failing observed_value.
+        evidence = mask_cell_metrics(
+            session,
+            stored,
+            check_id=incident.check_id,
+            at=incident.last_seen_at,
+            policy=policy,
+            tags=tags,
         )
-        if redacted == observed:
+        failing = evidence.get("failing_result")
+        if isinstance(failing, dict) and "observed_value" in failing:
+            tested_column, expectation_type = context.get(incident.id, (None, None))
+            observed = failing["observed_value"]
+            redacted = run_service.redact_observed_value(
+                observed,
+                tested_column=tested_column,
+                expectation_type=expectation_type,
+                policy=policy,
+                tags=tags,
+            )
+            if redacted != observed:
+                evidence = {**evidence, "failing_result": {**failing, "observed_value": redacted}}
+        if evidence == stored:
             continue
-        incident.evidence = {
-            **evidence,
-            "failing_result": {**failing, "observed_value": redacted},
-        }
+        incident.evidence = evidence
         updated += 1
 
     if updated:
@@ -538,11 +548,22 @@ def _redacted_as_of_now(
     a suite runs on it, and column pairs arrive with the daily refresh. Redacting an
     already-redacted value is a no-op, so this can only ever ADD masking to what is served.
     """
+    suite = session.get(Suite, incident.suite_id)
+    asset = session.get(Asset, incident.asset_id)
+    policy = suite.column_policy if suite is not None else None
+    tags = effective_column_tags(session, asset)
+    # Every cell-valued metric on the card too (#2240), each against its check as of that reading.
+    evidence = mask_cell_metrics(
+        session,
+        evidence,
+        check_id=incident.check_id,
+        at=incident.last_seen_at,
+        policy=policy,
+        tags=tags,
+    )
     failing = evidence.get("failing_result")
     if not isinstance(failing, dict) or "observed_value" not in failing:
         return evidence
-    suite = session.get(Suite, incident.suite_id)
-    asset = session.get(Asset, incident.asset_id)
     check = session.get(Check, incident.check_id)
     context = run_service.historical_check_context_at(
         session,
@@ -555,8 +576,8 @@ def _redacted_as_of_now(
         observed,
         tested_column=tested_column,
         expectation_type=expectation_type,
-        policy=suite.column_policy if suite is not None else None,
-        tags=effective_column_tags(session, asset),
+        policy=policy,
+        tags=tags,
     )
     if redacted == observed:
         return evidence

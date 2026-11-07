@@ -8,6 +8,11 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.comparison_side_read_metric_value_redaction_type_0 import (
+    ComparisonSideReadMetricValueRedactionType0,
+)
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.check_as_of_read import CheckAsOfRead
     from ..models.comparison_side_read_observed_value_type_0 import (
@@ -38,6 +43,7 @@ class ComparisonSideRead:
             observed_value (ComparisonSideReadObservedValueType0 | None):
             result_id (UUID):
             status (str):
+            metric_value_redaction (ComparisonSideReadMetricValueRedactionType0 | None | Unset):
     """
 
     check: CheckAsOfRead
@@ -45,6 +51,7 @@ class ComparisonSideRead:
     observed_value: ComparisonSideReadObservedValueType0 | None
     result_id: UUID
     status: str
+    metric_value_redaction: ComparisonSideReadMetricValueRedactionType0 | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,6 +74,14 @@ class ComparisonSideRead:
 
         status = self.status
 
+        metric_value_redaction: None | str | Unset
+        if isinstance(self.metric_value_redaction, Unset):
+            metric_value_redaction = UNSET
+        elif isinstance(self.metric_value_redaction, ComparisonSideReadMetricValueRedactionType0):
+            metric_value_redaction = self.metric_value_redaction.value
+        else:
+            metric_value_redaction = self.metric_value_redaction
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -78,6 +93,8 @@ class ComparisonSideRead:
                 "status": status,
             }
         )
+        if metric_value_redaction is not UNSET:
+            field_dict["metric_value_redaction"] = metric_value_redaction
 
         return field_dict
 
@@ -117,12 +134,34 @@ class ComparisonSideRead:
 
         status = d.pop("status")
 
+        def _parse_metric_value_redaction(
+            data: object,
+        ) -> ComparisonSideReadMetricValueRedactionType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                metric_value_redaction_type_0 = ComparisonSideReadMetricValueRedactionType0(data)
+
+                return metric_value_redaction_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ComparisonSideReadMetricValueRedactionType0 | None | Unset, data)
+
+        metric_value_redaction = _parse_metric_value_redaction(
+            d.pop("metric_value_redaction", UNSET)
+        )
+
         comparison_side_read = cls(
             check=check,
             metric_value=metric_value,
             observed_value=observed_value,
             result_id=result_id,
             status=status,
+            metric_value_redaction=metric_value_redaction,
         )
 
         comparison_side_read.additional_properties = d

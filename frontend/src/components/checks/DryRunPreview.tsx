@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import type { ResultStatus } from '../../api/runs';
 import { type CheckDryRunResult, dryRunCheck, targetString } from '../../api/suites';
+import { MetricValue } from '../results/MetricValue';
 import { ScalarValue } from '../results/ScalarValue';
 import { buildCheckPayload } from './checkForm';
 import { errorMessage } from '../../utils/errors';
@@ -107,7 +108,9 @@ function DryRunResultView({ result }: { result: CheckDryRunResult }) {
         {
           key: 'metric',
           label: 'Metric',
-          children: result.metric_value === null ? '—' : result.metric_value,
+          children: (
+            <MetricValue value={result.metric_value} redaction={result.metric_value_redaction} />
+          ),
         },
         {
           key: 'observed',

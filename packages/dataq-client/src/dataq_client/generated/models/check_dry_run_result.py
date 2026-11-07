@@ -7,6 +7,11 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.check_dry_run_result_metric_value_redaction_type_0 import (
+    CheckDryRunResultMetricValueRedactionType0,
+)
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.check_dry_run_result_expected_value_type_0 import (
         CheckDryRunResultExpectedValueType0,
@@ -27,12 +32,14 @@ class CheckDryRunResult:
         metric_value (float | None):
         observed_value (CheckDryRunResultObservedValueType0 | None):
         status (str):
+        metric_value_redaction (CheckDryRunResultMetricValueRedactionType0 | None | Unset):
     """
 
     expected_value: CheckDryRunResultExpectedValueType0 | None
     metric_value: float | None
     observed_value: CheckDryRunResultObservedValueType0 | None
     status: str
+    metric_value_redaction: CheckDryRunResultMetricValueRedactionType0 | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,6 +67,14 @@ class CheckDryRunResult:
 
         status = self.status
 
+        metric_value_redaction: None | str | Unset
+        if isinstance(self.metric_value_redaction, Unset):
+            metric_value_redaction = UNSET
+        elif isinstance(self.metric_value_redaction, CheckDryRunResultMetricValueRedactionType0):
+            metric_value_redaction = self.metric_value_redaction.value
+        else:
+            metric_value_redaction = self.metric_value_redaction
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -70,6 +85,8 @@ class CheckDryRunResult:
                 "status": status,
             }
         )
+        if metric_value_redaction is not UNSET:
+            field_dict["metric_value_redaction"] = metric_value_redaction
 
         return field_dict
 
@@ -123,11 +140,33 @@ class CheckDryRunResult:
 
         status = d.pop("status")
 
+        def _parse_metric_value_redaction(
+            data: object,
+        ) -> CheckDryRunResultMetricValueRedactionType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                metric_value_redaction_type_0 = CheckDryRunResultMetricValueRedactionType0(data)
+
+                return metric_value_redaction_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CheckDryRunResultMetricValueRedactionType0 | None | Unset, data)
+
+        metric_value_redaction = _parse_metric_value_redaction(
+            d.pop("metric_value_redaction", UNSET)
+        )
+
         check_dry_run_result = cls(
             expected_value=expected_value,
             metric_value=metric_value,
             observed_value=observed_value,
             status=status,
+            metric_value_redaction=metric_value_redaction,
         )
 
         check_dry_run_result.additional_properties = d

@@ -53,6 +53,7 @@ import { Page } from '../components/layout/Page';
 import { RunReport } from '../components/results/RunReport';
 import { SampledRunNotice, SampledTag } from '../components/results/sampling';
 import { isSampled } from '../components/results/samplingFormat';
+import { MetricValue, metricMaskedText } from '../components/results/MetricValue';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -372,7 +373,7 @@ function DownloadMenu({
         asOf(r)?.dimension ?? '',
         exportSource(asOf(r)?.source),
         r.status,
-        r.metric_value,
+        r.metric_value_redaction ? metricMaskedText(r.metric_value_redaction) : r.metric_value,
         exportScalar(r.observed_value),
         isSampled(r) ? 'yes' : 'no',
       ]),
@@ -402,6 +403,7 @@ function DownloadMenu({
         check_as_of: exportSource(asOf(r)?.source) || null,
         status: r.status,
         metric_value: r.metric_value,
+        metric_value_redaction: r.metric_value_redaction ?? null,
         observed_value: r.observed_value,
         expected_value: r.expected_value,
         // The whole record here, not just a flag: JSON is the machine-readable artifact most likely
@@ -728,9 +730,9 @@ function ResultsTable({
       title: 'Metric',
       dataIndex: 'metric_value',
       width: 90,
-      render: (v: number | null) =>
-        v === null ? (
-          '—'
+      render: (v: number | null, record: Result) =>
+        v === null || record.metric_value_redaction ? (
+          <MetricValue value={v} redaction={record.metric_value_redaction} />
         ) : (
           <span title={fullNumber(v)} data-testid="metric-value">
             {formatSig(v)}

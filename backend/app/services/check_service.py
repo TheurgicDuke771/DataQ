@@ -1946,6 +1946,8 @@ class CheckResultPoint:
     created_at: datetime
     #: A per-period anomaly result's period and what it was scored against (ADR 0048).
     seasonal: dict[str, Any] | None = None
+    #: Why `metric_value` was withheld (None when it is as recorded) — #2240.
+    metric_value_redaction: str | None = None
 
 
 def _number(value: Any) -> float | None:
@@ -1989,33 +1991,60 @@ def list_check_result_history(
     """A check's recent results in chronological order (oldest→newest) for the
     per-check trend (ADR 0022). 404 if the check is missing or cross-suite.
     """
+    from backend.app.services import run_service
+
     check = get_check(session, suite_id, check_id)  # 404 / cross-suite guard
     # Only a per-period anomaly result carries a seasonal point; any other check's payload
     # (a comparison's buckets, a column profile) is not read at all.
     per_period = check.kind == "anomaly" and isinstance(check.config.get("date_column"), str)
     stmt = (
         select(
-            Result.run_id,
             Result.status,
             Result.metric_value,
-            Run.created_at,
             Result.observed_value if per_period else null(),
+            Result.created_at,
+            Result.observed_value["aggregate"].astext,
+            Result.expected_value["aggregate"].astext,
+            Run,
         )
         .join(Run, Result.run_id == Run.id)
         .where(Result.check_id == check_id, Run.suite_id == suite_id)
         .order_by(Run.created_at.desc())
         .limit(limit)
     )
-    rows = [
-        CheckResultPoint(
-            run_id=run_id,
-            status=status,
-            metric_value=float(metric_value) if metric_value is not None else None,
-            created_at=created_at,
-            seasonal=seasonal_point(observed),
+    fetched = session.execute(stmt).all()
+    # Masked against the check AS OF each result and the tags of the asset that run read (#2240)
+    # — the ladder `GET /runs/{id}` applies to the same value.
+    as_of = run_service.historical_check_snapshots_at(
+        session, {i: (check_id, row[3]) for i, row in enumerate(fetched)}, {check.id: check}
+    )
+    suite = get_suite(session, suite_id)
+    tags_by_asset: dict[uuid.UUID | None, dict[str, str] | None] = {}
+    rows = []
+    for i, (status, metric_value, observed, _at, observed_agg, expected_agg, run) in enumerate(
+        fetched
+    ):
+        asset_id = run.asset_id or suite.asset_id
+        if asset_id not in tags_by_asset:
+            tags_by_asset[asset_id] = run_service.asset_column_tags(session, suite, run)
+        metric = run_service.redact_metric_value(
+            metric_value,
+            as_of=as_of[i],
+            policy=suite.column_policy,
+            tags=tags_by_asset[asset_id],
+            observed={"aggregate": observed_agg} if observed_agg is not None else None,
+            expected={"aggregate": expected_agg} if expected_agg is not None else None,
         )
-        for run_id, status, metric_value, created_at, observed in session.execute(stmt)
-    ]
+        rows.append(
+            CheckResultPoint(
+                run_id=run.id,
+                status=status,
+                metric_value=float(metric.value) if metric.value is not None else None,
+                created_at=run.created_at,
+                seasonal=seasonal_point(observed),
+                metric_value_redaction=metric.redaction,
+            )
+        )
     rows.reverse()  # chronological for the chart x-axis
     return rows
 

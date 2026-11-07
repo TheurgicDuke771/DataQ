@@ -33,6 +33,7 @@ import {
   TOOLTIP_STYLE,
 } from '../charts/chartTheme';
 import type { ResultStatus } from '../../api/runs';
+import { MetricValue } from '../results/MetricValue';
 import { formatTimestamp } from '../results/resultsFormat';
 import { formatTick } from '../../utils/formatNumber';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
@@ -279,6 +280,7 @@ export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTren
   const attached = [...attachedIds(check), ...promoted];
   const declared = (calendar ?? []).filter((p) => attached.includes(p.id));
   const withMetric = history.filter((p) => p.metric_value !== null);
+  const masked = history.filter((p) => p.metric_value_redaction).length;
   const bands = thresholdBands(check);
   const observations = parseObservations(baseline);
   const anomalyMeta = parseAnomalyMeta(baseline);
@@ -310,6 +312,15 @@ export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTren
       {view === 'chart' ? (
         <>
           <MetricChart points={withMetric} bands={bands} />
+          {masked > 0 && (
+            <Typography.Text
+              type="secondary"
+              style={{ display: 'block', marginTop: 4, fontSize: 12 }}
+              data-testid="metric-masked-note"
+            >
+              {`${masked} reading(s) not plotted: this min/max records one cell of a column marked sensitive, so its value is masked. Their status is in the Table view.`}
+            </Typography.Text>
+          )}
           {withMetric.length > 0 && (
             <StatusMarkerKey
               statuses={[...new Set(withMetric.map((p) => p.status as ResultStatus))]}
@@ -704,7 +715,9 @@ function TrendTable({
           {
             title: 'Metric',
             dataIndex: 'metric_value',
-            render: (v: number | null) => (v === null ? '—' : v),
+            render: (v: number | null, point: CheckResultPoint) => (
+              <MetricValue value={v} redaction={point.metric_value_redaction} />
+            ),
           },
           {
             title: 'Status',

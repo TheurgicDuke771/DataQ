@@ -1349,6 +1349,8 @@ class CheckAsOf:
     column: str | None
     #: Where the snapshot came from (#1613) — see `CheckAsOfSource`; None = unknown check.
     resolved_from: CheckAsOfSource | None = None
+    #: An `aggregate` check's configured function (`min`, `max`, …), else None (#2240).
+    aggregate: str | None = None
 
     @property
     def context(self) -> tuple[str | None, str | None]:
@@ -1357,6 +1359,11 @@ class CheckAsOf:
 
 
 _UNKNOWN_CHECK = CheckAsOf(None, None, GX_ENGINE, None, None, None)
+
+
+def _config_aggregate(config: Mapping[str, Any] | None) -> str | None:
+    value = config.get("aggregate") if isinstance(config, Mapping) else None
+    return value if isinstance(value, str) else None
 
 
 def historical_check_snapshots_at[K: Hashable](
@@ -1396,6 +1403,7 @@ def historical_check_snapshots_at[K: Hashable](
             dimension=source.dimension,
             column=source.config.get("column"),
             resolved_from=resolved_from,
+            aggregate=_config_aggregate(source.config),
         )
 
     return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
@@ -1484,6 +1492,93 @@ def is_cell_scalar(expectation_type: str | None, observed: Mapping[str, Any] | N
         and observed is not None
         and observed.get("aggregate") in AGGREGATE_CELL_VALUES
     )
+
+
+def metric_is_cell(
+    expectation_type: str | None,
+    *,
+    aggregate: str | None = None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether a result's `metric_value` is one literal cell of the tested column (#2240): an
+    `aggregate` monitor measuring MIN or MAX. Every source that names the function is consulted
+    — the check as of the result (`aggregate`) and the result's own `observed_value` /
+    `expected_value` — and any one of them saying min/max is enough; an aggregate result that
+    nothing names fails closed. GX's own min/max expectations never put the cell in
+    `metric_value`, which holds their unexpected percent.
+    """
+    docs = [doc for doc in (observed, expected) if isinstance(doc, Mapping)]
+    if expectation_type is None:
+        if not any(doc.get("monitor") == AGGREGATE or "aggregate" in doc for doc in docs):
+            return False
+    elif expectation_type != _AGGREGATE_EXPECTATION_TYPE:
+        return False
+    named = [aggregate, *(doc.get("aggregate") for doc in docs)]
+    known = [name for name in named if name is not None]
+    return not known or any(name in AGGREGATE_CELL_VALUES for name in known)
+
+
+def metric_value_redaction(
+    metric_value: Any,
+    *,
+    tested_column: str | None,
+    expectation_type: str | None,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    aggregate: str | None = None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> RedactionReason | None:
+    """Why a result's `metric_value` must be withheld, or None when it may be shown (#2240).
+
+    Only a cell-valued metric (`metric_is_cell`) is ever withheld, and then on exactly the
+    ladder `redact_observed_value` applies to the same value under `observed_value`, so the two
+    fields always agree. A cell with no tested column fails closed (`default_mask`).
+    """
+    if metric_value is None:
+        return None
+    if not metric_is_cell(
+        expectation_type, aggregate=aggregate, observed=observed, expected=expected
+    ):
+        return None
+    if not tested_column:
+        return "default_mask"
+    value = float(metric_value) if isinstance(metric_value, Decimal) else metric_value
+    return _known_sensitive_reason(tested_column, [value], policy, tags)
+
+
+class RedactedMetric(NamedTuple):
+    """A `metric_value` as a read surface may emit it: `value` is None whenever `redaction`
+    names why it was withheld."""
+
+    value: Any
+    redaction: RedactionReason | None
+
+
+def redact_metric_value(
+    metric_value: Any,
+    *,
+    as_of: CheckAsOf,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    observed: Mapping[str, Any] | None = None,
+    expected: Mapping[str, Any] | None = None,
+) -> RedactedMetric:
+    """`metric_value` for a read surface, masked per `metric_value_redaction` against the check
+    as of the result (`historical_check_snapshots`) — the ONE helper every surface that emits a
+    result's metric goes through."""
+    reason = metric_value_redaction(
+        metric_value,
+        tested_column=as_of.column,
+        expectation_type=as_of.expectation_type,
+        aggregate=as_of.aggregate,
+        observed=observed,
+        expected=expected,
+        policy=policy,
+        tags=tags,
+    )
+    return RedactedMetric(None if reason else metric_value, reason)
 
 
 def _strip_row_level_observed_value(

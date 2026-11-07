@@ -83,6 +83,8 @@ class ResultSide:
     metric_value: float | None
     observed_value: dict[str, Any] | None
     check: CheckIdentity
+    #: Why `metric_value` was withheld (None when it is as recorded) — `redact_metric_value`.
+    metric_value_redaction: svc.RedactionReason | None = None
 
 
 @dataclass(frozen=True)
@@ -127,10 +129,19 @@ def _sides(
     sides: dict[uuid.UUID, ResultSide] = {}
     for result in results:
         snap = as_of[result.id]
+        metric = svc.redact_metric_value(
+            result.metric_value,
+            as_of=snap,
+            policy=policy,
+            tags=tags,
+            observed=result.observed_value,
+            expected=result.expected_value,
+        )
         sides[result.check_id] = ResultSide(
             result_id=result.id,
             status=result.status,
-            metric_value=_number(result.metric_value),
+            metric_value=_number(metric.value),
+            metric_value_redaction=metric.redaction,
             # The same redaction path the run-detail read uses — never a raw observed sample.
             observed_value=svc.redact_observed_value(
                 result.observed_value,
@@ -199,13 +210,17 @@ def compare_runs(db: Session, *, base: Run, target: Run, suite: Suite, actor: An
     _record_access(db, actor, base, base_sides)
     _record_access(db, actor, target, target_sides)
 
+    # A withheld metric (#2240) yields no delta, but whether it changed is still stated truly.
+    recorded = {r.id: _number(r.metric_value) for r in base_results + target_results}
     rows: list[ComparisonRow] = []
     for check_id in set(base_sides) | set(target_sides):
         b, t = base_sides.get(check_id), target_sides.get(check_id)
         change = status_change(b.status if b else None, t.status if t else None)
-        b_metric = b.metric_value if b else None
-        t_metric = t.metric_value if t else None
-        absolute, percent = metric_delta(b_metric, t_metric)
+        absolute, percent = metric_delta(
+            b.metric_value if b else None, t.metric_value if t else None
+        )
+        b_metric = recorded[b.result_id] if b else None
+        t_metric = recorded[t.result_id] if t else None
         side_for_label = t or b
         assert side_for_label is not None  # nosec B101 — the union guarantees a side
         rows.append(
