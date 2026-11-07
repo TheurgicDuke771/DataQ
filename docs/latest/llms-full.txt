@@ -5722,6 +5722,10 @@ section below.
   settings tables carry a database check that refuses a second row, as the coverage and telemetry
   settings already did. The upgrade stops with the table named, instead of deleting anything, if a
   deployment somehow holds a row with another id.
+- **A refused promote no longer leaves a stale destination card.** When promoting a suite's inline
+  destination to a channel failed because another admin had already promoted or cleared it, the
+  dialog stayed open over a card that still offered the action. The dialog now closes and the
+  suite's notification settings reload beside the error.
 - **A suggested value set over a column classified as sensitive after it was proposed is no
   longer readable or acceptable.** A suggested rule's value set was screened only when it was
   proposed, so a column later marked sensitive (by the suite's column policy, a warehouse tag or
