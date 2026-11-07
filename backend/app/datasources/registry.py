@@ -22,7 +22,7 @@ from backend.app.datasources.base import (
     SampleSpec,
     TargetShapeError,
 )
-from backend.app.datasources.flatfile import FlatFileCheckRunner
+from backend.app.datasources.flatfile import FILE_FORMATS, FlatFileCheckRunner
 from backend.app.datasources.gcs import GcsConnectionAdapter
 from backend.app.datasources.generic_sql import (
     GenericSqlConnectionAdapter,
@@ -353,9 +353,10 @@ def _flatfile_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
             "'pattern' (batch), not both"
         )
     file_format = target.get("file_format")
-    if file_format is not None and file_format not in ("csv", "parquet", "json"):
+    if file_format is not None and file_format not in FILE_FORMATS:
         raise TargetShapeError(
-            f"flat-file target file_format must be csv, parquet or json, not {file_format!r}"
+            f"flat-file target file_format must be one of {sorted(FILE_FORMATS)}, "
+            f"not {file_format!r}"
         )
     if "pattern" in target:
         return ResolvedTarget(
