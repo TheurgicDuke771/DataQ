@@ -941,6 +941,12 @@ class Run(Base):
         # Results read, which is `suite_id IN (<accessible suites>)` and so cannot use
         # `ix_runs_suite_created`) and, by filtered index scan, the `?status=` one.
         Index("ix_runs_created_id", text("created_at DESC"), text("id DESC")),
+        _in_check("recorded_worst_severity", FAILING_TIERS, "recorded_worst_severity_valid"),
+        CheckConstraint(
+            "recorded_checks_passed >= 0 AND recorded_checks_passed <= recorded_checks_total"
+            " AND recorded_checks_total <= recorded_results_total",
+            name="outcome_counts_valid",
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -965,6 +971,13 @@ class Run(Base):
     # Why a `queued` run is still queued (#1998) — `awaiting_worker_memory` when admission
     # control is holding it back. NULL means the ordinary case: waiting on the broker.
     queued_reason: Mapped[str | None] = mapped_column(String(64))
+    # The outcome as it stood when the run finished (#2348): `results.check_id` is CASCADE, so
+    # one derived from the remaining rows shrinks when a check is deleted. `recorded_results_total`
+    # counts every row, skip and error included. NULL = not recorded (in flight, or older).
+    recorded_results_total: Mapped[int | None] = mapped_column(Integer)
+    recorded_checks_total: Mapped[int | None] = mapped_column(Integer)
+    recorded_checks_passed: Mapped[int | None] = mapped_column(Integer)
+    recorded_worst_severity: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = _created_at()
 
 
