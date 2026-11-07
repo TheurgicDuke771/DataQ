@@ -262,6 +262,8 @@ section below.
   with unreadable options; it now always opens at the picker's full width.
 - **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- **Opening another run from a run's page shows that run.** Picking a run in the command palette
+  while a run detail page was open changed the address but kept showing the first run.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
