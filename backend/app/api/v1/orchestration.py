@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -24,7 +25,11 @@ from backend.app.orchestration.base import (
 )
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import webhook_secret_service
-from backend.app.services.orchestration_service import ingest_event, request_immediate_poll
+from backend.app.services.orchestration_service import (
+    ingest_event,
+    request_immediate_poll,
+    stale_alert_reason,
+)
 
 log = get_logger(__name__)
 
@@ -63,6 +68,19 @@ async def _ack_event(
             pipeline=update.pipeline_or_dag_id,
         )
         if update.monitor_condition == "fired":
+            stale = stale_alert_reason(
+                update,
+                now=datetime.now(UTC),
+                max_age=timedelta(minutes=get_settings().orchestration_alert_max_age_minutes),
+            )
+            if stale is not None:
+                log.warning(
+                    "orchestration_alert_ping_stale",
+                    provider=provider_impl.provider,
+                    reason=stale,
+                    fired_at=update.fired_at.isoformat() if update.fired_at else None,
+                )
+                return EventAck(status="ignored")
             enqueued = await run_in_threadpool(
                 request_immediate_poll, provider_impl.provider, update.resource_name
             )

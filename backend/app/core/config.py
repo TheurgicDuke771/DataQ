@@ -389,6 +389,10 @@ class Settings(BaseSettings):
     # How long a REGENERATED webhook secret's previous value keeps working (#1701), so the
     # provider-side update is not a race. 0 revokes the old value immediately.
     webhook_secret_grace_minutes: int = 15
+    # An alert webhook (e.g. Azure Monitor's firedDateTime) older than this, or dated in the
+    # future, is acknowledged but starts no poll: replay protection (#2311). The 10-minute poll
+    # still picks the run up.
+    orchestration_alert_max_age_minutes: int = Field(default=60, ge=1)
 
     # SecretStore key for the workspace Teams webhook URL (token-bearing, so it lives in the
     # SecretStore).
