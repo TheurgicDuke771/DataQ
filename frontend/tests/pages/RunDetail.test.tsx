@@ -1040,6 +1040,23 @@ describe('RunDetail page', () => {
       expect(emDashes.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('marks a withheld min/max metric Masked in the table and the report, never as a dash', async () => {
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        results: [
+          { ...runDetail.results[0], metric_value: null, metric_value_redaction: 'policy' },
+        ],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByText('Masked')).toBeInTheDocument();
+      // The report's own Masked badge, plus the results table's.
+      expect(screen.getAllByText('Masked')).toHaveLength(2);
+    });
+
     it('omits sample failing rows from the report (redaction parity with CSV/JSON, #226)', async () => {
       mockGetRun.mockResolvedValue(runDetail);
       mockGetSuite.mockResolvedValue(suite);

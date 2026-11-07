@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { RcaNarrative } from './llm';
+import type { RedactionReason } from './runs';
 
 /**
  * Incidents API — the stateful, deduped, evidence-carrying roll-up of the per-result alert signal
@@ -57,6 +58,9 @@ export interface EvidenceAssetLayer {
 export interface EvidenceFailingResultLayer {
   status: string;
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
 }
@@ -64,6 +68,9 @@ export interface EvidenceFailingResultLayer {
 export interface EvidenceTrendPoint {
   status: string;
   metric_value: number | null;
+  /** Set when the API withheld `metric_value` (sent as null): an `aggregate` min/max is one
+   *  cell of a sensitive column. Absent on a response from an older API. */
+  metric_value_redaction?: RedactionReason | null;
   created_at: string | null;
   run_id: string;
 }

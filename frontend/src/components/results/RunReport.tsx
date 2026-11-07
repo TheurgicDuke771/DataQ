@@ -6,6 +6,7 @@ import { engineShortLabel } from '../checks/checkBadges';
 import { isSnoozed } from '../checks/snooze';
 import { checkAsOf, currentSuffix } from './checkAsOf';
 import { isSampled, sampledCoverage } from './samplingFormat';
+import { MetricValue } from './MetricValue';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
 
 /**
@@ -131,7 +132,9 @@ export function RunReport({
                 <td>{engineLabel(r)}</td>
                 <td>{dimensionLabel(r)}</td>
                 <td>{r.status}</td>
-                <td>{r.metric_value ?? '—'}</td>
+                <td>
+                  <MetricValue value={r.metric_value} redaction={r.metric_value_redaction} />
+                </td>
                 <td>{formatScalar(r.observed_value)}</td>
               </tr>
             ))}

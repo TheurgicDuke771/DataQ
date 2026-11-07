@@ -128,6 +128,15 @@ class ResultRead(ApiModel):
     check_id: uuid.UUID
     status: str  # pass | warn | fail | critical | skip | error
     metric_value: float | None
+    metric_value_redaction: svc.RedactionReason | None = Field(
+        default=None,
+        description=(
+            "Non-null when `metric_value` was withheld (sent as null): the metric is one literal "
+            "cell of the tested column (an `aggregate` min/max) and that column is sensitive. "
+            "The value names the rung that masked it, in the `redaction_reasons` vocabulary. "
+            "Null means `metric_value` is as recorded."
+        ),
+    )
     duration_ms: int | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
@@ -216,6 +225,8 @@ class ComparisonSideRead(ApiModel):
     result_id: uuid.UUID
     status: str  # pass | warn | fail | critical | skip | error
     metric_value: float | None
+    #: As on `ResultRead`: non-null when `metric_value` was withheld (sent as null).
+    metric_value_redaction: svc.RedactionReason | None = None
     observed_value: dict[str, Any] | None
     check: CheckAsOfRead
 
@@ -225,9 +236,10 @@ class ComparisonDeltaRead(ApiModel):
     `changed` is a transition through `skip`/`error`, which carry no rank;
     `added`/`removed` mean the check has a result on only one side. `metric_delta`
     is target minus base, `metric_delta_pct` relative to a non-zero base; both null
-    when either side has no metric. `metric_changed` is true whenever the two
-    metrics differ — including when only ONE side has one, in which case the deltas
-    are null because no difference can be stated.
+    when either side has no metric or withholds it (`metric_value_redaction`).
+    `metric_changed` is true whenever the two recorded metrics differ — including when
+    only ONE side has one, or a side's metric is withheld, in which case the deltas are
+    null because no difference can be stated.
     """
 
     status_change: run_comparison.StatusChange
@@ -391,6 +403,14 @@ def _result_read(
     (column, type), `zero_sample_suppressed` (kind, engine) and the `check` block alike.
     """
     tested_column, expectation_type = as_of.context
+    metric = svc.redact_metric_value(
+        result.metric_value,
+        as_of=as_of,
+        policy=policy,
+        tags=tags,
+        observed=result.observed_value,
+        expected=result.expected_value,
+    )
     zero_sample = svc.zero_sample_suppressed(
         status=result.status,
         check_kind=as_of.kind,
@@ -408,7 +428,8 @@ def _result_read(
         id=result.id,
         check_id=result.check_id,
         status=result.status,
-        metric_value=result.metric_value,
+        metric_value=metric.value,
+        metric_value_redaction=metric.redaction,
         duration_ms=result.duration_ms,
         observed_value=svc.redact_observed_value(
             result.observed_value,

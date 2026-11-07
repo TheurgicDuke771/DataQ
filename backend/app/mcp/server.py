@@ -516,7 +516,7 @@ def _run_results_payload(
                 # `run_service.CheckAsOfSource` (#1613).
                 "check_resolved_from": as_of[r.id].resolved_from,
                 "status": r.status,
-                "metric_value": _num(r.metric_value),
+                **_redacted_metric(r, as_of[r.id], policy, tags),
                 # How much of the dataset this check actually saw (#595).
                 # `None` = a complete read. Without it an AI client reads a
                 # green board from a 2% sample and reports full-dataset
@@ -596,6 +596,26 @@ def _redacted_sample(
         # Why each one was (#2255): the same keys as `redacted_columns`, a closed vocabulary.
         "redaction_reasons": redacted.redaction_reasons,
     }
+
+
+def _redacted_metric(
+    result: Any,
+    as_of: run_service.CheckAsOf,
+    policy: dict[str, Any] | None,
+    tags: dict[str, str] | None,
+) -> dict[str, Any]:
+    """`metric_value` plus `metric_value_redaction` (#2240): a min/max aggregate's metric is one
+    cell of the tested column, so on a sensitive column it is withheld (null) and the reason
+    names the rung — a withheld metric must never read as "this check records no metric"."""
+    metric = run_service.redact_metric_value(
+        result.metric_value,
+        as_of=as_of,
+        policy=policy,
+        tags=tags,
+        observed=result.observed_value,
+        expected=result.expected_value,
+    )
+    return {"metric_value": _num(metric.value), "metric_value_redaction": metric.redaction}
 
 
 # ─────────────────────────────── read tools ────────────────────────────────
@@ -748,8 +768,13 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     "zero_sample"`` (#1873) is a THIRD reading of a null sample: this
     deployment's zero-sample privacy mode never persisted one for this
     failing/erroring result at all, distinct from a genuinely sample-free check
-    (e.g. a passing one). Returns an empty result set if the suite has never
-    run. Requires at least view access to the suite.
+    (e.g. a passing one). A null ``metric_value`` beside a non-null
+    ``metric_value_redaction`` means the metric was WITHHELD, not absent: an
+    ``aggregate`` min/max measures one literal cell of its column, so on a
+    sensitive column it is masked on the same ladder as ``observed_value`` (the
+    reason uses the ``redaction_reasons`` vocabulary) — say it was masked, never
+    that the check measured nothing. Returns an empty result set if the suite has
+    never run. Requires at least view access to the suite.
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the values that applied to this particular result, resolved from the
@@ -1141,7 +1166,12 @@ def get_check_history(
     the run id, the run's timestamp, the check's status on that run
     (pass / warn / fail / critical / skip / error) and its ``metric_value`` — the
     number the check measured, when it measures one (row count, hours since the
-    last row, z-score…), or null for a check that records no metric.
+    last row, z-score…), or null for a check that records no metric. A null
+    ``metric_value`` with a non-null ``metric_value_redaction`` is different: an
+    ``aggregate`` min/max measures one literal cell of its column, so on a
+    sensitive column the value is withheld (the reason uses the
+    ``redaction_reasons`` vocabulary of ``get_run_results``). Its status still
+    trends; its number does not, so do not describe a masked point as "no metric".
 
     This is *result* history, not edit history: it says how the check performed,
     not how its definition changed. **For how the check's definition changed —
@@ -1185,6 +1215,7 @@ def get_check_history(
                     "at": p.created_at.isoformat(),
                     "status": p.status,
                     "metric_value": p.metric_value,
+                    "metric_value_redaction": p.metric_value_redaction,
                 }
                 for p in points
             ],
@@ -1554,7 +1585,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     (PII-redacted; see ``get_suite_results`` for what a null sample's
     ``redaction`` states mean, including ``"zero_sample"``, #1873, and for the
     ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
-    was masked — ``default_mask`` means never classified, not known personal data).
+    was masked — ``default_mask`` means never classified, not known personal data,
+    and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
+    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
@@ -3065,19 +3098,30 @@ def dryrun_check(
             detail={"expectation_type": expectation_type, "kind": kind},
             actor_kind="user",
         )
+        # The governance floor applies to a PREVIEW too (G3, #433). A dry-run reads
+        # live warehouse data and hands it to a model, so a tag honoured on the
+        # results path and not here would mask the column in the record and expose
+        # it in the rehearsal.
+        tags = _asset_column_tags(session, suite)
+        metric_redaction = run_service.metric_value_redaction(
+            outcome.metric_value,
+            tested_column=(config or {}).get("column"),
+            expectation_type=expectation_type,
+            observed=outcome.observed_value,
+            expected=outcome.expected_value,
+            policy=suite.column_policy,
+            tags=tags,
+        )
         return {
             "status": outcome.status,
-            "metric_value": _num(outcome.metric_value),
+            "metric_value": None if metric_redaction else _num(outcome.metric_value),
+            "metric_value_redaction": metric_redaction,
             "observed_value": live_probe.redact_probe_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
                 expectation_type=expectation_type,
                 policy=suite.column_policy,
-                # The governance floor applies to a PREVIEW too (G3, #433). A
-                # dry-run reads live warehouse data and hands it to a model, so a
-                # tag honoured on the results path and not here would mask the
-                # column in the record and expose it in the rehearsal.
-                tags=_asset_column_tags(session, suite),
+                tags=tags,
             ),
             "expected_value": outcome.expected_value,
         }
@@ -4576,10 +4620,11 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     the table that carries a detection, that run's or a retained earlier one,
     and that nothing classified — so it can exceed `columns_detected`),
     `aggregate`/`column`/`breached_bound` for
-    aggregate — its measured value is `failing_result.metric_value`, which is NOT
-    column-masked the way
-    `observed_value` is, so on a min/max over a policy-sensitive column it is one
-    real cell) instead of making you parse `failing_result.observed_value`'s
+    aggregate — its measured value is `failing_result.metric_value`; a min/max is
+    one real cell, so on a sensitive column it is null beside a non-null
+    `metric_value_redaction`, and so is every `metric_trend` and
+    `same_asset_siblings` entry measuring such a cell — a withheld number, not a
+    missing one) instead of making you parse `failing_result.observed_value`'s
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
     a comparison check — the common case, where `observed_value` already IS the
     shape. For a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly`/`pii_drift`

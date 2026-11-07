@@ -256,6 +256,11 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   the boundary, column-aware**: a suite's **column policy** (auto-derived by a classifier or
   set by hand) keeps non-sensitive breach values debuggable while masking PII columns to
   `<redacted>`. The numeric counts and row/column shape are kept.
+- **A metric can be a cell.** `metric_value` is normally a computed number, but an `aggregate`
+  check measuring min or max records one cell of its column. On a column the policy or the
+  warehouse tags mark sensitive, that value is withheld everywhere it is read (REST, MCP,
+  the trend view, incident evidence, alerts and webhooks): it is sent as null with a
+  `metric_value_redaction` reason.
 - **Zero-sample privacy mode** (`PRIVACY_ZERO_SAMPLE_MODE=true`) is a deployment-level
   step past redaction: no failing-row sample is ever **persisted** at all — not full, not
   redacted — only aggregates (`metric_value`, unexpected counts/percents). It gates the one

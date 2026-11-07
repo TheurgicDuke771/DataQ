@@ -312,6 +312,11 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
         f"Latest breaching occurrence: status={failing.get('status')}, "
         f"metric_value={failing.get('metric_value')}",
     ]
+    if failing.get("metric_value_redaction"):
+        lines.append(
+            "metric_value is withheld, not missing: it is one cell of a sensitive column "
+            f"(masked: {failing['metric_value_redaction']}), so don't quote or guess it"
+        )
     if failing.get("observed_value") is not None:
         lines.append(f"observed_value: {_json(failing['observed_value'])}")
     if failing.get("expected_value") is not None:
@@ -333,6 +338,11 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
                 "run_id": str(p.run_id),
                 "status": p.status,
                 "metric_value": p.metric_value,
+                **(
+                    {"metric_value_redaction": p.metric_value_redaction}
+                    if p.metric_value_redaction
+                    else {}
+                ),
                 "created_at": p.created_at.isoformat(),
             }
             for p in history

@@ -16,6 +16,7 @@ import {
 } from '../../api/incidents';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
+import { MetricValue } from '../results/MetricValue';
 import { formatDurationMs, formatScalar, formatTimestamp } from '../results/resultsFormat';
 import { AssetLink } from './AssetLink';
 import { IncidentNarrativeSection } from './IncidentNarrativeSection';
@@ -170,7 +171,13 @@ function FailingResultSection({ result }: { result: EvidenceFailingResultLayer |
           <Descriptions.Item label="Status">
             <ResultStatusTag status={result.status} />
           </Descriptions.Item>
-          <Descriptions.Item label="Metric">{formatScalar(result.metric_value)}</Descriptions.Item>
+          <Descriptions.Item label="Metric">
+            <MetricValue
+              value={result.metric_value}
+              redaction={result.metric_value_redaction}
+              format={formatScalar}
+            />
+          </Descriptions.Item>
           <Descriptions.Item label="Observed">
             {formatScalar(result.observed_value)}
           </Descriptions.Item>
@@ -196,7 +203,9 @@ function MetricTrendSection({ trend }: { trend: EvidenceTrendPoint[] | null }) {
     {
       title: 'Metric',
       dataIndex: 'metric_value',
-      render: (v: number | null) => formatScalar(v),
+      render: (v: number | null, point: EvidenceTrendPoint) => (
+        <MetricValue value={v} redaction={point.metric_value_redaction} format={formatScalar} />
+      ),
     },
   ];
   return (

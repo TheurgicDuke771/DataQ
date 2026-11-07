@@ -132,6 +132,29 @@ describe('IncidentEvidenceDrawer', () => {
     expect(mockGetIncident).toHaveBeenCalledWith('inc-1');
   });
 
+  it('marks a withheld failing metric and trend point Masked, not as a missing value', async () => {
+    const evidence = fullEvidence();
+    evidence.failing_result = {
+      ...evidence.failing_result!,
+      metric_value: null,
+      metric_value_redaction: 'own_tag',
+    };
+    evidence.metric_trend = [
+      {
+        status: 'fail',
+        metric_value: null,
+        metric_value_redaction: 'own_tag',
+        created_at: '2026-08-20T09:00:00Z',
+        run_id: 'r1',
+      },
+    ];
+    mockGetIncident.mockResolvedValue(detail(evidence));
+    renderDrawer('inc-1');
+
+    await screen.findByText('order_id not null');
+    expect(screen.getAllByText('Masked')).toHaveLength(2);
+  });
+
   it('renders an explicit "Not available" for every null layer (a layer failure), not blank', async () => {
     mockGetIncident.mockResolvedValue(
       detail({

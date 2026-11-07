@@ -19,6 +19,7 @@ import { AsOfCell } from '../components/results/checkAsOf';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
 import { formatMetricDelta, formatTimestamp } from '../components/results/resultsFormat';
+import { MetricValue } from '../components/results/MetricValue';
 import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
@@ -327,20 +328,35 @@ function ComparisonTable({ rows }: { rows: ComparisonRow[] }) {
       title: 'Base metric',
       key: 'base_metric',
       align: 'right',
-      render: (_, row) => <ScalarValue value={row.base?.metric_value ?? null} />,
+      render: (_, row) =>
+        row.base?.metric_value_redaction ? (
+          <MetricValue value={null} redaction={row.base.metric_value_redaction} />
+        ) : (
+          <ScalarValue value={row.base?.metric_value ?? null} />
+        ),
     },
     {
       title: 'Target metric',
       key: 'target_metric',
       align: 'right',
-      render: (_, row) => <ScalarValue value={row.target?.metric_value ?? null} />,
+      render: (_, row) =>
+        row.target?.metric_value_redaction ? (
+          <MetricValue value={null} redaction={row.target.metric_value_redaction} />
+        ) : (
+          <ScalarValue value={row.target?.metric_value ?? null} />
+        ),
     },
     {
       title: 'Δ metric',
       key: 'delta',
       align: 'right',
       render: (_, row) =>
-        row.delta.metric_changed && row.delta.metric_delta === null ? (
+        row.base?.metric_value_redaction || row.target?.metric_value_redaction ? (
+          // A withheld cell has no difference to state, even when it changed.
+          <Typography.Text type="secondary">
+            {row.delta.metric_changed ? 'changed (masked)' : 'masked'}
+          </Typography.Text>
+        ) : row.delta.metric_changed && row.delta.metric_delta === null ? (
           // Both sides exist and only one carries a metric: changed, but no difference to state.
           <Typography.Text type="secondary">one side only</Typography.Text>
         ) : (

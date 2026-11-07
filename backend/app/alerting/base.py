@@ -119,6 +119,9 @@ class CheckReport:
     # `run_service.RedactionReason`.
     redacted_columns: tuple[str, ...] = ()
     redaction_reasons: Mapping[str, str] = field(default_factory=dict)
+    # Why `metric_value` was withheld (None = as recorded): an aggregate min/max cell of a
+    # sensitive column (#2240), the `run_service.RedactionReason` vocabulary.
+    metric_value_redaction: str | None = None
 
 
 @dataclass(frozen=True)

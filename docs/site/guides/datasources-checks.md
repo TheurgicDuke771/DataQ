@@ -1282,6 +1282,12 @@ only an approximate percentile, or on **BigQuery**, whose exact percentile does 
 `approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
 **min or max** result keeps its status but not its value: that value is one cell of the table.
+For the same reason, a min or max over a column that the suite's column policy or the
+warehouse's tags mark sensitive has its value **withheld on every read**: the run page, the
+trend view, run comparison, incident evidence, alerts, webhooks, the API and MCP all send
+`metric_value` as null beside a `metric_value_redaction` naming the rule that masked it. The
+status still shows, so the trend keeps its pass/fail markers without the numbers. Mean,
+median, sum and standard deviation are computed statistics and are never withheld.
 
 ### Schema-drift monitor (all datasources — ADR 0012)
 

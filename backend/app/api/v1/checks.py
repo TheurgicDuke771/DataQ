@@ -680,6 +680,14 @@ class CheckResultPointRead(ApiModel):
     run_id: uuid.UUID
     status: str
     metric_value: float | None
+    metric_value_redaction: run_service.RedactionReason | None = Field(
+        default=None,
+        description=(
+            "Non-null when `metric_value` was withheld (sent as null): an `aggregate` min/max "
+            "measures one literal cell of a sensitive column. Names the rung that masked it, in "
+            "the `redaction_reasons` vocabulary of `GET /runs/{id}`."
+        ),
+    )
     created_at: datetime
     seasonal: SeasonalPointRead | None = None
 
@@ -858,6 +866,8 @@ class CheckDryRunResult(ApiModel):
     # check could not be evaluated, #122) and `skip` (its precondition was not met, #593).
     status: str
     metric_value: float | None
+    #: Non-null when `metric_value` was withheld with `observed_value` (as on `GET /runs/{id}`).
+    metric_value_redaction: run_service.RedactionReason | None = None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
 
@@ -897,13 +907,24 @@ def dry_run_check(
     masked = live_probe.values_are_masked(policy, destination=live_probe.Destination.INTERACTIVE)
     tested_column = (payload.config or {}).get("column")
     observed = outcome.observed_value
+    metric_redaction: run_service.RedactionReason | None = None
     if masked:
+        tags = run_service.asset_column_tags(db, suite)
         observed = live_probe.redact_probe_observed_value(
             observed,
             tested_column=tested_column,
             expectation_type=payload.expectation_type,
             policy=policy,
-            tags=run_service.asset_column_tags(db, suite),
+            tags=tags,
+        )
+        metric_redaction = run_service.metric_value_redaction(
+            outcome.metric_value,
+            tested_column=tested_column,
+            expectation_type=payload.expectation_type,
+            observed=outcome.observed_value,
+            expected=outcome.expected_value,
+            policy=policy,
+            tags=tags,
         )
     live_probe.record_probe_access(
         db,
@@ -919,7 +940,12 @@ def dry_run_check(
         status=outcome.status,
         # Explicit Decimal→float: the response model wants clean JSON numbers
         # (pydantic coerced this implicitly; typed now so checkers see it too).
-        metric_value=float(outcome.metric_value) if outcome.metric_value is not None else None,
+        metric_value=(
+            float(outcome.metric_value)
+            if outcome.metric_value is not None and metric_redaction is None
+            else None
+        ),
+        metric_value_redaction=metric_redaction,
         observed_value=observed,
         expected_value=outcome.expected_value,
     )
