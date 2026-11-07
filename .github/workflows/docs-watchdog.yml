@@ -1,0 +1,31 @@
+name: Docs publish watchdog
+
+# A Pages deploy queued behind a job that never starts holds the `pages` concurrency group: every
+# later Docs run waits and is cancelled by the next, nothing fails, and nothing publishes. This
+# reads the Docs runs and fails (which notifies) when that has happened.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install PyYAML==6.0.3
+      - name: Docs publishing is current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci/docs_publish_watchdog.py
