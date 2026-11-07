@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "736271d38787",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2413-promote-dangling-ref",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "changelog.d/2413.fixed.md",
+    "frontend/src/components/suites/NotificationsPanel.tsx",
+    "frontend/tests/components/NotificationsPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/73/6271d38787/0/metadata.json",
+      "transcript": "/73/6271d38787/0/full.jsonl",
+      "compact_transcript": "/73/6271d38787/0/transcript.jsonl",
+      "content_hash": "/73/6271d38787/0/content_hash.txt",
+      "prompt": "/73/6271d38787/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 28168,
+    "cache_read_tokens": 11069990,
+    "output_tokens": 12796,
+    "api_call_count": 24
+  },
+  "redaction": {
+    "replacements": 66,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 45,
+      "credentialed_uri": 0,
+      "entropy": 18,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
