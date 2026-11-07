@@ -3093,6 +3093,7 @@ section below.</p>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>Ids from the URL can no longer shape an API request path.</strong> Every path segment the web app sends is now percent-encoded, a malformed <code>?incident=</code> link is ignored, and a detail page opened with a non-UUID id shows the not-found page without issuing a request.</li>
 <li><strong>Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.</strong>
   Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
   automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column

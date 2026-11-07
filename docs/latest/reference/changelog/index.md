@@ -247,6 +247,7 @@ section below.
 
 ### Fixed
 
+- **Ids from the URL can no longer shape an API request path.** Every path segment the web app sends is now percent-encoded, a malformed `?incident=` link is ignored, and a detail page opened with a non-UUID id shows the not-found page without issuing a request.
 - **Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.**
   Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
   automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
