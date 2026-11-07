@@ -3091,6 +3091,16 @@ section below.</p>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>A slow query on a SQL datasource is now cancelled instead of running without limit.</strong> Every
+  query DataQ sends PostgreSQL, Redshift, MySQL/MariaDB, Trino, SQL Server, Athena or BigQuery
+  carries a wall-clock limit, <code>DATASOURCE_QUERY_TIMEOUT_S</code> (default 1800 seconds), applied
+  through the engine's own setting. Athena queries are cancelled on the service, so they stop
+  billing. A query past the limit fails its check or run with a message naming the setting, and
+  no longer holds a worker until the stuck-run reaper fails the run. A lower limit the
+  datasource already gives DataQ's user (a PostgreSQL role or database setting, a MySQL global or
+  MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
+  <code>statement_timeout</code> is not yet. On Trino the limit includes the time a query waits in a
+  resource-group queue. Snowflake and Unity Catalog are not covered yet.</li>
 <li><strong>Changelog entries are collected one file per change.</strong> The <strong>Unreleased</strong> section of
   this page is now assembled from small per-change files in the repository's <code>changelog.d/</code>
   directory when the site is built, and a release gathers them into a dated section. The
