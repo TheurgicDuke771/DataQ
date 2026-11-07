@@ -29,6 +29,7 @@ import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { errorMessage } from '../utils/errors';
 import { Modal } from '../components/shared/Modal';
+import { uuidOrNull } from '../utils/uuid';
 
 /**
  * Asset detail (`/assets/:assetId`, #760) — identity header, health across the composing suites
@@ -91,7 +92,7 @@ function AssetDetailBody({
   const navigate = useNavigate();
   // `?incident=<id>` — the notification feed's deep link — opens that incident's evidence.
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialIncidentId = searchParams.get('incident');
+  const initialIncidentId = uuidOrNull(searchParams.get('incident'));
   // Closing the drawer drops the param, or Back / refresh would reopen it.
   const onEvidenceClosed = () => {
     if (!searchParams.has('incident')) return;

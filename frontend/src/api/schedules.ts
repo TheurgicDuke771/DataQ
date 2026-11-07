@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Schedules — cron-driven suite runs (A7). */
 
@@ -39,12 +40,12 @@ export async function createSchedule(payload: ScheduleCreate): Promise<Schedule>
 }
 
 export async function updateSchedule(id: string, payload: ScheduleUpdate): Promise<Schedule> {
-  const { data } = await api.patch<Schedule>(`/schedules/${id}`, payload);
+  const { data } = await api.patch<Schedule>(apiPath`/schedules/${id}`, payload);
   return data;
 }
 
 export async function deleteSchedule(id: string): Promise<void> {
-  await api.delete(`/schedules/${id}`);
+  await api.delete(apiPath`/schedules/${id}`);
 }
 
 /** IANA timezones for the schedule editor. */

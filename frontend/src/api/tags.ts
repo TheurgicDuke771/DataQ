@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Tags API — the workspace-shared label vocabulary. Assignments ride on each entity's PATCH. */
 
@@ -18,7 +19,7 @@ export async function listTags(): Promise<Tag[]> {
 
 /** Admin-only: removes the tag from the vocabulary and detaches it everywhere. */
 export async function deleteTag(id: string): Promise<void> {
-  await api.delete(`/tags/${id}`);
+  await api.delete(apiPath`/tags/${id}`);
 }
 
 /** The server's stored form of a name — shown in the picker so what you type is what you get. */

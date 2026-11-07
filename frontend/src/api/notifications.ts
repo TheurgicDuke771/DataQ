@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Per-suite alert notification config (W6; Slack + email per-suite added in #633). */
 
@@ -25,7 +26,7 @@ export interface SuiteNotificationUpdate {
 }
 
 export async function getNotifications(suiteId: string): Promise<SuiteNotification> {
-  const { data } = await api.get<SuiteNotification>(`/suites/${suiteId}/notifications`);
+  const { data } = await api.get<SuiteNotification>(apiPath`/suites/${suiteId}/notifications`);
   return data;
 }
 
@@ -33,10 +34,13 @@ export async function putNotifications(
   suiteId: string,
   payload: SuiteNotificationUpdate,
 ): Promise<SuiteNotification> {
-  const { data } = await api.put<SuiteNotification>(`/suites/${suiteId}/notifications`, payload);
+  const { data } = await api.put<SuiteNotification>(
+    apiPath`/suites/${suiteId}/notifications`,
+    payload,
+  );
   return data;
 }
 
 export async function deleteNotifications(suiteId: string): Promise<void> {
-  await api.delete(`/suites/${suiteId}/notifications`);
+  await api.delete(apiPath`/suites/${suiteId}/notifications`);
 }

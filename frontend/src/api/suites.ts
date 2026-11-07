@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { CoverageLevel } from './coverage';
+import { apiPath } from './path';
 
 /** Suites API — a suite is a named bundle of DQ checks bound to one connection. */
 
@@ -119,7 +120,7 @@ export async function listSuites(
 }
 
 export async function getSuite(id: string): Promise<Suite> {
-  const { data } = await api.get<Suite>(`/suites/${id}`);
+  const { data } = await api.get<Suite>(apiPath`/suites/${id}`);
   return data;
 }
 
@@ -129,12 +130,12 @@ export async function createSuite(payload: SuiteCreate): Promise<Suite> {
 }
 
 export async function updateSuite(id: string, payload: SuiteUpdate): Promise<Suite> {
-  const { data } = await api.patch<Suite>(`/suites/${id}`, payload);
+  const { data } = await api.patch<Suite>(apiPath`/suites/${id}`, payload);
   return data;
 }
 
 export async function deleteSuite(id: string): Promise<void> {
-  await api.delete(`/suites/${id}`);
+  await api.delete(apiPath`/suites/${id}`);
 }
 
 /** Mirrors `SuiteDeletionImpactRead` — exact, never-estimated counts (#1320). */
@@ -147,7 +148,7 @@ export interface SuiteDeletionImpact {
 }
 
 export async function getSuiteDeletionImpact(id: string): Promise<SuiteDeletionImpact> {
-  const { data } = await api.get<SuiteDeletionImpact>(`/suites/${id}/deletion_impact`);
+  const { data } = await api.get<SuiteDeletionImpact>(apiPath`/suites/${id}/deletion_impact`);
   return data;
 }
 
@@ -187,13 +188,13 @@ export interface Check {
 }
 
 export async function listChecks(suiteId: string): Promise<Check[]> {
-  const { data } = await api.get<Check[]>(`/suites/${suiteId}/checks`);
+  const { data } = await api.get<Check[]>(apiPath`/suites/${suiteId}/checks`);
   return data;
 }
 
 /** Fetch one check by id — backs the deep-linkable `/checks/:id/edit` page. */
 export async function getCheck(suiteId: string, checkId: string): Promise<Check> {
-  const { data } = await api.get<Check>(`/suites/${suiteId}/checks/${checkId}`);
+  const { data } = await api.get<Check>(apiPath`/suites/${suiteId}/checks/${checkId}`);
   return data;
 }
 
@@ -238,7 +239,7 @@ export interface CheckUpdate {
 }
 
 export async function createCheck(suiteId: string, payload: CheckCreate): Promise<Check> {
-  const { data } = await api.post<Check>(`/suites/${suiteId}/checks`, payload);
+  const { data } = await api.post<Check>(apiPath`/suites/${suiteId}/checks`, payload);
   return data;
 }
 
@@ -247,23 +248,25 @@ export async function updateCheck(
   checkId: string,
   payload: CheckUpdate,
 ): Promise<Check> {
-  const { data } = await api.patch<Check>(`/suites/${suiteId}/checks/${checkId}`, payload);
+  const { data } = await api.patch<Check>(apiPath`/suites/${suiteId}/checks/${checkId}`, payload);
   return data;
 }
 
 export async function deleteCheck(suiteId: string, checkId: string): Promise<void> {
-  await api.delete(`/suites/${suiteId}/checks/${checkId}`);
+  await api.delete(apiPath`/suites/${suiteId}/checks/${checkId}`);
 }
 
 /** Mute a noisy check's alerts for N hours (edit-gated; backend caps at 720h). */
 export async function snoozeCheck(suiteId: string, checkId: string, hours: number): Promise<Check> {
-  const { data } = await api.post<Check>(`/suites/${suiteId}/checks/${checkId}/snooze`, { hours });
+  const { data } = await api.post<Check>(apiPath`/suites/${suiteId}/checks/${checkId}/snooze`, {
+    hours,
+  });
   return data;
 }
 
 /** Clear a check's alert snooze — alerts fire again immediately (edit-gated). */
 export async function clearCheckSnooze(suiteId: string, checkId: string): Promise<Check> {
-  const { data } = await api.delete<Check>(`/suites/${suiteId}/checks/${checkId}/snooze`);
+  const { data } = await api.delete<Check>(apiPath`/suites/${suiteId}/checks/${checkId}/snooze`);
   return data;
 }
 
@@ -280,10 +283,13 @@ export async function bulkSnoozeChecks(
   checkIds: string[],
   hours: number,
 ): Promise<BulkChecksResult> {
-  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/snooze`, {
-    check_ids: checkIds,
-    hours,
-  });
+  const { data } = await api.post<BulkChecksResult>(
+    apiPath`/suites/${suiteId}/checks-bulk/snooze`,
+    {
+      check_ids: checkIds,
+      hours,
+    },
+  );
   return data;
 }
 
@@ -291,9 +297,12 @@ export async function bulkUnsnoozeChecks(
   suiteId: string,
   checkIds: string[],
 ): Promise<BulkChecksResult> {
-  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/unsnooze`, {
-    check_ids: checkIds,
-  });
+  const { data } = await api.post<BulkChecksResult>(
+    apiPath`/suites/${suiteId}/checks-bulk/unsnooze`,
+    {
+      check_ids: checkIds,
+    },
+  );
   return data;
 }
 
@@ -302,9 +311,12 @@ export async function bulkDeleteChecks(
   suiteId: string,
   checkIds: string[],
 ): Promise<BulkChecksResult> {
-  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/delete`, {
-    check_ids: checkIds,
-  });
+  const { data } = await api.post<BulkChecksResult>(
+    apiPath`/suites/${suiteId}/checks-bulk/delete`,
+    {
+      check_ids: checkIds,
+    },
+  );
   return data;
 }
 
@@ -314,10 +326,13 @@ export async function bulkSetChecksEnabled(
   checkIds: string[],
   enabled: boolean,
 ): Promise<BulkChecksResult> {
-  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/enabled`, {
-    check_ids: checkIds,
-    enabled,
-  });
+  const { data } = await api.post<BulkChecksResult>(
+    apiPath`/suites/${suiteId}/checks-bulk/enabled`,
+    {
+      check_ids: checkIds,
+      enabled,
+    },
+  );
   return data;
 }
 
@@ -334,17 +349,20 @@ export async function bulkSetThresholds(
   checkIds: string[],
   thresholds: BulkThresholds,
 ): Promise<BulkChecksResult> {
-  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/thresholds`, {
-    check_ids: checkIds,
-    ...thresholds,
-  });
+  const { data } = await api.post<BulkChecksResult>(
+    apiPath`/suites/${suiteId}/checks-bulk/thresholds`,
+    {
+      check_ids: checkIds,
+      ...thresholds,
+    },
+  );
   return data;
 }
 
 /** Drop a schema_drift or pii_drift check's stored baseline — the NEXT run recaptures it from
  *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
 export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {
-  await api.post(`/suites/${suiteId}/checks/${checkId}/rebaseline`);
+  await api.post(apiPath`/suites/${suiteId}/checks/${checkId}/rebaseline`);
 }
 
 /** Mirrors the backend `CheckVersionRead` — one immutable snapshot in a check's history (#280). */
@@ -377,7 +395,9 @@ export interface CheckVersion {
 
 /** A check's version history, newest first. Requires `view` on the suite. */
 export async function listCheckVersions(suiteId: string, checkId: string): Promise<CheckVersion[]> {
-  const { data } = await api.get<CheckVersion[]>(`/suites/${suiteId}/checks/${checkId}/versions`);
+  const { data } = await api.get<CheckVersion[]>(
+    apiPath`/suites/${suiteId}/checks/${checkId}/versions`,
+  );
   return data;
 }
 
@@ -388,7 +408,7 @@ export async function restoreCheckVersion(
   versionNo: number,
 ): Promise<Check> {
   const { data } = await api.post<Check>(
-    `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}/restore`,
+    apiPath`/suites/${suiteId}/checks/${checkId}/versions/${versionNo}/restore`,
   );
   return data;
 }
@@ -400,7 +420,7 @@ export async function redactCheckVersion(
   versionNo: number,
 ): Promise<CheckVersion> {
   const { data } = await api.delete<CheckVersion>(
-    `/suites/${suiteId}/checks/${checkId}/versions/${versionNo}`,
+    apiPath`/suites/${suiteId}/checks/${checkId}/versions/${versionNo}`,
   );
   return data;
 }
@@ -439,7 +459,7 @@ export async function listCheckHistory(
   limit?: number,
 ): Promise<CheckResultPoint[]> {
   const { data } = await api.get<CheckResultPoint[]>(
-    `/suites/${suiteId}/checks/${checkId}/history`,
+    apiPath`/suites/${suiteId}/checks/${checkId}/history`,
     { params: limit ? { limit } : undefined },
   );
   return data;
@@ -464,7 +484,7 @@ export async function getCheckBaseline(
   checkId: string,
 ): Promise<CheckBaseline | null> {
   const { data } = await api.get<CheckBaseline | null>(
-    `/suites/${suiteId}/checks/${checkId}/baseline`,
+    apiPath`/suites/${suiteId}/checks/${checkId}/baseline`,
   );
   return data;
 }
@@ -492,7 +512,7 @@ export interface SuiteDocument {
 }
 
 export async function exportSuite(suiteId: string): Promise<SuiteDocument> {
-  const { data } = await api.get<SuiteDocument>(`/suites/${suiteId}/export`);
+  const { data } = await api.get<SuiteDocument>(apiPath`/suites/${suiteId}/export`);
   return data;
 }
 
@@ -531,7 +551,10 @@ export async function dryRunCheck(
   suiteId: string,
   payload: CheckDryRunRequest,
 ): Promise<CheckDryRunResult> {
-  const { data } = await api.post<CheckDryRunResult>(`/suites/${suiteId}/checks/dryrun`, payload);
+  const { data } = await api.post<CheckDryRunResult>(
+    apiPath`/suites/${suiteId}/checks/dryrun`,
+    payload,
+  );
   return data;
 }
 
@@ -583,7 +606,7 @@ export async function profileColumns(
   suiteId: string,
   payload: ColumnProfileRequest,
 ): Promise<ProfileResult> {
-  const { data } = await api.post<ProfileResult>(`/suites/${suiteId}/profile`, payload);
+  const { data } = await api.post<ProfileResult>(apiPath`/suites/${suiteId}/profile`, payload);
   return data;
 }
 
@@ -605,7 +628,9 @@ export async function listColumns(suiteId: string, target: ColumnTarget): Promis
   if (target.namespace) params.namespace = target.namespace;
   if (target.path) params.path = target.path;
   if (target.file_format) params.file_format = target.file_format;
-  const { data } = await api.get<{ columns: string[] }>(`/suites/${suiteId}/columns`, { params });
+  const { data } = await api.get<{ columns: string[] }>(apiPath`/suites/${suiteId}/columns`, {
+    params,
+  });
   return data.columns;
 }
 
@@ -640,7 +665,7 @@ export async function previewBatchTarget(
   params: BatchPreviewRequest,
   signal?: AbortSignal,
 ): Promise<BatchPreviewResponse> {
-  const { data } = await api.get<BatchPreviewResponse>(`/suites/${suiteId}/batch-preview`, {
+  const { data } = await api.get<BatchPreviewResponse>(apiPath`/suites/${suiteId}/batch-preview`, {
     params,
     signal,
   });

@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** Admin-only outbound-LLM provider config (issue #1511, ADR 0042). */
 
@@ -207,7 +208,7 @@ export async function generateRcaNarrative(incidentId: string): Promise<LlmInvoc
 export async function getLlmInvocation<T = Record<string, unknown>>(
   invocationId: string,
 ): Promise<LlmInvocation<T>> {
-  const { data } = await api.get<LlmInvocation<T>>(`/llm/invocations/${invocationId}`);
+  const { data } = await api.get<LlmInvocation<T>>(apiPath`/llm/invocations/${invocationId}`);
   return data;
 }
 

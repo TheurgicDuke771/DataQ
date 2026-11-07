@@ -1,5 +1,6 @@
 import type { WorkspaceRole } from './admin';
 import { api } from './client';
+import { apiPath } from './path';
 
 /**
  * Suite sharing — grant/list/update/revoke per-user access to a suite, plus the directory search
@@ -33,7 +34,7 @@ export interface UserSummary {
 }
 
 export async function listShares(suiteId: string): Promise<Share[]> {
-  const { data } = await api.get<Share[]>(`/suites/${suiteId}/shares`);
+  const { data } = await api.get<Share[]>(apiPath`/suites/${suiteId}/shares`);
   return data;
 }
 
@@ -41,7 +42,7 @@ export async function grantShare(
   suiteId: string,
   payload: { user_id: string; permission: SharePermission },
 ): Promise<Share> {
-  const { data } = await api.post<Share>(`/suites/${suiteId}/shares`, payload);
+  const { data } = await api.post<Share>(apiPath`/suites/${suiteId}/shares`, payload);
   return data;
 }
 
@@ -50,12 +51,14 @@ export async function updateShare(
   userId: string,
   permission: SharePermission,
 ): Promise<Share> {
-  const { data } = await api.patch<Share>(`/suites/${suiteId}/shares/${userId}`, { permission });
+  const { data } = await api.patch<Share>(apiPath`/suites/${suiteId}/shares/${userId}`, {
+    permission,
+  });
   return data;
 }
 
 export async function revokeShare(suiteId: string, userId: string): Promise<void> {
-  await api.delete(`/suites/${suiteId}/shares/${userId}`);
+  await api.delete(apiPath`/suites/${suiteId}/shares/${userId}`);
 }
 
 /** Search the user directory by email/display-name substring (min 2 chars). */

@@ -16,6 +16,7 @@ import { Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Spin, Tag, Typogr
 import type { MenuProps } from 'antd';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { RequireUuidParams } from './components/RequireUuidParams';
 
 import { AuthGate } from './auth/AuthGate';
 import { authMode } from './auth/config';
@@ -297,7 +298,9 @@ export function App() {
                         minimum="admin"
                         message="Connections are managed by workspace admins."
                       >
-                        <ConnectionEdit />
+                        <RequireUuidParams>
+                          <ConnectionEdit />
+                        </RequireUuidParams>
                       </RequireRole>
                     }
                   />
@@ -313,17 +316,73 @@ export function App() {
                       </RequireRole>
                     }
                   />
-                  <Route path="/suites/:suiteId" element={<Suites />} />
-                  <Route path="/suites/:suiteId/edit" element={<SuiteEdit />} />
-                  <Route path="/suites/:suiteId/checks/new" element={<CheckNew />} />
-                  <Route path="/suites/:suiteId/checks/:checkId/edit" element={<CheckEdit />} />
+                  <Route
+                    path="/suites/:suiteId"
+                    element={
+                      <RequireUuidParams>
+                        <Suites />
+                      </RequireUuidParams>
+                    }
+                  />
+                  <Route
+                    path="/suites/:suiteId/edit"
+                    element={
+                      <RequireUuidParams>
+                        <SuiteEdit />
+                      </RequireUuidParams>
+                    }
+                  />
+                  <Route
+                    path="/suites/:suiteId/checks/new"
+                    element={
+                      <RequireUuidParams>
+                        <CheckNew />
+                      </RequireUuidParams>
+                    }
+                  />
+                  <Route
+                    path="/suites/:suiteId/checks/:checkId/edit"
+                    element={
+                      <RequireUuidParams>
+                        <CheckEdit />
+                      </RequireUuidParams>
+                    }
+                  />
                   <Route path="/assets" element={<Assets />} />
-                  <Route path="/assets/:assetId" element={<AssetDetail />} />
+                  <Route
+                    path="/assets/:assetId"
+                    element={
+                      <RequireUuidParams>
+                        <AssetDetail />
+                      </RequireUuidParams>
+                    }
+                  />
                   <Route path="/contracts" element={<Contracts />} />
-                  <Route path="/contracts/:contractId" element={<ContractDetail />} />
+                  <Route
+                    path="/contracts/:contractId"
+                    element={
+                      <RequireUuidParams>
+                        <ContractDetail />
+                      </RequireUuidParams>
+                    }
+                  />
                   <Route path="/results" element={<Results />} />
-                  <Route path="/results/:runId" element={<RunDetail />} />
-                  <Route path="/results/:runId/compare/:otherRunId" element={<RunCompare />} />
+                  <Route
+                    path="/results/:runId"
+                    element={
+                      <RequireUuidParams>
+                        <RunDetail />
+                      </RequireUuidParams>
+                    }
+                  />
+                  <Route
+                    path="/results/:runId/compare/:otherRunId"
+                    element={
+                      <RequireUuidParams>
+                        <RunCompare />
+                      </RequireUuidParams>
+                    }
+                  />
                   <Route path="/profile" element={<Profile />} />
                   {ADMIN_ROUTES}
                   {SETTINGS_REDIRECT_ROUTE}

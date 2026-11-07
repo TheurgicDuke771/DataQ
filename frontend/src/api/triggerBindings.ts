@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /**
  * Trigger bindings — map a successful orchestrator run to a suite so the suite runs on that
@@ -82,12 +83,12 @@ export async function setTriggerBindingEnabled(
   id: string,
   enabled: boolean,
 ): Promise<TriggerBinding> {
-  const { data } = await api.patch<TriggerBinding>(`/trigger-bindings/${id}`, { enabled });
+  const { data } = await api.patch<TriggerBinding>(apiPath`/trigger-bindings/${id}`, { enabled });
   return data;
 }
 
 export async function deleteTriggerBinding(id: string): Promise<void> {
-  await api.delete(`/trigger-bindings/${id}`);
+  await api.delete(apiPath`/trigger-bindings/${id}`);
 }
 
 /**
