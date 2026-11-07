@@ -1,0 +1,117 @@
+<browser_instruction># Claude in Chrome browser automation
+
+You have access to browser automation tools (mcp__claude-in-chrome__*) for interacting with web pages in Chrome. Follow these guidelines for effective browser automation.
+
+## Loading deferred tools
+
+If the mcp__claude-in-chrome__* tools are deferred (must be loaded via ToolSearch before use), load every tool you expect to need in ONE ToolSearch call — the select query accepts a comma-separated list — never one call per tool. Start with the core set:
+
+ToolSearch with query "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+Add task-specific tools to the same call when the task obviously needs them: read_console_messages / read_network_requests for debugging, form_input for forms, gif_creator for recordings, javascript_tool for page scripting.
+
+## GIF recording
+
+When performing multi-step browser interactions that the user may want to review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+You must ALWAYS:
+* Capture extra frames before and after taking actions to ensure smooth playback
+* Name the file meaningfully to help the user identify it later (e.g., "login_process.gif")
+
+## Console log debugging
+
+You can use mcp__claude-in-chrome__read_console_messages to read console output. Console output may be verbose. If you are looking for specific log entries, use the 'pattern' parameter with a regex-compatible pattern. This filters results efficiently and avoids overwhelming output. For example, use pattern: "[MyApp]" to filter for application-specific logs rather than reading all console output.
+
+## Alerts and dialogs
+
+IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser modal dialogs through your actions. These browser dialogs block all further browser events and will prevent the extension from receiving any subsequent commands. Instead, when possible, use console.log for debugging and then use the mcp__claude-in-chrome__read_console_messages tool to read those log messages. If a page has dialog-triggering elements:
+1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete" buttons with confirmation dialogs)
+2. If you must interact with such elements, warn the user first that this may interrupt the session
+3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any existing dialogs before proceeding
+
+If you accidentally trigger a dialog and lose responsiveness, inform the user they need to manually dismiss it in the browser.
+
+## Avoid rabbit holes and loops
+
+When using browser automation tools, stay focused on the specific task. If you encounter any of the following, stop and ask the user for guidance:
+- Unexpected complexity or tangential browser exploration
+- Browser tool calls failing or returning errors after 2-3 attempts
+- No response from the browser extension
+- Page elements not responding to clicks or input
+- Pages not loading or timing out
+- Unable to complete the browser task despite multiple approaches
+
+Explain what you attempted, what went wrong, and ask how the user would like to proceed. Do not keep retrying the same failing browser action or explore unrelated pages without checking in first.
+
+## Tab context and session startup
+
+IMPORTANT: At the start of each browser automation session, call mcp__claude-in-chrome__tabs_context_mcp first to get information about the user's current browser tabs. Use this context to understand what the user might want to work with before creating new tabs.
+
+Never reuse tab IDs from a previous/other session. Follow these guidelines:
+1. Only reuse an existing tab if the user explicitly asks to work with it
+2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+3. If a tool returns an error indicating the tab doesn't exist or is invalid, call tabs_context_mcp to get fresh tab IDs
+4. When a tab is closed by the user or a navigation error occurs, call tabs_context_mcp to see what tabs are available</browser_instruction>
+# DataQ handover — v1.3 Week 6, after the 2026-11-07 session
+
+## Where things stand
+- **Cycle:** v1.3, Week 6 (bug fixes and security), due **2026-11-15**. Weeks 7 (polish) and 8 (debt and close) follow; the cycle ends 2026-11-29.
+- **Week 6:** 8 issues open, down from 22. Fifteen PRs merged this session.
+- **Main** is green. The newest alembic head is `ea0a2ff2bf6b`, from #2424's singleton checks.
+- **Environment:** the local stacks only. There is no cloud instance, so Snowflake, Unity Catalog, Azure and AWS can't be verified live (#2224).
+
+## Do these first
+1. **Merge PR #2605**, the `docs/progress.md` update. It's ready.
+2. **Unblock PR #2598 (#2240).** It's green and reviewed, but an unresolved CodeQL "cyclic import" thread blocks the merge.
+   - The flagged import of `run_service` sits inside a function, so it only runs when called. Nine earlier alerts for this pattern were dismissed as false positives.
+   - The permission classifier would not let the agent dismiss alert 222. The maintainer can dismiss it and resolve the thread, or ask for a refactor that removes the import.
+3. **Check for duplicate PRs.** An agent that hit the spend limit can resume later and reopen its branch. One already did (#2604, closed).
+
+## Remaining Week 6 work, in order
+1. **#2496: a per-query time limit on every SQL datasource.**
+   - Draft work exists, uncommitted, in worktree `.claude/worktrees/agent-ad8c661bb05760e9b` on branch `fix/issue-2496-query-timeout`. It adds the setting `DATASOURCE_QUERY_TIMEOUT_S` (default 1800) to `config.py`, and `datasources/query_timeout.py` (error markers and the message shown on timeout).
+   - Next, apply the limit in each engine's `_connect_args` or session statements:
+     - PostgreSQL and Redshift: `-c statement_timeout` in the connection options.
+     - SQL Server: a query timeout on the connection.
+     - Trino: `query_max_execution_time`.
+     - Athena: a limit on how long the client waits.
+     - BigQuery: `job_timeout_ms` on the default job config.
+     - Snowflake: `STATEMENT_TIMEOUT_IN_SECONDS`.
+     - Databricks: its statement timeout.
+   - Trap: MySQL takes `max_execution_time` in milliseconds, but MariaDB rejects that variable with error 1193. MariaDB uses `max_statement_time`, in seconds. So the connect hook must detect the server; one fixed session statement won't work.
+   - Also cover the profiler and introspection connections, and map timeouts to the classified message.
+   - Verify live against the harness MariaDB, Trino and Postgres. Say plainly that the cloud engines are unverified.
+2. **#2348: deleting a check silently rewrites past runs.**
+   - Pick one of the issue's options. I recommend option 1: store `checks_total`, `checks_passed` and `worst_severity` on the run when it completes, and show "N results removed with deleted checks".
+   - This needs a two-step deploy: the migration PR first, then the code PR stacked on it (CONTRIBUTING rule 9a).
+3. **#2416: a suite with no runnable check ends "succeeded" with zero results.** Do it after #2348, so it can read the stored total. The run gate, dashboard and coverage figure must stop reading such a run as clean.
+
+## Decisions waiting on the maintainer
+Options are posted on each issue.
+- **#2547:** scrub the literal from audit payloads, which bends ADR 0041's append-only rule, or record only a config fingerprint.
+- **#2481:** whether to re-key the batch-target assets already stored.
+- **#2592:** what to do with a check whose value set covers a column classified as sensitive later. Filed from the #2383 work.
+- **#2413 part 1:** how to detect a dangling secret ref when promoting a destination. Recommendation: add `SecretStore.exists`, and flag the Azure and AWS implementations as unverified. Part 2 shipped.
+
+## How to work
+- Work inline, one task at a time. The monthly spend limit killed three agents mid-task this session, so no fan-out unless the maintainer re-authorises it.
+- The loop for each PR:
+  1. Branch from a fresh `main`.
+  2. Test the failure mode, and prove each regression test fails without the fix.
+  3. Run the local gate: black, ruff, mypy, bandit, pre-commit, plus eslint, prettier and tsc for frontend changes.
+  4. Open the PR with a milestone, `Fixes #N` and a changelog fragment (`changelog.d/<issue>.<section>.md`).
+  5. Run `/code-review low <PR> --comment` and fix every finding with a follow-up commit, never a force-push.
+  6. Merge with a squash once CI is green. Then confirm the issue actually closed.
+- Before starting an issue, check it isn't already fixed on main. Three of the 22 were.
+- The classifier blocks a merge with no recorded review. A `/code-review` run, or `gh pr review --comment`, satisfies it.
+
+## Traps learned this session
+- **API model changes:** when a response model gains a field, regenerate the reference with `python -m backend.scripts.export_docs_reference`. Then regenerate the client with `scripts/generate-dataq-client.py`, with ruff 0.16.5 first on `PATH`.
+- **Recharts 3:** y-axis tick labels live under `.recharts-yAxis-tick-labels`, not inside `.recharts-yAxis`.
+- **Vitest and antd:** jsdom never finishes antd's modal close animation, so don't assert that a modal unmounted.
+- **Focus restore:** calling `useFocusFallback().restore()` straight from an async save can run before a keyed form remounts. Call it from an effect instead. To test it, stub `requestAnimationFrame` so the callback runs on a microtask.
+- **Machine load:** the load average is around 24, so full Vitest runs time out. Rerun a failing file on its own before debugging.
+- **Tamper-anchor tests:** four `test_tamper_anchor` tests fail locally only because of the local `.env.app` (#2551).
+- **Shell:** zsh doesn't word-split variables, so use arrays for file lists. Don't use `git stash`, because worktrees share the stash list.
+- **Test databases:** give each lane its own (`createdb dataq_test_<lane>`); a parallel run against the shared `dataq_test` drops your schema.
+- **Conda env:** it drifts after Dependabot merges. Resync with `…/envs/dataq/bin/python -m pip install -r backend/requirements-dev.txt`.

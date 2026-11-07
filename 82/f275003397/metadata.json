@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "82f275003397",
+  "strategy": "manual-commit",
+  "branch": "chore/deps-minimatch-ghsa-g3hv",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/82/f275003397/0/metadata.json",
+      "transcript": "/82/f275003397/0/full.jsonl",
+      "compact_transcript": "/82/f275003397/0/transcript.jsonl",
+      "content_hash": "/82/f275003397/0/content_hash.txt",
+      "prompt": "/82/f275003397/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 197844,
+    "cache_read_tokens": 9062053,
+    "output_tokens": 28670,
+    "api_call_count": 58
+  },
+  "redaction": {
+    "replacements": 14,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 6,
+      "credentialed_uri": 0,
+      "entropy": 7,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
