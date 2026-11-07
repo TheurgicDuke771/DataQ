@@ -5703,6 +5703,8 @@ section below.
   keep focus where you were and announce the result; and per-row actions (promote, enable or
   disable a check, dismiss or restore masking) are named for the row they act on.
 - **The comparison-report download is described correctly in the API reference.** It was documented as returning JSON, so the generated Python client failed on every download; the reference now lists its CSV and XLSX media types and the client returns the downloaded file.
+- **Run detail shows readable numbers.** The failing-rows percent and the Metric column are rounded to three significant figures (a value too small to show reads `<0.001`), with the exact value in the hover title and unchanged in exports.
+- **Metric trend charts no longer clip their y-axis labels.** Axis ticks are compact (`2.1K`, `0.06`) and the axis sizes itself to fit.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
