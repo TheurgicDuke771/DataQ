@@ -34,6 +34,7 @@ from backend.app.datasources.monitors import (
     AGGREGATE,
     AGGREGATE_CELL_VALUES,
     MONITOR_KINDS,
+    PII_DRIFT,
     SCALAR_MONITOR_KINDS,
     STATEFUL_MONITOR_KINDS,
     monitor_expectation_type,
@@ -437,6 +438,10 @@ def execute_run(
     suite_success = True
     n_results = 0
     published = False
+    # A pii_drift check records its detections in the last phase, and they commit with the run.
+    # Published earlier, this run's samples would be readable before the detection that masks
+    # them exists (#2476), so the whole run lands in the terminal commit instead.
+    hold_until_terminal = any(c.kind == PII_DRIFT for c in checks)
     try:
         for phase in _run_outcome_phases(
             runner,
@@ -463,7 +468,7 @@ def execute_run(
                 _discard_results_if_any(session, run, published=published)
                 log.info("run_cancelled_during_execution", run_id=str(run.id))
                 return run
-            if not phase.publishable:
+            if hold_until_terminal or not phase.publishable:
                 continue
             session.commit()
             published = True
