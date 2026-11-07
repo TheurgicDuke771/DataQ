@@ -88,6 +88,8 @@ module = [
     # The BigQuery dialect (#1681): untyped.
     "sqlalchemy_bigquery",
     "sqlalchemy_bigquery.*",
+    # The Athena client (#2131): its cursor is subclassed for the query limit (#2496).
+    "pyathena.*",
 ]
 ignore_missing_imports = true
 # None of these are in the slim CI typecheck deps, so CI sees them as Any. Several do

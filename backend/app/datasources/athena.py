@@ -169,7 +169,7 @@ def limited_cursor_class() -> type[Any]:
     from pyathena.cursor import Cursor
     from pyathena.model import AthenaQueryExecution
 
-    class LimitedCursor(Cursor):
+    class LimitedCursor(Cursor):  # type: ignore[misc]  # pyathena is Any to mypy
         def _poll_until_terminal(self, query_id: str) -> Any:
             deadline = time.monotonic() + query_timeout_s()
             while True:
