@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "49ffa36c44e2",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2311-adf-alert-freshness",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/api/v1/orchestration.py",
+    "backend/app/core/config.py",
+    "backend/app/services/orchestration_service.py",
+    "backend/tests/api/test_orchestration_events.py",
+    "changelog.d/2311.security.md",
+    "docs/site/adr/0006-adf-webhook-authentication.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/49/ffa36c44e2/0/metadata.json",
+      "transcript": "/49/ffa36c44e2/0/full.jsonl",
+      "compact_transcript": "/49/ffa36c44e2/0/transcript.jsonl",
+      "content_hash": "/49/ffa36c44e2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 28452,
+    "cache_read_tokens": 10152191,
+    "output_tokens": 13781,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 92757,
+      "cache_read_tokens": 107981,
+      "output_tokens": 591,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 46,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 28,
+      "credentialed_uri": 0,
+      "entropy": 15,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
