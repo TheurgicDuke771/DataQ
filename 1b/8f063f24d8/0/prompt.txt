@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>bed5bv2cj</task-id>
+<summary>Monitor event: "required CI on PRs 2589/2591/2594/2595/2596"</summary>
+<event>[Monitor expired after 30m with 3 events delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bpwo8fw3q</task-id>
+<summary>Monitor event: "required CI on PRs 2595/2596/2597/2598"</summary>
+<event>PR 2595 required checks done; failed: none</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bpwo8fw3q</task-id>
+<summary>Monitor event: "required CI on PRs 2595/2596/2597/2598"</summary>
+<event>PR 2596 required checks done; failed: none</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bpwo8fw3q</task-id>
+<summary>Monitor event: "required CI on PRs 2595/2596/2597/2598"</summary>
+<event>PR 2597 required checks done; failed: none</event>
+</task-notification>
