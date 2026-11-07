@@ -84,8 +84,14 @@ const COMPARE_CANDIDATES = 20;
  * is deep-linkable and refreshable.
  */
 export function RunDetail() {
-  const navigate = useNavigate();
   const { runId } = useParams<{ runId: string }>();
+  // Remount on id change: the router reuses this element from one run to the next (the command
+  // palette opens any run from any page), and the fetch runs on mount only.
+  return <RunDetailView key={runId} runId={runId} />;
+}
+
+function RunDetailView({ runId }: { runId: string | undefined }) {
+  const navigate = useNavigate();
 
   const { state } = useAsyncData(async () => {
     if (!runId) throw new Error('no run');
