@@ -212,3 +212,27 @@ def test_the_backfill_leaves_a_recorded_outcome_alone(db_session: Any) -> None:
     db_session.expire_all()
 
     assert db_session.get(Run, run.id).recorded_checks_total == 3
+
+
+def test_deleting_a_runs_only_evaluated_check_does_not_make_it_evaluate_nothing(
+    db_session: Any,
+) -> None:
+    # #2416 reads the recorded total: the deleted check's result rows are gone, but the run
+    # still evaluated it, so its asset stays watched and the gate still passes it.
+    from backend.app.db.models import Asset
+    from backend.app.services import coverage_service, gate_service
+
+    _, suite = _suite(db_session)
+    asset = Asset(namespace="snowflake://acct", name="db.s.t")
+    db_session.add(asset)
+    db_session.flush()
+    suite.asset_id = asset.id
+    run, checks = _running_run(db_session, suite, ("pass",))
+    run.triggered_by = "adf:pipe:run-1"
+    run_service._mark_succeeded(db_session, run)
+
+    _delete_check(db_session, checks["pass"])
+
+    assert coverage_service.coverage_figures(db_session).assets_watched == 1
+    (state,) = gate_service._suite_states(db_session, [suite.id], "adf:pipe:run-1", "fail")
+    assert (state.state, state.checks_total) == ("passed", 1)
