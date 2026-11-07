@@ -37,7 +37,6 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
-from backend.app.datasources.query_timeout import query_timeout_s
 
 #: How a request authenticates. ``password`` is HTTP basic (Trino's PASSWORD authenticator: a
 #: file, LDAP, …), ``jwt`` a bearer token, ``none`` a cluster that trusts the user name it is sent.
@@ -174,15 +173,46 @@ def _connect_args(
         # the worker's local zone unless told otherwise; the freshness math reads naive as UTC.
         "timezone": "UTC",
         "source": "dataq",
-        # The cluster cancels a query past the limit (#2496); a lower cluster-wide
-        # `query.max-execution-time` still wins.
-        "session_properties": {"query_max_execution_time": f"{query_timeout_s()}s"},
     }
     if tls:
         args["verify"] = _ca_bundle_path(config.ca_bundle) if config.ca_bundle else True
     if timeout is not None:
         args["request_timeout"] = timeout
     return args
+
+
+_DURATION = re.compile(r"\s*(\d+(?:\.\d+)?)\s*(ns|us|ms|s|m|h|d)\s*")
+_DURATION_SECONDS = {"ns": 1e-9, "us": 1e-6, "ms": 1e-3, "s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def _duration_seconds(value: Any) -> float | None:
+    """A Trino duration (`100.00d`, `30.00m`) in seconds, or None when it does not parse."""
+    match = _DURATION.fullmatch(str(value))
+    return float(match[1]) * _DURATION_SECONDS[match[2]] if match else None
+
+
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """The per-query limit (#2496) as `query_max_run_time`, which counts the time a query waits
+    in a resource-group queue as well as planning and execution — the whole time a check holds
+    a worker. The value the cluster gives this session (its `query.max-run-time`, or a session
+    property manager's) is kept when it is lower.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SHOW SESSION LIKE 'query_max_run_time'")
+        inherited = next(
+            (
+                _duration_seconds(row[1])
+                for row in cursor.fetchall()
+                if row[0] == "query_max_run_time"
+            ),
+            None,
+        )
+        limit = float(seconds) if not inherited else min(inherited, float(seconds))
+        cursor.execute(f"SET SESSION query_max_run_time = '{limit:.3f}s'")
+        cursor.fetchall()
+    finally:
+        cursor.close()
 
 
 def _auth_connect_args(config: TrinoConfig, secret: str | None) -> dict[str, Any]:
@@ -250,6 +280,7 @@ TRINO = SqlEngineSpec(
     drivername="trino",
     gx_datasource=_add_gx_datasource,
     connect_args=_connect_args,
+    query_timeout_setup=_query_timeout_setup,
     auth_connect_args=_auth_connect_args,
     credential_expiry=_credential_expiry,
     namespace_scheme="trino",

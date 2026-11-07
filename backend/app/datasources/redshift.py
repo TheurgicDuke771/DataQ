@@ -55,7 +55,9 @@ def _connect_args(
     options = f"-c search_path=pg_catalog,{config.default_schema}"
     if config.default_schema != "public":
         options += ",public"
-    options += f" -c statement_timeout={query_timeout_s() * 1000}"  # ms; the query limit (#2496)
+    # ms; the query limit (#2496). As a startup option it replaces a lower per-user
+    # `statement_timeout` (#2613: unlike PostgreSQL, unverified against a live cluster).
+    options += f" -c statement_timeout={query_timeout_s() * 1000}"
     if read_only:
         options = f"-c default_transaction_read_only=on {options}"
     args: dict[str, Any] = {

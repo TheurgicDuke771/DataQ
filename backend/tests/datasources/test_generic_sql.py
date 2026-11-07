@@ -140,7 +140,6 @@ def test_every_session_is_read_only_and_pinned_to_the_quoted_schema() -> None:
     args = POSTGRES.connect_args(_config(schema="Sales"), 10)
     assert args["options"] == (
         '-c default_transaction_read_only=on -c search_path=pg_catalog,"Sales",public'
-        " -c statement_timeout=1800000"
     )
     assert args["connect_timeout"] == 10
     assert args["sslmode"] == "require"
@@ -149,7 +148,7 @@ def test_every_session_is_read_only_and_pinned_to_the_quoted_schema() -> None:
 
 def test_public_is_not_repeated_when_it_is_the_connection_schema() -> None:
     assert POSTGRES.connect_args(_config(), None)["options"].endswith(
-        'search_path=pg_catalog,"public" -c statement_timeout=1800000'
+        'search_path=pg_catalog,"public"'
     )
 
 
@@ -165,7 +164,7 @@ def test_a_cleared_optional_field_means_the_default_not_an_error(blank: str) -> 
 
 def test_a_session_asked_not_to_be_read_only_keeps_everything_else() -> None:
     options = POSTGRES.connect_args(_config(schema="Sales"), None, read_only=False)["options"]
-    assert options == '-c search_path=pg_catalog,"Sales",public -c statement_timeout=1800000'
+    assert options == '-c search_path=pg_catalog,"Sales",public'
 
 
 def test_the_run_path_session_has_no_login_timeout() -> None:

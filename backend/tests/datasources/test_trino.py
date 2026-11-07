@@ -168,7 +168,6 @@ def test_every_session_is_utc_and_verifies_tls_against_the_system_store() -> Non
         "source": "dataq",
         "verify": True,
         "request_timeout": 10,
-        "session_properties": {"query_max_execution_time": "1800s"},
     }
     assert "request_timeout" not in TRINO.connect_args(_config(), None)
     plain = TRINO.connect_args(TRINO.validate_config(_OPEN), None)

@@ -12,7 +12,6 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
-from backend.app.datasources.query_timeout import query_timeout_s
 
 
 class PostgresConfig(GenericSqlConfig):
@@ -30,11 +29,10 @@ def _connect_args(
     config: PostgresConfig, timeout: int | None, *, read_only: bool = True
 ) -> dict[str, Any]:
     # `default_transaction_read_only` makes every transaction DataQ opens READ ONLY — the
-    # server refuses a write however it was smuggled into a query.
-    # `statement_timeout` (ms) cancels any one statement past the query limit (#2496).
-    options = (
-        f"-c search_path={_search_path(config)} -c statement_timeout={query_timeout_s() * 1000}"
-    )
+    # server refuses a write however it was smuggled into a query. The query limit is set after
+    # connecting (`_query_timeout_setup`), not here: a startup option would replace a lower
+    # limit the role or database sets.
+    options = f"-c search_path={_search_path(config)}"
     if read_only:
         options = f"-c default_transaction_read_only=on {options}"
     args: dict[str, Any] = {
@@ -49,6 +47,25 @@ def _connect_args(
     if timeout is not None:
         args["connect_timeout"] = timeout
     return args
+
+
+# `statement_timeout` (ms) cancels any one statement past the query limit (#2496). The session's
+# inherited value (role, database or server; 0 = none) is kept when it is lower.
+_QUERY_TIMEOUT_SQL = (
+    "SELECT set_config('statement_timeout', LEAST(NULLIF(setting::bigint, 0), %s)::text, false)"
+    " FROM pg_settings WHERE name = 'statement_timeout'"
+)
+
+
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute(_QUERY_TIMEOUT_SQL, (int(seconds) * 1000,))
+    finally:
+        cursor.close()
+    # A setting made inside a transaction is undone if it rolls back, which the pool does when
+    # the connection is first returned.
+    dbapi_connection.commit()
 
 
 def _search_path(config: PostgresConfig) -> str:
@@ -144,6 +161,7 @@ POSTGRES = SqlEngineSpec(
     drivername="postgresql+psycopg2",
     gx_datasource=_add_gx_datasource,
     connect_args=_connect_args,
+    query_timeout_setup=_query_timeout_setup,
     namespace_scheme="postgres",
     database_in_name=True,
     catalog=SqlCatalog(

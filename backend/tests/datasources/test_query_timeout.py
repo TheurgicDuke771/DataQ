@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,8 @@ from backend.app.core.config import Settings
 from backend.app.datasources import athena as athena_mod
 from backend.app.datasources import mssql as mssql_mod
 from backend.app.datasources import mysql as mysql_mod
+from backend.app.datasources import postgres as postgres_mod
+from backend.app.datasources import trino as trino_mod
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.query_timeout import (
     QueryTimeoutError,
@@ -48,10 +51,37 @@ def test_setting_is_bounded() -> None:
 
 
 @pytest.mark.parametrize("read_only", [True, False])
-def test_postgres_sets_statement_timeout_in_ms(limit: int, read_only: bool) -> None:
+def test_postgres_leaves_the_limit_out_of_the_startup_options(limit: int, read_only: bool) -> None:
+    # A startup option would replace a lower limit the role or database sets.
     spec = SQL_ENGINES["postgres"]
     args = spec.connect_args(spec.validate_config(_PG), None, read_only=read_only)
-    assert "-c statement_timeout=7000" in args["options"]
+    assert "statement_timeout" not in args["options"]
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs Postgres")
+@pytest.mark.parametrize(
+    ("inherited", "expected_ms"),
+    [("0", "7000"), ("1s", "1000"), ("1h", "7000")],
+)
+def test_postgres_keeps_a_lower_inherited_limit(
+    limit: int, inherited: str, expected_ms: str
+) -> None:
+    engine = create_engine(os.environ["TEST_DATABASE_URL"])
+    try:
+        raw = engine.raw_connection()
+        try:
+            cursor = raw.cursor()
+            cursor.execute("SELECT set_config('statement_timeout', %s, false)", (inherited,))
+            raw.commit()
+            postgres_mod._query_timeout_setup(raw, limit)
+            raw.rollback()  # what the pool does on return: the setting must survive it
+            cursor.execute("SELECT setting FROM pg_settings WHERE name = 'statement_timeout'")
+            row = cursor.fetchone()
+            assert row is not None and row[0] == expected_ms
+        finally:
+            raw.close()
+    finally:
+        engine.dispose()
 
 
 def test_redshift_sets_statement_timeout_in_ms(limit: int) -> None:
@@ -64,10 +94,9 @@ def test_redshift_sets_statement_timeout_in_ms(limit: int) -> None:
     assert "-c statement_timeout=7000" in _args("redshift", raw)["options"]
 
 
-def test_trino_sets_the_session_property(limit: int) -> None:
+def test_trino_leaves_the_limit_to_the_connect_hook(limit: int) -> None:
     raw = {"host": "trino.example.com", "database": "hive", "user": "dq", "auth_type": "none"}
-    args = _args("trino", raw, None)
-    assert args["session_properties"] == {"query_max_execution_time": "7s"}
+    assert "session_properties" not in _args("trino", raw, None)
 
 
 def test_mssql_python_tds_takes_the_query_timeout(limit: int) -> None:
@@ -150,8 +179,11 @@ def test_athena_poll_returns_a_query_that_finishes_in_time(
 
 
 class _RecordingConnection:
-    def __init__(self, server_version: str) -> None:
+    """Answers every SELECT with ``row`` and records each statement."""
+
+    def __init__(self, server_version: str = "", rows: list[tuple[Any, ...]] | None = None) -> None:
         self.server_version = server_version
+        self.rows = rows or []
         self.executed: list[str] = []
 
     def cursor(self) -> Any:
@@ -161,6 +193,12 @@ class _RecordingConnection:
             def execute(self, statement: str) -> None:
                 conn.executed.append(statement)
 
+            def fetchone(self) -> Any:
+                return conn.rows[0] if conn.rows else None
+
+            def fetchall(self) -> list[tuple[Any, ...]]:
+                return conn.rows if conn.executed[-1].startswith(("SELECT", "SHOW")) else []
+
             def close(self) -> None:
                 pass
 
@@ -168,17 +206,46 @@ class _RecordingConnection:
 
 
 @pytest.mark.parametrize(
-    ("server_version", "expected"),
+    ("server_version", "inherited", "expected"),
     [
-        ("8.4.11", "SET SESSION max_execution_time = 7000"),
-        ("11.4.13-MariaDB-ubu2404", "SET SESSION max_statement_time = 7"),
-        ("5.5.5-10.6.18-MariaDB", "SET SESSION max_statement_time = 7"),
+        ("8.4.11", 0, "SET SESSION max_execution_time = 7000"),
+        ("8.4.11", 1000, "SET SESSION max_execution_time = 1000"),
+        ("8.4.11", 3_600_000, "SET SESSION max_execution_time = 7000"),
+        ("11.4.13-MariaDB-ubu2404", 0.0, "SET SESSION max_statement_time = 7.000000"),
+        ("11.4.13-MariaDB-ubu2404", 1.5, "SET SESSION max_statement_time = 1.500000"),
+        ("5.5.5-10.6.18-MariaDB", 0.0, "SET SESSION max_statement_time = 7.000000"),
     ],
 )
-def test_mysql_spells_the_limit_for_the_server(server_version: str, expected: str) -> None:
-    conn = _RecordingConnection(server_version)
+def test_mysql_keeps_a_lower_inherited_limit(
+    server_version: str, inherited: float, expected: str
+) -> None:
+    conn = _RecordingConnection(server_version, [(inherited,)])
     mysql_mod._query_timeout_setup(conn, 7)
-    assert conn.executed == [expected]
+    assert conn.executed[-1] == expected
+
+
+def test_mysql_never_writes_a_large_limit_in_exponent_form() -> None:
+    conn = _RecordingConnection("8.4.11", [(0,)])
+    mysql_mod._query_timeout_setup(conn, 1800)
+    assert conn.executed[-1] == "SET SESSION max_execution_time = 1800000"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("100.00d", "SET SESSION query_max_run_time = '7.000s'"),
+        ("3.00s", "SET SESSION query_max_run_time = '3.000s'"),
+        ("500.00ms", "SET SESSION query_max_run_time = '0.500s'"),
+        ("not a duration", "SET SESSION query_max_run_time = '7.000s'"),
+    ],
+)
+def test_trino_bounds_the_whole_query_and_keeps_a_lower_cluster_limit(
+    value: str, expected: str
+) -> None:
+    # `query_max_run_time` counts resource-group queueing; `query_max_execution_time` does not.
+    conn = _RecordingConnection(rows=[("query_max_run_time", value, "100.00d", "varchar", "")])
+    trino_mod._query_timeout_setup(conn, 7)
+    assert conn.executed == ["SHOW SESSION LIKE 'query_max_run_time'", expected]
 
 
 def test_mssql_odbc_sets_the_connection_timeout_attribute() -> None:
@@ -204,8 +271,10 @@ def test_prepare_engine_runs_the_setup_on_every_new_connection(limit: int) -> No
     assert seen == [7]
 
 
-def test_the_two_engines_with_a_connect_hook_declare_it() -> None:
+def test_the_engines_with_a_connect_hook_declare_it() -> None:
+    assert SQL_ENGINES["postgres"].query_timeout_setup is postgres_mod._query_timeout_setup
     assert SQL_ENGINES["mysql"].query_timeout_setup is mysql_mod._query_timeout_setup
+    assert SQL_ENGINES["trino"].query_timeout_setup is trino_mod._query_timeout_setup
     assert SQL_ENGINES["mssql"].query_timeout_setup is mssql_mod._query_timeout_setup
 
 
