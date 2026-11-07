@@ -190,6 +190,8 @@ class ResolvedTarget:
     catalog: str | None
     batch: BatchSpec | None = None
     sampling: SampleSpec | None = None
+    #: A flat-file target's explicit format (csv/parquet/json); None = the path's extension.
+    file_format: str | None = None
 
 
 class TargetShapeError(ValueError):

@@ -29,7 +29,7 @@ from backend.app.datasources.monitors import (
 )
 from backend.app.datasources.registry import resolve_flatfile_secret
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, SQL_ENGINES
-from backend.app.db.models import Check, Connection, Run
+from backend.app.db.models import Check, Connection, Run, Suite
 from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -226,6 +226,7 @@ def introspect_columns(
     schema: str | None,
     catalog: str | None,
     secret_store: SecretStore,
+    file_format: str | None = None,
 ) -> list[ColumnSpec]:
     """The live column snapshot for a run's resolved target, by connection type."""
     try:
@@ -237,7 +238,7 @@ def introspect_columns(
             return _iceberg_columns(connection, identifier=table, secret_store=secret_store)
         if connection.type in FLAT_FILE_TYPES:
             return _file_columns(
-                connection, path=table, file_format=None, secret_store=secret_store
+                connection, path=table, file_format=file_format, secret_store=secret_store
             )
     except SchemaIntrospectionError:
         raise
@@ -268,9 +269,13 @@ def build_schema_drift_executor(
     secret_store: SecretStore,
     persist: bool = True,
     coverage: SuiteCoverage | None = None,  # the shared builder signature; unused here
-    run: Run | None = None,  # likewise
+    run: Run | None = None,
 ) -> Callable[[Check], CheckOutcome]:
     """A per-run executor for schema_drift checks (the comparison pattern, #794)."""
+
+    # The suite target's explicit file format, as pii_drift reads it (#2243).
+    suite = session.get(Suite, run.suite_id) if run is not None else None
+    target = suite.target if suite is not None and isinstance(suite.target, dict) else {}
 
     def executor(check: Check) -> CheckOutcome:
         try:
@@ -280,6 +285,7 @@ def build_schema_drift_executor(
                 schema=target_schema,
                 catalog=target_catalog,
                 secret_store=secret_store,
+                file_format=target.get("file_format"),
             )
         except SchemaIntrospectionError as exc:
             return CheckOutcome(

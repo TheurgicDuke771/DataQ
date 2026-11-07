@@ -229,6 +229,7 @@ def dry_run_check(
                 catalog=resolved.catalog,
                 # The suite target's row cap (#595).
                 sampling=resolved.sampling,
+                file_format=resolved.file_format,
             )
         except UnsupportedConnectionTypeError as exc:
             # Defensive: resolve_target already rejects non-datasource types, so this
@@ -444,6 +445,7 @@ def _dry_run_schema_drift(
             schema=resolved.schema,
             catalog=resolved.catalog,
             secret_store=secret_store,
+            file_format=resolved.file_format,
         )
     except schema_drift_service.SchemaIntrospectionError as exc:
         raise DryRunFailedError(str(exc), detail={"table": table}) from exc
