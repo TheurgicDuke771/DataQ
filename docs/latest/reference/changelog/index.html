@@ -3112,6 +3112,16 @@ section below.</p>
   settings tables carry a database check that refuses a second row, as the coverage and telemetry
   settings already did. The upgrade stops with the table named, instead of deleting anything, if a
   deployment somehow holds a row with another id.</li>
+<li><strong>A suggested value set over a column classified as sensitive after it was proposed is no
+  longer readable or acceptable.</strong> A suggested rule's value set was screened only when it was
+  proposed, so a column later marked sensitive (by the suite's column policy, a warehouse tag or
+  fail-closed mode) kept its raw values in the review queue. <code>GET /api/v1/suites/{id}/suggestions</code>,
+  the accept and reject responses, and MCP <code>list_suggested_rules</code> now re-check each value set
+  against today's classification: a sensitive one reads <code>&lt;redacted&gt;</code> per value, with
+  <code>redacted_columns</code> and <code>redaction_reasons</code> saying which column and rule decided (an AI-proposed
+  rule's name and rationale are replaced as well, as they may quote the values). Accepting such a
+  suggestion returns <code>409</code> with <code>error.code</code> <code>suggestion_values_sensitive</code>; reject it instead. The
+  suite page marks it <strong>Values withheld</strong> and disables <strong>Accept</strong>.</li>
 <li><strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.</li>
 <li><strong>Opening another run from a run's page shows that run.</strong> Picking a run in the command palette
