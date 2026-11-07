@@ -2336,7 +2336,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
 
     ``completed_checks`` can legitimately sit at 0 on a healthy, busy run: a suite
     of ordinary expectations is validated as one atomic batch, so its checks all
-    resolve at once at the end. Read a rising ``elapsed_ms`` with
+    resolve at once at the end. A suite holding a ``pii_drift`` check goes further: none
+    of its checks complete until the whole run does, so a privacy detection made during
+    the run is saved before any of its samples can be read. Read a rising ``elapsed_ms`` with
     ``status: running`` as "still working", not as "stuck".
 
     ``queued_reason`` explains why a ``queued`` run has not started, which polling

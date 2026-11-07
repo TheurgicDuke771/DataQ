@@ -496,6 +496,12 @@ data**), which is recorded in the audit log with the column and both states; a d
 a later re-detection, and the panel keeps showing "last seen" so a dismissed column that still
 carries the values stays visible. There is no MCP tool for dismissal.
 
+A suite with a **PII drift** check profiles its table during every run, and that profile can
+detect a column for the first time. Such a run publishes all its results together when it
+finishes, rather than check by check, so none of its failing samples can be read before the
+detection that masks them is saved. The run-progress view of that suite therefore shows its
+checks completing all at once, at the end.
+
 The asset detail (`GET /api/v1/assets/{id}`, MCP `get_asset`) lists every detection, dismissed
 ones included, each with its **effect**: `masks`, `overridden_by_tag` (the column's own warehouse
 tag decides instead, either way) or `dismissed`. It also carries the time a **full** profile
