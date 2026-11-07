@@ -169,6 +169,22 @@ def test_a_mailer_failure_is_absorbed_into_the_outcome_not_raised(db_session: An
     assert db_session.query(OtpCode).filter(OtpCode.email == email).count() == 1
 
 
+def test_a_request_whose_dispatch_failed_does_not_spend_the_quota(db_session: Any) -> None:
+    """#1824: retrying through a broker blip must not throttle the member. With a quota of two,
+    two failed dispatches leave both requests in the window, so a third is still sent."""
+    email = _address()
+    settings = _settings(auth_otp_request_per_email_per_10min=2)
+    for _ in range(2):
+        failed = svc.request_code(db_session, email, mailer=_FailingMailer(), settings=settings)
+        assert failed.reason == "dispatch_failed"
+
+    sent = svc.request_code(db_session, email, mailer=_RecordingMailer(), settings=settings)
+    assert sent.sent is True
+    assert svc.request_code(db_session, email, mailer=_RecordingMailer(), settings=settings).sent
+    third = svc.request_code(db_session, email, mailer=_RecordingMailer(), settings=settings)
+    assert third.reason == "throttled"
+
+
 def test_the_queued_mailer_publishes_the_send_task(monkeypatch: pytest.MonkeyPatch) -> None:
     """The production `CodeMailer` (#1731) is a Celery publish, by task NAME — the
     api process must not import `worker.tasks` (and GX with it) to send mail.
@@ -381,6 +397,9 @@ def test_the_counter_fails_OPEN_when_the_store_is_down(db_session: Any) -> None:
         def incr_window(self, key: str, ttl_seconds: int) -> int | None:
             return None
 
+        def refund_window(self, key: str) -> None:
+            pass
+
     svc.set_counter_store_for_testing(_DownStore())
     s = _settings(auth_otp_request_per_email_per_10min=1)
     email = _address()
@@ -400,6 +419,9 @@ def test_the_outage_warning_carries_no_address_in_any_form(db_session: Any) -> N
     class _DownStore:
         def incr_window(self, key: str, ttl_seconds: int) -> int | None:
             return None
+
+        def refund_window(self, key: str) -> None:
+            pass
 
     svc.set_counter_store_for_testing(_DownStore())
     email = _address()
@@ -888,3 +910,36 @@ async def test_an_otp_brownout_does_not_open_the_rate_limiters_breaker() -> None
         assert healthy_otp.calls == 1, "a rate-limit brownout stopped the OTP counter"
     finally:
         rate_limit.reset_rate_limit_state()
+
+
+def _real_redis() -> Any:
+    import redis
+
+    return redis.from_url("redis://localhost:6379/15", socket_connect_timeout=1, socket_timeout=1)
+
+
+def _redis_up() -> bool:
+    try:
+        return bool(_real_redis().ping())
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _redis_up(), reason="redis not reachable (docker compose up -d redis)")
+def test_the_redis_refund_takes_back_one_and_never_creates_a_window() -> None:
+    """Against real Redis: a bare DECR on an expired key would create it at -1 with no TTL, a
+    permanent extra request; the refund must only decrement a window that still exists."""
+    client = _real_redis()
+    key = f"otp:req:test-refund:{uuid.uuid4().hex}"
+    store = svc.RedisOtpCounterStore("redis://localhost:6379/15")
+    try:
+        assert store.incr_window(key, 60) == 1
+        assert store.incr_window(key, 60) == 2
+        store.refund_window(key)
+        assert int(client.get(key)) == 1
+
+        client.delete(key)
+        store.refund_window(key)
+        assert client.exists(key) == 0
+    finally:
+        client.delete(key)
