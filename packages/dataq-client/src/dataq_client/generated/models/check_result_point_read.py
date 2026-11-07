@@ -9,6 +9,9 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.check_result_point_read_metric_value_redaction_type_0 import (
+    CheckResultPointReadMetricValueRedactionType0,
+)
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -27,6 +30,9 @@ class CheckResultPointRead:
         metric_value (float | None):
         run_id (UUID):
         status (str):
+        metric_value_redaction (CheckResultPointReadMetricValueRedactionType0 | None | Unset): Non-null when
+            `metric_value` was withheld (sent as null): an `aggregate` min/max measures one literal cell of a sensitive
+            column. Names the rung that masked it, in the `redaction_reasons` vocabulary of `GET /runs/{id}`.
         seasonal (None | SeasonalPointRead | Unset):
     """
 
@@ -34,6 +40,7 @@ class CheckResultPointRead:
     metric_value: float | None
     run_id: UUID
     status: str
+    metric_value_redaction: CheckResultPointReadMetricValueRedactionType0 | None | Unset = UNSET
     seasonal: None | SeasonalPointRead | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -48,6 +55,14 @@ class CheckResultPointRead:
         run_id = str(self.run_id)
 
         status = self.status
+
+        metric_value_redaction: None | str | Unset
+        if isinstance(self.metric_value_redaction, Unset):
+            metric_value_redaction = UNSET
+        elif isinstance(self.metric_value_redaction, CheckResultPointReadMetricValueRedactionType0):
+            metric_value_redaction = self.metric_value_redaction.value
+        else:
+            metric_value_redaction = self.metric_value_redaction
 
         seasonal: dict[str, Any] | None | Unset
         if isinstance(self.seasonal, Unset):
@@ -67,6 +82,8 @@ class CheckResultPointRead:
                 "status": status,
             }
         )
+        if metric_value_redaction is not UNSET:
+            field_dict["metric_value_redaction"] = metric_value_redaction
         if seasonal is not UNSET:
             field_dict["seasonal"] = seasonal
 
@@ -90,6 +107,27 @@ class CheckResultPointRead:
 
         status = d.pop("status")
 
+        def _parse_metric_value_redaction(
+            data: object,
+        ) -> CheckResultPointReadMetricValueRedactionType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                metric_value_redaction_type_0 = CheckResultPointReadMetricValueRedactionType0(data)
+
+                return metric_value_redaction_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CheckResultPointReadMetricValueRedactionType0 | None | Unset, data)
+
+        metric_value_redaction = _parse_metric_value_redaction(
+            d.pop("metric_value_redaction", UNSET)
+        )
+
         def _parse_seasonal(data: object) -> None | SeasonalPointRead | Unset:
             if data is None:
                 return data
@@ -112,6 +150,7 @@ class CheckResultPointRead:
             metric_value=metric_value,
             run_id=run_id,
             status=status,
+            metric_value_redaction=metric_value_redaction,
             seasonal=seasonal,
         )
 

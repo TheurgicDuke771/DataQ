@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.result_read_metric_value_redaction_type_0 import ResultReadMetricValueRedactionType0
 from ..models.result_read_redaction_type_0 import ResultReadRedactionType0
 from ..types import UNSET, Unset
 
@@ -48,6 +49,10 @@ class ResultRead:
             sample_failures (None | ResultReadSampleFailuresType0):
             status (str):
             check (CheckAsOfRead | None | Unset):
+            metric_value_redaction (None | ResultReadMetricValueRedactionType0 | Unset): Non-null when `metric_value` was
+                withheld (sent as null): the metric is one literal cell of the tested column (an `aggregate` min/max) and that
+                column is sensitive. The value names the rung that masked it, in the `redaction_reasons` vocabulary. Null means
+                `metric_value` is as recorded.
             redacted_columns (list[str] | Unset):
             redaction (None | ResultReadRedactionType0 | Unset):
             redaction_reasons (ResultReadRedactionReasons | Unset): Why each entry of `redacted_columns` was masked, keyed
@@ -67,6 +72,7 @@ class ResultRead:
     sample_failures: None | ResultReadSampleFailuresType0
     status: str
     check: CheckAsOfRead | None | Unset = UNSET
+    metric_value_redaction: None | ResultReadMetricValueRedactionType0 | Unset = UNSET
     redacted_columns: list[str] | Unset = UNSET
     redaction: None | ResultReadRedactionType0 | Unset = UNSET
     redaction_reasons: ResultReadRedactionReasons | Unset = UNSET
@@ -124,6 +130,14 @@ class ResultRead:
         else:
             check = self.check
 
+        metric_value_redaction: None | str | Unset
+        if isinstance(self.metric_value_redaction, Unset):
+            metric_value_redaction = UNSET
+        elif isinstance(self.metric_value_redaction, ResultReadMetricValueRedactionType0):
+            metric_value_redaction = self.metric_value_redaction.value
+        else:
+            metric_value_redaction = self.metric_value_redaction
+
         redacted_columns: list[str] | Unset = UNSET
         if not isinstance(self.redacted_columns, Unset):
             redacted_columns = self.redacted_columns
@@ -164,6 +178,8 @@ class ResultRead:
         )
         if check is not UNSET:
             field_dict["check"] = check
+        if metric_value_redaction is not UNSET:
+            field_dict["metric_value_redaction"] = metric_value_redaction
         if redacted_columns is not UNSET:
             field_dict["redacted_columns"] = redacted_columns
         if redaction is not UNSET:
@@ -275,6 +291,27 @@ class ResultRead:
 
         check = _parse_check(d.pop("check", UNSET))
 
+        def _parse_metric_value_redaction(
+            data: object,
+        ) -> None | ResultReadMetricValueRedactionType0 | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                metric_value_redaction_type_0 = ResultReadMetricValueRedactionType0(data)
+
+                return metric_value_redaction_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | ResultReadMetricValueRedactionType0 | Unset, data)
+
+        metric_value_redaction = _parse_metric_value_redaction(
+            d.pop("metric_value_redaction", UNSET)
+        )
+
         redacted_columns = cast(list[str], d.pop("redacted_columns", UNSET))
 
         def _parse_redaction(data: object) -> None | ResultReadRedactionType0 | Unset:
@@ -328,6 +365,7 @@ class ResultRead:
             sample_failures=sample_failures,
             status=status,
             check=check,
+            metric_value_redaction=metric_value_redaction,
             redacted_columns=redacted_columns,
             redaction=redaction,
             redaction_reasons=redaction_reasons,

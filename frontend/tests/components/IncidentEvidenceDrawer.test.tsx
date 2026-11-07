@@ -134,8 +134,10 @@ describe('IncidentEvidenceDrawer', () => {
 
   it('marks a withheld failing metric and trend point Masked, not as a missing value', async () => {
     const evidence = fullEvidence();
+    const failing = evidence.failing_result;
+    if (!failing) throw new Error('fixture has a failing result');
     evidence.failing_result = {
-      ...evidence.failing_result!,
+      ...failing,
       metric_value: null,
       metric_value_redaction: 'own_tag',
     };

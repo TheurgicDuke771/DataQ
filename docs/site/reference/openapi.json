@@ -2726,6 +2726,26 @@
             ],
             "title": "Metric Value"
           },
+          "metric_value_redaction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own_tag",
+                  "inherited_tag",
+                  "policy",
+                  "unclassified",
+                  "detected",
+                  "classifier",
+                  "default_mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value Redaction"
+          },
           "observed_value": {
             "anyOf": [
               {
@@ -2958,6 +2978,27 @@
               }
             ],
             "title": "Metric Value"
+          },
+          "metric_value_redaction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own_tag",
+                  "inherited_tag",
+                  "policy",
+                  "unclassified",
+                  "detected",
+                  "classifier",
+                  "default_mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Non-null when `metric_value` was withheld (sent as null): an `aggregate` min/max measures one literal cell of a sensitive column. Names the rung that masked it, in the `redaction_reasons` vocabulary of `GET /runs/{id}`.",
+            "title": "Metric Value Redaction"
           },
           "run_id": {
             "format": "uuid",
@@ -4070,7 +4111,7 @@
         "type": "object"
       },
       "ComparisonDeltaRead": {
-        "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric. `metric_changed` is true whenever the two\nmetrics differ \u2014 including when only ONE side has one, in which case the deltas\nare null because no difference can be stated.",
+        "description": "`status_change`: `improved`/`regressed` rank pass < warn < fail < critical;\n`changed` is a transition through `skip`/`error`, which carry no rank;\n`added`/`removed` mean the check has a result on only one side. `metric_delta`\nis target minus base, `metric_delta_pct` relative to a non-zero base; both null\nwhen either side has no metric or withholds it (`metric_value_redaction`).\n`metric_changed` is true whenever the two recorded metrics differ \u2014 including when\nonly ONE side has one, or a side's metric is withheld, in which case the deltas are\nnull because no difference can be stated.",
         "properties": {
           "metric_changed": {
             "title": "Metric Changed",
@@ -4321,6 +4362,26 @@
               }
             ],
             "title": "Metric Value"
+          },
+          "metric_value_redaction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own_tag",
+                  "inherited_tag",
+                  "policy",
+                  "unclassified",
+                  "detected",
+                  "classifier",
+                  "default_mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Value Redaction"
           },
           "observed_value": {
             "anyOf": [
@@ -9693,6 +9754,27 @@
               }
             ],
             "title": "Metric Value"
+          },
+          "metric_value_redaction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own_tag",
+                  "inherited_tag",
+                  "policy",
+                  "unclassified",
+                  "detected",
+                  "classifier",
+                  "default_mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Non-null when `metric_value` was withheld (sent as null): the metric is one literal cell of the tested column (an `aggregate` min/max) and that column is sensitive. The value names the rung that masked it, in the `redaction_reasons` vocabulary. Null means `metric_value` is as recorded.",
+            "title": "Metric Value Redaction"
           },
           "observed_value": {
             "anyOf": [
