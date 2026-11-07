@@ -4278,6 +4278,11 @@
             "title": "Results Final",
             "type": "boolean"
           },
+          "results_removed": {
+            "default": 0,
+            "title": "Results Removed",
+            "type": "integer"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -10008,6 +10013,11 @@
             "title": "Results",
             "type": "array"
           },
+          "results_removed": {
+            "default": 0,
+            "title": "Results Removed",
+            "type": "integer"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -10331,6 +10341,11 @@
               }
             ],
             "title": "Queued Reason"
+          },
+          "results_removed": {
+            "default": 0,
+            "title": "Results Removed",
+            "type": "integer"
           },
           "started_at": {
             "anyOf": [

@@ -3145,6 +3145,12 @@ section below.</p>
   suite page marks it <strong>Values withheld</strong> and disables <strong>Accept</strong>.</li>
 <li><strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.</li>
+<li><strong>Deleting a check no longer rewrites the history of past runs.</strong> A run now records its outcome
+  (checks passed, worst severity) when it finishes, and the run page, runs list, recent-runs widget, PDF
+  report, REST API and MCP tools show that recorded outcome. When results have since been removed
+  with a deleted check, the run page and the report say how many, and the API and MCP tools return
+  the count as <code>results_removed</code>. Runs that finished before this release record the outcome they
+  had at the upgrade; a result already deleted before then cannot be recovered or counted.</li>
 <li><strong>A flat-file target's chosen file format now applies to its runs.</strong> The <em>File format</em> picked on
   a suite's target was used only by the profiler and column listing; checks, monitors, schema
   drift and memory admission still read the format from the file's extension, so a target like
