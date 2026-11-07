@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01UE6pe3ZXp6sAsqsrNGvKfX",
+  "agent_id": "a3a02cadd614cfcbb",
+  "subagent_type": "general-purpose",
+  "task_description": "Fix #2240 metric_value masking",
+  "token_usage": {
+    "input_tokens": 296,
+    "cache_creation_tokens": 331292,
+    "cache_read_tokens": 33390157,
+    "output_tokens": 94734,
+    "api_call_count": 149
+  },
+  "started_at": "2026-11-07T01:33:14.323334+05:30",
+  "completed_at": "2026-11-07T13:35:00.810423+05:30"
+}

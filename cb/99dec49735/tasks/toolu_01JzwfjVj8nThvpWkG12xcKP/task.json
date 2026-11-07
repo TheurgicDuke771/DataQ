@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01JzwfjVj8nThvpWkG12xcKP",
+  "agent_id": "ad8c661bb05760e9b",
+  "subagent_type": "general-purpose",
+  "task_description": "Fix #2496 per-query timeout",
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 212403,
+    "cache_read_tokens": 8662773,
+    "output_tokens": 37355,
+    "api_call_count": 54
+  },
+  "started_at": "2026-11-07T01:49:12.256908+05:30",
+  "completed_at": "2026-11-07T13:35:00.837226+05:30"
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_018ujNrqKRz2z1N7hN6AFcbk",
+  "agent_id": "a3232f5ca976bbbb2",
+  "subagent_type": "general-purpose",
+  "task_description": "Fix #2111 send_task + #2136 flake",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 114996,
+    "cache_read_tokens": 866938,
+    "output_tokens": 2835,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-07T01:33:14.01581+05:30",
+  "completed_at": "2026-11-07T13:35:00.605192+05:30"
+}
