@@ -101,6 +101,38 @@ describe('CoveragePanel', () => {
     expect(screen.getByText(/by ada@example.com/)).toBeInTheDocument();
   });
 
+  it('keeps focus in the panel after a save even when the frame fires before the remount', async () => {
+    mockGet.mockResolvedValue(DEFAULTS);
+    mockPut.mockResolvedValue(CUSTOM);
+    renderSubPage(<CoveragePanel />);
+    await screen.findByText('Defaults');
+    await userEvent.click(
+      screen.getByRole('switch', { name: 'Set for the workspace: Column profile thresholds' }),
+    );
+    setNumber('Column profile warn deviations', '5');
+    setNumber('Column profile fail deviations', '7');
+    setNumber('Column profile critical deviations', '9');
+    save().focus();
+    // A microtask runs before React's scheduler task commits the remount: the frame "wins".
+    let frame = 0;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      queueMicrotask(() => cb(performance.now()));
+      frame += 1;
+      return frame;
+    });
+    try {
+      fireEvent.click(save());
+      expect(await screen.findByText('Customised')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(
+          document.activeElement?.closest('[aria-label="Sensitivity of automatic checks"]'),
+        ).not.toBeNull(),
+      );
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   it('saves the yearly switch with the history group', async () => {
     mockGet.mockResolvedValue(DEFAULTS);
     mockPut.mockResolvedValue(CUSTOM);

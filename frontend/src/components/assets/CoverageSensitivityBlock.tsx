@@ -1,5 +1,5 @@
 import { Alert, App, Collapse, Flex, Tag, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { updateAsset } from '../../api/assets';
 import {
@@ -29,6 +29,14 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
   const { run, loading } = useAsyncAction('Could not save this table’s sensitivity');
   const { message } = App.useApp();
   const { ref: fallbackRef, restore: restoreFocus } = useFocusFallback();
+  // Bumped by a save; the effect runs after the commit that remounts the form (it is keyed on
+  // the override), so the Save button that had focus is already gone when the check runs.
+  // Called from the save itself, the check could run before that commit and see the old
+  // button still focused, and focus then fell to the page.
+  const [saves, setSaves] = useState(0);
+  useEffect(() => {
+    if (saves > 0) restoreFocus();
+  }, [saves, restoreFocus]);
 
   if (state.status === 'loading') return null;
   if (state.status === 'error') {
@@ -64,7 +72,7 @@ export function CoverageSensitivityBlock({ assetId }: { assetId: string }) {
         setSaved(null);
         reload();
       }
-      restoreFocus();
+      setSaves((n) => n + 1);
     });
 
   return (
