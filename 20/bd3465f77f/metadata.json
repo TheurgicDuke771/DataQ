@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "20bd3465f77f",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2243-flatfile-file-format-run-path",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/base.py",
+    "backend/app/datasources/flatfile.py",
+    "backend/app/datasources/registry.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/app/services/run_admission.py",
+    "backend/app/services/schema_drift.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/datasources/test_flatfile_file_format.py",
+    "changelog.d/2243.fixed.md",
+    "docs/site/guides/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/20/bd3465f77f/0/metadata.json",
+      "transcript": "/20/bd3465f77f/0/full.jsonl",
+      "compact_transcript": "/20/bd3465f77f/0/transcript.jsonl",
+      "content_hash": "/20/bd3465f77f/0/content_hash.txt",
+      "prompt": "/20/bd3465f77f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 46983,
+    "cache_read_tokens": 15756504,
+    "output_tokens": 21171,
+    "api_call_count": 38,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 94078,
+      "cache_read_tokens": 107995,
+      "output_tokens": 569,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 61,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 40,
+      "credentialed_uri": 0,
+      "entropy": 18,
+      "key_context": 3,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

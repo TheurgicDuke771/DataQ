@@ -1,0 +1,16 @@
+<task-notification>
+<task-id>bpwo8fw3q</task-id>
+<tool-use-id>toolu_01Bs6fRqozyawSTqJ6ng1evQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/84ae9e90-d402-4aca-a76a-fa5011c19971/tasks/bpwo8fw3q.output</output-file>
+<status>completed</status>
+<summary>Monitor "required CI on PRs 2595/2596/2597/2598" stream ended</summary>
+<event>PR 2598 required checks done; failed: Backend — tests,Frontend — lint &amp; format,</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>blfg3j24n</task-id>
+<summary>Monitor event: "required CI on PRs 2598/2599/2600"</summary>
+<event>PR 2598 required checks done; failed: Backend — tests,Frontend — lint &amp; format,</event>
+</task-notification>
