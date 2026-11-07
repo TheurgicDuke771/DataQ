@@ -5193,7 +5193,8 @@ def list_suggested_rules(
 
     Use this for 'what does DataQ suggest for the orders suite?' or 'which
     suggestions were rejected?'. Returns ``suggestions``, each with ``name``,
-    ``expectation_type``, ``config``, ``rationale``, ``source`` and ``status``.
+    ``expectation_type``, ``config``, ``rationale``, ``source``, ``status``,
+    ``redacted_columns`` and ``redaction_reasons``.
 
     **A suggested rule is not a check and has never run.** Nothing here says the
     data satisfies it today. ``rationale`` is why it was proposed: for
@@ -5203,6 +5204,21 @@ def list_suggested_rules(
     ``source: "llm"`` the model's own wording, which is a claim, not a
     measurement. ``check_id`` is the check created when one was accepted, and is
     null while pending, when rejected, and once that check has been deleted.
+
+    **A value set can be withheld.** Each suggestion is re-screened when read: if
+    its ``config.value_set`` is over a column classified as sensitive today (a
+    warehouse tag, the suite's column policy, fail-closed mode or the PII
+    classifier) — even one that was not sensitive when the rule was proposed —
+    every value reads ``<redacted>``, the column is in ``redacted_columns`` and
+    ``redaction_reasons`` says which rule decided. The real values are not
+    returned here, and such a suggestion cannot be accepted, even in the app: the
+    only decision left is to reject it. An already accepted rule is masked here
+    too, but its check (``check_id``) still holds the values it was created with,
+    and check reads do not mask them. For an AI-proposed rule
+    (``source: "llm"``) the ``name`` is replaced and ``rationale`` is null too,
+    since the model's wording may quote the values. An empty ``redacted_columns``
+    means nothing was withheld, not that the column was checked against a policy:
+    other expectation types store no values.
 
     Only suites that automatic coverage created get suggestions. An empty list on any
     other suite means it has no review queue, not that it needs no checks; on a
@@ -5214,8 +5230,11 @@ def list_suggested_rules(
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
-        rows = suggestion_service.list_suggestions(
-            session, sid, user_id=user.id, status=None if status == "all" else status
+        rows = suggestion_service.present(
+            session,
+            suggestion_service.list_suggestions(
+                session, sid, user_id=user.id, status=None if status == "all" else status
+            ),
         )
         return {
             "suite_id": str(sid),
@@ -5233,6 +5252,8 @@ def list_suggested_rules(
                     "check_id": str(r.check_id) if r.check_id else None,
                     "created_at": r.created_at.isoformat(),
                     "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+                    "redacted_columns": r.redacted_columns,
+                    "redaction_reasons": r.redaction_reasons,
                 }
                 for r in rows
             ],

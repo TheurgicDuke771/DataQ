@@ -11696,6 +11696,31 @@
             ],
             "title": "Rationale"
           },
+          "redacted_columns": {
+            "description": "Columns whose stored `config.value_set` is withheld (each value `<redacted>`) because the column is classified as sensitive now, by its warehouse tag, the suite's policy or the classifier. Such a suggestion cannot be accepted (409). For an AI-proposed rule the name and rationale are replaced too, as the model's wording may quote values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "description": "Why each entry of `redacted_columns` is withheld, keyed by column.",
+            "title": "Redaction Reasons",
+            "type": "object"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -18998,6 +19023,7 @@
     },
     "/api/v1/suggestions/{suggestion_id}/accept": {
       "post": {
+        "description": "Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified as sensitive since it was proposed; reject it instead.",
         "operationId": "accept_suggestion",
         "parameters": [
           {

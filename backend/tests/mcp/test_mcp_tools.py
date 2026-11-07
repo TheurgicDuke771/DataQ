@@ -5526,3 +5526,35 @@ def test_import_suite_refuses_an_enabled_that_is_not_a_boolean(
 
     assert "enabled" in str(exc.value)
     assert len(suite_service.list_suites(db_session, user_id=user.id)) == 1
+
+
+def test_list_suggested_rules_withholds_a_value_set_classified_after_it_was_queued(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    db_session.add(
+        CheckSuggestion(
+            suite_id=suite.id,
+            source="llm",
+            status="pending",
+            fingerprint="tier-set",
+            name="tier is gold or silver",
+            expectation_type="expect_column_values_to_be_in_set",
+            config={"column": "tier", "value_set": ["gold", "silver"]},
+            rationale="only gold and silver seen",
+        )
+    )
+    suite.column_policy = {"pii_columns": ["tier"]}
+    db_session.commit()
+    _as(monkeypatch, db_session, owner)
+
+    (row,) = server.list_suggested_rules(str(suite.id))["suggestions"]
+
+    assert row["config"]["value_set"] == ["<redacted>", "<redacted>"]
+    assert (row["redacted_columns"], row["redaction_reasons"]) == (
+        ["tier"],
+        {"tier": "policy"},
+    )
+    assert (row["name"], row["rationale"]) == ("tier: value set withheld", None)
+    assert "gold" not in repr(row)

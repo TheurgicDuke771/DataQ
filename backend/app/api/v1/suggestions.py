@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
@@ -15,6 +15,7 @@ from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.db.models import User
 from backend.app.db.session import get_db
 from backend.app.services import suggestion_service as svc
+from backend.app.services.run_service import RedactionReason
 
 router = APIRouter(tags=["suggestions"])
 
@@ -37,6 +38,19 @@ class SuggestionRead(ApiModel):
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     created_at: datetime
+    redacted_columns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Columns whose stored `config.value_set` is withheld (each value `<redacted>`) because "
+            "the column is classified as sensitive now, by its warehouse tag, the suite's policy "
+            "or the classifier. Such a suggestion cannot be accepted (409). For an AI-proposed "
+            "rule the name and rationale are replaced too, as the model's wording may quote values."
+        ),
+    )
+    redaction_reasons: dict[str, RedactionReason] = Field(
+        default_factory=dict,
+        description="Why each entry of `redacted_columns` is withheld, keyed by column.",
+    )
 
 
 @router.get(
@@ -50,8 +64,11 @@ def list_suggestions(
     db: Annotated[Session, Depends(get_db)],
     status: Annotated[Literal["pending", "accepted", "rejected", "all"], Query()] = "pending",
 ) -> list[Any]:
-    return svc.list_suggestions(
-        db, suite_id, user_id=current_user.id, status=None if status == "all" else status
+    return svc.present(
+        db,
+        svc.list_suggestions(
+            db, suite_id, user_id=current_user.id, status=None if status == "all" else status
+        ),
     )
 
 
@@ -59,13 +76,17 @@ def list_suggestions(
     "/suggestions/{suggestion_id}/accept",
     response_model=SuggestionRead,
     summary="Accept a proposed rule: it becomes a check in the suite",
+    description=(
+        "Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column "
+        "classified as sensitive since it was proposed; reject it instead."
+    ),
 )
 def accept_suggestion(
     suggestion_id: uuid.UUID,
     current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> Any:
-    return svc.accept(db, suggestion_id, user_id=current_user.id)
+    return svc.present(db, [svc.accept(db, suggestion_id, user_id=current_user.id)])[0]
 
 
 @router.post(
@@ -78,4 +99,4 @@ def reject_suggestion(
     current_user: MemberUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> Any:
-    return svc.reject(db, suggestion_id, user_id=current_user.id)
+    return svc.present(db, [svc.reject(db, suggestion_id, user_id=current_user.id)])[0]
