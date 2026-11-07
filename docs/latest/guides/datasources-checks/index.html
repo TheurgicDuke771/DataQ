@@ -4719,7 +4719,13 @@ wherever it is offered and is <strong>not offered on MySQL/MariaDB, Trino or Ath
 only an approximate percentile, or on <strong>BigQuery</strong>, whose exact percentile does not scale — use the mean there, or a custom-SQL check with the engine's
 <code>approx_percentile</code>. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
-<strong>min or max</strong> result keeps its status but not its value: that value is one cell of the table.</p>
+<strong>min or max</strong> result keeps its status but not its value: that value is one cell of the table.
+For the same reason, a min or max over a column that the suite's column policy or the
+warehouse's tags mark sensitive has its value <strong>withheld on every read</strong>: the run page, the
+trend view, run comparison, incident evidence, alerts, webhooks, the API and MCP all send
+<code>metric_value</code> as null beside a <code>metric_value_redaction</code> naming the rule that masked it. The
+status still shows, so the trend keeps its pass/fail markers without the numbers. Mean,
+median, sum and standard deviation are computed statistics and are never withheld.</p>
 <h3 id="schema-drift-monitor-all-datasources-adr-0012">Schema-drift monitor (all datasources — ADR 0012)<a class="headerlink" href="#schema-drift-monitor-all-datasources-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /

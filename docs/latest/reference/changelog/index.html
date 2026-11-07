@@ -2878,6 +2878,13 @@ section below.</p>
   authorization-server code, which DataQ never runs (it only acts as an OAuth client), so
   neither reached the product. The connector's new geospatial and catalog-name-escaping
   options are opt-in and off by default, so Unity Catalog connections behave as before.</li>
+<li><strong>A min or max aggregate no longer exposes a sensitive cell through its metric.</strong> An <code>aggregate</code>
+  check measuring min or max records one cell of its column as <code>metric_value</code>. On a column the
+  suite's column policy or the warehouse's tags mark sensitive, that value is now withheld on
+  every read surface (run results, run comparison, the per-check trend, incident evidence,
+  alerts, webhooks, the API and MCP): <code>metric_value</code> is null and the new <code>metric_value_redaction</code>
+  field names the rule that masked it. Stored incident evidence is masked when read; the
+  <code>redact_stale_incident_evidence</code> backfill also rewrites it on disk.</li>
 </ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>

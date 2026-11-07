@@ -3516,6 +3516,11 @@ are the reason this mode is opt-in rather than the default:</p>
   the boundary, column-aware</strong>: a suite's <strong>column policy</strong> (auto-derived by a classifier or
   set by hand) keeps non-sensitive breach values debuggable while masking PII columns to
   <code>&lt;redacted&gt;</code>. The numeric counts and row/column shape are kept.</li>
+<li><strong>A metric can be a cell.</strong> <code>metric_value</code> is normally a computed number, but an <code>aggregate</code>
+  check measuring min or max records one cell of its column. On a column the policy or the
+  warehouse tags mark sensitive, that value is withheld everywhere it is read (REST, MCP,
+  the trend view, incident evidence, alerts and webhooks): it is sent as null with a
+  <code>metric_value_redaction</code> reason.</li>
 <li><strong>Zero-sample privacy mode</strong> (<code>PRIVACY_ZERO_SAMPLE_MODE=true</code>) is a deployment-level
   step past redaction: no failing-row sample is ever <strong>persisted</strong> at all — not full, not
   redacted — only aggregates (<code>metric_value</code>, unexpected counts/percents). It gates the one

@@ -3467,6 +3467,12 @@ only an approximate percentile, or on **BigQuery**, whose exact percentile does 
 `approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
 accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
 **min or max** result keeps its status but not its value: that value is one cell of the table.
+For the same reason, a min or max over a column that the suite's column policy or the
+warehouse's tags mark sensitive has its value **withheld on every read**: the run page, the
+trend view, run comparison, incident evidence, alerts, webhooks, the API and MCP all send
+`metric_value` as null beside a `metric_value_redaction` naming the rule that masked it. The
+status still shows, so the trend keeps its pass/fail markers without the numbers. Mean,
+median, sum and standard deviation are computed statistics and are never withheld.
 
 ### Schema-drift monitor (all datasources — ADR 0012)
 
@@ -5484,6 +5490,13 @@ section below.
   authorization-server code, which DataQ never runs (it only acts as an OAuth client), so
   neither reached the product. The connector's new geospatial and catalog-name-escaping
   options are opt-in and off by default, so Unity Catalog connections behave as before.
+- **A min or max aggregate no longer exposes a sensitive cell through its metric.** An `aggregate`
+  check measuring min or max records one cell of its column as `metric_value`. On a column the
+  suite's column policy or the warehouse's tags mark sensitive, that value is now withheld on
+  every read surface (run results, run comparison, the per-check trend, incident evidence,
+  alerts, webhooks, the API and MCP): `metric_value` is null and the new `metric_value_redaction`
+  field names the rule that masked it. Stored incident evidence is masked when read; the
+  `redact_stale_incident_evidence` backfill also rewrites it on disk.
 
 ### Added
 
@@ -8484,9 +8497,14 @@ apply the product's standard column-aware redaction — to inspect specific fail
 `failing_result.observed_value` is a second, narrower door to real data: some expectation types
 (min/max/mean-style rules) carry a literal warehouse cell value there, not just GX metadata. That
 value is routed through the same column-policy/warehouse-tag redaction floor every other results
-surface applies — but, unlike the live results endpoints, this card computes it **once**, at the
-point the incident opens or gets a fresh occurrence, and stores the result. A suite's column
-policy edited afterward does not retroactively re-mask an already-stored card.
+surface applies when the incident opens or gets a fresh occurrence, and the stored card is
+re-checked against the current policy and tags each time it is read, which can only add masking.
+
+`metric_value` is the third door. An `aggregate` check measuring min or max records one cell of
+its column as the metric, so on a sensitive column `failing_result.metric_value`, each
+`metric_trend` point and each `same_asset_siblings` entry measuring such a cell is stored and
+served as null beside a `metric_value_redaction` reason. Each is judged against its check as it
+was when that reading was taken; a sibling on another suite is judged under that suite's policy.
 
 `same_asset_siblings` is assembled once, for the workspace as a whole, with no caller in scope —
 it has to be, since it draws from every suite that touches the asset, not just the one that
@@ -11401,6 +11419,11 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   the boundary, column-aware**: a suite's **column policy** (auto-derived by a classifier or
   set by hand) keeps non-sensitive breach values debuggable while masking PII columns to
   `<redacted>`. The numeric counts and row/column shape are kept.
+- **A metric can be a cell.** `metric_value` is normally a computed number, but an `aggregate`
+  check measuring min or max records one cell of its column. On a column the policy or the
+  warehouse tags mark sensitive, that value is withheld everywhere it is read (REST, MCP,
+  the trend view, incident evidence, alerts and webhooks): it is sent as null with a
+  `metric_value_redaction` reason.
 - **Zero-sample privacy mode** (`PRIVACY_ZERO_SAMPLE_MODE=true`) is a deployment-level
   step past redaction: no failing-row sample is ever **persisted** at all — not full, not
   redacted — only aggregates (`metric_value`, unexpected counts/percents). It gates the one

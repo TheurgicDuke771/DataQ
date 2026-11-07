@@ -2739,9 +2739,13 @@ apply the product's standard column-aware redaction — to inspect specific fail
 <p><code>failing_result.observed_value</code> is a second, narrower door to real data: some expectation types
 (min/max/mean-style rules) carry a literal warehouse cell value there, not just GX metadata. That
 value is routed through the same column-policy/warehouse-tag redaction floor every other results
-surface applies — but, unlike the live results endpoints, this card computes it <strong>once</strong>, at the
-point the incident opens or gets a fresh occurrence, and stores the result. A suite's column
-policy edited afterward does not retroactively re-mask an already-stored card.</p>
+surface applies when the incident opens or gets a fresh occurrence, and the stored card is
+re-checked against the current policy and tags each time it is read, which can only add masking.</p>
+<p><code>metric_value</code> is the third door. An <code>aggregate</code> check measuring min or max records one cell of
+its column as the metric, so on a sensitive column <code>failing_result.metric_value</code>, each
+<code>metric_trend</code> point and each <code>same_asset_siblings</code> entry measuring such a cell is stored and
+served as null beside a <code>metric_value_redaction</code> reason. Each is judged against its check as it
+was when that reading was taken; a sibling on another suite is judged under that suite's policy.</p>
 <p><code>same_asset_siblings</code> is assembled once, for the workspace as a whole, with no caller in scope —
 it has to be, since it draws from every suite that touches the asset, not just the one that
 opened this incident. Reading it back applies a second, per-request narrowing: a caller only
