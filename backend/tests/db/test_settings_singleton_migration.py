@@ -27,9 +27,14 @@ _ROWS = {
 }
 
 
+def _ensure_row_one(db: Any, table: str) -> None:
+    # Another test in the session may already hold the singleton row.
+    db.execute(text(_ROWS[table].format(id=1) + " ON CONFLICT (id) DO NOTHING"))
+
+
 @pytest.mark.parametrize("table", sorted(_ROWS))
 def test_a_second_row_is_refused(db_session: Any, table: str) -> None:
-    db_session.execute(text(_ROWS[table].format(id=1)))
+    _ensure_row_one(db_session, table)
     with pytest.raises(IntegrityError, match=f"ck_{table}_singleton"):
         with db_session.begin_nested():
             db_session.execute(text(_ROWS[table].format(id=2)))
