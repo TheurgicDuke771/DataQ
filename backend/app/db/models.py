@@ -973,7 +973,8 @@ class Run(Base):
     queued_reason: Mapped[str | None] = mapped_column(String(64))
     # The outcome as it stood when the run finished (#2348): `results.check_id` is CASCADE, so
     # one derived from the remaining rows shrinks when a check is deleted. `recorded_results_total`
-    # counts every row, skip and error included. NULL = not recorded (in flight, or older).
+    # counts every row, skip and error included. Written when a run succeeds; NULL = not recorded
+    # (in flight, failed or cancelled — those keep no results — or older than the backfill).
     recorded_results_total: Mapped[int | None] = mapped_column(Integer)
     recorded_checks_total: Mapped[int | None] = mapped_column(Integer)
     recorded_checks_passed: Mapped[int | None] = mapped_column(Integer)

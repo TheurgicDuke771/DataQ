@@ -38,7 +38,7 @@
 
 Named so nothing rolls silently (see the retro's "What rolls"):
 
-- **Security, filed and not fixed:** [#2348](https://github.com/TheurgicDuke771/DataQ/issues/2348) deleting a check rewrites run history · [#2383](https://github.com/TheurgicDuke771/DataQ/issues/2383) a suggested value set outlives a later PII classification · [#2240](https://github.com/TheurgicDuke771/DataQ/issues/2240) aggregate min/max on a sensitive column.
+- **Security, filed and not fixed:** [#2383](https://github.com/TheurgicDuke771/DataQ/issues/2383) a suggested value set outlives a later PII classification · [#2240](https://github.com/TheurgicDuke771/DataQ/issues/2240) aggregate min/max on a sensitive column.
 - **Waiting on something outside the repo:** [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224) cloud live verification (a test instance) · [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Iceberg v3 (trigger-gated) · [#732](https://github.com/TheurgicDuke771/DataQ/issues/732) listing readiness (decisions, or a hosted offer).
 - **Process, from the retro:** changelog fragments (one file per PR) to end the serial merge conflicts ([#2395](https://github.com/TheurgicDuke771/DataQ/issues/2395), Week 2); keep a weekly milestone to its planned rows.
 - Everything else open at the close was re-homed into the weekly milestones below.
@@ -116,7 +116,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 
 | Status | Task |
 |---|---|
-| ⬜ | [#2348](https://github.com/TheurgicDuke771/DataQ/issues/2348) Deleting a check silently rewrites the history of every run it took part in — needs an option choice (stamp the outcome at completion, keep results, or soft-delete) and a two-step migration; #2416 follows it |
+| ✅ | [#2348](https://github.com/TheurgicDuke771/DataQ/issues/2348) Deleting a check silently rewrites the history of every run it took part in — option 1: a run records its outcome as it succeeds and shows `results_removed`. Columns migration PR #2610, then code + backfill PR #2611 |
 | ✅ | [#2383](https://github.com/TheurgicDuke771/DataQ/issues/2383) Suggested rules: a value set saved before a column was classified as PII stays readable — [PR #2596](https://github.com/TheurgicDuke771/DataQ/pull/2596): a stored value set is re-screened at read time on REST and MCP, and accepting a now-sensitive one is refused (409) |
 | 🔄 | [#2240](https://github.com/TheurgicDuke771/DataQ/issues/2240) security: mask an aggregate min/max metric_value on policy-sensitive columns at read time — [PR #2598](https://github.com/TheurgicDuke771/DataQ/pull/2598): one shared helper masks a min/max `metric_value` on every read surface, alerts and the RCA prompt, plus stored incident evidence |
 | ✅ | [#2111](https://github.com/TheurgicDuke771/DataQ/issues/2111) fix(dispatch): send_task from the API subscribes to the Redis result backend per run — already fixed by #2206 (the Celery app stores no task results); closed as a duplicate of #2119 |

@@ -1,5 +1,5 @@
 import { triggeredByText, type RunDetail as RunDetailType } from '../../api/runs';
-import { checkLabel, noResultsMessage } from './runResultLabels';
+import { checkLabel, noResultsMessage, removedResultsNotice } from './runResultLabels';
 import type { Check } from '../../api/suites';
 import { DIMENSION_LABEL, type DqDimension } from '../checks/expectationCatalog';
 import { engineShortLabel } from '../checks/checkBadges';
@@ -60,6 +60,7 @@ export function RunReport({
   };
   // The same parity rule, applied to sampled-ness (#595/#1325).
   const { sampled, evaluated } = sampledCoverage(run.results);
+  const removedNotice = removedResultsNotice(run.results_removed);
 
   return (
     <div className="print-only rd-report" data-testid="run-report">
@@ -86,6 +87,12 @@ export function RunReport({
             <th scope="row">Duration</th>
             <td>{formatDuration(run.started_at, run.finished_at)}</td>
           </tr>
+          {removedNotice && (
+            <tr>
+              <th scope="row">Removed results</th>
+              <td data-testid="report-removed-notice">{removedNotice}</td>
+            </tr>
+          )}
           {sampled > 0 && (
             <tr>
               <th scope="row">Coverage</th>
@@ -107,7 +114,7 @@ export function RunReport({
       )}
 
       {run.results.length === 0 ? (
-        <p>{noResultsMessage(run.status)}</p>
+        <p>{noResultsMessage(run.status, run.results_removed)}</p>
       ) : (
         <table className="rd-report-table" aria-label="Per-check results">
           <thead>

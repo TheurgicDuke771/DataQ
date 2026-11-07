@@ -1,13 +1,14 @@
 """Tests for the run/result persistence service."""
 
 import uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import Update
+from sqlalchemy import Select, Update
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,11 @@ from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
 from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 from backend.tests.support.run_phases import collect_outcomes
+
+
+def _histogram_rows(rows: list[Any]) -> list[tuple[Any, str, int]]:
+    counts = Counter((r.run_id, r.status) for r in rows if isinstance(r, Result))
+    return [(run_id, status, n) for (run_id, status), n in counts.items()]
 
 
 class FakeSession:
@@ -70,8 +76,14 @@ class FakeSession:
         """`_cancelled_mid_run` reads the status column rather than refreshing."""
         return self._refresh_status or "running"
 
+    def flush(self) -> None:
+        pass
+
     def execute(self, statement: object) -> Any:
-        """The DELETE (discard) and the UPDATE (guarded succeeded-flip)."""
+        """The DELETE (discard), the UPDATE (guarded succeeded-flip) and the status histogram
+        the flip records (#2348), counted from the rows added so far."""
+        if isinstance(statement, Select):
+            return SimpleNamespace(all=lambda: _histogram_rows(self.added))
         if isinstance(statement, Update):
             # The flip is conditional on `status = 'running'`; a committed cancel
             # means it matches nothing.
