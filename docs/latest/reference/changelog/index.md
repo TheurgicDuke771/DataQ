@@ -288,6 +288,11 @@ section below.
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
   its linked channels.
+- **A failed sign-in code request no longer counts against the address's limit.** When the code
+  could not be handed to the mail worker (for example during a short message-broker outage), the
+  attempt used to spend one of the address's requests for the window, so a member retrying could
+  be throttled without ever receiving an email. Such attempts are now taken back; the sign-in
+  response is unchanged either way.
 - **Run detail and report label each result with the check as it WAS, not as it is.** A check
   re-pointed to another engine or re-classified to another DQ dimension after a run used to have
   its old results shown with today's engine and dimension (the badges read the suite's current
