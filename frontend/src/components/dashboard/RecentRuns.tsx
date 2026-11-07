@@ -7,7 +7,7 @@ import { listRuns, triggeredByText, type Run, type RunStatus } from '../../api/r
 import { listSuites } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { formatDuration, formatTimestamp } from '../results/resultsFormat';
-import { ChecksOutcomeTag, RunStatusTag } from '../shared/StatusTag';
+import { RunChecksCell, RunStatusTag } from '../shared/StatusTag';
 import { RowLink } from '../shared/RowLink';
 
 /**
@@ -52,16 +52,7 @@ export function RecentRuns() {
       // run with failing checks doesn't read all-green on the dashboard (#423).
       title: 'Checks',
       width: 100,
-      render: (_: unknown, run: Run) =>
-        run.checks_total === 0 ? (
-          <Typography.Text type="secondary">—</Typography.Text>
-        ) : (
-          <ChecksOutcomeTag
-            passed={run.checks_passed}
-            total={run.checks_total}
-            worst={run.worst_severity}
-          />
-        ),
+      render: (_: unknown, run: Run) => <RunChecksCell run={run} />,
     },
     { title: 'Triggered by', render: (_: unknown, run: Run) => triggeredByText(run) },
     { title: 'Started', dataIndex: 'started_at', render: (t: string | null) => formatTimestamp(t) },

@@ -43,7 +43,7 @@ from backend.app.services import (
 )
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.inventory_service import INVENTORY_TYPES
-from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES, run_evaluated_a_check
 
 log = get_logger(__name__)
 
@@ -543,7 +543,8 @@ def coverage_figures(
     ran_since = now - timedelta(days=COVERAGE_WINDOW_DAYS)
     assets_total = session.scalar(select(func.count()).select_from(Asset)) or 0
     # An asset is watched by an origin if a suite of that origin targeting it completed a
-    # run in the window. `succeeded` only: a run that failed outright evaluated nothing.
+    # run in the window that evaluated a check. A run that failed outright, or succeeded with no
+    # runnable check, verified nothing (#2416).
     watched_rows = session.execute(
         select(Suite.asset_id, Suite.origin)
         .join(Run, Run.suite_id == Suite.id)
@@ -551,6 +552,7 @@ def coverage_figures(
             Suite.asset_id.is_not(None),
             Run.status.in_(AGGREGATABLE_RUN_STATUSES),
             Run.created_at >= ran_since,
+            run_evaluated_a_check(),
         )
         .distinct()
     ).all()

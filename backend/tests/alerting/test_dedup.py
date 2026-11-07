@@ -128,6 +128,22 @@ def test_recovery_then_failure_refires(db_session: Any) -> None:
     assert dedup.is_duplicate_alert(db_session, r3) is False
 
 
+def test_a_run_that_evaluated_nothing_is_not_a_recovery(db_session: Any) -> None:
+    # #2416: a run with no runnable check (or only skips) between two identical failures says
+    # nothing about the data, so the second failure is still the same alert.
+    suite = _suite(db_session)
+    chk = _check(db_session, suite)
+    r1 = _run(db_session, suite, seq=1)
+    _result(db_session, r1, chk, "fail")
+    _run(db_session, suite, seq=2)  # every check disabled: no results
+    r3 = _run(db_session, suite, seq=3)
+    _result(db_session, r3, chk, "skip")
+    r4 = _run(db_session, suite, seq=4)
+    _result(db_session, r4, chk, "fail")
+    db_session.commit()
+    assert dedup.is_duplicate_alert(db_session, r4) is True
+
+
 def test_de_escalation_is_suppressed(db_session: Any) -> None:
     suite = _suite(db_session)
     chk = _check(db_session, suite)

@@ -39,8 +39,9 @@ blocking finishes.
      that the normal success event triggered.
 3. **States, never a bare boolean:** `awaiting_trigger` (status-only, no run yet),
    `running` (any bound run queued or running), `passed`, `failed` (some result at or above
-   `fail_on`), `error` (a run failed operationally or was cancelled, or a check could not be
-   evaluated). The response lists each bound suite's run, status, worst severity and counts,
+   `fail_on`), `error` (a run failed operationally or was cancelled, a check could not be
+   evaluated, or the run evaluated no check at all — none was runnable, or every one skipped).
+   The response lists each bound suite's run, status, worst severity and counts,
    plus a `retry_after_seconds` hint. `error` is distinct from `failed` so a client can
    choose; the shipped snippets **fail closed** on both.
 4. **Authorization is the manual-trigger rule.** Starting a suite run is `edit` on the suite

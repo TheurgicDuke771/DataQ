@@ -167,6 +167,9 @@ def test_the_pipelines_own_success_event_reuses_the_gates_run(
         (("critical",), "critical", "failed"),
         (("pass", "error"), "fail", "error"),
         (("pass", "skip"), "fail", "passed"),
+        # Evaluated no check (#2416): nothing runnable, or every check skipped.
+        ((), "fail", "error"),
+        (("skip", "skip"), "fail", "error"),
     ],
 )
 def test_a_finished_run_is_judged_against_fail_on(

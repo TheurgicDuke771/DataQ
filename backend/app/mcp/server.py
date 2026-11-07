@@ -2354,7 +2354,8 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
     ``enabled_checks`` in the response is how many checks this run will execute.
     **When it is 0 the run still starts and still ends ``succeeded``, having
     verified nothing** — say so instead of reporting a clean run, and point at
-    ``list_checks`` to see what is switched off.
+    ``list_checks`` to see what is switched off. Such a run does not count toward
+    ``get_coverage``, and a pipeline gate reports it as ``error``.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -5202,18 +5203,19 @@ def get_coverage(
     noisy?'. Returns two workspace-wide figures with the counts behind them.
 
     **Coverage.** ``coverage_pct`` (a percentage, 0 to 100) is ``assets_watched / assets_total``:
-    assets with at least one suite whose run **succeeded** — finished, whatever
-    its checks found — and started in the last
+    assets with at least one suite whose run **succeeded** having evaluated at
+    least one check — finished, whatever its checks found — and started in the last
     ``coverage_window_days`` (7). A run that errored or was cancelled does not
-    count. ``assets_watched_authored`` are watched by a suite a person wrote;
+    count, and neither does one that evaluated no check (none enabled and
+    runnable, or every one skipped). ``assets_watched_authored`` are watched by
+    a suite a person wrote;
     ``assets_watched_auto_only`` only by automatic coverage. An asset whose
     suites exist but have no such run is NOT watched here — "not watched" does
     not mean "no checks", and this is a stricter test than ``list_assets``'
     ``monitored`` (any suite targets it), so the two counts differ; use
     ``get_asset`` before telling someone a table has no checks.
-    A suite whose checks are all switched off still runs and still succeeds, so
-    its asset counts as watched here while ``get_asset`` reports every dimension
-    uncovered: watched means a successful run exists, not that anything was checked.
+    Watched still does not mean every dimension is covered: one passing check is
+    enough, while ``get_asset`` may report most dimensions uncovered.
     ``assets_total`` is every asset in the inventory, including ones excluded
     from automatic coverage and ones the inventory no longer sees, so the
     percentage is not "share of what coverage is meant to reach", and it reads

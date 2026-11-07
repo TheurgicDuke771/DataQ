@@ -200,7 +200,9 @@ def _suite_states(
         has_error = flags.get(run.id, (False, False))[0]
         if run.status in ("queued", "running"):
             state = RUNNING
-        elif run.status != "succeeded" or has_error:
+        elif run.status != "succeeded" or has_error or total == 0:
+            # `total == 0`: the run evaluated no check — none was runnable, or every one skipped —
+            # so it verified nothing and must not let a pipeline through (#2416).
             state = ERROR
         elif worst is not None and SEVERITY_RANK[worst] >= threshold:
             state = FAILED

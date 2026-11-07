@@ -5,6 +5,7 @@ import { RUN_STATUSES, type ResultStatus } from '../../src/api/runs';
 import {
   ChecksOutcomeTag,
   ResultStatusTag,
+  RunChecksCell,
   RunStatusTag,
 } from '../../src/components/shared/StatusTag';
 
@@ -77,5 +78,29 @@ describe('status tags carry severity without colour', () => {
     expect(container.querySelector('.anticon')).toBeNull();
     const result = render(<ResultStatusTag status="quarantined" />);
     expect(result.container).toHaveTextContent('quarantined');
+  });
+});
+
+describe('RunChecksCell', () => {
+  const run = { checks_passed: 0, worst_severity: null } as const;
+
+  it('says a succeeded run that evaluated no check verified nothing', () => {
+    render(<RunChecksCell run={{ ...run, status: 'succeeded', checks_total: 0 }} />);
+    expect(screen.getByText('Nothing evaluated')).toBeInTheDocument();
+  });
+
+  it('shows a dash for a run that has not finished', () => {
+    render(<RunChecksCell run={{ ...run, status: 'running', checks_total: 0 }} />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing evaluated')).not.toBeInTheDocument();
+  });
+
+  it('shows the outcome chip once a check was evaluated', () => {
+    render(
+      <RunChecksCell
+        run={{ status: 'succeeded', checks_total: 2, checks_passed: 1, worst_severity: 'fail' }}
+      />,
+    );
+    expect(screen.getByText('1/2')).toBeInTheDocument();
   });
 });

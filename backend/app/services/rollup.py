@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run, Suite
@@ -72,6 +72,22 @@ def performance_state(score: float | None) -> str:
 #: The run statuses whose `results` rows are a **complete, final** account of what the suite found,
 #: and therefore the only ones an aggregate may count.
 AGGREGATABLE_RUN_STATUSES: frozenset[str] = frozenset({"succeeded"})
+
+
+def run_evaluated_a_check() -> ColumnElement[bool]:
+    """``Run`` evaluated at least one check: a pass/warn/fail/critical result (#2416).
+
+    A run with no runnable check, or one whose every check skipped or errored, still ends
+    `succeeded` but verified nothing. The recorded count is read when the run has one (#2348),
+    so a later check deletion does not change the answer; an older run falls back to its rows.
+    """
+    return or_(
+        Run.recorded_checks_total > 0,
+        and_(
+            Run.recorded_checks_total.is_(None),
+            exists().where(Result.run_id == Run.id, Result.status.in_(RESULT_SEVERITY_TIERS)),
+        ),
+    )
 
 
 def latest_runs_per_suite_stmt(

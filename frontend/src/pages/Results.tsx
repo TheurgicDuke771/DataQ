@@ -54,7 +54,7 @@ import {
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
-import { ChecksOutcomeTag, RunStatusTag } from '../components/shared/StatusTag';
+import { RunChecksCell, RunStatusTag } from '../components/shared/StatusTag';
 import { RowLink } from '../components/shared/RowLink';
 
 const LIST_LIMIT = 200;
@@ -241,16 +241,7 @@ function RunsTab({
       // execution Status.
       title: 'Checks',
       width: 100,
-      render: (_: unknown, run: Run) =>
-        run.checks_total === 0 ? (
-          <Typography.Text type="secondary">—</Typography.Text>
-        ) : (
-          <ChecksOutcomeTag
-            passed={run.checks_passed}
-            total={run.checks_total}
-            worst={run.worst_severity}
-          />
-        ),
+      render: (_: unknown, run: Run) => <RunChecksCell run={run} />,
     },
     { title: 'Triggered by', render: (_: unknown, run: Run) => triggeredByText(run) },
     {
