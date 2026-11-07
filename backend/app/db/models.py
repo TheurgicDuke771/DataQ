@@ -1600,9 +1600,8 @@ class AuditChainState(Base):
     """
 
     __tablename__ = "audit_chain_state"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
 
-    #: Always 1 — there is exactly one row, checked at query time, not by a DB constraint
-    #: (a CHECK on a literal singleton value adds nothing a `get(AuditChainState, 1)` doesn't).
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     head_hash: Mapped[str | None] = mapped_column(String(64))
     #: NO foreign key — same reasoning as `AuditEvent.entity_id`.
@@ -1620,8 +1619,8 @@ class PrivacySetting(Base):
     """
 
     __tablename__ = "privacy_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
 
-    #: Always 1 — singleton, checked at query time like `AuditChainState.id`.
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     zero_sample_mode: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
@@ -1649,6 +1648,7 @@ class ScoringSetting(Base):
             "AND fail_weight <= critical_weight AND critical_weight > 0",
             name="weights_ordered",
         ),
+        CheckConstraint("id = 1", name="singleton"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1798,9 +1798,9 @@ class LlmSetting(Base):
     __table_args__ = (
         _in_check("provider", LLM_PROVIDERS, "llm_provider_valid"),
         _in_check("structured_output", LLM_STRUCTURED_OUTPUT_MODES, "llm_structured_output_valid"),
+        CheckConstraint("id = 1", name="singleton"),
     )
 
-    #: Always 1 — singleton, the `AuditChainState` idiom.
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     #: Required for `openai_compatible`; optional first-party override for `anthropic`.
