@@ -5,7 +5,10 @@ import type { RunStatus } from '../../api/runs';
  * are deleted with the check, so a run that completed can end up with none — and a suite with
  * no checks also completes with none, which the run itself cannot tell apart.
  */
-export function noResultsMessage(status: RunStatus): string {
+export function noResultsMessage(status: RunStatus, removed = 0): string {
+  if (status === 'succeeded' && removed > 0) {
+    return 'This run’s checks have been deleted since it ran, and their results with them.';
+  }
   if (status === 'succeeded') {
     return 'This run completed and has no check results. Either the suite had no checks when it ran, or its checks have been deleted since: a check’s results are removed with it.';
   }
@@ -37,4 +40,11 @@ export function checkExportName(
 ): string {
   if (name !== undefined) return name;
   return checksKnown ? `Deleted check (${checkId})` : checkId;
+}
+
+/** Why a finished run lists fewer results than its outcome counts, or null when it does not. */
+export function removedResultsNotice(removed: number | undefined): string | null {
+  if (!removed) return null;
+  const rows = removed === 1 ? '1 result was' : `${removed} results were`;
+  return `${rows} removed with checks deleted after this run. The outcome shown is the one recorded when the run finished, so it still counts them.`;
 }

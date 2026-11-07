@@ -509,10 +509,11 @@ def execute_run(
 def _mark_succeeded(session: Session, run: Run) -> bool:
     """Flip a still-``running`` run to ``succeeded``; return whether it won (#318 G4)."""
     finished = _now()
+    recorded = recorded_outcome_values(session, run.id)
     result = session.execute(
         update(Run)
         .where(Run.id == run.id, Run.status == "running")
-        .values(status="succeeded", finished_at=finished, failure_reason=None)
+        .values(status="succeeded", finished_at=finished, failure_reason=None, **recorded)
     )
     won = cast("CursorResult[Any]", result).rowcount == 1
     session.commit()
@@ -522,7 +523,26 @@ def _mark_succeeded(session: Session, run: Run) -> bool:
     run.status = "succeeded"
     run.finished_at = finished
     run.failure_reason = None
+    for name, value in recorded.items():
+        setattr(run, name, value)
     return True
+
+
+def recorded_outcome_values(session: Session, run_id: uuid.UUID) -> dict[str, Any]:
+    """The `Run.recorded_*` values for a run's result rows as they stand now (#2348).
+
+    Called as a run succeeds, so the outcome survives a later check deletion, which
+    CASCADE-deletes that check's results.
+    """
+    session.flush()
+    by_status = status_histograms(session, [run_id]).get(run_id, {})
+    total, passed, worst = outcome_from_histogram(by_status)
+    return {
+        "recorded_results_total": sum(by_status.values()),
+        "recorded_checks_total": total,
+        "recorded_checks_passed": passed,
+        "recorded_worst_severity": worst,
+    }
 
 
 def _discard_results_if_any(session: Session, run: Run, *, published: bool) -> None:
@@ -545,6 +565,8 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
     session.add_all(rows)
     run.status = "succeeded"
     run.finished_at = _now()
+    for name, value in recorded_outcome_values(session, run.id).items():
+        setattr(run, name, value)
     session.commit()
     log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
     return run
@@ -690,7 +712,37 @@ def check_outcome_counts(
     warn/fail/critical present, else ``None`` (all passed / only operational).
     """
     histograms = status_histograms(session, run_ids, complete_runs_only=complete_runs_only)
-    return {run_id: outcome_from_histogram(by_status) for run_id, by_status in histograms.items()}
+    outcomes = {
+        run_id: outcome_from_histogram(by_status) for run_id, by_status in histograms.items()
+    }
+    # A recorded outcome wins (#2348): the rows behind a derived one shrink when a check is
+    # deleted. Only a succeeded run records one, so `complete_runs_only` needs no filter here.
+    if run_ids:
+        for run_id, total, passed, worst in session.execute(
+            select(
+                Run.id,
+                Run.recorded_checks_total,
+                Run.recorded_checks_passed,
+                Run.recorded_worst_severity,
+            ).where(Run.id.in_(run_ids), Run.recorded_checks_total.is_not(None))
+        ):
+            outcomes[run_id] = (int(total), int(passed or 0), worst)
+    return outcomes
+
+
+def removed_result_counts(session: Session, run_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Per run, how many of the result rows it recorded have since been deleted with their
+    check (#2348). Runs with nothing removed, or no recorded outcome, are absent.
+    """
+    if not run_ids:
+        return {}
+    present = select(func.count()).where(Result.run_id == Run.id).correlate(Run).scalar_subquery()
+    rows = session.execute(
+        select(Run.id, Run.recorded_results_total - present).where(
+            Run.id.in_(run_ids), Run.recorded_results_total.is_not(None)
+        )
+    )
+    return {run_id: int(removed) for run_id, removed in rows if removed > 0}
 
 
 def outcome_from_histogram(by_status: Mapping[str, int]) -> tuple[int, int, str | None]:

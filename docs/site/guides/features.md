@@ -270,7 +270,9 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
   snooze, unsnooze, disable, enable or delete them together, or **Set thresholds** to
   give them all the same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
   none are, and the ones at fault are named. A bulk delete removes each check's results
-  and history, as a single delete does. Thresholds can only be set on checks of one kind
+  and history, as a single delete does. A past run keeps the outcome it recorded when it
+  finished (checks passed, worst severity), and its page says how many of its results were
+  removed with deleted checks. Thresholds can only be set on checks of one kind
   at a time, because a threshold is compared with the number that kind of check measures.
 - **Per-suite config** — channels + threshold + recipients set per suite.
 - **Connection poll-health alerts** — when an orchestration connection's poll keeps failing

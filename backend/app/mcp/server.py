@@ -333,7 +333,9 @@ def _page_window(timestamps: list[datetime | None]) -> dict[str, Any]:
     }
 
 
-def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -> dict[str, Any]:
+def _run_outcome_fields(
+    run: Run, outcome: tuple[int, int, str | None] | None, results_removed: int = 0
+) -> dict[str, Any]:
     """A run's data-quality verdict for `list_runs`, or nulls when it has none yet.
 
     The same #318 rule `_run_results_payload` enforces, applied to the aggregate
@@ -354,6 +356,7 @@ def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -
             "checks_total": None,
             "checks_passed": None,
             "worst_severity": None,
+            "results_removed": None,
         }
     total, passed, worst = outcome
     return {
@@ -361,6 +364,7 @@ def _run_outcome_fields(run: Run, outcome: tuple[int, int, str | None] | None) -
         "checks_total": total,
         "checks_passed": passed,
         "worst_severity": worst,
+        "results_removed": results_removed,
     }
 
 
@@ -487,6 +491,13 @@ def _run_results_payload(
             "results_final": final,
             # A `queued` run is not necessarily waiting on the broker (#1998).
             "queued_reason": run.queued_reason,
+            # Results deleted with their checks since the run finished (#2348): `checks` below
+            # is then not the whole run. Null when the run is not final.
+            "results_removed": (
+                run_service.removed_result_counts(session, [run.id]).get(run.id, 0)
+                if final
+                else None
+            ),
         },
         "checks": [
             {
@@ -797,8 +808,9 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     never produced a complete account. Report the run's status in that case; do
     not describe the suite's quality from it. A third case: `checks` empty with
     `run.results_final` true means the run finished having evaluated nothing —
-    the suite has no checks, or every one is switched off (``list_checks``). That
-    is not a clean bill of health. If it is ``queued``, read
+    the suite has no checks, or every one is switched off (``list_checks``) — unless
+    ``run.results_removed`` is above 0, in which case the checks it evaluated have since
+    been deleted, with their results. Neither is a clean bill of health. If it is ``queued``, read
     ``run.queued_reason``: ``awaiting_worker_memory`` means worker-memory
     admission control is holding it back, not that it is stuck (see
     ``get_run_results`` for the full explanation).
@@ -1466,6 +1478,13 @@ def list_runs(
     Those two statuses answer different questions and should not be merged: a run
     is ``succeeded`` when DataQ executed it, even if every check inside it failed.
 
+    The outcome is the one recorded when the run finished, so deleting a check later
+    does not change it. ``results_removed`` counts the result rows deleted with their
+    checks since; when it is above 0, ``get_run_results`` lists fewer checks than
+    ``checks_total`` says ran. A result deleted before the run's outcome was recorded
+    (a run that finished before DataQ recorded outcomes) is not counted, so 0 means
+    none is known to be missing.
+
     A run that has not finished successfully reports ``results_final: false`` and
     a **null** outcome (no counts, no severity) — it is still executing, or it
     failed without producing a complete account. Describe such a run by its
@@ -1522,6 +1541,7 @@ def list_runs(
         # One grouped query for the whole page's outcomes, not one per run — the
         # N+1 an LLM caller cannot see the cost of (#947).
         outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
+        removed = run_service.removed_result_counts(session, [r.id for r in runs])
         total = run_service.count_runs(
             session,
             user_id=user.id,
@@ -1555,7 +1575,7 @@ def list_runs(
                     "failure_reason": r.failure_reason,
                     # Why a `queued` run is still queued (#1998).
                     "queued_reason": r.queued_reason,
-                    **_run_outcome_fields(r, outcomes.get(r.id)),
+                    **_run_outcome_fields(r, outcomes.get(r.id), removed.get(r.id, 0)),
                 }
                 for r in runs
             ],
@@ -1599,6 +1619,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     values and may postdate the result; null means the check is unknown, and
     ``engine`` is then null too rather than a default. ``name`` and ``check_enabled``
     are always current.
+
+    ``run.results_removed`` counts results deleted with their checks since the run
+    finished: ``checks`` then omits them, so it is not the whole run. Say so rather
+    than describing the remaining checks as everything the run evaluated.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and
