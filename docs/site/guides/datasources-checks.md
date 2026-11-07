@@ -863,9 +863,10 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3 / GCS) read `.csv`, `.parquet`/`.pq`, and JSON as
-`.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
-format from the file's **extension**; a target's *File format* choice is used by the
-profiler and column listing. **The CSV
+`.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). A target's *File format*
+choice decides how every read treats the file (checks, monitors, schema drift, the profiler and
+column listing), so a key with another extension, such as `orders.dat`, works once you pick
+its format. Left on *Infer from extension*, the format comes from the file's extension. **The CSV
 delimiter is detected per file, not per connection** — a connection is a whole
 bucket/container and the files under it need not agree, so DataQ sniffs each file's
 header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide

@@ -55,13 +55,13 @@ class MemoryEstimate:
     exclusive: bool = False
 
 
-def _settings_expansion(path: str) -> float:
-    from backend.app.datasources.flatfile import format_from_path
+def _settings_expansion(path: str, file_format: str | None = None) -> float:
+    from backend.app.datasources.flatfile import resolve_format
 
     settings = get_settings()
     # The reader's own format decision, so a path the runner reads as Parquet (`.pq`) or
     # JSON (`.jsonl`) is priced as what it will actually become in memory.
-    fmt = format_from_path(path)
+    fmt = resolve_format(path, file_format)
     if fmt == "parquet":
         return settings.run_admission_expansion_parquet
     if fmt == "json":
@@ -126,7 +126,9 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
     # every other one first.
     cap = get_settings().run_max_scan_bytes
     size = min(stat.size, cap) if cap > 0 else stat.size
-    return MemoryEstimate(bytes=int(size * _settings_expansion(path)), basis="flat_file_size")
+    return MemoryEstimate(
+        bytes=int(size * _settings_expansion(path, target.file_format)), basis="flat_file_size"
+    )
 
 
 def _unity_catalog_estimate(

@@ -134,6 +134,7 @@ def build_flatfile_runner(
     secret_ref: str | None,
     secret_store: SecretStore,
     sampling: SampleSpec | None = None,
+    file_format: str | None = None,
 ) -> FlatFileCheckRunner:
     """Build a runner from a flat-file `Connection`'s primitives (secret resolved
     eagerly; raw config, not the ORM model). ``sampling=None`` = whole-object read.
@@ -143,7 +144,13 @@ def build_flatfile_runner(
     secret = resolve_flatfile_secret(
         conn_type=conn_type, config=config, secret_ref=secret_ref, secret_store=secret_store
     )
-    return FlatFileCheckRunner(conn_type=conn_type, config=config, secret=secret, sampling=sampling)
+    return FlatFileCheckRunner(
+        conn_type=conn_type,
+        config=config,
+        secret=secret,
+        sampling=sampling,
+        file_format=file_format,
+    )
 
 
 def credential_expiry(
@@ -179,6 +186,7 @@ class _RunnerBuilder(Protocol):
         secret_store: SecretStore,
         catalog: str | None,
         sampling: SampleSpec | None,
+        file_format: str | None,
     ) -> CheckRunner: ...
 
 
@@ -197,6 +205,7 @@ def _flatfile_runner(
     secret_ref: str | None,
     secret_store: SecretStore,
     sampling: SampleSpec | None = None,
+    file_format: str | None = None,
     **_: Any,
 ) -> CheckRunner:
     return build_flatfile_runner(
@@ -205,6 +214,7 @@ def _flatfile_runner(
         secret_ref=secret_ref,
         secret_store=secret_store,
         sampling=sampling,
+        file_format=file_format,
     )
 
 
@@ -267,6 +277,7 @@ def build_check_runner(
     secret_store: SecretStore,
     catalog: str | None = None,
     sampling: SampleSpec | None = None,
+    file_format: str | None = None,
 ) -> CheckRunner:
     """Build the `CheckRunner` for ``conn_type`` from a connection's primitives."""
     builder = _RUNNER_BUILDERS.get(conn_type)
@@ -279,6 +290,7 @@ def build_check_runner(
         secret_store=secret_store,
         catalog=catalog,
         sampling=sampling,
+        file_format=file_format,
     )
 
 
@@ -340,9 +352,21 @@ def _flatfile_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
             "flat-file target is ambiguous: set either 'path' (literal) or "
             "'pattern' (batch), not both"
         )
+    file_format = target.get("file_format")
+    if file_format is not None and file_format not in ("csv", "parquet", "json"):
+        raise TargetShapeError(
+            f"flat-file target file_format must be csv, parquet or json, not {file_format!r}"
+        )
     if "pattern" in target:
-        return ResolvedTarget(table="", schema=None, catalog=None, batch=_batch_spec(target))
-    return ResolvedTarget(table=_require(target, "path", conn_type), schema=None, catalog=None)
+        return ResolvedTarget(
+            table="", schema=None, catalog=None, batch=_batch_spec(target), file_format=file_format
+        )
+    return ResolvedTarget(
+        table=_require(target, "path", conn_type),
+        schema=None,
+        catalog=None,
+        file_format=file_format,
+    )
 
 
 def _table_schema_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:

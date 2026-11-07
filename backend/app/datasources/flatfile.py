@@ -95,6 +95,17 @@ def format_from_path(path: str) -> str | None:
     return None
 
 
+FILE_FORMATS = frozenset({"csv", "parquet", "json"})
+
+
+def resolve_format(path: str, explicit: str | None = None) -> str | None:
+    """The format a read uses: the suite target's explicit ``file_format`` when set (an
+    extension-less or ``.dat`` key needs it), else the path's extension (#2243)."""
+    if explicit is not None:
+        return explicit if explicit in FILE_FORMATS else None
+    return format_from_path(path)
+
+
 def sniff_delimiter(sample: bytes) -> str:
     """Guess a CSV's delimiter from its leading bytes, falling back to a comma."""
     text = sample.decode("utf-8", errors="replace")
@@ -763,22 +774,30 @@ def row_count(
     path: str,
     secret: str | None,
     session: StoreSession | None = None,
+    file_format: str | None = None,
 ) -> int:
     """Rows in a flat file by the cheapest route: Parquet footer, CSV or JSON stream (#942)."""
-    fmt = format_from_path(path)
+    fmt = resolve_format(path, file_format)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     counter = {"csv": csv_row_count, "json": json_row_count}.get(fmt, parquet_row_count)
     return counter(conn_type=conn_type, config=config, path=path, secret=secret, session=session)
 
 
-def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret: str | None) -> Any:
+def read_dataframe(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str | None,
+    file_format: str | None = None,
+) -> Any:
     """Download and parse the whole file into pandas (live seam); `ValueError` on
     an unknown format. Checks need every row/column — counts must be exact.
     """
     import pandas as pd
 
-    fmt = format_from_path(path)
+    fmt = resolve_format(path, file_format)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     raw = io.BytesIO(download_bytes(conn_type=conn_type, config=config, path=path, secret=secret))
@@ -1031,6 +1050,7 @@ def read_sampled_dataframe(
     path: str,
     secret: str | None,
     sample: SampleSpec,
+    file_format: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """A bounded sample of a flat file, plus the record of what was sampled (#595).
 
@@ -1041,7 +1061,7 @@ def read_sampled_dataframe(
     (#2004). Uniform with `_counted_rows`: the read's whole job is to describe
     the object as it stands now.
     """
-    fmt = format_from_path(path)
+    fmt = resolve_format(path, file_format)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
@@ -1078,7 +1098,7 @@ def _sampled_frame(
     total: int | None = None
     indices: list[int] | None = None
     if not want_head and not single_pass:
-        total = row_count(**reader_args)
+        total = row_count(**reader_args, file_format=fmt)
         # `None` = sample covers the whole dataset — read straight through rather
         # than materialise an identity index list (~40 MB at 1.4M rows).
         indices = sample_row_indices(total=total, rows=sample.rows, seed=sample.seed)
@@ -1257,11 +1277,14 @@ class FlatFileCheckRunner:
         config: dict[str, Any],
         secret: str | None,
         sampling: SampleSpec | None = None,
+        file_format: str | None = None,
     ) -> None:
         self._conn_type = conn_type
         self._config = config
         self._secret = secret
         self._sampling = sampling
+        #: The suite target's explicit format; None = from each path's extension (#2243).
+        self._file_format = file_format
         #: Per-path metadata memo (#595) — the guard can be reached twice per phase.
         self._stats: dict[str, FileStat] = {}
 
@@ -1325,6 +1348,7 @@ class FlatFileCheckRunner:
                 path=path,
                 secret=self._secret,
                 session=session,
+                file_format=self._file_format,
             )
 
     def _load_frame(self, path: str) -> tuple[Any, dict[str, Any] | None]:
@@ -1337,10 +1361,15 @@ class FlatFileCheckRunner:
                 path=path,
                 secret=self._secret,
                 sample=self._sampling,
+                file_format=self._file_format,
             )
         self._guard_object_size(path)
         frame = read_dataframe(
-            conn_type=self._conn_type, config=self._config, path=path, secret=self._secret
+            conn_type=self._conn_type,
+            config=self._config,
+            path=path,
+            secret=self._secret,
+            file_format=self._file_format,
         )
         return frame, None
 
@@ -1387,6 +1416,7 @@ class FlatFileCheckRunner:
                     config=self._config,
                     path=table,
                     secret=self._secret,
+                    file_format=self._file_format,
                 ),
             )
 

@@ -162,6 +162,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
                 # Suite row cap (#595); `resolve_target` already refused it on
                 # pushdown datasources, so it is never silently dropped here.
                 sampling=target.sampling,
+                file_format=target.file_format,
             )
         except Exception as exc:
             credential.failed(exc)
