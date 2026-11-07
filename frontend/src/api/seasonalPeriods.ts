@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** The declared seasonal calendar (ADR 0048): read by anyone signed in, changed by admins. */
 
@@ -62,13 +63,13 @@ export async function updateSeasonalPeriod(
   id: string,
   payload: SeasonalPeriodWrite,
 ): Promise<SeasonalPeriod> {
-  const { data } = await api.patch<SeasonalPeriod>(`${BASE}/${id}`, payload);
+  const { data } = await api.patch<SeasonalPeriod>(apiPath`/admin/seasonal-periods/${id}`, payload);
   return data;
 }
 
 /** Rejects with a `seasonal_period_in_use` 409 whose `detail.checks` names the checks. */
 export async function deleteSeasonalPeriod(id: string): Promise<void> {
-  await api.delete(`${BASE}/${id}`);
+  await api.delete(apiPath`/admin/seasonal-periods/${id}`);
 }
 
 export interface PromotePayload {
@@ -136,7 +137,7 @@ export async function getDetectedSeasonalPeriods(
   checkId: string,
 ): Promise<DetectedSeasonalPeriods> {
   const { data } = await api.get<DetectedSeasonalPeriods>(
-    `/suites/${suiteId}/checks/${checkId}/seasonal-periods/detected`,
+    apiPath`/suites/${suiteId}/checks/${checkId}/seasonal-periods/detected`,
   );
   return data;
 }

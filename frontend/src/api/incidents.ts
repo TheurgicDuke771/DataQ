@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { RcaNarrative } from './llm';
+import { apiPath } from './path';
 import type { RedactionReason } from './runs';
 
 /**
@@ -165,7 +166,7 @@ export async function listIncidents(params?: {
 }
 
 export async function getIncident(incidentId: string): Promise<IncidentDetail> {
-  const { data } = await api.get<IncidentDetail>(`/incidents/${incidentId}`);
+  const { data } = await api.get<IncidentDetail>(apiPath`/incidents/${incidentId}`);
   return data;
 }
 
@@ -174,7 +175,7 @@ export async function acknowledgeIncident(
   incidentId: string,
   note?: string,
 ): Promise<IncidentDetail> {
-  const { data } = await api.post<IncidentDetail>(`/incidents/${incidentId}/ack`, {
+  const { data } = await api.post<IncidentDetail>(apiPath`/incidents/${incidentId}/ack`, {
     note: note ?? null,
   });
   return data;
@@ -196,7 +197,7 @@ export async function resolveIncident(
   note?: string,
   resolution?: IncidentResolution | null,
 ): Promise<IncidentDetail> {
-  const { data } = await api.post<IncidentDetail>(`/incidents/${incidentId}/resolve`, {
+  const { data } = await api.post<IncidentDetail>(apiPath`/incidents/${incidentId}/resolve`, {
     note: note ?? null,
     resolution: resolution ?? null,
   });
@@ -214,6 +215,8 @@ export interface IncidentNarrativeRead {
 }
 
 export async function getIncidentNarrative(incidentId: string): Promise<IncidentNarrativeRead> {
-  const { data } = await api.get<IncidentNarrativeRead>(`/incidents/${incidentId}/narrative`);
+  const { data } = await api.get<IncidentNarrativeRead>(
+    apiPath`/incidents/${incidentId}/narrative`,
+  );
   return data;
 }

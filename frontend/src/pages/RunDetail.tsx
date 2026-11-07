@@ -58,6 +58,7 @@ import { ScalarValue } from '../components/results/ScalarValue';
 import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
+import { formatSig, fullNumber } from '../utils/formatNumber';
 import { PageError } from '../components/feedback/PageError';
 import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
 
@@ -85,8 +86,14 @@ const COMPARE_CANDIDATES = 20;
  * is deep-linkable and refreshable.
  */
 export function RunDetail() {
-  const navigate = useNavigate();
   const { runId } = useParams<{ runId: string }>();
+  // Remount on id change: the router reuses this element from one run to the next (the command
+  // palette opens any run from any page), and the fetch runs on mount only.
+  return <RunDetailView key={runId} runId={runId} />;
+}
+
+function RunDetailView({ runId }: { runId: string | undefined }) {
+  const navigate = useNavigate();
 
   const { state } = useAsyncData(async () => {
     if (!runId) throw new Error('no run');
@@ -546,7 +553,11 @@ function SampleFailures({
         Failing rows{' '}
         <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
           {count !== null && `· ${count} row${count === 1 ? '' : 's'}`}
-          {percent !== null && ` · ${percent}%`}
+          {percent !== null && (
+            <span title={`${fullNumber(percent)}%`} data-testid="failing-percent">
+              {` · ${formatSig(percent)}%`}
+            </span>
+          )}
           {redactionLabel !== null && ` · ${redactionLabel}`}
         </Typography.Text>
       </Typography.Text>
@@ -719,9 +730,14 @@ function ResultsTable({
       title: 'Metric',
       dataIndex: 'metric_value',
       width: 90,
-      render: (v: number | null, record: Result) => (
-        <MetricValue value={v} redaction={record.metric_value_redaction} />
-      ),
+      render: (v: number | null, record: Result) =>
+        v === null || record.metric_value_redaction ? (
+          <MetricValue value={v} redaction={record.metric_value_redaction} />
+        ) : (
+          <span title={fullNumber(v)} data-testid="metric-value">
+            {formatSig(v)}
+          </span>
+        ),
     },
     {
       // Bounded width + ellipsis (#1207 — #1184's "verified-benign" scope-out didn't hold for

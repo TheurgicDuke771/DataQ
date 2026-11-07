@@ -8,6 +8,7 @@ import { checkAsOf, currentSuffix } from './checkAsOf';
 import { isSampled, sampledCoverage } from './samplingFormat';
 import { MetricValue } from './MetricValue';
 import { formatDuration, formatScalar, formatTimestamp } from './resultsFormat';
+import { formatSig } from '../../utils/formatNumber';
 
 /**
  * PDF report export (#345) — a print-only, chrome-free rendering of a run, parallel to the
@@ -133,7 +134,11 @@ export function RunReport({
                 <td>{dimensionLabel(r)}</td>
                 <td>{r.status}</td>
                 <td>
-                  <MetricValue value={r.metric_value} redaction={r.metric_value_redaction} />
+                  <MetricValue
+                    value={r.metric_value}
+                    redaction={r.metric_value_redaction}
+                    format={formatSig}
+                  />
                 </td>
                 <td>{formatScalar(r.observed_value)}</td>
               </tr>

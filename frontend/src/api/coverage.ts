@@ -1,4 +1,5 @@
 import { api } from './client';
+import { apiPath } from './path';
 
 /** The automatic baselines that carry deviation thresholds (ADR 0047). */
 export type CoverageBaseline = 'volume' | 'freshness' | 'profile';
@@ -63,6 +64,8 @@ export async function resetCoverageSettings(): Promise<CoverageSettings> {
 }
 
 export async function getAssetCoverageSettings(assetId: string): Promise<AssetCoverageSettings> {
-  const { data } = await api.get<AssetCoverageSettings>(`/assets/${assetId}/coverage-settings`);
+  const { data } = await api.get<AssetCoverageSettings>(
+    apiPath`/assets/${assetId}/coverage-settings`,
+  );
   return data;
 }

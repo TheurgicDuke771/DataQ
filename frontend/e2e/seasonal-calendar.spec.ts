@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
 
 import { settle } from '../scripts/a11y/settle';
 
@@ -59,6 +59,34 @@ async function expectAccessible(page: Page, selector: string) {
   const results = await new AxeBuilder({ page }).include(selector).analyze();
   const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(bad.map((v) => `${v.id}: ${v.nodes.map((n) => n.target).join(', ')}`)).toEqual([]);
+}
+
+/** Every y-axis tick inside `scope` is fully inside its chart's svg, and none is empty. jsdom does
+ *  no layout, so only a real browser can see a tick label clipped at the svg's left edge. */
+async function expectYTicksVisible(scope: Locator) {
+  await expect(
+    scope.locator('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value').first(),
+  ).toBeVisible();
+  const ticks = await scope.evaluate((root) =>
+    Array.from(root.querySelectorAll('svg.recharts-surface')).flatMap((svg) => {
+      const box = svg.getBoundingClientRect();
+      return Array.from(
+        svg.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value'),
+      ).map((t) => ({
+        text: t.textContent ?? '',
+        gap: t.getBoundingClientRect().left - box.left,
+      }));
+    }),
+  );
+  expect(ticks.length).toBeGreaterThan(0);
+  for (const t of ticks) {
+    expect(t.text, 'tick text').toMatch(/^\d+(\.\d+)?[KMB]?$/);
+    // An auto-sized axis hugs its widest label, so glyph overhang can read a fraction of a pixel
+    // negative; the clipping this guards against cut whole characters (about 16px).
+    expect(t.gap, `tick "${t.text}" left edge vs svg`).toBeGreaterThanOrEqual(-1);
+  }
+  // The baseline observations run 1000-5009: a clipped axis would read "00".
+  expect(ticks.some((t) => /^\d(\.\d+)?K$/.test(t.text))).toBe(true);
 }
 
 /** antd Select: pick the option `steps` below the first, by keyboard (see e2e/README.md). */
@@ -234,6 +262,7 @@ test.describe('Seasonal calendar', () => {
       // The expected value is its own dashed line, and the attached entry is shaded and named.
       await expect(drawer.locator('.recharts-line path[stroke-dasharray="6 3"]')).toHaveCount(1);
       await expect(drawer.locator('.recharts-reference-area')).not.toHaveCount(0);
+      await expectYTicksVisible(drawer);
       await expect(drawer.getByTestId('detected-periods')).toContainText('Seen once');
       await expect(drawer.getByRole('button', { name: /^Promote to calendar/ })).toBeVisible();
       await expectAccessible(page, '.ant-drawer [role="dialog"]');

@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { OrchestrationProvider } from './triggerBindings';
+import { apiPath } from './path';
 
 /** Workspace-admin read API — the all-suites / all-users / access overview behind the Admin page. */
 
@@ -67,7 +68,7 @@ export async function setAdminUserRole(
   role: WorkspaceRole,
   opts: { confirmSelf?: boolean } = {},
 ): Promise<AdminUser> {
-  const { data } = await api.patch<AdminUser>(`/admin/users/${userId}/role`, {
+  const { data } = await api.patch<AdminUser>(apiPath`/admin/users/${userId}/role`, {
     role,
     confirm_self: opts.confirmSelf ?? false,
   });
@@ -141,12 +142,12 @@ export async function addWorkspaceMember(
 
 /** `confirmSelf` is required by the backend to remove your OWN membership. */
 export async function removeWorkspaceMember(id: string, confirmSelf = false): Promise<void> {
-  await api.delete(`/admin/members/${id}`, { params: { confirm_self: confirmSelf } });
+  await api.delete(apiPath`/admin/members/${id}`, { params: { confirm_self: confirmSelf } });
 }
 
 /** Clear the provisional flag on an auto-imported row. Grants nothing new. */
 export async function confirmWorkspaceMember(id: string): Promise<WorkspaceMember> {
-  const { data } = await api.post<WorkspaceMember>(`/admin/members/${id}/confirm`);
+  const { data } = await api.post<WorkspaceMember>(apiPath`/admin/members/${id}/confirm`);
   return data;
 }
 
@@ -157,7 +158,7 @@ export async function listAdminAccess(): Promise<AdminAccess[]> {
 
 /** Revoke any per-suite grant as a workspace admin, grant or suite unowned. */
 export async function revokeAdminGrant(suiteId: string, grantId: string): Promise<void> {
-  await api.delete(`/admin/suites/${suiteId}/access/${grantId}`);
+  await api.delete(apiPath`/admin/suites/${suiteId}/access/${grantId}`);
 }
 
 export interface SuiteTransferResult {
@@ -174,7 +175,7 @@ export async function transferAdminSuite(
   payload: { new_owner_user_id: string; keep_previous_owner_access: boolean },
 ): Promise<SuiteTransferResult> {
   const { data } = await api.post<SuiteTransferResult>(
-    `/admin/suites/${suiteId}/transfer`,
+    apiPath`/admin/suites/${suiteId}/transfer`,
     payload,
   );
   return data;
@@ -182,7 +183,7 @@ export async function transferAdminSuite(
 
 /** Delete any suite in the workspace. The cascade is the owner's own delete. */
 export async function deleteAdminSuite(suiteId: string): Promise<void> {
-  await api.delete(`/admin/suites/${suiteId}`);
+  await api.delete(apiPath`/admin/suites/${suiteId}`);
 }
 
 /** ── Offboarding ─────────────────────────────────────────────────────────────
@@ -245,7 +246,7 @@ export async function previewOffboarding(
   userId: string,
   signal?: AbortSignal,
 ): Promise<OffboardPreview> {
-  const { data } = await api.get<OffboardPreview>(`/admin/offboarding/${userId}/preview`, {
+  const { data } = await api.get<OffboardPreview>(apiPath`/admin/offboarding/${userId}/preview`, {
     signal,
   });
   return data;
@@ -259,7 +260,7 @@ export async function offboardUser(
     confirm_email: string;
   },
 ): Promise<OffboardReceipt> {
-  const { data } = await api.post<OffboardReceipt>(`/admin/offboarding/${userId}`, payload);
+  const { data } = await api.post<OffboardReceipt>(apiPath`/admin/offboarding/${userId}`, payload);
   return data;
 }
 
@@ -591,7 +592,7 @@ export async function regenerateWebhookSecret(
   provider: OrchestrationProvider,
 ): Promise<WebhookRegeneration> {
   const { data } = await api.post<WebhookRegeneration>(
-    `/admin/orchestration/webhooks/${provider}/regenerate`,
+    apiPath`/admin/orchestration/webhooks/${provider}/regenerate`,
   );
   return data;
 }
@@ -641,9 +642,12 @@ export async function setInventorySync(
   connectionId: string,
   enabled: boolean,
 ): Promise<InventorySyncRow> {
-  const { data } = await api.patch<InventorySyncRow>(`/admin/inventory-sync/${connectionId}`, {
-    enabled,
-  });
+  const { data } = await api.patch<InventorySyncRow>(
+    apiPath`/admin/inventory-sync/${connectionId}`,
+    {
+      enabled,
+    },
+  );
   return data;
 }
 
@@ -651,7 +655,7 @@ export async function runInventorySync(
   connectionId: string,
 ): Promise<{ status: string; task_id: string }> {
   const { data } = await api.post<{ status: string; task_id: string }>(
-    `/admin/inventory-sync/${connectionId}/run`,
+    apiPath`/admin/inventory-sync/${connectionId}/run`,
   );
   return data;
 }

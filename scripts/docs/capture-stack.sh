@@ -41,6 +41,9 @@ _env() {
   export DATAQ_ROLE_TOKENS_PATH="$RUN/.role-tokens.json"
 }
 
+# A failure after the API started stops what is running, so no half-started stack is left behind.
+_abort() { echo "$1"; [ -n "${2:-}" ] && tail -20 "$2"; stop >/dev/null; exit 1; }
+
 _alive() { [ -f "$RUN/$1.pid" ] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null; }
 
 _psql() { "${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d postgres -tAc "$1"; }
@@ -64,15 +67,16 @@ start() {
   for _ in $(seq 1 40); do
     curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null && break; sleep 1
   done
-  curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null || { echo "api did not come up"; tail -20 "$RUN/api.log"; exit 1; }
+  curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null || _abort "api did not come up" "$RUN/api.log"
   # The seed carries no llm_settings row; the LLM captures need a saved, enabled
   # OpenAI-compatible config so a fresh stack regenerates the same images. The
-  # key is a placeholder (Ollama ignores it); Test only shows OK when a server
-  # answers at DOCS_LLM_BASE_URL.
+  # key is a placeholder (Ollama ignores it). The API tests the provider on save, so
+  # with nothing answering at DOCS_LLM_BASE_URL the save is refused: the stack still
+  # starts, and only the LLM captures are unavailable.
   curl -sf -o /dev/null -X PUT -H 'Content-Type: application/json' \
     "http://127.0.0.1:${API_PORT}/api/v1/admin/llm" \
     -d "{\"provider\":\"openai_compatible\",\"model\":\"${DOCS_LLM_MODEL:-qwen2.5:14b}\",\"base_url\":\"${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}\",\"api_key\":\"docs-capture-placeholder\",\"structured_output\":\"prompt_json\",\"enabled\":true}" \
-    || { echo "could not seed the LLM provider config"; exit 1; }
+    || echo "warning: LLM provider config not saved (no server answering at ${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}?) — continuing without the LLM captures"
   # Optional: a real Snowflake reader connection + suite, for the SQL-generation and
   # suggest-checks captures (both need to introspect a live table — a fake config
   # errors on every call). Skipped when DOCS_SNOWFLAKE_ACCOUNT is unset, so the base
@@ -86,22 +90,26 @@ start() {
       "http://127.0.0.1:${API_PORT}/api/v1/connections" \
       -d "{\"name\":\"snowflake-docs-reader\",\"type\":\"snowflake\",\"env\":\"dev\",\"config\":{\"account\":\"${DOCS_SNOWFLAKE_ACCOUNT}\",\"user\":\"${DOCS_SNOWFLAKE_USER:?export DOCS_SNOWFLAKE_USER to enable the live-warehouse captures}\",\"database\":\"${DOCS_SNOWFLAKE_DATABASE:-DATAQ_DB}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\",\"warehouse\":\"${DOCS_SNOWFLAKE_WAREHOUSE:-DATAQ_WH}\",\"role\":\"${DOCS_SNOWFLAKE_ROLE:-DATAQ_READER}\",\"auth_type\":\"password\"},\"secret\":\"${DOCS_SNOWFLAKE_SECRET:?export DOCS_SNOWFLAKE_SECRET to enable the live-warehouse captures}\"}" \
       | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))')" \
-      || { echo "could not create the docs Snowflake connection"; exit 1; }
+      || _abort "could not create the docs Snowflake connection"
     if [ -z "$conn_id" ]; then
-      echo "docs Snowflake connection created but the response carried no id — aborting rather than silently skipping the live-warehouse captures"; exit 1
+      _abort "docs Snowflake connection created but the response carried no id — aborting rather than silently skipping the live-warehouse captures"
     fi
     curl -sf -o /dev/null -X POST -H 'Content-Type: application/json' \
       "http://127.0.0.1:${API_PORT}/api/v1/suites" \
       -d "{\"name\":\"Retail orders (reader)\",\"connection_id\":\"$conn_id\",\"target\":{\"table\":\"${DOCS_SNOWFLAKE_TABLE:-ORDERS_HEADER}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\"}}" \
-      || { echo "could not create the docs Snowflake suite"; exit 1; }
+      || _abort "could not create the docs Snowflake suite"
     echo "live-warehouse captures enabled (connection $conn_id)"
   fi
   (cd "$ROOT/frontend" && VITE_API_PROXY_TARGET="http://127.0.0.1:${API_PORT}" VITE_AUTH_DEV_BYPASS=true \
       nohup pnpm dev --host 127.0.0.1 --port "$WEB_PORT" --strictPort >"$RUN/web.log" 2>&1 </dev/null & echo $! >"$RUN/web.pid")
+  # Vite must be the process answering: with the port already taken it exits, and
+  # whatever else listens there would pass a bare curl of `/`.
   for _ in $(seq 1 40); do
-    curl -sf "http://127.0.0.1:${WEB_PORT}/" >/dev/null && break; sleep 1
+    _alive web || break
+    curl -sf "http://127.0.0.1:${WEB_PORT}/@vite/client" >/dev/null && break; sleep 1
   done
-  curl -sf "http://127.0.0.1:${WEB_PORT}/" >/dev/null || { echo "vite did not come up"; tail -20 "$RUN/web.log"; exit 1; }
+  { _alive web && curl -sf "http://127.0.0.1:${WEB_PORT}/@vite/client" >/dev/null; } \
+    || _abort "vite did not come up" "$RUN/web.log"
   echo "docs capture stack up: web http://127.0.0.1:${WEB_PORT} api http://127.0.0.1:${API_PORT} (logs in $RUN)"
 }
 

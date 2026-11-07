@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getIncident, type Incident, listIncidents } from '../../src/api/incidents';
@@ -1024,6 +1024,32 @@ describe('RunDetail page', () => {
       expect(screen.queryByText('manual:u1')).not.toBeInTheDocument();
     });
 
+    it('formats the failing-rows percent and the Metric cell, keeping the full value in a title', async () => {
+      mockGetRun.mockResolvedValue({
+        ...runDetail,
+        results: [
+          {
+            ...runDetail.results[0],
+            metric_value: 0.11474469305794606,
+            sample_failures: { unexpected_count: 1, unexpected_percent: 0.05875440658049354 },
+          },
+        ],
+      });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+      const region = screenRegion();
+      const user = userEvent.setup();
+
+      await region.findByText('0.115');
+      expect(region.getByTestId('metric-value')).toHaveAttribute('title', '0.11474469305794606');
+      await user.click(region.getByRole('button', { name: /expand row/i }));
+      const percent = await region.findByTestId('failing-percent');
+      expect(percent).toHaveTextContent('0.0588%');
+      expect(percent).toHaveAttribute('title', '0.05875440658049354%');
+      expect(region.queryByText(/0\.058754/)).not.toBeInTheDocument();
+    });
+
     it('em-dashes a null triggered_by / metric_value in the report', async () => {
       mockGetRun.mockResolvedValue({
         ...runDetail,
@@ -1689,5 +1715,44 @@ describe('check identity as of the result (#1613)', () => {
     expect(within(report).getByText('DMF (later)')).toBeInTheDocument();
     expect(within(report).getByTestId('report-later-footnote')).toBeInTheDocument();
     expect(within(report).queryByTestId('report-current-footnote')).not.toBeInTheDocument();
+  });
+});
+
+describe('RunDetail on a run-to-run navigation', () => {
+  // The command palette opens any run from any page, so the router keeps this element mounted
+  // from /results/r1 to /results/r2; the page must load and show r2, not keep r1.
+  it('loads the new run when the id changes on the same mounted route', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    const r2: RunDetailType = {
+      ...runDetail,
+      id: 'r2',
+      status: 'failed',
+      checks_total: 0,
+      checks_passed: 0,
+      worst_severity: null,
+      failure_reason: 'warehouse unreachable on r2',
+      results: [],
+    };
+    mockGetRun.mockImplementation(async (id: string) => (id === 'r2' ? r2 : runDetail));
+
+    render(
+      <MemoryRouter initialEntries={['/results/r1']}>
+        <Link to="/results/r2">open r2</Link>
+        <Routes>
+          <Route path="/results/:runId" element={<RunDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screenRegion().getByText('warn')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('link', { name: 'open r2' }));
+
+    await waitFor(() =>
+      expect(screenRegion().getByText('warehouse unreachable on r2')).toBeInTheDocument(),
+    );
+    expect(mockGetRun).toHaveBeenLastCalledWith('r2');
+    expect(screenRegion().queryByText('warn')).not.toBeInTheDocument();
   });
 });

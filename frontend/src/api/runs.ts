@@ -2,6 +2,7 @@ import { api } from './client';
 import { toListPage, type ListPage } from './listPage';
 import type { SampleStrategy } from './suites';
 import type { OrchestrationProvider } from './triggerBindings';
+import { apiPath } from './path';
 
 /**
  * Runs / results / pipeline-runs API — the read surface behind the Results page (backend
@@ -200,25 +201,25 @@ export async function listRuns(params?: {
 }
 
 export async function getRun(runId: string): Promise<RunDetail> {
-  const { data } = await api.get<RunDetail>(`/runs/${runId}`);
+  const { data } = await api.get<RunDetail>(apiPath`/runs/${runId}`);
   return data;
 }
 
 /** Trigger a run of a suite (`POST /suites/{id}/run`). */
 export async function runSuite(suiteId: string): Promise<Run> {
-  const { data } = await api.post<Run>(`/suites/${suiteId}/run`);
+  const { data } = await api.post<Run>(apiPath`/suites/${suiteId}/run`);
   return data;
 }
 
 /** Poll a run's live progress (`GET /runs/{id}/progress`). */
 export async function getRunProgress(runId: string): Promise<RunProgress> {
-  const { data } = await api.get<RunProgress>(`/runs/${runId}/progress`);
+  const { data } = await api.get<RunProgress>(apiPath`/runs/${runId}/progress`);
   return data;
 }
 
 /** Cancel a non-terminal run (`POST /runs/{id}/cancel`). */
 export async function cancelRun(runId: string): Promise<Run> {
-  const { data } = await api.post<Run>(`/runs/${runId}/cancel`);
+  const { data } = await api.post<Run>(apiPath`/runs/${runId}/cancel`);
   return data;
 }
 
@@ -241,10 +242,13 @@ export async function downloadComparisonReport(
   resultId: string,
   fmt: 'csv' | 'xlsx',
 ): Promise<void> {
-  const { data } = await api.get<Blob>(`/runs/${runId}/results/${resultId}/comparison_report`, {
-    params: { fmt },
-    responseType: 'blob',
-  });
+  const { data } = await api.get<Blob>(
+    apiPath`/runs/${runId}/results/${resultId}/comparison_report`,
+    {
+      params: { fmt },
+      responseType: 'blob',
+    },
+  );
   const url = URL.createObjectURL(data);
   const link = document.createElement('a');
   link.href = url;
@@ -331,7 +335,7 @@ export interface RunComparison {
 }
 
 export async function compareRuns(runId: string, otherRunId: string): Promise<RunComparison> {
-  const { data } = await api.get<RunComparison>(`/runs/${runId}/compare/${otherRunId}`);
+  const { data } = await api.get<RunComparison>(apiPath`/runs/${runId}/compare/${otherRunId}`);
   return data;
 }
 
