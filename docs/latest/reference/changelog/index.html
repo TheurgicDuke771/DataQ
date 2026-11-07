@@ -3106,6 +3106,10 @@ section below.</p>
 <li><strong>The bulk "Set thresholds" dropdowns no longer open as a sliver.</strong> Opening the Warn, Fail or
   Critical picker while the dialog was still animating in produced a dropdown about 30px wide
   with unreadable options; it now always opens at the picker's full width.</li>
+<li><strong>Workspace settings tables now hold exactly one row.</strong> The privacy, health-score, LLM and audit-chain
+  settings tables carry a database check that refuses a second row, as the coverage and telemetry
+  settings already did. The upgrade stops with the table named, instead of deleting anything, if a
+  deployment somehow holds a row with another id.</li>
 <li><strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.</li>
 <li><strong>Opening another run from a run's page shows that run.</strong> Picking a run in the command palette
