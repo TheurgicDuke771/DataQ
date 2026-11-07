@@ -213,12 +213,19 @@ def test_the_two_engines_with_a_connect_hook_declare_it() -> None:
 # produced it, wrapped the way SQLAlchemy wraps a DBAPI error.
 _ENGINE_ERRORS = [
     "(psycopg2.errors.QueryCanceled) canceling statement due to statement timeout",
-    "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted "
-    "(max_statement_time exceeded)')",
-    "(pymysql.err.OperationalError) (3024, 'Query execution was interrupted, maximum "
-    "statement execution time exceeded')",
-    "(trino.exceptions.TrinoQueryError) TrinoQueryError(type=INSUFFICIENT_RESOURCES, "
-    'name=EXCEEDED_TIME_LIMIT, message="Query exceeded the maximum execution time limit of 2.00s")',
+    (
+        "(pymysql.err.OperationalError) (1969, 'Query execution was interrupted "
+        "(max_statement_time exceeded)')"
+    ),
+    (
+        "(pymysql.err.OperationalError) (3024, 'Query execution was interrupted, maximum "
+        "statement execution time exceeded')"
+    ),
+    (
+        "(trino.exceptions.TrinoQueryError) TrinoQueryError(type=INSUFFICIENT_RESOURCES, "
+        'name=EXCEEDED_TIME_LIMIT, message="Query exceeded the maximum execution time limit '
+        'of 2.00s")'
+    ),
     "('HYT00', '[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]Query timeout expired (0)')",
     "Job execution was cancelled: Job timed out after 7 sec",
 ]
