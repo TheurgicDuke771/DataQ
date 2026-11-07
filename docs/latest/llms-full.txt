@@ -3026,7 +3026,8 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   crying wolf.
 - **Is it working?** The Dashboard's **Coverage** panel shows two workspace-wide figures. *Assets
   watched* is the share of assets in the inventory with at least one suite that completed a run
-  in the last 7 days, split into assets with authored checks and assets watched by automatic
+  evaluating at least one check in the last 7 days (a run with no enabled check, or whose every
+  check skipped, does not count), split into assets with authored checks and assets watched by automatic
   coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
   last 30 days **and said what they were**, the share marked false positive. Both show the counts
   behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
@@ -4962,7 +4963,7 @@ The pipeline calls `POST /api/v1/orchestration/gate` with its `provider`, pipeli
 | `awaiting_trigger` | status-only mode, and no run exists yet for this pipeline run |
 | `passed` | every bound suite finished below `fail_on` (default `fail`) |
 | `failed` | some check finished at or above `fail_on` |
-| `error` | a run failed or was cancelled, or a check couldn't be evaluated |
+| `error` | a run failed or was cancelled, a check couldn't be evaluated, or the run evaluated no check (none was enabled and runnable, or every one skipped) |
 
 - **Trigger-and-wait** (the default): the first call starts one run of every enabled bound
   suite for this pipeline run, and later calls never start another. The pipeline's own
@@ -5743,6 +5744,12 @@ section below.
   settings tables carry a database check that refuses a second row, as the coverage and telemetry
   settings already did. The upgrade stops with the table named, instead of deleting anything, if a
   deployment somehow holds a row with another id.
+- **A run that evaluated no check no longer reads as a pass.** A suite whose checks are all
+  disabled, or whose every check skipped, still runs and ends succeeded, but it verified nothing.
+  The pipeline gate now answers `error` for such a run, so the shipped gate snippets stop the
+  pipeline. The dashboard's *Assets watched* figure no longer counts it. Alert dedup looks past it,
+  so a repeated failure on either side is not re-sent as new. The runs tables show it as
+  *Nothing evaluated*.
 - **A refused promote no longer leaves a stale destination card.** When promoting a suite's inline
   destination to a channel failed because another admin had already promoted or cleared it, the
   dialog stayed open over a card that still offered the action. The dialog now closes and the
@@ -19520,8 +19527,9 @@ blocking finishes.
      that the normal success event triggered.
 3. **States, never a bare boolean:** `awaiting_trigger` (status-only, no run yet),
    `running` (any bound run queued or running), `passed`, `failed` (some result at or above
-   `fail_on`), `error` (a run failed operationally or was cancelled, or a check could not be
-   evaluated). The response lists each bound suite's run, status, worst severity and counts,
+   `fail_on`), `error` (a run failed operationally or was cancelled, a check could not be
+   evaluated, or the run evaluated no check at all — none was runnable, or every one skipped).
+   The response lists each bound suite's run, status, worst severity and counts,
    plus a `retry_after_seconds` hint. `error` is distinct from `failed` so a client can
    choose; the shipped snippets **fail closed** on both.
 4. **Authorization is the manual-trigger rule.** Starting a suite run is `edit` on the suite

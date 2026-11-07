@@ -283,6 +283,12 @@ section below.
   settings tables carry a database check that refuses a second row, as the coverage and telemetry
   settings already did. The upgrade stops with the table named, instead of deleting anything, if a
   deployment somehow holds a row with another id.
+- **A run that evaluated no check no longer reads as a pass.** A suite whose checks are all
+  disabled, or whose every check skipped, still runs and ends succeeded, but it verified nothing.
+  The pipeline gate now answers `error` for such a run, so the shipped gate snippets stop the
+  pipeline. The dashboard's *Assets watched* figure no longer counts it. Alert dedup looks past it,
+  so a repeated failure on either side is not re-sent as new. The runs tables show it as
+  *Nothing evaluated*.
 - **A refused promote no longer leaves a stale destination card.** When promoting a suite's inline
   destination to a channel failed because another admin had already promoted or cleared it, the
   dialog stayed open over a card that still offered the action. The dialog now closes and the

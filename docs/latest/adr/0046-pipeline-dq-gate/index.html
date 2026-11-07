@@ -2550,8 +2550,9 @@ blocking finishes.</p>
      that the normal success event triggered.</li>
 <li><strong>States, never a bare boolean:</strong> <code>awaiting_trigger</code> (status-only, no run yet),
    <code>running</code> (any bound run queued or running), <code>passed</code>, <code>failed</code> (some result at or above
-   <code>fail_on</code>), <code>error</code> (a run failed operationally or was cancelled, or a check could not be
-   evaluated). The response lists each bound suite's run, status, worst severity and counts,
+   <code>fail_on</code>), <code>error</code> (a run failed operationally or was cancelled, a check could not be
+   evaluated, or the run evaluated no check at all — none was runnable, or every one skipped).
+   The response lists each bound suite's run, status, worst severity and counts,
    plus a <code>retry_after_seconds</code> hint. <code>error</code> is distinct from <code>failed</code> so a client can
    choose; the shipped snippets <strong>fail closed</strong> on both.</li>
 <li><strong>Authorization is the manual-trigger rule.</strong> Starting a suite run is <code>edit</code> on the suite
