@@ -565,7 +565,8 @@ def test_promote_of_a_webhook_whose_secret_is_gone_is_a_409_and_changes_nothing(
 
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "promote_secret_missing"
-    assert client.get("/api/v1/notification-channels", headers=headers).json() == []
+    channels = client.get("/api/v1/notification-channels", headers=headers).json()
+    assert channels == []
     after = client.get(f"/api/v1/suites/{suite.id}/notifications", headers=headers).json()
     assert after["has_webhook"] is True
     assert secret_store.requested == []

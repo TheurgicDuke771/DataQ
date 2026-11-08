@@ -33,7 +33,13 @@ admin gets **Clear**, which removes the destination. Setting a new inline destin
 not possible any more — not from the app and not from the API, for anyone: the request is
 refused with the field named.
 
-Two things to know before promoting:
+Three things to know before promoting:
+
+- **A webhook whose secret is gone cannot be promoted.** DataQ checks that the secret store
+  still holds the webhook, without reading it. If it does not, the suite was already not
+  delivering to that webhook, and a channel made from it would never deliver either, so the
+  promote is refused with that reason. Remove the inline destination with **Clear**, then
+  link a channel with a working webhook. If the secret store cannot be reached, try again.
 
 - **The workspace default may start applying.** An inline value replaced the workspace-wide
   default for that suite; a linked channel is delivered in addition to it. If the deployment
