@@ -3108,6 +3108,14 @@ section below.</p>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>Snowflake and Unity Catalog queries now carry the datasource query limit too.</strong> Every session
+  DataQ opens on either engine sets <code>DATASOURCE_QUERY_TIMEOUT_S</code> through the engine's own setting:
+  <code>STATEMENT_TIMEOUT_IN_SECONDS</code> on Snowflake and <code>STATEMENT_TIMEOUT</code> on Databricks SQL. A
+  slow query is cancelled, which stops the warehouse spending on it, and the check reports a
+  timeout. A lower limit already in place is kept: a Snowflake user or account setting, or a
+  Databricks warehouse or workspace setting. A Snowflake warehouse's own limit still applies as
+  well. If a warehouse refuses the setting, DataQ logs <code>query_limit_not_applied</code> and runs the
+  query without a limit rather than failing it.</li>
 <li><strong>A slow query on a SQL datasource is now cancelled instead of running without limit.</strong> Every
   query DataQ sends PostgreSQL, Redshift, MySQL/MariaDB, Trino, SQL Server, Athena or BigQuery
   carries a wall-clock limit, <code>DATASOURCE_QUERY_TIMEOUT_S</code> (default 1800 seconds), applied
