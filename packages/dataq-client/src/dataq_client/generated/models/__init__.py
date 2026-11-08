@@ -29,6 +29,7 @@ from .audit_event_page import AuditEventPage
 from .audit_event_read import AuditEventRead
 from .audit_event_read_after_type_0 import AuditEventReadAfterType0
 from .audit_event_read_before_type_0 import AuditEventReadBeforeType0
+from .audit_event_scrub_request import AuditEventScrubRequest
 from .auth_email_test_response import AuthEmailTestResponse
 from .baseline_shape_write import BaselineShapeWrite
 from .batch_preview_read import BatchPreviewRead
@@ -434,6 +435,7 @@ __all__ = (
     "AuditEventRead",
     "AuditEventReadAfterType0",
     "AuditEventReadBeforeType0",
+    "AuditEventScrubRequest",
     "AuthEmailTestResponse",
     "BaselineShapeWrite",
     "BatchPreviewRead",

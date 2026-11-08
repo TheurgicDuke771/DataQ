@@ -12,7 +12,8 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -62,18 +63,23 @@ def _coerce(value: Any) -> Any:
     return value
 
 
-def _canonical(event: AuditEvent) -> dict[str, Any]:
-    return {name: _coerce(getattr(event, name)) for name in _HASH_FIELDS}
+def _canonical(event: AuditEvent, overrides: Mapping[str, Any] | None) -> dict[str, Any]:
+    values = {name: getattr(event, name) for name in _HASH_FIELDS}
+    values.update(overrides or {})
+    return {name: _coerce(values[name]) for name in _HASH_FIELDS}
 
 
-def compute_row_hash(event: AuditEvent, prev_hash: str | None) -> str:
+def compute_row_hash(
+    event: AuditEvent, prev_hash: str | None, *, overrides: Mapping[str, Any] | None = None
+) -> str:
     """Deterministic sha256 over `event`'s content and its chain position.
 
     Called both when a row is written (with the real `prev_hash`) and when
     `verify_chain` recomputes it from what is stored — the two MUST agree on
     exactly what goes in, which is why this is the only place either does it.
+    `overrides` replaces hashed fields, so a scrub can hash the row it is about to write.
     """
-    payload = {"prev_hash": prev_hash, **_canonical(event)}
+    payload = {"prev_hash": prev_hash, **_canonical(event, overrides)}
     encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -185,6 +191,19 @@ class ChainBreak:
 
 
 @dataclass(frozen=True)
+class VerifiedScrub:
+    """A scrub event reached and verified on the walk from the head: the only kind trusted."""
+
+    event_id: uuid.UUID
+    #: Chain position, 0 at the head; larger is older. Unlike `occurred_at`, it cannot be set by
+    #: whoever writes the row.
+    position: int
+    target_event_id: uuid.UUID
+    target_row_hash: str | None
+    residual_hash: str | None
+
+
+@dataclass(frozen=True)
 class ChainVerification:
     """The chain's state as of this call — every field an admin needs to answer
     "has this been tampered with", not just a boolean.
@@ -196,6 +215,14 @@ class ChainVerification:
     unverifiable_legacy_count: int
     chain_head_hash: str | None
     first_break: ChainBreak | None
+    #: Rows whose content no longer recomputes to their own hash because a payload path was
+    #: scrubbed, each vouched for by a verified scrub event. Included in `verified_count`.
+    scrubbed_count: int = 0
+    #: Target id -> (its row_hash, its hash after the scrub), from the newest verified scrub event.
+    scrub_claims: dict[uuid.UUID, tuple[str | None, str | None]] = field(default_factory=dict)
+    verified_scrubs: tuple[VerifiedScrub, ...] = ()
+    #: row_hash -> chain position, for every row the walk verified.
+    positions: dict[str, int] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -243,6 +270,13 @@ def verify_chain(session: Session) -> ChainVerification:
     head_hash = state.head_hash if state else None
 
     verified = 0
+    scrubbed = 0
+    # Target id -> (its row_hash, its content's hash after the scrub), from the newest verified
+    # scrub event. The walk runs newest-first and a scrub is always chained after its target, so
+    # every claim is collected before the row it names is reached.
+    scrub_claims: dict[uuid.UUID, tuple[str | None, str | None]] = {}
+    verified_scrubs: list[VerifiedScrub] = []
+    positions: dict[str, int] = {}
     first_break: ChainBreak | None = None
     # What a dangling pointer should be blamed on: initially the head itself.
     blame_id = state.head_event_id if state else None
@@ -258,9 +292,18 @@ def verify_chain(session: Session) -> ChainVerification:
                 # still a break, just one with no row left to read details from.
                 first_break = ChainBreak(blame_id, None, current_hash, None)
             break
-        if compute_row_hash(row, row.prev_hash) != row.row_hash:
-            first_break = ChainBreak(row.id, row.occurred_at, row.prev_hash, row.row_hash)
-            break
+        recomputed = compute_row_hash(row, row.prev_hash)
+        if recomputed != row.row_hash:
+            if scrub_claims.get(row.id) != (row.row_hash, recomputed):
+                first_break = ChainBreak(row.id, row.occurred_at, row.prev_hash, row.row_hash)
+                break
+            scrubbed += 1
+        claim = _scrub_claim(row)
+        if claim is not None:
+            scrub_claims.setdefault(claim[0], claim[1])
+            verified_scrubs.append(VerifiedScrub(row.id, verified, claim[0], *claim[1]))
+        if row.row_hash is not None:
+            positions[row.row_hash] = verified
         verified += 1
         blame_id = row.id
         prev = row.prev_hash
@@ -274,7 +317,22 @@ def verify_chain(session: Session) -> ChainVerification:
         unverifiable_legacy_count=legacy_count,
         chain_head_hash=head_hash,
         first_break=first_break,
+        scrubbed_count=scrubbed,
+        scrub_claims=scrub_claims,
+        verified_scrubs=tuple(verified_scrubs),
+        positions=positions,
     )
+
+
+#: The scrub event's action (ADR 0041 §9, 2026-11-08 amendment), and the entity it names.
+SCRUB_ACTION = "audit_event.scrub"
+SCRUB_ENTITY_TYPE = "audit_event"
+
+
+def _scrub_claim(row: AuditEvent) -> tuple[uuid.UUID, tuple[str | None, str | None]] | None:
+    if row.action != SCRUB_ACTION or row.entity_id is None or not isinstance(row.after, dict):
+        return None
+    return row.entity_id, (row.after.get("target_row_hash"), row.after.get("residual_hash"))
 
 
 def write_purge_checkpoint(session: Session, *, cutoff: datetime) -> AuditChainCheckpoint | None:

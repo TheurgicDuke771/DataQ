@@ -393,7 +393,7 @@ def test_verify_surfaces_the_anchor_read_back_beside_the_chain_verdict(
     monkeypatch.setattr(
         audit_anchor_service,
         "verify_anchors",
-        lambda _session: AnchorVerification(
+        lambda _session, **_kw: AnchorVerification(
             status="mismatch",
             checked_count=2,
             present_count=1,
@@ -443,7 +443,9 @@ def test_verify_reports_an_anchor_store_outage_as_unavailable(
     monkeypatch.setattr(
         audit_anchor_service,
         "verify_anchors",
-        lambda _session: AnchorVerification(status="unavailable", error="ConnectError: refused"),
+        lambda _session, **_kw: AnchorVerification(
+            status="unavailable", error="ConnectError: refused"
+        ),
     )
 
     body = client.get("/api/v1/admin/audit-events/verify").json()

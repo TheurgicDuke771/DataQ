@@ -109,6 +109,13 @@ function ChainResult({ result }: { result: AuditChainStatus }) {
             `${result.unverifiable_legacy_count} event(s) written before the chain shipped — real history, just not hash-covered`
           )}
         </Descriptions.Item>
+        <Descriptions.Item label="Scrubbed">
+          {(result.scrubbed_count ?? 0) === 0 ? (
+            <Typography.Text type="secondary">None</Typography.Text>
+          ) : (
+            `${result.scrubbed_count} event(s) whose config was scrubbed — vouched for by a scrub record, not their own hash`
+          )}
+        </Descriptions.Item>
         <Descriptions.Item label="Chain head">
           {result.chain_head_hash ? (
             <Typography.Text code copyable={{ text: result.chain_head_hash }}>
@@ -144,21 +151,25 @@ function ChainResult({ result }: { result: AuditChainStatus }) {
 }
 
 const ANCHOR_TAG: Record<
-  AnchorVerification['status'] | 'malformed',
+  AnchorVerification['status'] | 'malformed' | 'unanchored',
   { color: string; label: string }
 > = {
   ok: { color: 'green', label: 'Every published head is in the chain' },
   mismatch: { color: 'red', label: 'A published head is missing from the chain' },
   malformed: { color: 'orange', label: 'An object under the anchor prefix is not an anchor' },
+  unanchored: { color: 'red', label: 'A scrub has no receipt in the store' },
   empty: { color: 'default', label: 'Nothing published yet' },
   unavailable: { color: 'orange', label: 'Anchor store unreachable — not checked' },
 };
 
 function AnchorReadBack({ anchors }: { anchors: AnchorVerification }) {
+  const unanchored = anchors.unanchored_scrub_count ?? 0;
   const tag =
-    anchors.status === 'mismatch' && anchors.missing_count === 0
-      ? ANCHOR_TAG.malformed
-      : ANCHOR_TAG[anchors.status];
+    anchors.status !== 'mismatch' || anchors.missing_count > 0
+      ? ANCHOR_TAG[anchors.status]
+      : unanchored > 0
+        ? ANCHOR_TAG.unanchored
+        : ANCHOR_TAG.malformed;
   return (
     <Flex vertical gap={4}>
       <Tag color={tag.color}>{tag.label}</Tag>
@@ -180,6 +191,23 @@ function AnchorReadBack({ anchors }: { anchors: AnchorVerification }) {
           are counted separately.
         </Typography.Text>
       )}
+      {anchors.status !== 'unavailable' && (anchors.scrub_receipt_count ?? 0) + unanchored > 0 && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {anchors.scrub_receipt_count ?? 0} scrub receipt(s) read, {unanchored} scrub(s) with no
+          receipt, {anchors.orphan_receipt_count ?? 0} receipt(s) naming no scrub.
+        </Typography.Text>
+      )}
+      {unanchored > 0 && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          A scrub with no receipt was not written by the app, or its receipt failed to publish (the
+          log says which). Scrubs from before the anchor's first publish are not judged.
+        </Typography.Text>
+      )}
+      {(anchors.unanchored_scrub_event_ids ?? []).map((id) => (
+        <Typography.Text key={`scrub-${id}`} code style={{ fontSize: 12 }}>
+          unanchored scrub: {id}
+        </Typography.Text>
+      ))}
       {anchors.findings.map((f, i) => (
         <Typography.Text key={`${i}-${f.key}`} code style={{ fontSize: 12 }}>
           {f.match}: {f.key}

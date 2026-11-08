@@ -53,6 +53,32 @@ def anchor_payload(
     }
 
 
+#: The label on a scrub receipt (ADR 0041 §9, 2026-11-08 amendment).
+SCRUB_RECEIPT_LABEL = "audit_events_scrub"
+
+
+def scrub_receipt_payload(
+    *,
+    scrub_event_id: str,
+    target_event_id: str,
+    target_row_hash: str | None,
+    residual_hash: str | None,
+    as_of: datetime,
+) -> dict[str, Any]:
+    """What a scrub publishes: which row was scrubbed, its hash, and its content's hash after the
+    scrub. Never the value. A scrub event in the database with no receipt was not written by the
+    app.
+    """
+    return {
+        "label": SCRUB_RECEIPT_LABEL,
+        "scrub_event_id": scrub_event_id,
+        "target_event_id": target_event_id,
+        "target_row_hash": target_row_hash,
+        "residual_hash": residual_hash,
+        "as_of": as_of.isoformat(),
+    }
+
+
 class TamperAnchorUnavailableError(Exception):
     """The anchor store could not be read. Distinct from "no anchors found" on
     purpose: an outage must never be reportable as a state (the ADR 0039 lesson).
@@ -69,6 +95,10 @@ class TamperAnchor(Protocol):
         """
         ...
 
+    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
+        """Publish a `scrub_receipt_payload`. Same contract as `publish`: never raises."""
+        ...
+
 
 class NoopTamperAnchor:
     """The default. Says so out loud, once per process, rather than silently
@@ -81,6 +111,12 @@ class NoopTamperAnchor:
         self._lock = threading.Lock()
 
     def publish(self, *, label: str, head_hash: str, event_count: int, as_of: datetime) -> bool:
+        return self._warn_unconfigured()
+
+    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
+        return self._warn_unconfigured()
+
+    def _warn_unconfigured(self) -> bool:
         with self._lock:
             if not self._warned:
                 log.warning(
@@ -113,9 +149,14 @@ class WebhookTamperAnchor:
         return hmac.new(self._secret, body, hashlib.sha256).hexdigest()
 
     def publish(self, *, label: str, head_hash: str, event_count: int, as_of: datetime) -> bool:
-        payload = anchor_payload(
-            label=label, head_hash=head_hash, event_count=event_count, as_of=as_of
+        return self._post(
+            anchor_payload(label=label, head_hash=head_hash, event_count=event_count, as_of=as_of)
         )
+
+    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
+        return self._post(receipt)
+
+    def _post(self, payload: dict[str, Any]) -> bool:
         body = json.dumps(payload, sort_keys=True).encode("utf-8")
         try:
             response = self._client.post(
@@ -169,6 +210,25 @@ class AnchorRecord:
 
 
 @dataclass(frozen=True)
+class ScrubReceiptRecord:
+    key: str
+    scrub_event_id: str | None
+    as_of: datetime | None
+    #: The object under the receipt prefix is not a receipt DataQ wrote.
+    malformed: bool = False
+    target_event_id: str | None = None
+    target_row_hash: str | None = None
+    residual_hash: str | None = None
+
+
+@dataclass(frozen=True)
+class ScrubReceiptReadResult:
+    records: list[ScrubReceiptRecord]
+    #: More receipts exist than were read — the newest `limit` were.
+    truncated: bool
+
+
+@dataclass(frozen=True)
 class AnchorReadResult:
     records: list[AnchorRecord]
     #: More anchors exist than were read — the newest `limit` were.
@@ -207,6 +267,32 @@ def _parse_record(key: str, body: bytes) -> AnchorRecord:
     )
 
 
+def _parse_receipt(key: str, body: bytes) -> ScrubReceiptRecord:
+    try:
+        data = json.loads(body)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return ScrubReceiptRecord(key, None, None, malformed=True)
+    scrub_id = data.get("scrub_event_id")
+    as_of = _parse_timestamp(data.get("as_of"))
+    if data.get("label") != SCRUB_RECEIPT_LABEL or not isinstance(scrub_id, str) or as_of is None:
+        return ScrubReceiptRecord(key, None, None, malformed=True)
+
+    def _opt(name: str) -> str | None:
+        value = data.get(name)
+        return value if isinstance(value, str) else None
+
+    return ScrubReceiptRecord(
+        key,
+        scrub_id,
+        as_of,
+        target_event_id=_opt("target_event_id"),
+        target_row_hash=_opt("target_row_hash"),
+        residual_hash=_opt("residual_hash"),
+    )
+
+
 class ObjectLockAnchor:
     """Writes each chain head as its own immutable object — S3 Object Lock (AWS or any
     S3-compatible store that implements it, e.g. MinIO) or an Azure immutable blob.
@@ -231,18 +317,33 @@ class ObjectLockAnchor:
     def prefix(self) -> str:
         return self._prefix
 
+    @property
+    def receipt_prefix(self) -> str:
+        """A sibling of `prefix`, not under it, so a head listing never reads a receipt."""
+        return f"{self._prefix}-scrubs"
+
     def object_key(self, published_at: datetime, head_hash: str) -> str:
         return f"{self._prefix}/{published_at:%Y%m%dT%H%M%S%f}Z-{head_hash}.json"
 
+    def receipt_key(self, published_at: datetime, scrub_event_id: str) -> str:
+        return f"{self.receipt_prefix}/{published_at:%Y%m%dT%H%M%S%f}Z-{scrub_event_id}.json"
+
     def publish(self, *, label: str, head_hash: str, event_count: int, as_of: datetime) -> bool:
-        now = self._clock()
-        retain_until = now + self._retention
         payload = anchor_payload(
             label=label, head_hash=head_hash, event_count=event_count, as_of=as_of
         )
+        return self._put(payload, lambda now: self.object_key(now, head_hash))
+
+    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
+        scrub_id = str(receipt.get("scrub_event_id"))
+        return self._put(dict(receipt), lambda now: self.receipt_key(now, scrub_id))
+
+    def _put(self, payload: dict[str, Any], key_for: Callable[[datetime], str]) -> bool:
+        now = self._clock()
+        retain_until = now + self._retention
         payload["published_at"] = now.isoformat()
         payload["retain_until"] = retain_until.isoformat()
-        key = self.object_key(now, head_hash)
+        key = key_for(now)
         body = json.dumps(payload, sort_keys=True).encode("utf-8")
         try:
             self._store.put(key, body, retain_until=retain_until)
@@ -278,6 +379,28 @@ class ObjectLockAnchor:
             )
             raise TamperAnchorUnavailableError(f"{type(exc).__name__}: {exc}") from exc
         return AnchorReadResult(records=records, truncated=truncated)
+
+    def read_scrub_receipts(self, *, limit: int = DEFAULT_READ_LIMIT) -> ScrubReceiptReadResult:
+        """The newest `limit` scrub receipts. Raises `TamperAnchorUnavailableError` like
+        `read_anchors`.
+        """
+        try:
+            objects = self._store.list_objects(self.receipt_prefix + "/")
+            objects.sort(key=lambda o: o.key, reverse=True)
+            truncated = len(objects) > limit
+            page = objects[:limit]
+            records = [
+                _parse_receipt(obj.key, body)
+                for obj, body in zip(page, self._store.fetch(page), strict=True)
+            ]
+        except Exception as exc:
+            log.error(
+                "tamper_anchor_read_failed",
+                mode=_OBJECT_LOCK_MODE,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise TamperAnchorUnavailableError(f"{type(exc).__name__}: {exc}") from exc
+        return ScrubReceiptReadResult(records=records, truncated=truncated)
 
 
 class S3ObjectLockStore:

@@ -11,8 +11,10 @@ _APP = Path(__file__).resolve().parents[2] / "app"
 #: and which re-grants the privilege around its own statement.
 _DELETE_ALLOWED = {"services/audit_read_service.py"}
 
-#: No module at all may UPDATE an audit row.
-_UPDATE_ALLOWED: set[str] = set()
+#: The single module allowed to UPDATE an audit row: the audited payload scrub (ADR 0041 §9,
+#: 2026-11-08 amendment), which grants itself the privilege for its own statement and records a
+#: chained event for every row it touches.
+_UPDATE_ALLOWED = {"services/audit_scrub.py"}
 
 
 def _python_sources() -> list[Path]:

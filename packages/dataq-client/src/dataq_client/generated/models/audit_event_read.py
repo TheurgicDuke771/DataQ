@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
+
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.audit_event_read_after_type_0 import AuditEventReadAfterType0
@@ -33,6 +36,10 @@ class AuditEventRead:
         id (str):
         occurred_at (str):
         request_id (None | str):
+        scrubbable (bool | Unset): Whether a scrub of this event would remove anything: a check event whose `config`
+            still holds more than its tested `column`. Default: False.
+        scrubbed_at (datetime.datetime | None | Unset): Set when a check event's `config` was scrubbed: it then keeps
+            only the tested `column`. The `audit_event.scrub` event naming this one says who, when and why.
     """
 
     action: str
@@ -48,6 +55,8 @@ class AuditEventRead:
     id: str
     occurred_at: str
     request_id: None | str
+    scrubbable: bool | Unset = False
+    scrubbed_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -95,6 +104,16 @@ class AuditEventRead:
         request_id: None | str
         request_id = self.request_id
 
+        scrubbable = self.scrubbable
+
+        scrubbed_at: None | str | Unset
+        if isinstance(self.scrubbed_at, Unset):
+            scrubbed_at = UNSET
+        elif isinstance(self.scrubbed_at, datetime.datetime):
+            scrubbed_at = self.scrubbed_at.isoformat()
+        else:
+            scrubbed_at = self.scrubbed_at
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -114,6 +133,10 @@ class AuditEventRead:
                 "request_id": request_id,
             }
         )
+        if scrubbable is not UNSET:
+            field_dict["scrubbable"] = scrubbable
+        if scrubbed_at is not UNSET:
+            field_dict["scrubbed_at"] = scrubbed_at
 
         return field_dict
 
@@ -202,6 +225,25 @@ class AuditEventRead:
 
         request_id = _parse_request_id(d.pop("request_id"))
 
+        scrubbable = d.pop("scrubbable", UNSET)
+
+        def _parse_scrubbed_at(data: object) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                scrubbed_at_type_0 = datetime.datetime.fromisoformat(data)
+
+                return scrubbed_at_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        scrubbed_at = _parse_scrubbed_at(d.pop("scrubbed_at", UNSET))
+
         audit_event_read = cls(
             action=action,
             action_class=action_class,
@@ -216,6 +258,8 @@ class AuditEventRead:
             id=id,
             occurred_at=occurred_at,
             request_id=request_id,
+            scrubbable=scrubbable,
+            scrubbed_at=scrubbed_at,
         )
 
         audit_event_read.additional_properties = d

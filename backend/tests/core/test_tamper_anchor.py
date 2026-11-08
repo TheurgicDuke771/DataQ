@@ -27,6 +27,7 @@ from backend.app.core.tamper_anchor import (
     WebhookTamperAnchor,
     get_tamper_anchor,
     reset_tamper_anchor_cache,
+    scrub_receipt_payload,
 )
 
 _AS_OF = datetime(2026, 1, 1, tzinfo=UTC)
@@ -684,3 +685,69 @@ def test_object_lock_azure_account_url_must_be_https() -> None:
 
 def test_object_lock_azure_mode_does_not_need_the_s3_fields() -> None:
     _azure_settings()  # must not raise
+
+
+# ───────────────── scrub receipts (ADR 0041 §9, 2026-11-08) ─────────────────
+
+
+def _receipt() -> dict[str, Any]:
+    return scrub_receipt_payload(
+        scrub_event_id="s-1",
+        target_event_id="t-1",
+        target_row_hash="aa",
+        residual_hash="bb",
+        as_of=_AS_OF,
+    )
+
+
+def test_a_webhook_scrub_receipt_is_signed_like_a_head() -> None:
+    sent: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200)
+
+    anchor = WebhookTamperAnchor(
+        "http://sink.example/ingest",
+        "sekrit",
+        client=httpx.Client(transport=httpx.MockTransport(_handler)),
+    )
+    assert anchor.publish_scrub(_receipt()) is True
+    body = json.loads(sent[0].content)
+    assert body == _receipt()
+    expected = hmac.new(b"sekrit", sent[0].content, hashlib.sha256).hexdigest()
+    assert sent[0].headers["x-dataq-signature"] == f"sha256={expected}"
+
+
+def test_a_noop_scrub_receipt_is_not_anchored() -> None:
+    assert NoopTamperAnchor().publish_scrub(_receipt()) is False
+
+
+class _MemStore:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def put(self, key: str, body: bytes, *, retain_until: datetime) -> None:
+        self.objects[key] = body
+
+    def list_objects(self, prefix: str) -> list[StoredObject]:
+        return [StoredObject(k) for k in self.objects if k.startswith(prefix)]
+
+    def fetch(self, objects: list[StoredObject]) -> list[bytes]:
+        return [self.objects[o.key] for o in objects]
+
+
+def test_an_object_lock_receipt_lives_beside_the_heads_not_under_them() -> None:
+    store = _MemStore()
+    anchor = ObjectLockAnchor(store, prefix="audit-anchors", retention_days=30)
+    anchor.publish(label="audit_chain_daily", head_hash="h1", event_count=1, as_of=_AS_OF)
+    assert anchor.publish_scrub(_receipt()) is True
+
+    receipt_keys = [k for k in store.objects if k.startswith("audit-anchors-scrubs/")]
+    assert len(receipt_keys) == 1 and receipt_keys[0].endswith("-s-1.json")
+    assert json.loads(store.objects[receipt_keys[0]])["retain_until"]
+    assert [r.head_hash for r in anchor.read_anchors().records] == ["h1"]
+
+    store.objects["audit-anchors-scrubs/foreign.json"] = b"not json"
+    records = anchor.read_scrub_receipts().records
+    assert {(r.scrub_event_id, r.malformed) for r in records} == {(None, True), ("s-1", False)}

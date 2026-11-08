@@ -851,13 +851,15 @@ def verify_audit_chain() -> bool:
                 expected_prev_hash=result.first_break.expected_prev_hash,
                 actual_prev_hash=result.first_break.actual_prev_hash,
             )
-        anchors = audit_anchor_service.verify_anchors(session)
+        anchors = audit_anchor_service.verify_anchors(session, chain=result)
         if anchors is not None and anchors.status == "mismatch":
             log.error(
                 "audit_anchor_mismatch",
                 missing_count=anchors.missing_count,
                 malformed_count=anchors.malformed_count,
+                unanchored_scrub_count=anchors.unanchored_scrub_count,
                 findings=[f"{f.match}:{f.key}" for f in anchors.findings],
+                unanchored_scrub_event_ids=anchors.unanchored_scrub_event_ids,
             )
         elif anchors is not None and anchors.status == "unavailable":
             log.error("audit_anchor_unverified", error=anchors.error)

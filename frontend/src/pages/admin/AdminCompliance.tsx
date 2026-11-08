@@ -8,11 +8,14 @@ import {
   type ExternalTransfer,
   getDeploymentPosture,
   listAuditEvents,
+  scrubAuditEvent,
 } from '../../api/admin';
+import { Modal } from '../../components/shared/Modal';
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { Filter } from '../../components/shared/Filter';
 import { WINDOW_PRESETS } from '../../components/shared/windowPresets';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { type FetchFailure, fetchFailure } from '../../utils/errors';
 import { mapAsync } from './asyncHelpers';
 import { AuditChainCard } from './AuditChainCard';
 import { DataSubjectCard } from './DataSubjectCard';
@@ -70,6 +73,7 @@ function AuditLogSection() {
   const [draft, setDraft] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
   const [query, setQuery] = useState<AuditFilterDraft>(EMPTY_AUDIT_FILTERS);
   const [page, setPage] = useState(1);
+  const [scrubbing, setScrubbing] = useState<AuditEvent | null>(null);
   const trimmedDraftActor = draft.actorUserId.trim();
   const actorError = trimmedDraftActor !== '' && !UUID_PATTERN.test(trimmedDraftActor);
 
@@ -146,7 +150,7 @@ function AuditLogSection() {
 
       <DataTable
         state={mapAsync(state, (p) => p.events)}
-        columns={AUDIT_EVENT_COLUMNS}
+        columns={auditEventColumns(setScrubbing)}
         rowKey={(e) => e.id}
         errorMessage="Failed to load the audit log"
         pagination={
@@ -161,7 +165,83 @@ function AuditLogSection() {
             : false
         }
       />
+      <ScrubEventModal
+        event={scrubbing}
+        onClose={() => setScrubbing(null)}
+        onScrubbed={() => {
+          setScrubbing(null);
+          reload();
+        }}
+      />
     </Section>
+  );
+}
+
+/** The scrub cannot be undone and rewrites a record, so it asks for the reason the log keeps. */
+function ScrubEventModal({
+  event,
+  onClose,
+  onScrubbed,
+}: {
+  event: AuditEvent | null;
+  onClose: () => void;
+  onScrubbed: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<FetchFailure | null>(null);
+  const close = () => {
+    setReason('');
+    setFailure(null);
+    onClose();
+  };
+  const submit = async () => {
+    if (!event) return;
+    setSaving(true);
+    setFailure(null);
+    try {
+      await scrubAuditEvent(event.id, reason.trim());
+      setReason('');
+      onScrubbed();
+    } catch (err) {
+      setFailure(fetchFailure(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Scrub this event's config?"
+      open={event !== null}
+      onCancel={close}
+      okText="Scrub permanently"
+      okButtonProps={{ danger: true, disabled: reason.trim() === '', loading: saving }}
+      onOk={submit}
+    >
+      <Flex vertical gap={12}>
+        <Typography.Paragraph>
+          The config recorded on <Typography.Text code>{event?.action}</Typography.Text> is replaced
+          with the column it tested. Nothing else in the event changes, the audit chain still
+          verifies, and the scrub is recorded as its own event. This cannot be undone.
+        </Typography.Paragraph>
+        <Input.TextArea
+          aria-label="Reason for the scrub"
+          placeholder="Why this value must not be kept, e.g. a token pasted into the SQL"
+          maxLength={500}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+        {failure && (
+          <Alert
+            type="error"
+            showIcon
+            title="Could not scrub the event"
+            description={failure.message}
+          />
+        )}
+      </Flex>
+    </Modal>
   );
 }
 
@@ -188,7 +268,7 @@ function AuditRetentionNotice({ page }: { page: AuditEventPage }) {
 
 const ACTION_CLASS_COLORS: Record<string, string> = { config: 'blue', access: 'purple' };
 
-const AUDIT_EVENT_COLUMNS: ColumnsType<AuditEvent> = [
+const auditEventColumns = (onScrub: (e: AuditEvent) => void): ColumnsType<AuditEvent> => [
   {
     title: 'When',
     dataIndex: 'occurred_at',
@@ -199,7 +279,16 @@ const AUDIT_EVENT_COLUMNS: ColumnsType<AuditEvent> = [
     dataIndex: 'action_class',
     render: (v: string) => <Tag color={ACTION_CLASS_COLORS[v] ?? 'default'}>{v}</Tag>,
   },
-  { title: 'Action', dataIndex: 'action' },
+  {
+    title: 'Action',
+    key: 'action',
+    render: (_, e) => (
+      <Flex gap={6} align="center" wrap>
+        <span>{e.action}</span>
+        {e.scrubbed_at && <Tag>Scrubbed {formatTimestamp(e.scrubbed_at)}</Tag>}
+      </Flex>
+    ),
+  },
   {
     title: 'Entity',
     key: 'entity',
@@ -218,6 +307,16 @@ const AUDIT_EVENT_COLUMNS: ColumnsType<AuditEvent> = [
     title: 'Actor',
     key: 'actor',
     render: (_, e) => e.actor_display ?? <Typography.Text type="secondary">—</Typography.Text>,
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    render: (_, e) =>
+      e.scrubbable ? (
+        <Button size="small" danger onClick={() => onScrub(e)}>
+          Scrub config
+        </Button>
+      ) : null,
   },
 ];
 

@@ -32,6 +32,7 @@ class AuditChainStatus:
             unverifiable_legacy_count (int):
             verified_count (int):
             anchors (AnchorVerificationRead | None | Unset):
+            scrubbed_count (int | Unset):  Default: 0.
     """
 
     anchor_mode: AuditChainStatusAnchorMode
@@ -41,6 +42,7 @@ class AuditChainStatus:
     unverifiable_legacy_count: int
     verified_count: int
     anchors: AnchorVerificationRead | None | Unset = UNSET
+    scrubbed_count: int | Unset = 0
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,6 +76,8 @@ class AuditChainStatus:
         else:
             anchors = self.anchors
 
+        scrubbed_count = self.scrubbed_count
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -88,6 +92,8 @@ class AuditChainStatus:
         )
         if anchors is not UNSET:
             field_dict["anchors"] = anchors
+        if scrubbed_count is not UNSET:
+            field_dict["scrubbed_count"] = scrubbed_count
 
         return field_dict
 
@@ -146,6 +152,8 @@ class AuditChainStatus:
 
         anchors = _parse_anchors(d.pop("anchors", UNSET))
 
+        scrubbed_count = d.pop("scrubbed_count", UNSET)
+
         audit_chain_status = cls(
             anchor_mode=anchor_mode,
             chain_head_hash=chain_head_hash,
@@ -154,6 +162,7 @@ class AuditChainStatus:
             unverifiable_legacy_count=unverifiable_legacy_count,
             verified_count=verified_count,
             anchors=anchors,
+            scrubbed_count=scrubbed_count,
         )
 
         audit_chain_status.additional_properties = d

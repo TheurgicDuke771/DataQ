@@ -51,7 +51,7 @@ def _clean_chain(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _anchors(monkeypatch: pytest.MonkeyPatch, result: AnchorVerification | None) -> None:
-    monkeypatch.setattr(audit_anchor_service, "verify_anchors", lambda _s: result)
+    monkeypatch.setattr(audit_anchor_service, "verify_anchors", lambda _s, **_: result)
 
 
 def test_a_clean_chain_with_no_readable_anchor_verifies(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -46,9 +46,9 @@
 > one. A redacted check version can no longer be restored (there is no config to apply). Each
 > redaction is an audit event (`connection.version_redact` / `check.version_redact`, ADR 0041)
 > naming **which** version numbers, never what they held. Connection audit payloads never carry
-> config, so a redacted connection value is gone; a check's `check.update` audit event records
-> its config, so the append-only audit log may still hold an edited-out check literal — the
-> redaction clears the product surface, not the durable record.
+> config, so a redacted connection value is gone. A check's audit events record its config;
+> since ADR 0041's 2026-11-08 amendment, a check-version redaction also scrubs the audit events
+> that carried the same config, through the one audited exception to append-only.
 
 ## Context
 

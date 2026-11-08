@@ -596,9 +596,9 @@ class CheckVersionRead(ApiModel):
         default=False,
         description="True when this snapshot was redacted: `config` then keeps only the tested "
         "`column` (the result's identity), every other value it held is gone from the version "
-        "history and the version cannot be restored. The "
-        "append-only audit log may still hold them on the `check.update` event that recorded "
-        "the edit.",
+        "history and the version cannot be restored. The audit events that carried the same "
+        "config are scrubbed to the same `column` in the same request; one that no longer "
+        "matches its hash is left as it is and logged, never scrubbed.",
     )
     redacted_at: datetime | None = None
     redacted_by_name: str | None = None

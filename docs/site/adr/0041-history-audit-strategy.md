@@ -113,7 +113,7 @@ An audit payload is a **JSONB write that never passes through structlog**, so CL
 
 ### 7. Append-only is a guard against accidental mutation — **not** tamper-resistance, and the difference is recorded
 
-No UPDATE or DELETE code path in the app (one deliberate exception since 2026-11-08: the audited payload scrub, amendment at the end of §9), **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
+No UPDATE or DELETE code path in the app beyond three named ones, **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
 
 **What that buys, stated honestly, because an earlier draft of this section overclaimed it.** The deployed app owns its schema: the Azure stack creates the database `OWNER dataq_app` and hands the migrate job the *same* `DATABASE_URL` as the api and worker, so Alembic will create `audit_events` owned by `dataq_app` — and a table's owner can `GRANT` the privileges back in one statement, or `TRUNCATE`/`DROP` it regardless of any grant. The REVOKE therefore stops an accidental in-app `UPDATE`/`DELETE` (a stray ORM call, a careless bulk statement) and nothing stronger. It is worth doing and it is not tamper-evidence.
 
@@ -311,8 +311,10 @@ and are not affected.
 **Decision: one deliberate exception to append-only, a scrub of named payload paths.** The
 row stays, along with every hashed column except the scrubbed values. Each scrub is a chained
 audit event. When an anchor is configured, each scrub is also published to it. Decision 7's
-"no UPDATE or DELETE code path" becomes "no UPDATE code path except the scrub, and no DELETE
-code path except retention".
+"no UPDATE or DELETE code path" now names its three exceptions: the chain sealing
+`prev_hash`/`row_hash` under a standing column grant (migration `0ef2edb2ea38`), retention's
+DELETE, and this scrub's UPDATE of `before`/`after`/`scrubbed_at`. Each grants itself no more
+than its own columns or statement.
 
 1. **What can be scrubbed is an allow-list, per entity type: `check` → `config`, on either
    side.** A scrubbed `config` keeps `KEPT_CHECK_KEYS` (the tested `column`), exactly as a
@@ -324,8 +326,10 @@ code path except retention".
      `redact_check_version` scrubs every `check` event for that check whose `before.config`
      or `after.config` equals the version's config as it was before it was emptied. That
      covers the event that wrote the value and the one that edited it out. Matching is on the
-     serialized value the audit payload stores; the build proves the version snapshot and the
-     audit serializer produce the same JSON for every check kind.
+     value the audit payload stores: the version's config is put through the audit
+     serializer first, because the payload scrubs credential-shaped keys and strings and the
+     version snapshot does not. An event that fails the precondition (4) is skipped and logged
+     at ERROR, and the redaction still goes ahead.
    - **Directly, by a workspace admin, one event at a time**
      (`POST /admin/audit-events/{id}/scrub`, with a required reason). This covers what the
      automatic path cannot reach: a deleted check, and versions redacted before this shipped,
@@ -339,9 +343,16 @@ code path except retention".
    version-redaction amendment. A nullable `scrubbed_at` column is added for display, so the
    audit page can say "scrubbed". Verification never trusts that column (see 4).
 4. **The hash chain and anchors keep verifying, because `row_hash` is never rewritten.**
-   - **Precondition.** The scrub refuses a row whose content does not currently recompute
-     to its stored `row_hash`, so it cannot launder a row that was already tampered with.
-   - **The `audit.scrub` event.** It is chained like any event, with
+   - **Precondition.** The scrub refuses a row that does not currently verify, so it cannot
+     launder a row that was already tampered with. A row verifies when its content recomputes
+     to its stored `row_hash`, or, if it was scrubbed before, to the residual hash of the newest
+     scrub event naming it that the chain walk reached and verified. A claim read straight from
+     the table is never trusted: anyone who can write the table can write one. A second scrub of one row is normal: a `check.update` whose
+     `before` is scrubbed when v1 is redacted has its `after` scrubbed when v2 is.
+   - **A row from before the chain** (`row_hash` NULL, the oldest events) has no hash to
+     protect, so it can be scrubbed. Its scrub event records NULL for both hashes, and the row
+     stays in `unverifiable_legacy_count`: a scrub does not bring it into the chain.
+   - **The `audit_event.scrub` event.** It is chained like any event, with
      `entity_type = 'audit_event'` and `entity_id` = the target. It records:
      - the target's `row_hash`;
      - the scrubbed paths;
@@ -351,7 +362,7 @@ code path except retention".
      It never records the value.
    - **What `verify_chain` checks.** A row whose content no longer recomputes to its
      `row_hash` is not a break if two things hold:
-     1. the latest `audit.scrub` event naming that row records the same `row_hash`;
+     1. the latest `audit_event.scrub` event naming that row records the same `row_hash`;
      2. the row's current content recomputes to that event's residual hash.
 
      The links (`prev_hash`) and every anchored head are untouched, because `row_hash` is
@@ -362,16 +373,25 @@ code path except retention".
 5. **Each scrub is published to the anchor, which closes the gap a scrub record opens.**
    - **The gap.** A scrubbed row is vouched for by its scrub event, not its original hash.
      An actor with direct database write access, the §9 threat model, could edit any field of
-     an anchored row and append a forged `audit.scrub` event whose residual matches the edit.
+     an anchored row and append a forged `audit_event.scrub` event whose residual matches
+     the edit.
      The chain alone cannot tell that from a real scrub.
    - **The receipt.** Each scrub therefore publishes a receipt through the `TamperAnchor`
      seam after it commits: target id, original `row_hash`, residual hash, scrub event id.
      It uses a new `publish_scrub` method beside `publish`, because a head's payload has no
      place for a target id. A forged scrub event has no receipt, because the receipt
      lives under different control than the database.
-   - **`object_lock`.** `verify_anchors` reads receipts back. It reports a scrub event with
-     no receipt as `unanchored_scrub` and a receipt with no scrub event as `orphan_receipt`.
-     The daily `verify_audit_chain` task logs the first at ERROR.
+   - **`object_lock`.** `verify_anchors` reads receipts back, from a prefix beside the heads'
+     (`<prefix>-scrubs/`) so a head listing never reads one. A scrub event with no receipt is
+     an `unanchored_scrub` and makes the status `mismatch`; the daily `verify_audit_chain` task
+     logs it at ERROR. A receipt counts only if its target and both hashes equal the scrub
+     event's, so a residual edited after its receipt was published does not pass on the id.
+     Which scrubs are judged is decided by **chain position**, never by `occurred_at`, which
+     whoever writes the row sets: every verified scrub chained after the oldest published head,
+     or at or after the oldest scrub with any receipt. An older scrub predates the anchor. When
+     more receipts exist than one read returns, only scrubs at or after the oldest receipt read
+     are judged, and the result says `truncated`. A receipt with no scrub event, or an object the app did not write, is an `orphan_receipt`:
+     reported, not a mismatch.
    - **`webhook`.** The sink holds the receipts for an auditor; DataQ cannot read them back,
      the same as for heads.
    - **`none`.** A scrub is exactly as trustworthy as the database, the posture §9 already
@@ -383,9 +403,11 @@ code path except retention".
    then the REVOKE, all in one transaction, mirroring retention's DELETE. A stray ORM update
    to a payload still fails at any other moment. This is a guard against accident, not
    against the owner, for the reasons decision 7 already records.
-7. **Retention needs no change.** A scrub event is always newer than the row it names, so
-   retention purges the target first. A purged scrub event can never leave a live scrubbed
-   row unexplained.
+7. **Retention.** A scrub event is always newer than the row it names, so retention purges
+   the target first, and a purged scrub event can never leave a live scrubbed row unexplained.
+   Its receipt outlives it in the store, so a receipt older than the latest legitimate purge
+   cutoff is counted as purged, not as an orphan: the rule the head read-back already applies,
+   with the same guard against a forged far-future checkpoint.
 
 **Alternatives considered.**
 - **A commitment hash scheme for new rows.** Each scrubbable value would be hashed as a

@@ -19,7 +19,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.tamper_anchor import get_tamper_anchor
 from backend.app.db.chunked_dml import CHUNK_SIZE
 from backend.app.db.models import AuditEvent
-from backend.app.services import audit_chain, audit_service
+from backend.app.services import audit_chain, audit_scrub, audit_service
 
 log = get_logger(__name__)
 
@@ -72,12 +72,12 @@ def list_events(
 
     # An unvalidated filter that matches nothing returns `total: 0`, and on an audit log that reads
     # as "nothing happened" rather than "you asked for a thing that does not exist".
-    if entity_type is not None and entity_type not in audit_service.declared_entity_types():
+    if entity_type is not None and entity_type not in audit_service.queryable_entity_types():
         raise AuditFilterInvalidError(
             f"unknown entity_type {entity_type!r}",
             detail={
                 "entity_type": entity_type,
-                "known": list(audit_service.declared_entity_types()),
+                "known": list(audit_service.queryable_entity_types()),
             },
         )
 
@@ -207,4 +207,6 @@ def as_dict(event: AuditEvent) -> dict[str, Any]:
         "before": event.before,
         "after": event.after,
         "request_id": event.request_id,
+        "scrubbed_at": event.scrubbed_at,
+        "scrubbable": audit_scrub.scrubbable(event),
     }

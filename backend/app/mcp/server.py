@@ -1311,8 +1311,9 @@ def list_check_versions(
     ``config.column`` are still real; the rest of ``config`` is gone, so it is
     not what the check was, and ``restore_check_version`` refuses it. Redaction
     cannot be undone and has no MCP tool: it is done in the app's History
-    drawer. The append-only audit log may still hold the values on the
-    ``check.update`` event that recorded the edit; only an admin reads that.
+    drawer. The audit events that carried the same config are scrubbed to the
+    same ``column`` with it, so the audit log (which only an admin reads) no
+    longer holds the values either.
 
     To put the check back to one of these snapshots, use
     ``restore_check_version``. Requires view access to the suite.

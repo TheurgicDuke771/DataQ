@@ -77,6 +77,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.services import (
+    audit_scrub,
     audit_service,
     coverage_settings_service,
     suggestion_claims,
@@ -1836,7 +1837,18 @@ def redact_check_version(
         )
     if version.redacted:
         return version  # idempotent: nothing changes, nothing is audited
+    held = dict(version.config or {})
     version_redaction.redact(version, actor_id=actor_id)
+    # The check events that carried the same config hold the same value (ADR 0041 §9 amendment).
+    audit_scrub.scrub_matching(
+        session,
+        entity_type="check",
+        entity_id=check.id,
+        key="config",
+        value=held,
+        actor=actor_id,
+        reason=f"check version {version_no} redacted",
+    )
     audit_service.record(
         session,
         action="check.version_redact",
