@@ -116,10 +116,13 @@ function makeSignIn(page: Page): SignIn {
       await skipPrompt.waitFor({ state: 'visible' });
       // NOTE: clicking "Skip for now" writes `dataq:profileCompletionPrompt:skipped` to
       // sessionStorage (by design — see the component).
+      // Click only while the button is there, and bound the click: a retry that lands while
+      // the modal closes (`destroyOnHidden`) would otherwise wait for a button that is gone
+      // until the test times out (#2557).
       await expect(async () => {
-        await skipPrompt.click();
-        await expect(skipPrompt).toBeHidden({ timeout: 500 });
-      }).toPass();
+        if (await skipPrompt.isVisible()) await skipPrompt.click({ timeout: 2_000 });
+        await expect(skipPrompt).toBeHidden({ timeout: 2_000 });
+      }).toPass({ timeout: 20_000 });
       return code;
     },
   };
