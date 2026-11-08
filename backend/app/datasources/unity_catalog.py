@@ -34,6 +34,7 @@ from backend.app.datasources.monitors import (
     row_count_from_scalar,
     run_monitors_over_engine,
 )
+from backend.app.datasources.query_timeout import apply_session_limit, register_session_limit
 from backend.app.datasources.sampling import (
     SamplingDrawError,
     enforce_frame_cap,
@@ -94,6 +95,26 @@ class UnityCatalogConfig(BaseModel):
         return f"/sql/1.0/warehouses/{self.warehouse_id}"
 
 
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """Databricks SQL `STATEMENT_TIMEOUT` for the session (#2607). A session value takes precedence
+    over the warehouse's and the workspace's, so a lower one inherited from either (the value
+    `SET STATEMENT_TIMEOUT` reports) is kept. 0 means none.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SET STATEMENT_TIMEOUT")
+        row = cursor.fetchone()
+        inherited = int(row[1]) if row is not None and str(row[1]).isdigit() else 0
+        limit = int(seconds) if not inherited else min(inherited, int(seconds))
+        cursor.execute(f"SET STATEMENT_TIMEOUT = {limit}")
+    finally:
+        cursor.close()
+
+
+# Every Databricks SQL session built through SQLAlchemy, including GX's, carries the query limit.
+register_session_limit("unity_catalog", "databricks.sql", _query_timeout_setup)
+
+
 class UnityCatalogConnectionAdapter:
     """`ConnectionAdapter` for Unity Catalog — config validation + a SELECT 1 probe."""
 
@@ -118,6 +139,8 @@ class UnityCatalogConnectionAdapter:
             access_token=secret,
         )
         try:
+            # Not a SQLAlchemy pool, so the registered hook does not see this connection.
+            apply_session_limit(connection, _query_timeout_setup, engine="unity_catalog")
             cursor = connection.cursor()
             try:
                 cursor.execute("SELECT 1")
