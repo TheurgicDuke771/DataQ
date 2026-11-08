@@ -356,6 +356,13 @@ class UnknownAuditEntityError(RuntimeError):
     """A caller asked to audit an entity type with no declared allow-list."""
 
 
+def payload_value(value: Any) -> Any:
+    """`value` as an audit payload stores it (JSON-safe, then scrubbed): what a stored payload
+    field is compared against.
+    """
+    return _scrub_value(_jsonable(value))
+
+
 def snapshot(entity_type: str, entity: Any) -> dict[str, Any] | None:
     """Build an allow-listed, scrubbed, JSON-safe payload for `entity`."""
     fields = _SERIALIZERS.get(entity_type)

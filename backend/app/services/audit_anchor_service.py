@@ -9,7 +9,7 @@ this check exists only for anchors that can.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -20,11 +20,13 @@ from backend.app.core.config import get_settings
 from backend.app.core.tamper_anchor import (
     AnchorRecord,
     ObjectLockAnchor,
+    ScrubReceiptReadResult,
     TamperAnchor,
     TamperAnchorUnavailableError,
     get_tamper_anchor,
 )
 from backend.app.db.models import AuditChainCheckpoint, AuditEvent
+from backend.app.services.audit_chain import SCRUB_ACTION
 
 AnchorMatch = Literal["present", "purged", "missing", "malformed"]
 AnchorStatus = Literal["ok", "mismatch", "empty", "unavailable"]
@@ -56,6 +58,23 @@ class AnchorVerification:
     truncated: bool = False
     #: Why the store could not be read — set only with status "unavailable".
     error: str | None = None
+    #: Scrub receipts read back (ADR 0041 §9, 2026-11-08 amendment).
+    scrub_receipt_count: int = 0
+    #: Scrub events with no receipt: not written by the app, or a publish that failed. Each one
+    #: makes the status "mismatch". Only scrubs since the anchor began publishing are judged.
+    unanchored_scrub_count: int = 0
+    #: Receipts naming no scrub event that retention explains, or objects under the receipt
+    #: prefix DataQ did not write.
+    orphan_receipt_count: int = 0
+    #: The unanchored scrub events' ids, at most `MAX_REPORTED`.
+    unanchored_scrub_event_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _ScrubCheck:
+    receipt_count: int = 0
+    unanchored: list[str] = field(default_factory=list)
+    orphan_count: int = 0
 
 
 def _match(record: AnchorRecord, known: set[str], purge_cutoff: datetime | None) -> AnchorMatch:
@@ -94,10 +113,13 @@ def verify_anchors(
         return None
     try:
         read = anchor.read_anchors()
+        receipts = anchor.read_scrub_receipts()
     except TamperAnchorUnavailableError as exc:
         return AnchorVerification(status="unavailable", error=str(exc))
-    if not read.records:
-        return AnchorVerification(status="empty", truncated=read.truncated)
+    purge_cutoff = _legitimate_purge_cutoff(session)
+    scrubs = _check_scrubs(session, read.records, receipts, purge_cutoff)
+    if not read.records and not scrubs.unanchored:
+        return _with_scrubs(AnchorVerification(status="empty", truncated=read.truncated), scrubs)
 
     heads = {r.head_hash for r in read.records if r.head_hash is not None}
     known: set[str] = set()
@@ -115,8 +137,6 @@ def verify_anchors(
         )
         if h is not None
     )
-    purge_cutoff = _legitimate_purge_cutoff(session)
-
     checks = [
         AnchorCheck(r.key, r.label, r.head_hash, r.as_of, _match(r, known, purge_cutoff))
         for r in read.records
@@ -126,8 +146,8 @@ def verify_anchors(
         for m in ("present", "purged", "missing", "malformed")
     }
     findings = [c for c in checks if c.match in ("missing", "malformed")]
-    return AnchorVerification(
-        status="mismatch" if findings else "ok",
+    verification = AnchorVerification(
+        status="mismatch" if findings or scrubs.unanchored else "ok",
         checked_count=len(checks),
         present_count=counts["present"],
         purged_count=counts["purged"],
@@ -135,4 +155,54 @@ def verify_anchors(
         malformed_count=counts["malformed"],
         findings=findings[:MAX_REPORTED],
         truncated=read.truncated,
+    )
+    return _with_scrubs(verification, scrubs)
+
+
+def _with_scrubs(verification: AnchorVerification, scrubs: _ScrubCheck) -> AnchorVerification:
+    return replace(
+        verification,
+        scrub_receipt_count=scrubs.receipt_count,
+        unanchored_scrub_count=len(scrubs.unanchored),
+        orphan_receipt_count=scrubs.orphan_count,
+        unanchored_scrub_event_ids=scrubs.unanchored[:MAX_REPORTED],
+    )
+
+
+def _check_scrubs(
+    session: Session,
+    heads: list[AnchorRecord],
+    receipts: ScrubReceiptReadResult,
+    purge_cutoff: datetime | None,
+) -> _ScrubCheck:
+    """Match scrub events against their receipts. A scrub from before the anchor's first publish
+    (or, when the receipt listing was truncated, older than its oldest receipt read) is not judged:
+    nothing could have anchored it, or its receipt was not read.
+    """
+    valid = [r for r in receipts.records if not r.malformed and r.as_of is not None]
+    receipt_times = [r.as_of for r in valid if r.as_of is not None]
+    published = [r.as_of for r in heads if r.as_of is not None] + receipt_times
+    floor = min(published) if published else None
+    if receipts.truncated and receipt_times:
+        floor = max(floor, min(receipt_times)) if floor is not None else min(receipt_times)
+    events = session.execute(
+        select(AuditEvent.id, AuditEvent.occurred_at).where(
+            AuditEvent.action == SCRUB_ACTION, AuditEvent.row_hash.isnot(None)
+        )
+    ).all()
+    anchored = {r.scrub_event_id for r in valid}
+    unanchored = [
+        str(event_id)
+        for event_id, occurred_at in sorted(events, key=lambda e: e[1], reverse=True)
+        if str(event_id) not in anchored and floor is not None and occurred_at >= floor
+    ]
+    live = {str(event_id) for event_id, _ in events}
+    orphans = sum(1 for r in receipts.records if r.malformed) + sum(
+        1
+        for r in valid
+        if r.scrub_event_id not in live
+        and not (purge_cutoff is not None and r.as_of is not None and r.as_of < purge_cutoff)
+    )
+    return _ScrubCheck(
+        receipt_count=len(receipts.records), unanchored=unanchored, orphan_count=orphans
     )

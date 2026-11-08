@@ -184,6 +184,39 @@ describe('AuditChainCard', () => {
     expect(screen.getAllByText('malformed: audit-anchors/x.json')).toHaveLength(2);
   });
 
+  it('a scrub with no receipt is named as such, not as a restore or a foreign object', async () => {
+    mockVerify.mockResolvedValue({
+      ...CHAIN_OK,
+      scrubbed_count: 1,
+      anchor_mode: 'object_lock',
+      anchors: {
+        status: 'mismatch',
+        checked_count: 1,
+        present_count: 1,
+        purged_count: 0,
+        missing_count: 0,
+        malformed_count: 0,
+        findings: [],
+        truncated: false,
+        error: null,
+        scrub_receipt_count: 0,
+        unanchored_scrub_count: 1,
+        unanchored_scrub_event_ids: ['scrub-1'],
+        orphan_receipt_count: 0,
+      },
+    });
+    renderSubPage(<AuditChainCard />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify now/ }));
+
+    expect(await screen.findByText('A scrub has no receipt in the store')).toBeInTheDocument();
+    expect(screen.getByText('unanchored scrub: scrub-1')).toBeInTheDocument();
+    expect(screen.getByText(/1 event\(s\) whose config was scrubbed/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('An object under the anchor prefix is not an anchor'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/restored to before that anchor/)).not.toBeInTheDocument();
+  });
+
   it('an unreachable anchor store is reported as unchecked, never as empty', async () => {
     mockVerify.mockResolvedValue({
       ...CHAIN_OK,

@@ -124,6 +124,8 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── Data-subject-rights erasure (G2 / #432) — a real mutation over regulated
     # data, so it belongs in AUDITED like any other admin write.
     ("POST", "/api/v1/admin/data-subject-requests/erase"): "data_subject_request.erase",
+    # ── The audited payload scrub (ADR 0041 §9 amendment) — its own record is the evidence.
+    ("POST", "/api/v1/admin/audit-events/{event_id}/scrub"): "audit_event.scrub",
     # ── The outbound-LLM provider config (ADR 0042) — what model the workspace's
     # data-adjacent context is sent to is among the highest-value config events.
     ("PUT", "/api/v1/admin/llm"): "llm_setting.update",

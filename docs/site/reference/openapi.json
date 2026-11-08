@@ -582,12 +582,22 @@
             "title": "Missing Count",
             "type": "integer"
           },
+          "orphan_receipt_count": {
+            "default": 0,
+            "title": "Orphan Receipt Count",
+            "type": "integer"
+          },
           "present_count": {
             "title": "Present Count",
             "type": "integer"
           },
           "purged_count": {
             "title": "Purged Count",
+            "type": "integer"
+          },
+          "scrub_receipt_count": {
+            "default": 0,
+            "title": "Scrub Receipt Count",
             "type": "integer"
           },
           "status": {
@@ -603,6 +613,18 @@
           "truncated": {
             "title": "Truncated",
             "type": "boolean"
+          },
+          "unanchored_scrub_count": {
+            "default": 0,
+            "title": "Unanchored Scrub Count",
+            "type": "integer"
+          },
+          "unanchored_scrub_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unanchored Scrub Event Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -1219,6 +1241,11 @@
             ],
             "title": "First Break"
           },
+          "scrubbed_count": {
+            "default": 0,
+            "title": "Scrubbed Count",
+            "type": "integer"
+          },
           "status": {
             "enum": [
               "ok",
@@ -1398,6 +1425,19 @@
               }
             ],
             "title": "Request Id"
+          },
+          "scrubbed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when a check event's `config` was scrubbed: it then keeps only the tested `column`. The `audit_event.scrub` event naming this one says who, when and why.",
+            "title": "Scrubbed At"
           }
         },
         "required": [
@@ -1416,6 +1456,21 @@
           "request_id"
         ],
         "title": "AuditEventRead",
+        "type": "object"
+      },
+      "AuditEventScrubRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AuditEventScrubRequest",
         "type": "object"
       },
       "AuthEmailTestResponse": {
@@ -3308,7 +3363,7 @@
           },
           "redacted": {
             "default": false,
-            "description": "True when this snapshot was redacted: `config` then keeps only the tested `column` (the result's identity), every other value it held is gone from the version history and the version cannot be restored. The append-only audit log may still hold them on the `check.update` event that recorded the edit.",
+            "description": "True when this snapshot was redacted: `config` then keeps only the tested `column` (the result's identity), every other value it held is gone from the version history and the version cannot be restored. The audit events that carried the same config are scrubbed to the same `column` in the same request; one that no longer matches its hash is left as it is and logged, never scrubbed.",
             "title": "Redacted",
             "type": "boolean"
           },
@@ -13997,6 +14052,60 @@
           }
         },
         "summary": "Verify the audit hash chain for tampering (workspace-admin only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-events/{event_id}/scrub": {
+      "post": {
+        "description": "The one exception to append-only (ADR 0041 \u00a79): replace a check event's `config` with\nits tested `column`, for a value that should never have been stored. The row keeps its hash,\nso the chain and anchored heads still verify; an `audit_event.scrub` event records who, why\nand the hashes, never the value. 409 when the event holds nothing to scrub or no longer\nmatches its hash.",
+        "operationId": "scrub_audit_event",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditEventScrubRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scrub a check audit event's config (workspace-admin only)",
         "tags": [
           "admin"
         ]

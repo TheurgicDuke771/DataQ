@@ -305,6 +305,14 @@ export interface AuditEvent {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   request_id: string | null;
+  /** Set when a check event's `config` was scrubbed to its tested `column`. */
+  scrubbed_at?: string | null;
+}
+
+/** Scrub a check event's `config` (the one audited exception to append-only, ADR 0041 §9). */
+export async function scrubAuditEvent(eventId: string, reason: string): Promise<AuditEvent> {
+  const { data } = await api.post<AuditEvent>(`/admin/audit-events/${eventId}/scrub`, { reason });
+  return data;
 }
 
 export interface AuditEventPage {
@@ -373,6 +381,8 @@ export interface AuditChainStatus {
   /** Rows written before the chain shipped — real history, just not covered by it. */
   unverifiable_legacy_count: number;
   chain_head_hash: string | null;
+  /** Rows vouched for by a scrub record rather than their own hash; included in `verified_count`. */
+  scrubbed_count?: number;
   /** `none` = internally consistent, but not independently verifiable (ADR 0041 §9). */
   anchor_mode: 'none' | 'webhook' | 'object_lock';
   first_break: AuditChainBreak | null;
@@ -399,6 +409,11 @@ export interface AnchorVerification {
   findings: AnchorFinding[];
   truncated: boolean;
   error: string | null;
+  scrub_receipt_count?: number;
+  /** Scrub events with no receipt in the store: not written by the app, or a failed publish. */
+  unanchored_scrub_count?: number;
+  unanchored_scrub_event_ids?: string[];
+  orphan_receipt_count?: number;
 }
 
 export async function verifyAuditChain(): Promise<AuditChainStatus> {

@@ -8,6 +8,7 @@ from attrs import field as _attrs_field
 from typing_extensions import Self
 
 from ..models.anchor_verification_read_status import AnchorVerificationReadStatus
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.anchor_finding import AnchorFinding
@@ -29,6 +30,10 @@ class AnchorVerificationRead:
         purged_count (int):
         status (AnchorVerificationReadStatus):
         truncated (bool):
+        orphan_receipt_count (int | Unset):  Default: 0.
+        scrub_receipt_count (int | Unset):  Default: 0.
+        unanchored_scrub_count (int | Unset):  Default: 0.
+        unanchored_scrub_event_ids (list[str] | Unset):
     """
 
     checked_count: int
@@ -40,6 +45,10 @@ class AnchorVerificationRead:
     purged_count: int
     status: AnchorVerificationReadStatus
     truncated: bool
+    orphan_receipt_count: int | Unset = 0
+    scrub_receipt_count: int | Unset = 0
+    unanchored_scrub_count: int | Unset = 0
+    unanchored_scrub_event_ids: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,6 +74,16 @@ class AnchorVerificationRead:
 
         truncated = self.truncated
 
+        orphan_receipt_count = self.orphan_receipt_count
+
+        scrub_receipt_count = self.scrub_receipt_count
+
+        unanchored_scrub_count = self.unanchored_scrub_count
+
+        unanchored_scrub_event_ids: list[str] | Unset = UNSET
+        if not isinstance(self.unanchored_scrub_event_ids, Unset):
+            unanchored_scrub_event_ids = self.unanchored_scrub_event_ids
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -80,6 +99,14 @@ class AnchorVerificationRead:
                 "truncated": truncated,
             }
         )
+        if orphan_receipt_count is not UNSET:
+            field_dict["orphan_receipt_count"] = orphan_receipt_count
+        if scrub_receipt_count is not UNSET:
+            field_dict["scrub_receipt_count"] = scrub_receipt_count
+        if unanchored_scrub_count is not UNSET:
+            field_dict["unanchored_scrub_count"] = unanchored_scrub_count
+        if unanchored_scrub_event_ids is not UNSET:
+            field_dict["unanchored_scrub_event_ids"] = unanchored_scrub_event_ids
 
         return field_dict
 
@@ -116,6 +143,14 @@ class AnchorVerificationRead:
 
         truncated = d.pop("truncated")
 
+        orphan_receipt_count = d.pop("orphan_receipt_count", UNSET)
+
+        scrub_receipt_count = d.pop("scrub_receipt_count", UNSET)
+
+        unanchored_scrub_count = d.pop("unanchored_scrub_count", UNSET)
+
+        unanchored_scrub_event_ids = cast(list[str], d.pop("unanchored_scrub_event_ids", UNSET))
+
         anchor_verification_read = cls(
             checked_count=checked_count,
             error=error,
@@ -126,6 +161,10 @@ class AnchorVerificationRead:
             purged_count=purged_count,
             status=status,
             truncated=truncated,
+            orphan_receipt_count=orphan_receipt_count,
+            scrub_receipt_count=scrub_receipt_count,
+            unanchored_scrub_count=unanchored_scrub_count,
+            unanchored_scrub_event_ids=unanchored_scrub_event_ids,
         )
 
         anchor_verification_read.additional_properties = d

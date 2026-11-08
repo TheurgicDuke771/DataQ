@@ -35,6 +35,7 @@ from backend.app.services import (
     audit_anchor_service,
     audit_chain,
     audit_read_service,
+    audit_scrub,
     audit_service,
     data_subject_requests,
     llm_service,
@@ -709,6 +710,11 @@ class AuditEventRead(ApiModel):
     before: dict[str, Any] | None
     after: dict[str, Any] | None
     request_id: str | None
+    scrubbed_at: datetime | None = Field(
+        default=None,
+        description="Set when a check event's `config` was scrubbed: it then keeps only the "
+        "tested `column`. The `audit_event.scrub` event naming this one says who, when and why.",
+    )
 
 
 class AuditEventPage(ApiModel):
@@ -787,6 +793,9 @@ class AuditChainStatus(ApiModel):
     #: by it. Reported, never silently folded into `verified_count`.
     unverifiable_legacy_count: int
     chain_head_hash: str | None
+    #: Rows vouched for by a verified scrub event rather than their own hash, because a payload
+    #: path was scrubbed. Included in `verified_count`.
+    scrubbed_count: int = 0
     #: Whether TAMPER_ANCHOR is configured. "ok" with anchor_mode="none" means the
     #: chain is internally consistent but NOT independently verifiable by anyone
     #: who could also rewrite the whole table — see ADR 0041 §9.
@@ -820,6 +829,42 @@ class AnchorVerificationRead(ApiModel):
     findings: list[AnchorFinding]
     truncated: bool
     error: str | None
+    #: Scrub receipts read back. A scrub event with no receipt makes the status "mismatch": the
+    #: app did not write it, or its publish failed. Scrubs from before the anchor's first publish
+    #: are not judged.
+    scrub_receipt_count: int = 0
+    unanchored_scrub_count: int = 0
+    unanchored_scrub_event_ids: list[str] = Field(default_factory=list)
+    #: Receipts naming no scrub event that retention explains, or foreign objects under the
+    #: receipt prefix.
+    orphan_receipt_count: int = 0
+
+
+class AuditEventScrubRequest(ApiRequestModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.post(
+    "/audit-events/{event_id}/scrub",
+    response_model=AuditEventRead,
+    summary="Scrub a check audit event's config (workspace-admin only)",
+)
+def scrub_audit_event(
+    event_id: UUID,
+    payload: AuditEventScrubRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+) -> AuditEventRead:
+    """The one exception to append-only (ADR 0041 §9): replace a check event's `config` with
+    its tested `column`, for a value that should never have been stored. The row keeps its hash,
+    so the chain and anchored heads still verify; an `audit_event.scrub` event records who, why
+    and the hashes, never the value. 409 when the event holds nothing to scrub or no longer
+    matches its hash.
+    """
+    target = audit_scrub.scrub_event(db, event_id, actor=current_user, reason=payload.reason)
+    db.commit()
+    db.refresh(target)
+    return AuditEventRead(**audit_read_service.as_dict(target))
 
 
 @router.get(
@@ -857,6 +902,7 @@ def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainSta
         verified_count=result.verified_count,
         unverifiable_legacy_count=result.unverifiable_legacy_count,
         chain_head_hash=result.chain_head_hash,
+        scrubbed_count=result.scrubbed_count,
         anchor_mode=settings.tamper_anchor,
         first_break=break_info,
         anchors=(
@@ -881,6 +927,10 @@ def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainSta
                 ],
                 truncated=anchors.truncated,
                 error=anchors.error,
+                scrub_receipt_count=anchors.scrub_receipt_count,
+                unanchored_scrub_count=anchors.unanchored_scrub_count,
+                unanchored_scrub_event_ids=anchors.unanchored_scrub_event_ids,
+                orphan_receipt_count=anchors.orphan_receipt_count,
             )
         ),
     )

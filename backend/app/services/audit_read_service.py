@@ -207,4 +207,5 @@ def as_dict(event: AuditEvent) -> dict[str, Any]:
         "before": event.before,
         "after": event.after,
         "request_id": event.request_id,
+        "scrubbed_at": event.scrubbed_at,
     }

@@ -857,7 +857,9 @@ def verify_audit_chain() -> bool:
                 "audit_anchor_mismatch",
                 missing_count=anchors.missing_count,
                 malformed_count=anchors.malformed_count,
+                unanchored_scrub_count=anchors.unanchored_scrub_count,
                 findings=[f"{f.match}:{f.key}" for f in anchors.findings],
+                unanchored_scrub_event_ids=anchors.unanchored_scrub_event_ids,
             )
         elif anchors is not None and anchors.status == "unavailable":
             log.error("audit_anchor_unverified", error=anchors.error)

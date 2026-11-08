@@ -381,3 +381,86 @@ def test_without_the_grant_the_seal_update_is_refused(owner_session: Session) ->
     with pytest.raises(ProgrammingError):
         _seed(owner_session, age_days=0, count=1)
     owner_session.rollback()
+
+
+def _can_update_payload(session: Session) -> bool:
+    return bool(
+        session.execute(
+            text("SELECT has_column_privilege(CURRENT_USER, 'audit_events', 'before', 'UPDATE')")
+        ).scalar()
+    )
+
+
+def _check_event(session: Session) -> uuid.UUID:
+    session.execute(text(_revoke_statement(_ROLE)))
+    session.execute(text(_grant_statement(_ROLE)))
+    event = AuditEvent(
+        action_class="config",
+        action="check.update",
+        entity_type="check",
+        entity_id=uuid.uuid4(),
+        actor_kind="user",
+        after={"config": {"column": "status", "value_set": ["PASTED_LITERAL"]}},
+    )
+    session.add(event)
+    session.commit()
+    return event.id
+
+
+def test_the_scrub_updates_despite_the_revoke_and_hands_the_privilege_back(
+    owner_session: Session,
+) -> None:
+    """ADR 0041 §9 (2026-11-08): the scrub grants itself `UPDATE (before, after, scrubbed_at)` for
+    its own statement, as this very role, and revokes it again inside the same transaction.
+    """
+    from backend.app.services import audit_scrub
+
+    event_id = _check_event(owner_session)
+    assert _can_update_payload(owner_session) is False
+
+    target = audit_scrub.scrub_event(owner_session, event_id, actor=None, reason="r")
+    assert _can_update_payload(owner_session) is False
+    owner_session.commit()
+
+    owner_session.refresh(target)
+    assert target.after == {"config": {"column": "status"}}
+    assert target.scrubbed_at is not None
+    assert _can_update_payload(owner_session) is False
+    with pytest.raises(ProgrammingError):
+        owner_session.execute(text("UPDATE audit_events SET before = NULL"))
+    owner_session.rollback()
+
+
+def test_a_scrub_that_fails_mid_update_leaves_no_privilege(
+    owner_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import audit_scrub
+
+    event_id = _check_event(owner_session)
+
+    def _boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("mid-update")
+
+    monkeypatch.setattr(audit_scrub, "update", _boom)
+    with pytest.raises(RuntimeError):
+        audit_scrub.scrub_event(owner_session, event_id, actor=None, reason="r")
+    assert _can_update_payload(owner_session) is False
+    owner_session.rollback()
+    assert _can_update_payload(owner_session) is False
+
+
+def test_a_database_error_mid_scrub_surfaces_as_itself(
+    owner_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The REVOKE after an aborted UPDATE fails too; the caller must see the UPDATE's error."""
+    from sqlalchemy.exc import DataError
+
+    from backend.app.services import audit_scrub
+
+    event_id = _check_event(owner_session)
+    # JSONB refuses a NUL, so the UPDATE itself fails at the database and aborts the transaction.
+    monkeypatch.setattr(audit_scrub, "_kept", lambda value, keep: {"column": "a\x00b"})
+    with pytest.raises(DataError):
+        audit_scrub.scrub_event(owner_session, event_id, actor=None, reason="r")
+    owner_session.rollback()
+    assert _can_update_payload(owner_session) is False

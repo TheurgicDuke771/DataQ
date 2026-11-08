@@ -286,9 +286,11 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   `edit` share can restore a version but not redact one. The current version is refused — it
   is the live config, visible on the entity itself; edit it first, then redact the old one. A
   redacted check version cannot be restored. Each redaction is an audit event naming the
-  version numbers, never the values. Connection audit events never hold config; a check's
-  update event does, so an edited-out check literal can remain in the audit log, which only
-  workspace admins read.
+  version numbers, never the values. Connection audit events never hold config. A check's
+  events do, so redacting a check version also **scrubs** every check event that carried the
+  same config down to the tested column. A workspace admin can scrub one check event directly,
+  for a deleted check or a version redacted before this existed. See
+  [Audit-log tamper-evidence](#audit-log-tamper-evidence) for how a scrub stays verifiable.
 
 ## Retention
 
@@ -900,6 +902,22 @@ the two classes:
 
 A failed publish, in either class, is logged at ERROR and recorded on the purge
 checkpoint as not anchored — it never blocks the retention sweep.
+
+**The one exception to append-only: the audited scrub.** A check event's `config` can be
+scrubbed to the column it tested — by a check-version redaction, or by a workspace admin for one
+event. Nothing else in any event can be scrubbed. The row keeps its hash, so the chain's links
+and every anchored head still verify. Each scrub writes its own chained `audit_event.scrub`
+event, recording the scrubbed row's hash, the hash of its content after the scrub, the reason
+and who did it. It never records the value. Verification accepts a row that no longer matches
+its own hash only against that event, and reports how many rows rely on one. Any other change
+to the row is still a break. A row that already fails verification is never scrubbed. The scrub
+grants itself `UPDATE` on the payload columns for its own statement only.
+
+Each scrub also publishes a **receipt** to the anchor, because a scrub event is evidence only
+if the app wrote it. With `object_lock`, verification reads the receipts back. It reports a scrub
+event with no receipt as a mismatch: one the app did not write, or a publish that failed. Scrubs
+from before the anchor's first publish are not judged. With `webhook`, the sink holds the
+receipts. With no anchor, a scrub is exactly as trustworthy as the database.
 
 ### Organizational artifacts
 
