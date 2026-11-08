@@ -38,12 +38,23 @@ jobs:
 
       # In this required job rather than its own, which would need the ruleset edited. helm is on
       # the runner image; PyYAML comes with pre-commit above.
+      # Cached so a GitHub Releases outage (504s for half an hour on 2026-11-08) fails nothing once
+      # main has stored it; a cache hit skips the download, the checksum runs either way.
+      - name: Cache kubeconform
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/kubeconform
+          key: kubeconform-v0.8.0-linux-amd64
       - name: Helm chart (lint, render, kubeconform, invariants)
         run: |
-          curl -fsSL -o /tmp/kubeconform.tgz \
-            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
-          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  /tmp/kubeconform.tgz" | sha256sum -c -
-          tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
+          tgz=~/.cache/kubeconform/kubeconform.tgz
+          if [ ! -f "$tgz" ]; then
+            mkdir -p ~/.cache/kubeconform
+            curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$tgz" \
+              https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          fi
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  $tgz" | sha256sum -c -
+          tar -xzf "$tgz" -C /tmp kubeconform
           helm version
           python scripts/check-helm-chart.py --kubeconform /tmp/kubeconform
 
