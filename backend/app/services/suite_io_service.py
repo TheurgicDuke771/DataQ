@@ -47,6 +47,8 @@ from backend.app.services.check_service import (
     validate_threshold_ordering,
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
+from backend.app.services.value_set_guard import reject_masked_value_set
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 log = get_logger(__name__)
 
@@ -77,6 +79,7 @@ def export_suite(
         )
     docs: list[dict[str, Any]] = []
     inherited = coverage_settings_service.inherited_settings(session, checks)
+    masker = ValueSetMasker(session)
     for c in checks:
         doc: dict[str, Any] = {
             "name": c.name,
@@ -86,6 +89,9 @@ def export_suite(
             # An inheriting automatic baseline is written with the values it runs on.
             **coverage_settings_service.document_fields(c, inherited.get(c.id)),
         }
+        # A value set over a column that is sensitive now is exported withheld (#2592), and
+        # such a document is refused on import.
+        doc["config"] = masker.mask(suite.id, doc.get("config")).config
         # Emitted only when non-default (ADR 0036), like `source_connection` below: pre-engine
         # documents and consumers stay byte-identical.
         if c.engine != GX_ENGINE:
@@ -176,6 +182,8 @@ def _validate_check(
     # Direct `Check(...)` construction below has no Pydantic layer of its own — today the REST
     # import route's `CheckDocumentIn` model already enforces the same 256/128 bounds.
     validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
+    # An export of a check whose value set was withheld (#2592) cannot be imported as-is.
+    reject_masked_value_set(c["config"], check=c["name"])
     # #568: an imported document must not smuggle in what a direct POST
     # would 422 — same shared validator create_check/update_check use.
     validate_threshold_ordering(

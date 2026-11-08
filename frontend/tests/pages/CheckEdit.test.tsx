@@ -183,6 +183,68 @@ describe('CheckEdit', () => {
     },
   );
 
+  describe('a withheld value set', () => {
+    const withheld: Check = {
+      ...existing,
+      name: 'status in set',
+      expectation_type: 'expect_column_values_to_be_in_set',
+      dimension: 'validity',
+      config: { column: 'status', value_set: ['<redacted>', '<redacted>'] },
+      redacted_columns: ['status'],
+    };
+
+    beforeEach(() => {
+      mockGetSuite.mockResolvedValue(suite);
+      mockGetCheck.mockResolvedValue(withheld);
+      mockGetConnection.mockResolvedValue(connection);
+      mockUpdate.mockResolvedValue(withheld);
+    });
+
+    it('says so, and a save that leaves it alone sends no config', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      expect(await screen.findByText('Accepted values withheld')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('status'));
+      await user.clear(screen.getByLabelText('Name'));
+      await user.type(screen.getByLabelText('Name'), 'status in set v2');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      expect(mockUpdate.mock.calls[0][2]).not.toHaveProperty('config');
+      expect(mockUpdate.mock.calls[0][2]).toMatchObject({ name: 'status in set v2' });
+    });
+
+    it('asks for the full list before another config change is saved', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('status'));
+      await user.clear(screen.getByLabelText('Column'));
+      await user.type(screen.getByLabelText('Column'), 'state');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(
+        await screen.findByText(/These values are withheld. Enter the full list/),
+      ).toBeInTheDocument();
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('saves a replaced list of real values', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const field = await screen.findByLabelText('Allowed values');
+      await user.clear(field);
+      await user.type(field, 'open, closed');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      expect(mockUpdate.mock.calls[0][2]).toMatchObject({
+        config: { column: 'status', value_set: ['open', 'closed'] },
+      });
+    });
+  });
+
   it('edits a custom SQL check in the plain editor, with no generate panel', async () => {
     // The panel belongs to the "Generate from a description" entry point on the add page.
     // An existing check already has its SQL; offering to regenerate over it is not an edit.

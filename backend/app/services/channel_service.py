@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretNotFoundError, SecretStore
+from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretStoreUnavailableError
 from backend.app.db.models import (
     NOTIFICATION_CHANNEL_TYPES,
     NotificationChannel,
@@ -65,6 +65,18 @@ class NothingToPromoteError(DataQError):
 
     status_code = 409
     code = "nothing_to_promote"
+
+
+class PromoteSecretMissingError(DataQError):
+    """The legacy webhook's secret is gone, so a promoted channel would never deliver."""
+
+    status_code = 409
+    code = "promote_secret_missing"
+
+
+class PromoteSecretStoreUnavailableError(DataQError):
+    status_code = 503
+    code = "secret_store_unavailable"
 
 
 class ChannelCredentialRedirectError(DataQError):
@@ -658,12 +670,14 @@ def promote_suite_destination(
     *,
     destination: str,
     name: str,
+    secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
 ) -> NotificationChannel:
     """Move a suite's legacy inline destination into a new channel linked to that suite
     (#1762), in one transaction. A webhook moves by its SecretStore REF — the URL is never
     read, and the secret is never deleted, because the channel now owns it. The legacy
-    column is nulled so the secret has exactly one owner.
+    column is nulled so the secret has exactly one owner. A ref whose secret is gone is
+    refused (#2413): the channel would never deliver.
     """
     legacy_attr, channel_attr = _PROMOTABLE[destination]
     # Suite row first, then its config: the order a suite delete takes them (the row,
@@ -685,6 +699,21 @@ def promote_suite_destination(
         # A list stored before recipients were validated would fail every send of every
         # suite the channel is later linked to, not just this one.
         notification_service.assert_valid_recipients(value)
+    else:
+        try:
+            present = secret_store.exists(value)
+        except SecretStoreUnavailableError as exc:
+            raise PromoteSecretStoreUnavailableError(
+                "the secret store could not be reached to check this webhook; try again",
+                detail={"destination": destination},
+            ) from exc
+        if not present:
+            raise PromoteSecretMissingError(
+                f"this suite's {destination} webhook secret is missing from the secret "
+                "store, so a channel made from it would never deliver; set a new webhook "
+                "URL on the suite or create a channel with one",
+                detail={"destination": destination},
+            )
 
     channel = NotificationChannel(name=name, type=destination, created_by=actor_id)
     setattr(channel, channel_attr, value)

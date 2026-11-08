@@ -74,6 +74,7 @@ from backend.app.services.coverage_settings_service import SuiteCoverage
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
 from backend.app.services.severity import resolve_status
+from backend.app.services.value_set_guard import REDACTED_MARKER
 
 log = get_logger(__name__)
 
@@ -907,7 +908,7 @@ def _elapsed_ms(run: Run) -> int | None:
 # the producer's `gx_runner._SAMPLE_KEYS` — keep in sync or new keys get masked.
 _SAMPLE_SAFE_KEYS = frozenset({"unexpected_count", "unexpected_percent"})
 # Same sentinel as core.logging._REDACTED; the two redactors stay separate.
-_REDACTED_VALUE = "<redacted>"
+_REDACTED_VALUE = REDACTED_MARKER
 
 # `VALUE_SIGNAL_SUMMARY_KEY` (#1230) is shared with the writer via `datasources.base`;
 # consumed for classification, then dropped from the redacted output.

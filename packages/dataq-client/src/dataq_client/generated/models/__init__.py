@@ -75,6 +75,10 @@ from .check_progress_read import CheckProgressRead
 from .check_read import CheckRead
 from .check_read_config import CheckReadConfig
 from .check_read_contract_ref_type_0 import CheckReadContractRefType0
+from .check_read_redaction_reasons import CheckReadRedactionReasons
+from .check_read_redaction_reasons_additional_property import (
+    CheckReadRedactionReasonsAdditionalProperty,
+)
 from .check_result_point_read import CheckResultPointRead
 from .check_result_point_read_metric_value_redaction_type_0 import (
     CheckResultPointReadMetricValueRedactionType0,
@@ -85,6 +89,10 @@ from .check_update import CheckUpdate
 from .check_update_config_type_0 import CheckUpdateConfigType0
 from .check_version_read import CheckVersionRead
 from .check_version_read_config import CheckVersionReadConfig
+from .check_version_read_redaction_reasons import CheckVersionReadRedactionReasons
+from .check_version_read_redaction_reasons_additional_property import (
+    CheckVersionReadRedactionReasonsAdditionalProperty,
+)
 from .classification_dismiss_update import ClassificationDismissUpdate
 from .clause_state_read import ClauseStateRead
 from .clause_state_read_clause import ClauseStateReadClause
@@ -470,6 +478,8 @@ __all__ = (
     "CheckRead",
     "CheckReadConfig",
     "CheckReadContractRefType0",
+    "CheckReadRedactionReasons",
+    "CheckReadRedactionReasonsAdditionalProperty",
     "CheckResultPointRead",
     "CheckResultPointReadMetricValueRedactionType0",
     "CheckSnoozeRequest",
@@ -478,6 +488,8 @@ __all__ = (
     "CheckUpdateConfigType0",
     "CheckVersionRead",
     "CheckVersionReadConfig",
+    "CheckVersionReadRedactionReasons",
+    "CheckVersionReadRedactionReasonsAdditionalProperty",
     "ClassificationDismissUpdate",
     "ClauseStateRead",
     "ClauseStateReadClause",

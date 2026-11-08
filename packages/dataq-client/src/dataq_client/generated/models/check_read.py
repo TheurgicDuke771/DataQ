@@ -14,6 +14,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.check_read_config import CheckReadConfig
     from ..models.check_read_contract_ref_type_0 import CheckReadContractRefType0
+    from ..models.check_read_redaction_reasons import CheckReadRedactionReasons
     from ..models.inherited_from import InheritedFrom
 
 
@@ -40,6 +41,10 @@ class CheckRead:
         enabled (bool | Unset):  Default: True.
         inherited (InheritedFrom | None | Unset):
         origin (str | Unset):  Default: 'user'.
+        redacted_columns (list[str] | Unset): Columns whose `config.value_set` is withheld: the column is classified as
+            sensitive now, so each value reads as `<redacted>`. Saving a config that still holds `<redacted>` is refused
+            (422 `value_set_redacted`): send the full real list, or leave `config` out to keep the stored values.
+        redaction_reasons (CheckReadRedactionReasons | Unset): Per withheld column, the rule that classified it.
         source_connection_id (None | Unset | UUID):
         tags (list[str] | Unset):
     """
@@ -60,6 +65,8 @@ class CheckRead:
     enabled: bool | Unset = True
     inherited: InheritedFrom | None | Unset = UNSET
     origin: str | Unset = "user"
+    redacted_columns: list[str] | Unset = UNSET
+    redaction_reasons: CheckReadRedactionReasons | Unset = UNSET
     source_connection_id: None | Unset | UUID = UNSET
     tags: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -125,6 +132,14 @@ class CheckRead:
 
         origin = self.origin
 
+        redacted_columns: list[str] | Unset = UNSET
+        if not isinstance(self.redacted_columns, Unset):
+            redacted_columns = self.redacted_columns
+
+        redaction_reasons: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.redaction_reasons, Unset):
+            redaction_reasons = self.redaction_reasons.to_dict()
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -165,6 +180,10 @@ class CheckRead:
             field_dict["inherited"] = inherited
         if origin is not UNSET:
             field_dict["origin"] = origin
+        if redacted_columns is not UNSET:
+            field_dict["redacted_columns"] = redacted_columns
+        if redaction_reasons is not UNSET:
+            field_dict["redaction_reasons"] = redaction_reasons
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
         if tags is not UNSET:
@@ -178,6 +197,7 @@ class CheckRead:
         from ..models.check_read_contract_ref_type_0 import (
             CheckReadContractRefType0,
         )
+        from ..models.check_read_redaction_reasons import CheckReadRedactionReasons
         from ..models.inherited_from import InheritedFrom
 
         d = dict(src_dict)
@@ -280,6 +300,15 @@ class CheckRead:
 
         origin = d.pop("origin", UNSET)
 
+        redacted_columns = cast(list[str], d.pop("redacted_columns", UNSET))
+
+        _redaction_reasons = d.pop("redaction_reasons", UNSET)
+        redaction_reasons: CheckReadRedactionReasons | Unset
+        if isinstance(_redaction_reasons, Unset):
+            redaction_reasons = UNSET
+        else:
+            redaction_reasons = CheckReadRedactionReasons.from_dict(_redaction_reasons)
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -316,6 +345,8 @@ class CheckRead:
             enabled=enabled,
             inherited=inherited,
             origin=origin,
+            redacted_columns=redacted_columns,
+            redaction_reasons=redaction_reasons,
             source_connection_id=source_connection_id,
             tags=tags,
         )
