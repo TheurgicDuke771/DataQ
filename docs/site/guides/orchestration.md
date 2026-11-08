@@ -25,6 +25,9 @@ Azure Monitor raises an alert on pipeline events → an **Action Group webhook**
 (shared-secret authenticated). The alert names the factory/pipeline but no run id, so a
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
 feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
+A fired alert older than `ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the
+future, or without a fired time is acknowledged and starts no poll, so a captured alert
+cannot be replayed to start work; the 10-min poll still records the run.
 
 **Getting the webhook URL:** a workspace admin opens **Admin → Integrations** in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared

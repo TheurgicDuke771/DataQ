@@ -285,6 +285,8 @@ catalog knowing about them (mechanism ④).
 | Run now | Suite detail → Run panel | Live per-check progress + cancel |
 | Cron schedule | Suite detail → Schedules | 5-field cron, IANA timezone, DST-aware, [no backfill](../guides/scheduling.md) |
 | Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG/dbt-job **success** — ADF + Airflow + dbt, see [Orchestration](../guides/orchestration.md) |
+| Upstream suite | Suite detail → Triggers | Runs when another suite's run succeeds with no check at fail or critical; loops are refused and a chain stops at depth 5, see [Orchestration](../guides/orchestration.md) |
+| Pipeline gate | `POST /orchestration/gate` | A pipeline stage starts its bound suites for this run (or only reads the verdict) and waits for the answer, see [Gate a pipeline on DataQ](../guides/orchestration.md#gate-a-pipeline-on-dataq) |
 | API / MCP | `POST /suites/{id}/run` · `trigger_suite_run` MCP tool | Same authz as the UI |
 
 ## Severity & results
@@ -355,6 +357,7 @@ they already hold.
 | Connections: list & reference in suites | ✅ | ✅ | list only |
 | Connections: test (saved) | ✅ | ✅ | ❌ |
 | Connections: test (unsaved draft) | ✅ | ❌ | ❌ |
+| Data contracts: import / delete | ✅ | ✅ | ❌ |
 | Mint API tokens (inherit the user's access) | ✅ | ✅ | ✅ |
 | `/admin`, implicit suite-admin, workspace-wide visibility | ✅ | ❌ | ❌ |
 | Manage roles in-app | ✅ | ❌ | ❌ |

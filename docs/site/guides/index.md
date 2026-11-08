@@ -19,7 +19,16 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
     ---
 
     Cron [schedules](scheduling.md), or trigger a suite when an ADF, Airflow or dbt
-    pipeline finishes — [orchestration](orchestration.md).
+    pipeline finishes, or when another suite does — [orchestration](orchestration.md).
+
+-   :material-file-document-check:{ .lg .middle } **Hold data to its contract**
+
+    ---
+
+    Import an ODCS v3 data contract: its rules become checks and each clause reports its
+    compliance.
+
+    [:octicons-arrow-right-24: Data contracts](data-contracts.md)
 
 -   :material-bell-ring:{ .lg .middle } **Alert the right people**
 

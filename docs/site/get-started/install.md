@@ -3,7 +3,7 @@
 Three tracks, matched to why you're here:
 
 - **Production and enterprise teams** → deploy on a cloud platform with a reference stack:
-  Azure Container Apps (primary) or AWS ECS Fargate. See
+  Azure Container Apps or AWS ECS Fargate, both supported at the same level. See
   [Production deployment](../operate/deployment.md). This is the recommended way to run DataQ
   for a team: managed Postgres and Redis, a cloud secret store, your identity provider, and
   the frontend as the only public surface.

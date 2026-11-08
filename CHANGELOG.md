@@ -13,6 +13,10 @@ would act on. The step lives in the release checklist in
 
 ## [Unreleased]
 
+Changes since 1.2.0 collect as one fragment per change in [`changelog.d/`](changelog.d/) and show
+in the **Unreleased** section of the [docs changelog](docs/site/reference/changelog.md); this
+file gets the curated 1.3.0 entry when it is tagged.
+
 ## [1.2.0] — 2026-10-04
 
 The DQ-intelligence and operability cycle (2026-08-22 → 2026-10-04). The curated user-facing
