@@ -177,21 +177,6 @@ function AuditLogSection() {
   );
 }
 
-/** The backend's allow-list: a check event's `config` holding more than its tested `column`. */
-const SCRUB_KEEPS = new Set(['column']);
-
-function hasScrubbableConfig(e: AuditEvent): boolean {
-  if (e.entity_type !== 'check') return false;
-  return [e.before, e.after].some((side) => {
-    const config = side?.config;
-    return (
-      typeof config === 'object' &&
-      config !== null &&
-      Object.keys(config).some((k) => !SCRUB_KEEPS.has(k))
-    );
-  });
-}
-
 /** The scrub cannot be undone and rewrites a record, so it asks for the reason the log keeps. */
 function ScrubEventModal({
   event,
@@ -327,7 +312,7 @@ const auditEventColumns = (onScrub: (e: AuditEvent) => void): ColumnsType<AuditE
     title: 'Actions',
     key: 'actions',
     render: (_, e) =>
-      hasScrubbableConfig(e) ? (
+      e.scrubbable ? (
         <Button size="small" danger onClick={() => onScrub(e)}>
           Scrub config
         </Button>

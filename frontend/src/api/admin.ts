@@ -307,6 +307,7 @@ export interface AuditEvent {
   request_id: string | null;
   /** Set when a check event's `config` was scrubbed to its tested `column`. */
   scrubbed_at?: string | null;
+  scrubbable?: boolean;
 }
 
 /** Scrub a check event's `config` (the one audited exception to append-only, ADR 0041 §9). */

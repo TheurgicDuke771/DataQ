@@ -715,6 +715,11 @@ class AuditEventRead(ApiModel):
         description="Set when a check event's `config` was scrubbed: it then keeps only the "
         "tested `column`. The `audit_event.scrub` event naming this one says who, when and why.",
     )
+    scrubbable: bool = Field(
+        default=False,
+        description="Whether a scrub of this event would remove anything: a check event whose "
+        "`config` still holds more than its tested `column`.",
+    )
 
 
 class AuditEventPage(ApiModel):

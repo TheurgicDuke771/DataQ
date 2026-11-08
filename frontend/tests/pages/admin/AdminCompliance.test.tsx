@@ -26,12 +26,14 @@ const HELD: AuditEvent = {
   id: 'ev-held',
   before: { config: { column: 'status', value_set: ['PASTED'] } },
   after: { config: { column: 'status', value_set: ['open'] } },
+  scrubbable: true,
 };
 const SCRUBBED: AuditEvent = {
   ...HELD,
   before: { config: { column: 'status' } },
   after: { config: { column: 'status' } },
   scrubbed_at: '2026-11-08T09:00:00Z',
+  scrubbable: false,
 };
 
 beforeEach(() => {

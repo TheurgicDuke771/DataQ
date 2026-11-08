@@ -109,6 +109,24 @@ def test_redacting_a_version_scrubs_the_events_that_carried_it(
     verify = client.get("/api/v1/admin/audit-events/verify").json()
     assert verify["status"] == "ok" and verify["scrubbed_count"] == 2
 
+
+def test_the_audit_log_filters_by_the_scrub_events_entity_type(
+    client: TestClient, db_session: Any
+) -> None:
+    sid, cid = _check_with_history(client, db_session)
+    client.delete(f"/api/v1/suites/{sid}/checks/{cid}/versions/1")
+
+    resp = client.get(f"/api/v1/admin/audit-events?entity_type={audit_chain.SCRUB_ENTITY_TYPE}")
+    assert resp.status_code == 200
+    assert {e["action"] for e in resp.json()["events"]} == {audit_chain.SCRUB_ACTION}
+    checks = client.get(f"/api/v1/admin/audit-events?entity_id={cid}").json()["events"]
+    # The create's literal was scrubbed; the update still holds the current config on `after`.
+    assert {e["action"]: e["scrubbable"] for e in checks} == {
+        "check.create": False,
+        "check.update": True,
+        "check.version_redact": False,
+    }
+
     listed = client.get(
         "/api/v1/admin/audit-events", params={"entity_type": "check", "entity_id": cid}
     ).json()["events"]

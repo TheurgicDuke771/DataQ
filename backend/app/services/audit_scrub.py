@@ -87,6 +87,11 @@ def _pending(row: AuditEvent, *, only: Any = None) -> list[_Scrub]:
     return found
 
 
+def scrubbable(row: AuditEvent) -> bool:
+    """Whether a scrub of `row` would remove anything."""
+    return bool(_pending(row))
+
+
 def _verifies(row: AuditEvent, claims: Mapping[uuid.UUID, tuple[str | None, str | None]]) -> bool:
     """The row is intact now: by its own hash, or (already scrubbed) by the claim of the newest
     scrub event the chain walk verified. A claim read straight from the table is never trusted:

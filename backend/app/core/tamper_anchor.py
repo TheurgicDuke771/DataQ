@@ -111,6 +111,12 @@ class NoopTamperAnchor:
         self._lock = threading.Lock()
 
     def publish(self, *, label: str, head_hash: str, event_count: int, as_of: datetime) -> bool:
+        return self._warn_unconfigured()
+
+    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
+        return self._warn_unconfigured()
+
+    def _warn_unconfigured(self) -> bool:
         with self._lock:
             if not self._warned:
                 log.warning(
@@ -125,11 +131,6 @@ class NoopTamperAnchor:
                 )
                 self._warned = True
         return False
-
-    def publish_scrub(self, receipt: dict[str, Any]) -> bool:
-        return self.publish(
-            label=SCRUB_RECEIPT_LABEL, head_hash="", event_count=0, as_of=datetime.now(UTC)
-        )
 
 
 class WebhookTamperAnchor:

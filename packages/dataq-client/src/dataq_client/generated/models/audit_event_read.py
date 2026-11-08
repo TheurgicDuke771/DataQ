@@ -36,6 +36,8 @@ class AuditEventRead:
         id (str):
         occurred_at (str):
         request_id (None | str):
+        scrubbable (bool | Unset): Whether a scrub of this event would remove anything: a check event whose `config`
+            still holds more than its tested `column`. Default: False.
         scrubbed_at (datetime.datetime | None | Unset): Set when a check event's `config` was scrubbed: it then keeps
             only the tested `column`. The `audit_event.scrub` event naming this one says who, when and why.
     """
@@ -53,6 +55,7 @@ class AuditEventRead:
     id: str
     occurred_at: str
     request_id: None | str
+    scrubbable: bool | Unset = False
     scrubbed_at: datetime.datetime | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -101,6 +104,8 @@ class AuditEventRead:
         request_id: None | str
         request_id = self.request_id
 
+        scrubbable = self.scrubbable
+
         scrubbed_at: None | str | Unset
         if isinstance(self.scrubbed_at, Unset):
             scrubbed_at = UNSET
@@ -128,6 +133,8 @@ class AuditEventRead:
                 "request_id": request_id,
             }
         )
+        if scrubbable is not UNSET:
+            field_dict["scrubbable"] = scrubbable
         if scrubbed_at is not UNSET:
             field_dict["scrubbed_at"] = scrubbed_at
 
@@ -218,6 +225,8 @@ class AuditEventRead:
 
         request_id = _parse_request_id(d.pop("request_id"))
 
+        scrubbable = d.pop("scrubbable", UNSET)
+
         def _parse_scrubbed_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -249,6 +258,7 @@ class AuditEventRead:
             id=id,
             occurred_at=occurred_at,
             request_id=request_id,
+            scrubbable=scrubbable,
             scrubbed_at=scrubbed_at,
         )
 

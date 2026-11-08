@@ -1426,6 +1426,12 @@
             ],
             "title": "Request Id"
           },
+          "scrubbable": {
+            "default": false,
+            "description": "Whether a scrub of this event would remove anything: a check event whose `config` still holds more than its tested `column`.",
+            "title": "Scrubbable",
+            "type": "boolean"
+          },
           "scrubbed_at": {
             "anyOf": [
               {

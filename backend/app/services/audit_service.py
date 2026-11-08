@@ -542,3 +542,10 @@ def record_access(
 def declared_entity_types() -> Sequence[str]:
     """The entity types with a declared allow-list — the drift-guard test's input."""
     return sorted(_SERIALIZERS)
+
+
+def queryable_entity_types() -> Sequence[str]:
+    """The entity types the audit log can be filtered by: the snapshot allow-list plus the types
+    written without a snapshot.
+    """
+    return sorted({*_SERIALIZERS, _audit_chain.SCRUB_ENTITY_TYPE})

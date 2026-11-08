@@ -469,3 +469,17 @@ def test_a_truncated_receipt_read_judges_only_scrubs_it_could_see(
     assert result is not None
     assert result.status == "ok" and result.unanchored_scrub_count == 0
     assert result.scrub_receipt_count == 1 and result.truncated
+
+
+def test_scrubbable_says_whether_a_scrub_would_remove_anything(
+    db_session: Any, anchor: _Anchor
+) -> None:
+    held = _event(db_session, after={"config": _HELD})
+    kept = _event(db_session, after={"config": {"column": "status"}})
+    other = _event(db_session, entity_type="suite", after={"name": "finance"})
+    assert audit_scrub.scrubbable(held)
+    assert not audit_scrub.scrubbable(kept) and not audit_scrub.scrubbable(other)
+
+    audit_scrub.scrub_event(db_session, held.id, actor=None, reason="r")
+    db_session.commit()
+    assert not audit_scrub.scrubbable(held)
