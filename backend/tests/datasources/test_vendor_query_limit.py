@@ -105,13 +105,27 @@ def test_another_drivers_connection_is_left_alone(monkeypatch: pytest.MonkeyPatc
     assert conn.executed == []
 
 
-def test_registering_twice_runs_the_setup_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registering_twice_adds_one_listener(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy import event
+
     monkeypatch.setattr(query_timeout, "_REGISTERED", dict(query_timeout._REGISTERED))
-    calls: list[int] = []
+    listened: list[str] = []
+    monkeypatch.setattr(event, "listen", lambda target, name, fn: listened.append(name))
     for _ in range(2):
-        query_timeout.register_session_limit("probe", "probe_driver", lambda c, s: calls.append(s))
-    QueuePool(_creator(_conn_from("probe_driver.client", _Conn()))).connect().close()
-    assert len(calls) == 1
+        query_timeout.register_session_limit("probe", "probe_driver", lambda c, s: None)
+    assert listened == ["connect"]
+
+
+def test_the_real_drivers_connections_match_the_registered_modules() -> None:
+    """The hook dispatches on the connection class's module: a driver moving its class would
+    silently drop the limit, so the registered prefixes are pinned to the installed drivers.
+    """
+    from databricks.sql.client import Connection as DatabricksConnection
+    from snowflake.connector.connection import SnowflakeConnection
+
+    registered = query_timeout._REGISTERED
+    assert SnowflakeConnection.__module__.startswith(registered["snowflake"] + ".")
+    assert DatabricksConnection.__module__.startswith(registered["unity_catalog"] + ".")
 
 
 def test_a_setup_the_warehouse_rejects_leaves_the_session_usable(
