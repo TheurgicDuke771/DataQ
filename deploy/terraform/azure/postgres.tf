@@ -1,6 +1,5 @@
 # App database — a DISTINCT `dataq` database on the SHARED Postgres Flexible Server (this
-# subscription caps Flexible Servers at 1, so the app shares the harness's server — renamed
-# neutrally to dataq-pg-* / purpose=dataq-shared). The app connects as the least-privilege
+# subscription caps Flexible Servers at 1, so the app may share a server other workloads use). The app connects as the least-privilege
 # `dataq_app` role (owns only `dataq`; provisioned out-of-band — see deploy/terraform/README.md).
 #
 # SECURITY CONSTRAINT — the single-role model is load-bearing, not just tidy. Postgres's

@@ -88,7 +88,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 | `TELEMETRY_FILE_PATH` | unset | required with `TELEMETRY_SINK=file`; the api and worker refuse to boot without it. |
 | `OPENLINEAGE_URL` | unset | OpenLineage emission (ADR 0034, #758) — **dark by default**: unset ⇒ zero emission. Point at an OL receiver (Marquez, DataHub's OL endpoint) and every suite run emits START + terminal RunEvents with DQ facets (5s emit timeout, fail-open, no sample rows ever). Advanced transports via the library-owned `OPENLINEAGE__TRANSPORT__*` / `OPENLINEAGE_CONFIG`; `OPENLINEAGE_DISABLED=true` forces dark. |
 | `WAREHOUSE_LINEAGE_ENABLED` | unset (`true`) | controls the daily `refresh_warehouse_lineage` sweep (ADR 0034, #858) — **on by default** since the 2026-09-06 ADR 0034 amendment; a principal lacking the Snowflake `ACCOUNT_USAGE` / UC `system.access` grants degrades per connection. Set `false` to opt a deployment out. Set in `containerapps.tf` (`local.worker_env`, shared with beat). Beat only *schedules* the sweep task; the **worker** is what actually executes it and reads this flag, so setting it on the api does nothing. |
-| `LINEAGE_PROVIDER` / `MARQUEZ_URL` | unset | **leave unset** unless you run a lineage server. This deployment deliberately does **not** set them (#1086): Marquez is a dev-only compose profile and production is expected to bring its own catalog (ADR 0034). Set them only when pointing at a reachable OL-compatible server. Two failure shapes differ: an unreachable `MARQUEZ_URL` leaves the pull *configured but failing* (fail-soft, logged, pruning deliberately skipped for cross-source safety); **un-setting the provider is now handled** ([#1090](https://github.com/TheurgicDuke771/DataQ/issues/1090)) — the next daily `refresh_lineage_pull` tick sweeps the orphaned `source='marquez'` edges (logged as `lineage_pull_orphans_purged`; re-configuring re-pulls). A configured-but-broken provider (typo'd name, missing URL) deliberately does NOT purge. |
+| `LINEAGE_PROVIDER` / `MARQUEZ_URL` | unset | **leave unset** unless you run a lineage server. The reference stacks deliberately do **not** set them (#1086): Marquez is a dev-only compose profile and production is expected to bring its own catalog (ADR 0034). Set them only when pointing at a reachable OL-compatible server. Two failure shapes differ: an unreachable `MARQUEZ_URL` leaves the pull *configured but failing* (fail-soft, logged, pruning deliberately skipped for cross-source safety); **un-setting the provider is now handled** ([#1090](https://github.com/TheurgicDuke771/DataQ/issues/1090)) — the next daily `refresh_lineage_pull` tick sweeps the orphaned `source='marquez'` edges (logged as `lineage_pull_orphans_purged`; re-configuring re-pulls). A configured-but-broken provider (typo'd name, missing URL) deliberately does NOT purge. |
 | `LINEAGE_STALE_AFTER_HOURS` | `48` | staleness window for the asset-view lineage-source banner (#1091): a warehouse lineage source last refreshed longer ago than this is flagged **stale**, independent of error/degraded — a refresh loop that silently stops must not render as healthy. `0` disables. |
 | `LINEAGE_CLASSIFICATION_PROPAGATION` | `true` | a column whose **recorded** upstream column (column-level lineage) is tagged sensitive is masked too, on every read path (REST, MCP, alerts, incident evidence). Additive-only: never inherits `public`, and a column's own tag wins. `false` limits masking to each table's own tags. |
 | `WAREHOUSE_LINEAGE_MAX_SEEDS` | `500` | seed cap for the Snowflake `GET_LINEAGE` per-seed traversal (#892) — the Enterprise-only top tier walks this many enumerated tables (ADR 0040 seam) per refresh, **two round trips each** (upstream + downstream), so it is a latency/cost bound. Overflow walks the first N in catalog order and logs `get_lineage_seeds_truncated`; `<=0` removes the bound. Ignored on Standard accounts (the tier is edition-gated) and by every other tier. |
@@ -111,10 +111,10 @@ mode for you. A production deployment must flip all of the following. Values liv
   **two app registrations** (API + SPA) and **grant admin consent** for the API scope.
 - **Subscription resource-provider registration** — the app's OpenTofu stack registers
   `Microsoft.App`, `Microsoft.Cache`, `Microsoft.KeyVault`, `Microsoft.Web` (see
-  [rp.tf](terraform/azure/rp.tf)); the PostgreSQL + monitoring providers
+  [rp.tf](terraform/azure/rp.tf)); register the PostgreSQL + monitoring providers
   (`Microsoft.DBforPostgreSQL`, `Microsoft.Insights`, `Microsoft.OperationalInsights`)
-  come registered with the shared harness resources (ADR 0024). Registration needs
-  subscription-level rights.
+  yourself if the subscription has not used them (`az provider register -n <namespace>`).
+  Registration needs subscription-level rights.
 - **GitHub repo admin** — to set the Actions [secrets/vars](#github-config-the-workflow-reads)
   and create the OIDC **federated credential** (subject = the repo's `production`
   environment). The GHCR image push uses the built-in `GITHUB_TOKEN` (`packages: write`);
@@ -127,7 +127,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 DataQ is provider-agnostic by design — no cloud is baked into app code, and each
 target sits behind the same seams (ADR [0010](../docs/site/adr/0010-provider-agnostic-infrastructure-seams.md) /
 [0013](../docs/site/adr/0013-marketplace-distribution-and-anti-lock-in.md)). **Azure and AWS
-are both supported and live today, at the same level** — neither is primary or a
+are both supported today, at the same level** — neither is primary or a
 fallback for the other; the choice is the deployer's. GCP remains planned.
 
 #### Azure — supported today
@@ -135,9 +135,11 @@ fallback for the other; the choice is the deployer's. GCP remains planned.
 - An Azure **subscription** + a region with quota for **1 Container Apps environment**,
   **1 PostgreSQL Flexible Server**, Cache for Redis, Key Vault, and App Insights + Log
   Analytics (the frontend is a Container App, not a Static Web App — ADR 0028).
-  (Free/trial tiers cap one ACA env + one Postgres
-  server per subscription, so the app **shares** the RG/env/Postgres server with the
-  harness and namespaces its own DB + role — ADR [0024](../docs/site/adr/0024-app-deployment-infrastructure.md).)
+  The stack **references** the resource group, the Container Apps environment (`dataq-cae`)
+  and the Postgres server rather than creating them — free/trial tiers cap one environment
+  and one Postgres server per subscription, which other workloads may already use — so
+  create them first ([commands](terraform/azure/README.md#prerequisites)); the app
+  namespaces its own database + role on the server — ADR [0024](../docs/site/adr/0024-app-deployment-infrastructure.md).
 - The **resource providers** and **app registrations** from §2 registered/created.
 - The **GHCR** backend package public. Then follow [One-time provisioning](#one-time-provisioning).
 
@@ -188,9 +190,8 @@ eval stack (`DATAQ_AUTH_MODE=otp` by default, #1150) and prod (`=oidc`).
 
 ## One-time provisioning
 
-The datasource + compute infra is stood up by the external OpenTofu harness
-(ADR 0021) — see the harness repo's `README.md` (not git-tracked here). Beyond
-that, this app needs:
+Create the resource group, Container Apps environment and Postgres server first (see the
+[stack README](terraform/azure/README.md#prerequisites)). Beyond that, this app needs:
 
 1. An **ACA environment** + the three apps/job above (the backend image is on
    **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;
@@ -626,23 +627,12 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
 - **Restart dependent Container Apps after a shared-Postgres delete/recreate** —
   the DB host is injected as a start-time secret snapshot, so every dependent
   revision must be restarted or it keeps resolving the old/dead host.
-- The shared RG / Container Apps env / Postgres server are **reused, never
-  destroyed** (free/trial caps one of each; shared with the harness — ADR 0024).
-- `key_vault_purge_protection` is off during bring-up (so a destroy/re-apply can
-  reuse the vault name); set it **true** for a hardened prod (irreversible).
-  **Decision (2026-07-02): deliberately left off** for this deployment — the vault
-  is demo/trial-scoped and destroy/re-apply flexibility wins; every secret it holds
-  (PATs, SAS, webhook secrets) is rotatable, so accidental-delete recovery is
-  re-mint, not data loss. Revisit (flip to `true`) before any regulated or
-  production-critical use.
-- **This reference deployment carries demo/test fixtures — tear them down before any
-  commercial or marketplace use.** The live connections (Snowflake/UC/ADLS/ADF/Airflow),
-  Flows A/B/C, demo users, and the deliberately-failing "seeded breach" check are the
-  ADR 0021 test harness, not product. The harness Databricks workspace is **Free Edition
-  (non-commercial licence)** — recorded 2026-07-03: fine for demo/eval, but before any
-  commercial demo, marketplace listing, or customer-facing deployment, migrate UC to a paid
-  workspace and remove the harness flows/connections/users (post-v1 gap register G-h/G-i in
-  [post-v1-roadmap.md](../context/post-v1-roadmap.md)).
+- The resource group, Container Apps environment and Postgres server are **referenced,
+  never destroyed** by the stack (free/trial caps one of each — ADR 0024).
+- `key_vault_purge_protection` is off by default (so a destroy/re-apply can reuse the vault
+  name); set it **true** for a hardened production deployment (irreversible). Every secret the
+  vault holds (PATs, SAS tokens, webhook secrets) is rotatable, so with it off,
+  accidental-delete recovery is a re-mint, not data loss.
 - **Azure CLI is pre-authorized on the API scope** (`azuread_application_pre_authorized.azure_cli_on_api`
   in `terraform/azure/sso.tf`): operators mint API bearers non-interactively with
   `az account get-access-token --resource api://<api-client-id>` (live smoke,
