@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from backend.app.db.models import AuditEvent, Connection, User
 from backend.app.db.session import get_db
@@ -23,6 +23,11 @@ _LITERAL = "PASTED_LITERAL"
 
 @pytest.fixture
 def client(db_session: Any) -> Iterator[TestClient]:
+    # These tests assert the chain verifies, so they start from an empty one: rows another test
+    # committed to the shared database are cleared inside this test's rolled-back transaction
+    # (#2623).
+    db_session.execute(text("DELETE FROM audit_events"))
+    db_session.execute(text("UPDATE audit_chain_state SET head_hash = NULL, head_event_id = NULL"))
     app.dependency_overrides[get_db] = lambda: db_session
     try:
         yield TestClient(app)
