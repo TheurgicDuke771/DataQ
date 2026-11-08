@@ -271,6 +271,15 @@ section below.
 
 ### Fixed
 
+- **A check's accepted values over a column marked sensitive are no longer shown.** When a
+  column a value-set check tests is classified as sensitive after the check was written (the
+  suite's column policy, a warehouse tag, fail-closed mode or the PII classifier), each value now
+  reads `<redacted>` on every check read: the check editor, version history, suite export, the
+  REST API and the MCP tools. `redacted_columns` names the column and `redaction_reasons` the rule
+  that decided. The check still runs with its real values. Saving a configuration that still holds
+  `<redacted>` is refused (`422 value_set_redacted`): leave the values untouched and the stored
+  ones are kept, or enter the full list to replace them. An export holding withheld values cannot
+  be imported.
 - **Saving coverage sensitivity keeps keyboard focus in the settings.** After saving a table's or
   the workspace's sensitivity for automatic checks, focus could fall back to the top of the page
   instead of staying in the settings block, depending on timing.

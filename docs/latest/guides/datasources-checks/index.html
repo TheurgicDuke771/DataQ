@@ -4297,7 +4297,11 @@ checks and a daily schedule. After its first run it adds <em>Data is fresh</em> 
   marks sensitive is never proposed as a value set, because that would copy its values into the
   check. If a column is marked sensitive after its value set was proposed, the suggestion is
   shown with its values hidden and marked <strong>Values withheld</strong>, and it can only be rejected:
-  accepting it is refused.</li>
+  accepting it is refused. The same holds for any check, however it was written: once its
+  column is marked sensitive, its accepted values read as <code>&lt;redacted&gt;</code> in the check editor,
+  version history, export, API and MCP tools, while the check keeps running with the real
+  values. Saving the check without touching the values keeps them; to change the configuration,
+  enter the full list again. An export holding withheld values cannot be imported.</li>
 <li><strong>Your changes win.</strong> You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
   is not added back.</li>
