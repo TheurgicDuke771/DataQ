@@ -128,6 +128,17 @@ dev mode mounts kv-v2 at secret/, listens on :8200
 - **Encrypt values before writing them to Redis** — rejected. It moves the problem rather than solving it: the encryption key then needs a store, which is the original question, and it delivers none of the audit/versioning/access-control that motivates a vault.
 - **Infisical / other OSS secret managers** — not pursued. The KV v2 API has the widest compatibility surface (four server implementations honour it), which is precisely the property decision 1 is buying.
 
+## Amendment: `exists` without a read
+
+`SecretStore` gains `exists(name) -> bool`, which says whether a readable secret is behind a
+ref **without reading its value**, so a caller that must never read a secret can still tell a
+dangling ref. A soft-deleted secret is absent; a store that cannot answer raises
+`SecretStoreUnavailableError`, never `False`, by decision 6. OpenBao reads the KV v2 metadata
+path (an absent, soft-deleted or destroyed current version is absent; verified against a local
+OpenBao). AWS calls `DescribeSecret` (a `DeletedDate` is absent) and Azure Key Vault lists the
+secret's version properties (no enabled version is absent); both are unverified against a live
+account. The first caller is the promote of a legacy notification webhook into a channel.
+
 ## Related
 
 - ADR [0010](0010-provider-agnostic-infrastructure-seams.md) — the provider-agnostic seam rule this closes the last major gap in.

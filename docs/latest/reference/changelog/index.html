@@ -3158,7 +3158,14 @@ section below.</p>
   destination to a channel failed because another admin had already promoted or cleared it, the
   dialog stayed open over a card that still offered the action. The dialog now closes and the
   suite's notification settings reload beside the error.</li>
-<li><strong>A suggested value set over a column classified as sensitive after it was proposed is no
+</ul>
+<p><strong>Promoting a suite's legacy webhook whose secret is gone is now refused.</strong> Before, the promote
+  succeeded and created a channel that never delivered. DataQ now checks the secret store still
+  holds the webhook, without reading it, and refuses with <code>409 promote_secret_missing</code> when it
+  does not, or <code>503</code> when the secret store cannot be reached. Every secret store gains this check
+  (OpenBao verified; AWS Secrets Manager and Azure Key Vault not yet verified against a live
+  account).
+- <strong>A suggested value set over a column classified as sensitive after it was proposed is no
   longer readable or acceptable.</strong> A suggested rule's value set was screened only when it was
   proposed, so a column later marked sensitive (by the suite's column policy, a warehouse tag or
   fail-closed mode) kept its raw values in the review queue. <code>GET /api/v1/suites/{id}/suggestions</code>,
@@ -3167,31 +3174,31 @@ section below.</p>
   <code>redacted_columns</code> and <code>redaction_reasons</code> saying which column and rule decided (an AI-proposed
   rule's name and rationale are replaced as well, as they may quote the values). Accepting such a
   suggestion returns <code>409</code> with <code>error.code</code> <code>suggestion_values_sensitive</code>; reject it instead. The
-  suite page marks it <strong>Values withheld</strong> and disables <strong>Accept</strong>.</li>
-<li><strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
-  invented ceiling, and a refused volume check now names the key that is wrong or missing.</li>
-<li><strong>Deleting a check no longer rewrites the history of past runs.</strong> A run now records its outcome
+  suite page marks it <strong>Values withheld</strong> and disables <strong>Accept</strong>.
+- <strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
+  invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- <strong>Deleting a check no longer rewrites the history of past runs.</strong> A run now records its outcome
   (checks passed, worst severity) when it finishes, and the run page, runs list, recent-runs widget, PDF
   report, REST API and MCP tools show that recorded outcome. When results have since been removed
   with a deleted check, the run page and the report say how many, and the API and MCP tools return
   the count as <code>results_removed</code>. Runs that finished before this release record the outcome they
-  had at the upgrade; a result already deleted before then cannot be recovered or counted.</li>
-<li><strong>A flat-file target's chosen file format now applies to its runs.</strong> The <em>File format</em> picked on
+  had at the upgrade; a result already deleted before then cannot be recovered or counted.
+- <strong>A flat-file target's chosen file format now applies to its runs.</strong> The <em>File format</em> picked on
   a suite's target was used only by the profiler and column listing; checks, monitors, schema
   drift and memory admission still read the format from the file's extension, so a target like
-  <code>exports/orders.dat</code> set to CSV profiled fine and failed every run.</li>
-<li><strong>Opening another run from a run's page shows that run.</strong> Picking a run in the command palette
-  while a run detail page was open changed the address but kept showing the first run.</li>
-<li><strong>Settings → Notifications no longer describes workspace-wide alert defaults as a future
+  <code>exports/orders.dat</code> set to CSV profiled fine and failed every run.
+- <strong>Opening another run from a run's page shows that run.</strong> Picking a run in the command palette
+  while a run detail page was open changed the address but kept showing the first run.
+- <strong>Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.</strong> The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
-  its linked channels.</li>
-<li><strong>A failed sign-in code request no longer counts against the address's limit.</strong> When the code
+  its linked channels.
+- <strong>A failed sign-in code request no longer counts against the address's limit.</strong> When the code
   could not be handed to the mail worker (for example during a short message-broker outage), the
   attempt used to spend one of the address's requests for the window, so a member retrying could
   be throttled without ever receiving an email. Such attempts are now taken back; the sign-in
-  response is unchanged either way.</li>
-<li><strong>Run detail and report label each result with the check as it WAS, not as it is.</strong> A check
+  response is unchanged either way.
+- <strong>Run detail and report label each result with the check as it WAS, not as it is.</strong> A check
   re-pointed to another engine or re-classified to another DQ dimension after a run used to have
   its old results shown with today's engine and dimension (the badges read the suite's current
   check list). <code>GET /api/v1/runs/{id}</code> now carries a <code>check</code> block per result — name, kind, engine,
@@ -3202,8 +3209,7 @@ section below.</p>
   "(current)" instead of presenting it as history, on the run comparison page too. MCP
   <code>get_run_results</code> / <code>get_suite_results</code> gain <code>dimension</code> and <code>check_resolved_from</code> per check (and
   <code>get_run_results</code> no longer claims <code>engine</code> is the check's current engine; it has reported the
-  as-of engine for some time).</li>
-</ul>
+  as-of engine for some time).</p>
 <h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>
 <ul>

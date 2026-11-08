@@ -2477,6 +2477,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#amendment-exists-without-a-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment: exists without a read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2661,6 +2672,15 @@ dev mode mounts kv-v2 at secret/, listens on :8200
 <li><strong>Encrypt values before writing them to Redis</strong> — rejected. It moves the problem rather than solving it: the encryption key then needs a store, which is the original question, and it delivers none of the audit/versioning/access-control that motivates a vault.</li>
 <li><strong>Infisical / other OSS secret managers</strong> — not pursued. The KV v2 API has the widest compatibility surface (four server implementations honour it), which is precisely the property decision 1 is buying.</li>
 </ul>
+<h2 id="amendment-exists-without-a-read">Amendment: <code>exists</code> without a read<a class="headerlink" href="#amendment-exists-without-a-read" title="Permanent link">¶</a></h2>
+<p><code>SecretStore</code> gains <code>exists(name) -&gt; bool</code>, which says whether a readable secret is behind a
+ref <strong>without reading its value</strong>, so a caller that must never read a secret can still tell a
+dangling ref. A soft-deleted secret is absent; a store that cannot answer raises
+<code>SecretStoreUnavailableError</code>, never <code>False</code>, by decision 6. OpenBao reads the KV v2 metadata
+path (an absent, soft-deleted or destroyed current version is absent; verified against a local
+OpenBao). AWS calls <code>DescribeSecret</code> (a <code>DeletedDate</code> is absent) and Azure Key Vault lists the
+secret's version properties (no enabled version is absent); both are unverified against a live
+account. The first caller is the promote of a legacy notification webhook into a channel.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">¶</a></h2>
 <ul>
 <li>ADR <a href="../0010-provider-agnostic-infrastructure-seams/">0010</a> — the provider-agnostic seam rule this closes the last major gap in.</li>

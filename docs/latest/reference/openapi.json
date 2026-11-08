@@ -21551,7 +21551,7 @@
     },
     "/api/v1/suites/{suite_id}/notifications/promote": {
       "post": {
-        "description": "Creates a channel holding the suite's existing webhook (or recipient list), links\nit to the suite and clears the legacy value. The webhook URL is moved, never read or\nreturned. Admin-only, like every channel mutation.",
+        "description": "Creates a channel holding the suite's existing webhook (or recipient list), links\nit to the suite and clears the legacy value. The webhook URL is moved, never read or\nreturned. A webhook whose secret is missing from the secret store is refused (409\n`promote_secret_missing`), since its channel would never deliver; a secret store that\ncannot answer is a 503. Admin-only, like every channel mutation.",
         "operationId": "promote_suite_destination",
         "parameters": [
           {
