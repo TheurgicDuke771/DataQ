@@ -1593,6 +1593,9 @@ class AuditEvent(Base):
     #: legacy, never silently treated as a break. See `audit_chain.py`.
     prev_hash: Mapped[str | None] = mapped_column(String(64))
     row_hash: Mapped[str | None] = mapped_column(String(64))
+    #: When a payload path was scrubbed (ADR 0041 §9, 2026-11-08 amendment). Display only and
+    #: outside the row hash: verification trusts the chained scrub event, never this column.
+    scrubbed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     actor: Mapped["User | None"] = relationship()
 
