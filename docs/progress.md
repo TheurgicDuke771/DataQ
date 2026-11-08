@@ -148,7 +148,7 @@ Week 3 also carried, unplanned and on the maintainer's direction 2026-10-21: CON
 | ✅ | [#2496](https://github.com/TheurgicDuke771/DataQ/issues/2496) No per-query wall-clock limit on any SQL datasource — all seven generic-SQL engines wired (PR #2609); a lower limit the server already gives DataQ's user is kept, and Trino's counts queue time. Live-verified on PostgreSQL 16, MariaDB 11.4, MySQL 8.4 and Trino 476; Redshift, SQL Server, Athena and BigQuery unverified live (#2224). Redshift's inherited-limit gap is [#2613](https://github.com/TheurgicDuke771/DataQ/issues/2613) (Backlog) |
 | ⬜ | [#2607](https://github.com/TheurgicDuke771/DataQ/issues/2607) the same limit on Snowflake and Unity Catalog — split from #2496: sessions are built inside GX's vendor datasources, and neither engine can be verified live |
 | ⬜ | [#2481](https://github.com/TheurgicDuke771/DataQ/issues/2481) fix(assets): a flat-file batch target's asset name ignores its prefix — needs a decision on re-keying persisted assets |
-| ⬜ | [#2592](https://github.com/TheurgicDuke771/DataQ/issues/2592) Checks: a value set over a column classified as sensitive after the check was written stays readable — filed from the #2383 work; needs a design decision |
+| ✅ | [#2592](https://github.com/TheurgicDuke771/DataQ/issues/2592) Checks: a value set over a column classified as sensitive after the check was written stays readable — masked on every check read (`<redacted>` + `redacted_columns`), saving a masked value refused (`value_set_redacted`); the contract-export twin is [#2615](https://github.com/TheurgicDuke771/DataQ/issues/2615) |
 
 ### v1.3 Week 7 — polish: MCP & API, performance, accessibility (due 2026-11-22)
 

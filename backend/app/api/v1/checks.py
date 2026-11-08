@@ -37,7 +37,9 @@ from backend.app.services import (
 from backend.app.services import check_service as svc
 from backend.app.services import dryrun_service as dryrun
 from backend.app.services.check_service import CheckConfigInvalidError
+from backend.app.services.run_service import RedactionReason
 from backend.app.services.suite_authz import require_permission
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 log = get_logger(__name__)
 
@@ -152,12 +154,23 @@ class CheckRead(ApiModel):
     inherited: InheritedFrom | None = None
     #: Workspace labels (#888), sorted by name; not part of the check's versioned definition.
     tags: TagNames = Field(default_factory=list)
+    redacted_columns: list[str] = Field(
+        default_factory=list,
+        description="Columns whose `config.value_set` is withheld: the column is classified as "
+        "sensitive now, so each value reads as `<redacted>`. Saving a config that still holds "
+        "`<redacted>` is refused (422 `value_set_redacted`): send the full real list, or leave "
+        "`config` out to keep the stored values.",
+    )
+    redaction_reasons: dict[str, RedactionReason] = Field(
+        default_factory=dict, description="Per withheld column, the rule that classified it."
+    )
 
 
 def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
     """Checks as the API returns them: an inheriting automatic baseline shows the thresholds
     and shape it runs on, never the stored snapshot."""
     inherited = coverage_settings_service.inherited_settings(db, checks)
+    masker = ValueSetMasker(db)
     out: list[CheckRead] = []
     for check in checks:
         read = CheckRead.model_validate(check)
@@ -172,6 +185,12 @@ def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
                 "critical_threshold": settings.sensitivity.critical,
                 "inherited": InheritedFrom(**settings.levels()),
             }
+        masked = masker.mask(check.suite_id, update["config"])
+        update |= {
+            "config": masked.config,
+            "redacted_columns": masked.redacted_columns,
+            "redaction_reasons": masked.redaction_reasons,
+        }
         out.append(read.model_copy(update=update))
     return out
 
@@ -583,6 +602,32 @@ class CheckVersionRead(ApiModel):
     )
     redacted_at: datetime | None = None
     redacted_by_name: str | None = None
+    redacted_columns: list[str] = Field(
+        default_factory=list,
+        description="As on a check: a `config.value_set` withheld because its column is "
+        "sensitive now. Restoring the version still restores the real values.",
+    )
+    redaction_reasons: dict[str, RedactionReason] = Field(default_factory=dict)
+
+
+def _version_reads(
+    db: Session, suite_id: uuid.UUID, versions: Sequence[Any]
+) -> list[CheckVersionRead]:
+    masker = ValueSetMasker(db)
+    out = []
+    for version in versions:
+        read = CheckVersionRead.model_validate(version)
+        masked = masker.mask(suite_id, read.config)
+        out.append(
+            read.model_copy(
+                update={
+                    "config": masked.config,
+                    "redacted_columns": masked.redacted_columns,
+                    "redaction_reasons": masked.redaction_reasons,
+                }
+            )
+        )
+    return out
 
 
 @router.delete(
@@ -607,7 +652,7 @@ def redact_check_version(
     """
     require_permission(db, suite_id, current_user.id, minimum="admin")
     version = svc.redact_check_version(db, suite_id, check_id, version_no, actor_id=current_user.id)
-    return CheckVersionRead.model_validate(version)
+    return _version_reads(db, suite_id, [version])[0]
 
 
 @router.get(
@@ -622,9 +667,7 @@ def list_check_versions(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[CheckVersionRead]:
     require_permission(db, suite_id, current_user.id, minimum="view")
-    return [
-        CheckVersionRead.model_validate(v) for v in svc.list_check_versions(db, suite_id, check_id)
-    ]
+    return _version_reads(db, suite_id, svc.list_check_versions(db, suite_id, check_id))
 
 
 @router.post(
