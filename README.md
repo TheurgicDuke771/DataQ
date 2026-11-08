@@ -13,7 +13,7 @@
 ## What it does
 
 - **Checks**
-  GX expectations (including **custom SQL**), **freshness / volume / schema-drift / anomaly** monitors and cross-dataset **comparison**.
+  GX expectations (including **custom SQL**), **freshness / volume / aggregate / schema-drift / anomaly / PII-drift** monitors and cross-dataset **comparison**.
   A column profiler and dry-run work on every datasource.
   Snowflake checks can also run as native DMFs, and Unity Catalog checks as Databricks DQX.
   [Feature matrix →](https://theurgicduke771.github.io/DataQ/docs/latest/reference/feature-matrix/)
@@ -29,7 +29,7 @@
   System-owned suites over the asset inventory, plus a review queue of suggested rules.
 
 - **Run anywhere**
-  Run now, on a cron schedule (DST-aware), or from a **pipeline trigger** in ADF, Airflow or dbt.
+  Run now, on a cron schedule (DST-aware), from a **pipeline trigger** in ADF, Airflow or dbt, or when another suite finishes.
   A pipeline stage can also ask DataQ for a pass/fail verdict through the **pipeline gate**.
   [Orchestration →](https://theurgicduke771.github.io/DataQ/docs/latest/guides/orchestration/)
 
@@ -41,8 +41,12 @@
   YAML suite files with `validate`, drift and `apply`, through a Python client and the `dataq` CLI.
   [Python client →](https://theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/)
 
+- **Data contracts**
+  Import an ODCS v3 contract and its enforceable rules become checks; each clause then reports its compliance, and the contract exports back as ODCS with the checks added since.
+  [Data contracts →](https://theurgicduke771.github.io/DataQ/docs/latest/guides/data-contracts/)
+
 - **Governance**
-  Workspace roles plus per-suite sharing (RBAC), PII-redacted failing samples and an audit log.
+  Workspace roles plus per-suite sharing (RBAC), PII-redacted failing samples and a tamper-evident audit log.
 
 - **Optional LLM assist** (off by default)
   SQL generation, check suggestions and root-cause narratives.
@@ -61,7 +65,7 @@
 
 ### Run it for a team
 
-Deploy on **Azure Container Apps** (primary) or **AWS ECS Fargate** with the reference OpenTofu stacks — the recommended path for production and enterprise teams.
+Deploy on **Azure Container Apps** or **AWS ECS Fargate** — both supported at the same level — with the reference OpenTofu stacks, the recommended path for production and enterprise teams. A Helm chart covers your own Kubernetes cluster.
 See [Production deployment](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/).
 
 ### Evaluate in ~5 minutes
@@ -104,9 +108,9 @@ docker-compose up     # backend :8000 · frontend :3000 · mail :8025
 
 ## AI assistants (MCP)
 
-DataQ serves **56 curated MCP tools** at `https://<your-dataq-host>/mcp/`:
+DataQ serves **59 curated MCP tools** at `https://<your-dataq-host>/mcp/`:
 
-- 32 read-only
+- 35 read-only
 - 18 that change state
 - 6 that open a live datasource connection (gated like writes)
 
@@ -128,7 +132,7 @@ Client setup for Claude, VS Code / Copilot and Cursor: [MCP setup →](https://t
 ## Support, privacy & upgrading
 
 - **Support:** community, best effort — see [SUPPORT.md](.github/SUPPORT.md).
-- **Privacy:** DataQ is self-hosted and sends nothing to its authors — no telemetry, no licence check, no update check ([what can leave a deployment](https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/#what-can-move-data-out)).
+- **Privacy:** DataQ is self-hosted and sends nothing to its authors — no licence check, no update check, and its optional usage telemetry (off by default) goes only to a sink you run ([what can leave a deployment](https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/#what-can-move-data-out)).
 - **Upgrading:** see the [upgrade guide](https://theurgicduke771.github.io/DataQ/docs/latest/operate/upgrading/).
 
 ## Contributing & reference

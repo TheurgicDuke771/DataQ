@@ -2,7 +2,7 @@
 # Override in terraform.tfvars (gitignored) — see terraform.tfvars.example.
 
 variable "project_tag" {
-  description = "Tag applied to all resources (matches the harness/RG convention)."
+  description = "Tag applied to all resources."
   type        = string
   default     = "dataq"
 }
@@ -10,7 +10,7 @@ variable "project_tag" {
 # ── Shared (reused) ──────────────────────────────────────────────────────────
 
 variable "azure_resource_group" {
-  description = "Existing RG shared with the harness. Reused, never destroyed."
+  description = "Existing resource group (create it first). Referenced, never created or destroyed."
   type        = string
   default     = "dataq-rg"
 }
@@ -29,7 +29,7 @@ variable "shared_pg_expected_location" {
 }
 
 
-# ── Shared Postgres (the app's DB lives on the harness's single server) ───────
+# ── Postgres (the app's DB lives on a pre-existing Flexible Server) ───────────
 
 # No default, deliberately.
 variable "shared_pg_server_name" {
@@ -38,7 +38,7 @@ variable "shared_pg_server_name" {
 }
 
 variable "app_db_name" {
-  description = "The app's database on the shared server (distinct from airflow's)."
+  description = "The app's database on the Postgres server (distinct from any other database on it)."
   type        = string
   default     = "dataq"
 }

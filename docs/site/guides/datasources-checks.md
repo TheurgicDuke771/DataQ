@@ -1023,6 +1023,9 @@ target still works everywhere.
   works the same way, its schemas being the databases the user has privileges on, and
   **Trino** inside the connection's catalog, listing what the cluster's access control
   lets the user see. **SQL Server / Azure SQL** likewise, inside the connection's database.
+  **Redshift** lists the schemas the user has `USAGE` on, as PostgreSQL does. **Athena** lists
+  the Glue databases the IAM principal can see; each listing is itself a billed query.
+  **BigQuery** lists the project's datasets through the free metadata API, not a query.
 - **Snowflake — Browse schemas…** lists the schemas of the connection's database, then a
   schema's tables and views, from that database's `INFORMATION_SCHEMA` — already filtered
   to what the connection's role can see.

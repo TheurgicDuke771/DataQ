@@ -99,3 +99,20 @@ def test_env_app_template_llm_reaper_thresholds_match_the_code_default() -> None
         templated.llm_invocation_running_threshold_minutes
         == code_default.llm_invocation_running_threshold_minutes
     )
+
+
+def test_the_env_template_lists_every_setting() -> None:
+    """`.env.app.example` is the complete settings reference (deploy/README.md says so): every
+    `Settings` field has a `KEY=` line in it, live or commented, and no line names a key the app
+    does not read.
+    """
+    import re
+
+    text = (_REPO_ROOT / ".env.app.example").read_text()
+    listed = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", text, re.M))
+    fields = {
+        (f.validation_alias if isinstance(f.validation_alias, str) else name).upper()
+        for name, f in Settings.model_fields.items()
+    }
+    assert sorted(fields - listed) == [], "add these to .env.app.example"
+    assert sorted(listed - fields) == [], "these are not Settings fields"

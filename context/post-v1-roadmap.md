@@ -1,5 +1,10 @@
 # Post-v1 roadmap — the single home for deferred work
 
+> **Status: a historical index, no longer maintained.** It mapped the backlog at the v1 → v1.1
+> transition; most of its themes shipped in v1.1–v1.3. The forward view is
+> [roadmap-v1.2-v1.3.md](roadmap-v1.2-v1.3.md), and open deferred work is the GitHub
+> **`v1.3 Backlog`** milestone. The issue lists below are not kept current.
+
 > **What this is:** the canonical index of everything deliberately deferred past DataQ v1 —
 > design themes (with their detailed design docs) **and** the concrete issue backlog. Every
 > issue on the GitHub **`v1.1 Backlog`** milestone (renamed 2026-07-04 from

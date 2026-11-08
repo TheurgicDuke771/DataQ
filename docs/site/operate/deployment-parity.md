@@ -9,7 +9,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Hosting
 
-| Concern | Azure (primary reference) | AWS (second reference) | Local (compose) |
+| Concern | Azure (reference stack) | AWS (reference stack) | Local (compose) |
 |---|---|---|---|
 | Compute | Container Apps: api / worker / beat / frontend + migrate **job** | ECS Fargate: same four services + migrate **run-task** | docker-compose services |
 | Public surface | Frontend Container App (sole public ingress; api internal-only) | CloudFront → ALB → frontend (the ALB security group admits only the CloudFront managed prefix list; nginx re-verifies an origin-secret header) | `localhost` |
@@ -26,9 +26,11 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all eleven datasource types, every monitor kind,
+The application feature set — suites/checks across all thirteen datasource types, every monitor kind,
 assets/lineage/incidents, alerting, scheduling, the 59-tool MCP server, PATs, rate limiting —
-is the **same code everywhere**. Where the installations genuinely differ:
+is the **same code everywhere**. Where the installations genuinely differ (the *live-verified* and
+*deployed* notes record what was exercised on the project's reference deployments as of the date
+above; both cloud stacks are supported for your own deployment):
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|

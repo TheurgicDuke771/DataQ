@@ -1,5 +1,5 @@
-# The Container Apps environment is SHARED with the harness: this subscription is capped at ONE
-# Container App Environment, so we do NOT create one here.
+# The Container Apps environment is referenced, not created: a free/trial subscription allows ONE,
+# which other workloads may already use (ADR 0024).
 data "azurerm_container_app_environment" "shared" {
   name                = "dataq-cae"
   resource_group_name = data.azurerm_resource_group.dataq.name

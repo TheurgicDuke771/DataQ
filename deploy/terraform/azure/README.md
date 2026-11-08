@@ -1,17 +1,16 @@
 # DataQ — app infra (OpenTofu)
 
-Provisions the DataQ **application's own** production resources into the existing
-`dataq-rg`. Separate from the harness stack
-(`~/Coding/Python/DataQ-harness/terraform`, ADR 0021), **except** for three shared
-resources forced by free/trial subscription caps (1 Container App Environment and
-1 Postgres Flexible Server per subscription — see ADR 0024):
+Provisions DataQ's production resources on Azure. Three resources are **referenced, not
+created** (data sources), because a free/trial subscription allows only one Container Apps
+environment and one Postgres Flexible Server, which other workloads may already use
+(ADR 0024):
 
-- the **subscription** + **resource group** (`dataq-rg`),
-- the **Container Apps environment** `dataq-cae` (neutral name, `purpose=dataq-shared`),
-- the **Postgres Flexible Server** (tagged `purpose=dataq-shared`), named per deployment.
+- the **resource group** (`azure_resource_group`, default `dataq-rg`),
+- the **Container Apps environment**, which must be named `dataq-cae`,
+- the **Postgres Flexible Server** (`shared_pg_server_name`).
 
-Both shared resources are **owned by the harness stack**; this stack only
-*references* them (data sources). Everything the app creates is `dataq-app-*` /
+Create them first if your subscription does not have them yet (see
+[Prerequisites](#prerequisites)). Everything this stack creates is `dataq-app-*` /
 `purpose=dataq-app`; any other resources in the group are untouched.
 
 ## What it creates
@@ -28,8 +27,8 @@ Both shared resources are **owned by the harness stack**; this stack only
 | Azure AD SSO app regs | `dataq-app-api-sso` (API) + `dataq-app-spa` (SPA) |
 | GitHub-deploy app registration | `dataq-github-deploy` (OIDC federated cred) |
 
-**Referenced, not created:** the `dataq-cae` environment and the
-shared Postgres server (both pre-existing). The app's database is a **distinct
+**Referenced, not created:** the resource group, the `dataq-cae` environment and the
+Postgres server. The app's database is a **distinct
 `dataq` database** + least-privilege **`dataq_app`** role on the shared server.
 
 Images (GHCR, public — ACA pulls anonymously, ADR 0023; must exist + be **public**
@@ -45,15 +44,24 @@ before apply):
   extension keep the `terraform` name deliberately: `terraform {}` is OpenTofu's own
   block name and `.tf` its own format. Validated on OpenTofu 1.12.5.
 - `az login` as a subscription **Owner** (registers RPs; creates role assignments,
-  AAD app registrations, and Key Vault secrets). **Do not** `source` the harness
-  `secrets.sh` — that switches the CLI to the harness SP, which lacks Key Vault
-  data-plane rights (403) and isn't the right identity for this stack.
-- The shared Container Apps environment + Postgres server already exist.
+  AAD app registrations, and Key Vault secrets). Use your own login, not a service
+  principal without Key Vault data-plane rights: the apply writes secrets and would 403.
+- The resource group, Container Apps environment and Postgres server exist, all in
+  `azure_location` (a postcondition refuses a mismatch). If they do not:
+
+  ```bash
+  az group create -n dataq-rg -l westus2
+  az containerapp env create -n dataq-cae -g dataq-rg -l westus2
+  # PostgreSQL 16; --public-access 0.0.0.0 adds the allow-Azure-services firewall rule
+  az postgres flexible-server create -n <server> -g dataq-rg -l westus2 --version 16 \
+    --tier Burstable --sku-name Standard_B1ms --admin-user <admin> \
+    --admin-password '<admin password>' --public-access 0.0.0.0
+  ```
 - The GHCR backend **and** frontend images pushed + public.
 - The `dataq` database + `dataq_app` role provisioned (one-off, below).
 - State is **local + gitignored**.
 
-## Shared Postgres — one-off role + database
+## Postgres — one-off role + database
 
 Name the server with **`shared_pg_server_name`** in your `terraform.tfvars`. It is
 **required and has no default**: the server pre-exists and this stack only attaches
@@ -84,12 +92,14 @@ at runtime over the server's allow-Azure-services firewall rule.
 ```bash
 cd deploy/terraform/azure
 tofu init
-# image_tag / frontend_image_tag have no default: pass what prod runs NOW, so any
-# app the apply creates (e.g. dataq-app-beat, #1811) starts on the live image.
-IMG=$(az containerapp show -n dataq-app-worker -g dataq-rg --query 'properties.template.containers[0].image' -o tsv)
-FE=$(az containerapp show -n dataq-app-frontend -g dataq-rg --query 'properties.template.containers[0].image' -o tsv)
+# image_tag / frontend_image_tag have no default. On a FIRST apply, pass a release tag:
+IMG=v1.2.0 FE=v1.2.0
+# On a LATER apply, pass what the deployment runs now, so any app the apply creates
+# (e.g. dataq-app-beat, #1811) starts on the live image rather than an older one:
+#   IMG=$(az containerapp show -n dataq-app-worker -g dataq-rg --query 'properties.template.containers[0].image' -o tsv); IMG=${IMG##*:}
+#   FE=$(az containerapp show -n dataq-app-frontend -g dataq-rg --query 'properties.template.containers[0].image' -o tsv); FE=${FE##*:}
 TF_VAR_app_db_password='<the dataq_app password>' tofu plan -out=azure.plan \
-  -var="image_tag=${IMG##*:}" -var="frontend_image_tag=${FE##*:}"   # review
+  -var="image_tag=$IMG" -var="frontend_image_tag=$FE"   # review
 tofu apply azure.plan
 ```
 
@@ -195,7 +205,7 @@ the off-machine copy in the same session.
 ## Verify
 
 ```bash
-# App resources only — harness untouched:
+# The app's resources only — anything else in the group is untouched:
 az resource list -g dataq-rg --query "[?tags.purpose=='dataq-app'].name" -o tsv
 
 # Frontend up (200) — the public surface. The api has NO public ingress since

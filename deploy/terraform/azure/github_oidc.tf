@@ -19,8 +19,8 @@ resource "azuread_application_federated_identity_credential" "github_deploy" {
   subject = "repo:${var.github_repo}:environment:${var.github_environment}"
 }
 
-# Least privilege: scope Contributor to ONLY the deploy targets, not the whole RG — dataq-rg is
-# SHARED with the harness.
+# Least privilege: scope Contributor to ONLY the deploy targets, not the whole RG — the group may
+# hold other workloads.
 locals {
   github_deploy_targets = {
     api      = azurerm_container_app.api.id
@@ -38,8 +38,8 @@ resource "azurerm_role_assignment" "github_deploy_contributor" {
   principal_id         = azuread_service_principal.github_deploy.object_id
 }
 
-# `az containerapp update --image` / `job start` resolve the app's managed environment (the harness-
-# owned shared dataq-cae); without read there the deploy can 403.
+# `az containerapp update --image` / `job start` resolve the app's managed environment (the
+# referenced dataq-cae); without read there the deploy can 403.
 resource "azurerm_role_assignment" "github_deploy_env_reader" {
   scope                = data.azurerm_container_app_environment.shared.id
   role_definition_name = "Reader"

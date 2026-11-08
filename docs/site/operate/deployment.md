@@ -1,13 +1,13 @@
 # Production deployment
 
 How to stand DataQ up in production. This is the operator's overview; the exhaustive
-provisioning runbook, the OpenTofu stack, and the complete env-var reference live in the
-repository's `deploy/README.md` and
+provisioning runbook and the OpenTofu stack live in the repository's `deploy/README.md` and
 [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure).
-**Azure is the primary reference target; AWS is a second, live-verified reference stack**
+**Azure and AWS are both supported, at the same level** — deploy on either; each has a
+reference OpenTofu stack
 ([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) —
-see [AWS reference deployment](#aws-reference-deployment) below). GCP is planned behind the
-same seams.
+see [AWS reference deployment](#aws-reference-deployment) below). On your own Kubernetes
+cluster, use the [Helm chart](kubernetes.md). GCP is planned behind the same seams.
 
 ## Topology
 
@@ -70,7 +70,7 @@ Run the **pre-deploy** and **post-deploy smoke** checklists in the repository's
   and MCP — MCP must be `401`, **not** `421`); prod docs are gated (`404`); and the api /
   worker / frontend are on the deployed tag with the migrate job `Succeeded`.
 
-> A side-by-side comparison of the three installations — hosting, features, harness,
+> A side-by-side comparison of the three installations — hosting, features,
 > workflow and config differences — lives on the
 > [Deployment parity](deployment-parity.md) page.
 
@@ -164,10 +164,11 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake, ADLS, Athena, Redshift or BigQuery **connection** needs the live service to run against.
-The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
-Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
-SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
+Snowflake, Athena or Redshift **connection** needs the live service to run against. ADLS Gen2,
+Google Cloud Storage and BigQuery also run against their emulators (Azurite, `fake-gcs-server`,
+`goccy/bigquery-emulator`), which is enough to evaluate them. The local-first path keeps flat
+files (local, S3 and S3-compatible stores such as MinIO), Unity Catalog (Databricks Free
+Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino / SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
 to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so `pytest` is green with no cloud credentials of
 any kind.
@@ -184,5 +185,6 @@ any kind.
   seeded environment). Remove them before any customer-facing use — see the deploy
   README's operational notes.
 
-For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
-the checklists — see the repository's `deploy/README.md`.
+For the full runbook — one-time provisioning, SSO setup, and the checklists — see the
+repository's `deploy/README.md`. Every setting the app reads, with its default, is listed in
+[`.env.app.example`](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example).

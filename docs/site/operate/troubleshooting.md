@@ -65,6 +65,25 @@ shows a **redaction-safe reason** — one of:
 distinct from data failures: `error` = the check couldn't be evaluated (e.g. a missing
 column); `skip` = a precondition wasn't met (e.g. a batch file hasn't landed yet).
 
+**A check reports "A query ran longer than the datasource query limit".** Every query DataQ
+sends a SQL datasource carries a wall-clock limit, `DATASOURCE_QUERY_TIMEOUT_S` (default 1800
+seconds), applied through the engine's own setting, and this one hit it and was cancelled.
+Narrow the check or the run target (a sample, a smaller table), or raise the setting if the
+query legitimately needs longer. Keep it under `STUCK_RUN_THRESHOLD_MINUTES`. A lower limit
+the datasource already gives DataQ's user (a role, user, account, warehouse or workspace
+setting) is kept and can be the one that fired. On Snowflake and Unity Catalog, a warehouse
+that refuses the setting is logged as `query_limit_not_applied` and its queries run without it.
+
+**A run reads *Nothing evaluated*.** Every check in the suite was disabled or skipped, so the
+run verified nothing. It is not counted as a pass: the pipeline gate answers `error` for it,
+and it does not count toward the dashboard's *Assets watched*. Enable a check, or fix what made
+them skip (for example a batch file that has not landed).
+
+**A run says some results were removed.** Checks were deleted after the run finished, which
+deletes their results. The outcome shown (checks passed, worst severity) is the one recorded
+when the run finished, so it still counts them; the API returns the count as
+`results_removed`.
+
 **`checks_total` reads 0 / `—`.** A run that failed before any check executed evaluated
 nothing, so its data-quality outcome is empty — that's truthful, distinct from the suite's
 defined check count shown on the progress view.
@@ -92,6 +111,11 @@ runs. See [Scheduling](../guides/scheduling.md).
 `(provider, pipeline/DAG/job, env)` exactly, and that the webhook is configured (or the
 10-minute poll fallback can reach the artifacts/REST API). Failure events **alert but never
 trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
+
+**An ADF alert arrived but started no poll.** A fired Azure Monitor alert older than
+`ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the future, or without a fired time
+is acknowledged and ignored, so a replayed or stale alert cannot start work. The regular
+ten-minute poll still records the pipeline run.
 
 ## Alerts
 
