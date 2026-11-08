@@ -644,3 +644,26 @@ def test_the_same_account_name_in_two_clouds_is_two_assets() -> None:
         )
     }
     assert len(namespaces) == 3
+
+
+@pytest.mark.parametrize(
+    ("target", "name"),
+    [
+        ({"prefix": "orders/", "pattern": r"orders_(\d{4}-\d{2}-\d{2})\.csv"}, "orders/"),
+        ({"prefix": "sales/", "pattern": r"orders_(\d+)\.csv"}, "sales/"),
+        # A pattern that already spells the prefix out is not prefixed twice.
+        ({"prefix": "retail/", "pattern": r"retail/orders_(\d+)\.csv"}, "retail/"),
+        ({"prefix": "retail/", "pattern": r"(\d+)\.csv"}, "retail/"),
+        ({"prefix": "a/b/", "pattern": r"c/d_(\d+)"}, "a/b/c/"),
+    ],
+)
+def test_a_batch_target_name_includes_its_listing_prefix(target: dict[str, str], name: str) -> None:
+    # #2481: the prefix used to be ignored, so `orders/` and `sales/` batches with the same file
+    # pattern resolved to one asset.
+    for conn_type in ("s3", "gcs", "adls_gen2"):
+        config = (
+            {"account_url": "https://mylake.dfs.core.windows.net", "container": "raw"}
+            if conn_type == "adls_gen2"
+            else {"bucket": "b"}
+        )
+        assert resolve_asset_identity(conn_type, config, target).name == name
