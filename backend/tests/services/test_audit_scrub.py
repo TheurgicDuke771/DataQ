@@ -309,7 +309,7 @@ def test_a_scrub_from_before_the_anchor_began_is_not_judged(
 ) -> None:
     store = _Store()
     target = _event(db_session, after={"config": _HELD})
-    monkeypatch.setattr(audit_scrub, "get_tamper_anchor", lambda: _Anchor())
+    monkeypatch.setattr(audit_scrub, "get_tamper_anchor", _Anchor)
     audit_scrub.scrub_event(db_session, target.id, actor=None, reason="r")
     db_session.commit()
     anchor = ObjectLockAnchor(store, prefix="audit-anchors", retention_days=30)
