@@ -186,7 +186,14 @@ export interface Check {
   enabled?: boolean;
   /** Workspace labels, sorted by name; absent on older payloads. */
   tags?: string[];
+  /** Columns whose `config.value_set` is withheld (each value reads `<redacted>`) because the
+   *  column is classified as sensitive now. A config still holding `<redacted>` is refused on
+   *  save; leaving `config` out keeps the stored values. */
+  redacted_columns?: string[];
 }
+
+/** What a withheld value reads as (`config.value_set` of a check on a sensitive column). */
+export const WITHHELD_VALUE = '<redacted>';
 
 export async function listChecks(suiteId: string): Promise<Check[]> {
   const { data } = await api.get<Check[]>(apiPath`/suites/${suiteId}/checks`);

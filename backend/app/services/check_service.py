@@ -96,6 +96,7 @@ from backend.app.services.custom_sql import (
 from backend.app.services.monitor_baseline import get_baseline as _get_monitor_baseline
 from backend.app.services.run_target import SuiteTargetInvalidError, resolve_target
 from backend.app.services.suite_service import get_suite
+from backend.app.services.value_set_redaction import reject_masked_value_set
 
 log = get_logger(__name__)
 
@@ -966,6 +967,7 @@ def create_check(
     """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
+    reject_masked_value_set(config)
     try:
         coverage_settings_service.validate_new_check(config, kind=kind, origin=origin)
     except coverage_settings_service.InheritEditError as exc:
@@ -1307,6 +1309,7 @@ def update_check(
     check must be able to return to.
     """
     check = get_check(session, suite_id, check_id)
+    reject_masked_value_set(config)
     # Before any field below is mutated.
     audit_before = audit_service.snapshot("check", check)
     definition_untouched = all(

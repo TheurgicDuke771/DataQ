@@ -2909,6 +2909,31 @@
             "title": "Origin",
             "type": "string"
           },
+          "redacted_columns": {
+            "description": "Columns whose `config.value_set` is withheld: the column is classified as sensitive now, so each value reads as `<redacted>`. Saving a config that still holds `<redacted>` is refused (422 `value_set_redacted`): send the full real list, or leave `config` out to keep the stored values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "description": "Per withheld column, the rule that classified it.",
+            "title": "Redaction Reasons",
+            "type": "object"
+          },
           "source_connection_id": {
             "anyOf": [
               {
@@ -3334,6 +3359,30 @@
               }
             ],
             "title": "Redacted By Name"
+          },
+          "redacted_columns": {
+            "description": "As on a check: a `config.value_set` withheld because its column is sensitive now. Restoring the version still restores the real values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "title": "Redaction Reasons",
+            "type": "object"
           },
           "source_connection_id": {
             "anyOf": [
