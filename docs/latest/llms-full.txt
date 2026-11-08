@@ -5779,6 +5779,10 @@ section below.
 
 ### Fixed
 
+- **Filtering the audit log by entity type now works for every type DataQ records.** Run, result,
+  contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
+  events were refused with "unknown entity_type", although the log holds them. They can now be
+  filtered like any other type.
 - **A check's accepted values over a column marked sensitive are no longer shown.** When a
   column a value-set check tests is classified as sensitive after the check was written (the
   suite's column policy, a warehouse tag, fail-closed mode or the PII classifier), each value now
