@@ -292,6 +292,14 @@ section below.
 - **The comparison-report download is described correctly in the API reference.** It was documented as returning JSON, so the generated Python client failed on every download; the reference now lists its CSV and XLSX media types and the client returns the downloaded file.
 - **Run detail shows readable numbers.** The failing-rows percent and the Metric column are rounded to three significant figures (a value too small to show reads `<0.001`), with the exact value in the hover title and unchanged in exports.
 - **Metric trend charts no longer clip their y-axis labels.** Axis ticks are compact (`2.1K`, `0.06`) and the axis sizes itself to fit.
+- **Flat-file batches in different folders are no longer merged into one asset.** A batch
+  target's asset name (ADLS Gen2, S3, GCS) ignored the target's prefix, so two suites reading
+  `orders/` and `sales/` with similar file patterns shared one asset, mixing their scorecards,
+  lineage and incidents. The name now includes the prefix (`orders/`, `sales/`). The upgrade
+  re-keys existing assets: an asset used by a single folder is renamed in place and keeps its
+  history and settings; a merged asset is split, and each suite moves to its folder's asset with
+  the runs and incidents it recorded. Lineage edges and detected column classifications of a
+  split asset stay on the old one until the next lineage pull and profile.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
