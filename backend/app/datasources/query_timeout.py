@@ -1,14 +1,22 @@
 """The one wall-clock limit on a query DataQ sends a SQL datasource (#2496).
 
 Each generic SQL engine applies `query_timeout_s` through its own mechanism where it builds a
-session (its `connect_args`, or `SqlEngineSpec.query_timeout_setup` once connected). A query that
-hits it fails with the engine's own error, which `is_query_timeout` recognises so the run reports
-`query_timeout_message` instead of an opaque driver error.
+session (its `connect_args`, or `SqlEngineSpec.query_timeout_setup` once connected). Snowflake and
+Unity Catalog sessions are also built inside GX, so they are limited by `register_session_limit`
+on every new connection instead (#2607). A query that hits the limit fails with the engine's own
+error, which `is_query_timeout` recognises so the run reports `query_timeout_message` instead of
+an opaque driver error.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from backend.app.core.errors import SafeMonitorError
+from backend.app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 SETTING = "DATASOURCE_QUERY_TIMEOUT_S"
 
@@ -29,6 +37,11 @@ _MARKERS: tuple[str, ...] = (
     "query timeout expired",
     # BigQuery (`job_timeout_ms`).
     "job timed out after",
+    # Snowflake 000630 (`STATEMENT_TIMEOUT_IN_SECONDS`, session or warehouse).
+    "reached its statement or warehouse timeout",
+    # Databricks SQL QUERY_EXECUTION_TIMEOUT_EXCEEDED (`STATEMENT_TIMEOUT`).
+    "query_execution_timeout_exceeded",
+    "query execution was cancelled due to exceeding the timeout",
     # DataQ-raised: the Athena poll limit.
     SETTING.lower(),
 )
@@ -78,3 +91,39 @@ def is_query_timeout(exc: BaseException) -> bool:
             return True
         current = current.__cause__ or current.__context__
     return False
+
+
+SessionLimitSetup = Callable[[Any, int], None]
+
+# Engine name -> the DBAPI module prefix it matches; one listener each, however often registered.
+_REGISTERED: dict[str, str] = {}
+
+
+def apply_session_limit(dbapi_connection: Any, setup: SessionLimitSetup, *, engine: str) -> None:
+    """Run ``setup`` on a fresh connection. A failure leaves the session without the limit and is
+    logged rather than raised: these engines cannot be exercised here (#2224), and a statement
+    one warehouse rejects must not fail every run on it.
+    """
+    try:
+        setup(dbapi_connection, query_timeout_s())
+    except Exception as exc:
+        log.warning("query_limit_not_applied", engine=engine, error_type=type(exc).__name__)
+
+
+def register_session_limit(engine: str, dbapi_module: str, setup: SessionLimitSetup) -> None:
+    """Apply the query limit to every new DBAPI connection whose class lives under
+    ``dbapi_module``, whoever built the SQLAlchemy engine (GX builds its own). Idempotent.
+    """
+    if engine in _REGISTERED:
+        return
+    from sqlalchemy import event
+    from sqlalchemy.pool import Pool
+
+    prefix = dbapi_module + "."
+
+    def _on_connect(dbapi_connection: Any, _record: Any) -> None:
+        if type(dbapi_connection).__module__.startswith(prefix):
+            apply_session_limit(dbapi_connection, setup, engine=engine)
+
+    event.listen(Pool, "connect", _on_connect)
+    _REGISTERED[engine] = dbapi_module

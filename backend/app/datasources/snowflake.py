@@ -33,6 +33,7 @@ from backend.app.datasources.gx_runner import (
     to_suite_outcome,
 )
 from backend.app.datasources.monitors import AGGREGATE, FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.query_timeout import register_session_limit
 from backend.app.datasources.snowflake_dmf import (
     DMF_ENGINE,
     evaluate_dmf_check,
@@ -138,6 +139,26 @@ def build_connect_args(config: SnowflakeConfig, secret: str) -> dict[str, Any]:
     if config.auth_type == "key_pair":
         return {"private_key": _private_key_der(secret)}
     return {}
+
+
+def _query_timeout_setup(dbapi_connection: Any, seconds: int) -> None:
+    """`STATEMENT_TIMEOUT_IN_SECONDS` for the session (#2607). A session value replaces the user's
+    and account's, so a lower one inherited from either is kept; a warehouse's own limit still
+    applies beside it (Snowflake enforces the lower of the two). 0 means none.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("SHOW PARAMETERS LIKE 'STATEMENT_TIMEOUT_IN_SECONDS' IN SESSION")
+        row = cursor.fetchone()
+        inherited = int(row[1]) if row is not None and str(row[1]).isdigit() else 0
+        limit = int(seconds) if not inherited else min(inherited, int(seconds))
+        cursor.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {limit}")
+    finally:
+        cursor.close()
+
+
+# Every Snowflake session, including the ones GX builds for a run, carries the query limit.
+register_session_limit("snowflake", "snowflake.connector", _query_timeout_setup)
 
 
 # GX's compound_columns_unique metric — and the unexpected_index_column_names lookup every

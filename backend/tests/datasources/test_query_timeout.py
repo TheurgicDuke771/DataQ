@@ -297,6 +297,15 @@ _ENGINE_ERRORS = [
     ),
     "('HYT00', '[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]Query timeout expired (0)')",
     "Job execution was cancelled: Job timed out after 7 sec",
+    (
+        "(snowflake.connector.errors.ProgrammingError) 000630 (57014): Statement reached its "
+        "statement or warehouse timeout of 2 second(s) and was canceled."
+    ),
+    (
+        "(databricks.sql.exc.ServerOperationError) [QUERY_EXECUTION_TIMEOUT_EXCEEDED] Query "
+        "execution was cancelled due to exceeding the timeout (2s). You can increase the limit "
+        "in seconds by setting STATEMENT_TIMEOUT. SQLSTATE: 57KD0"
+    ),
 ]
 
 
