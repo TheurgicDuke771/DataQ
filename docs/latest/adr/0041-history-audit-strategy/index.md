@@ -113,7 +113,7 @@ An audit payload is a **JSONB write that never passes through structlog**, so CL
 
 ### 7. Append-only is a guard against accidental mutation — **not** tamper-resistance, and the difference is recorded
 
-No UPDATE or DELETE code path in the app, **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
+No UPDATE or DELETE code path in the app (one deliberate exception since 2026-11-08: the audited payload scrub, amendment at the end of §9), **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
 
 **What that buys, stated honestly, because an earlier draft of this section overclaimed it.** The deployed app owns its schema: the Azure stack creates the database `OWNER dataq_app` and hands the migrate job the *same* `DATABASE_URL` as the api and worker, so Alembic will create `audit_events` owned by `dataq_app` — and a table's owner can `GRANT` the privileges back in one statement, or `TRUNCATE`/`DROP` it regardless of any grant. The REVOKE therefore stops an accidental in-app `UPDATE`/`DELETE` (a stray ORM call, a careless bulk statement) and nothing stronger. It is worth doing and it is not tamper-evidence.
 
@@ -298,3 +298,105 @@ unit-tested against the SDK's documented call shape only, and the docs say so.
 Still out of scope: alerting on a detected break or mismatch beyond the ERROR
 log and the admin surface; a per-object retention read-back (the payload records
 `retain_until`, the store's own retention is not re-queried).
+
+### Amendment (2026-11-08) — the audited payload scrub
+
+**Problem.** Redacting a check version (ADR 0020 amendment, 2026-10-25) empties that
+snapshot's `config`, but the `check.create` / `check.update` / `check.restore` /
+`check.delete` events that carried the same value keep it in `before`/`after`, because
+`_CHECK_FIELDS` includes `config`. Deleting a check cascades its versions, so the version
+redaction cannot reach a deleted check's history at all. Connection payloads carry no config
+and are not affected.
+
+**Decision: one deliberate exception to append-only, a scrub of named payload paths.** The
+row stays, along with every hashed column except the scrubbed values. Each scrub is a chained
+audit event. When an anchor is configured, each scrub is also published to it. Decision 7's
+"no UPDATE or DELETE code path" becomes "no UPDATE code path except the scrub, and no DELETE
+code path except retention".
+
+1. **What can be scrubbed is an allow-list, per entity type: `check` → `config`, on either
+   side.** A scrubbed `config` keeps `KEPT_CHECK_KEYS` (the tested `column`), exactly as a
+   redacted version does, so masking and data-subject searches still find the event. The
+   action, entity, actor, timestamps and every other payload key are never scrubbable. A new
+   path needs an amendment, not a config switch.
+2. **Two ways in.**
+   - **Automatically, with a version redaction.** In the same transaction,
+     `redact_check_version` scrubs every `check` event for that check whose `before.config`
+     or `after.config` equals the version's config as it was before it was emptied. That
+     covers the event that wrote the value and the one that edited it out. Matching is on the
+     serialized value the audit payload stores; the build proves the version snapshot and the
+     audit serializer produce the same JSON for every check kind.
+   - **Directly, by a workspace admin, one event at a time**
+     (`POST /admin/audit-events/{id}/scrub`, with a required reason). This covers what the
+     automatic path cannot reach: a deleted check, and versions redacted before this shipped,
+     whose config is already gone, so there is nothing left to match on.
+
+   The automatic path rides the version redaction's own gate (the suite's owner or admin).
+   That widens who can change the audit log beyond workspace admins. The scope is one check's
+   events, and only a value equal to the one being redacted, which the actor could already
+   read. The direct path is admin-only, like reading the log.
+3. **The flag is a column, never a marker inside the JSONB**, the same rule as the
+   version-redaction amendment. A nullable `scrubbed_at` column is added for display, so the
+   audit page can say "scrubbed". Verification never trusts that column (see 4).
+4. **The hash chain and anchors keep verifying, because `row_hash` is never rewritten.**
+   - **Precondition.** The scrub refuses a row whose content does not currently recompute
+     to its stored `row_hash`, so it cannot launder a row that was already tampered with.
+   - **The `audit.scrub` event.** It is chained like any event, with
+     `entity_type = 'audit_event'` and `entity_id` = the target. It records:
+     - the target's `row_hash`;
+     - the scrubbed paths;
+     - the **residual hash**: `compute_row_hash` over the row as it is after the scrub;
+     - the reason.
+
+     It never records the value.
+   - **What `verify_chain` checks.** A row whose content no longer recomputes to its
+     `row_hash` is not a break if two things hold:
+     1. the latest `audit.scrub` event naming that row records the same `row_hash`;
+     2. the row's current content recomputes to that event's residual hash.
+
+     The links (`prev_hash`) and every anchored head are untouched, because `row_hash` is
+     unchanged. A scrubbed row counts as verified and is also reported in a new
+     `scrubbed_count`, so an operator can see how many rows rely on a scrub record rather than
+     their own hash. Anything else is still a break, including a column changed beside the
+     scrubbed path.
+5. **Each scrub is published to the anchor, which closes the gap a scrub record opens.**
+   - **The gap.** A scrubbed row is vouched for by its scrub event, not its original hash.
+     An actor with direct database write access, the §9 threat model, could edit any field of
+     an anchored row and append a forged `audit.scrub` event whose residual matches the edit.
+     The chain alone cannot tell that from a real scrub.
+   - **The receipt.** Each scrub therefore publishes a receipt through the `TamperAnchor`
+     seam after it commits: target id, original `row_hash`, residual hash, scrub event id.
+     It uses a new `publish_scrub` method beside `publish`, because a head's payload has no
+     place for a target id. A forged scrub event has no receipt, because the receipt
+     lives under different control than the database.
+   - **`object_lock`.** `verify_anchors` reads receipts back. It reports a scrub event with
+     no receipt as `unanchored_scrub` and a receipt with no scrub event as `orphan_receipt`.
+     The daily `verify_audit_chain` task logs the first at ERROR.
+   - **`webhook`.** The sink holds the receipts for an auditor; DataQ cannot read them back,
+     the same as for heads.
+   - **`none`.** A scrub is exactly as trustworthy as the database, the posture §9 already
+     states for an unanchored chain.
+   - **A publish failure never blocks the scrub.** It is logged at ERROR. Erasing a value
+     that should not be held is the obligation, the same trade retention makes.
+6. **The privilege is granted per transaction, not permanently.** The scrub runs
+   `GRANT UPDATE (before, after, scrubbed_at) ON audit_events TO CURRENT_USER`, the UPDATE,
+   then the REVOKE, all in one transaction, mirroring retention's DELETE. A stray ORM update
+   to a payload still fails at any other moment. This is a guard against accident, not
+   against the owner, for the reasons decision 7 already records.
+7. **Retention needs no change.** A scrub event is always newer than the row it names, so
+   retention purges the target first. A purged scrub event can never leave a live scrubbed
+   row unexplained.
+
+**Alternatives considered.**
+- **A commitment hash scheme for new rows.** Each scrubbable value would be hashed as a
+  salted digest, so a scrub deletes the value and its salt and verification stays
+  self-contained. Rejected: it does not help any existing row, which is the backlog this
+  exists for, and it leaves two hash schemes to verify forever. The residual hash plus
+  receipt covers old and new rows the same way.
+- **Re-hashing the chain forward from the scrubbed row.** Rejected: it invalidates every
+  anchored head after it, which is exactly the signature of the tamper the anchor exists to
+  catch.
+
+**Out of scope.** G2's payload erasure. `actor_label` is unhashed and is pseudonymized in
+place by its own path (decision 6.5). A future erasure of payload PII would add paths to the
+allow-list in 1 through its own amendment, reusing this mechanism.

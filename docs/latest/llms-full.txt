@@ -13938,7 +13938,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0038](0038-dq-dimension-classification.md) | DQ-dimension classification on checks — **seven canonical dimensions** (accuracy/completeness/consistency/integrity/timeliness/uniqueness/validity) as a **closed** vocabulary via table `CHECK`, not a Postgres ENUM (no `ALTER TYPE` friction) and not free text (unbounded values destroy coverage reporting); **derived default → stored → overridable at any time** (stored so the scorecard aggregates in SQL and an override survives); derivation is **deliberately partial** — `accuracy`/`integrity` are never derived and custom SQL has no answer, so **NULL means unclassified** and the scorecard must render it as a gap; **existing rows ARE backfilled** (migration `a7b8c9d0e1f2`; §5 **amended 2026-07-19** — the backfill cannot overwrite a human decision because none existed yet when it ran, while leaving them NULL made the scorecard useless on day one; unmapped types stay NULL); `dimension` ⊥ `kind` ⊥ `engine`; narrows 0036 §4 — lands the derivation map as the backend catalog's seed without moving the frontend catalog server-side, since no native engine exists yet | Accepted |
 | [0039](0039-openbao-self-hosted-secret-backend.md) | Self-hosted secret backend — a fourth `SecretStore` speaking the **KV v2 HTTP API, not a vendor SDK** (one mode serves OpenBao / Vault Community / Enterprise / HCP; no HashiCorp lock-in traded for the Azure one); **OpenBao** (MPL-2.0, LF fork of pre-BUSL Vault 1.14) is the shipped/tested/pinned server — Vault Community is BUSL-1.1 and rule-40-forbidden as a *distributed* component, supported as a *target*; **`SECRET_STORE=openbao` replaces `redis` and `RedisSecretStore` is deleted** (plaintext credentials were the default of the published eval stack), with a loud one-cycle `RuntimeError` shim, **Redis stays** for broker + rate-limit counters; token auth phase 1 (AppRole deferred/filed), dev-mode token generated into the gitignored `.env`; Azure Key Vault remains the prod default (managed identity beats a held token), OpenBao is the BYOL/cloud-neutral option; **an outage is never reportable as a state** — new `SecretStoreUnavailableError`, deliberately NOT a `SecretNotFoundError` subclass, since every caller branches on the TYPE and none reads the message (a sealed vault otherwise renders "not set" on the admin page, skips alert delivery silently, and runs connections with the credential omitted); no status is silent (400=KV v1 mount, 401=gateway, 429=HCP throttle); **`AzureKeyVaultStore` had the same defect since Week 2** and is fixed too (the same invisible-degradation shape seen before); `delete` purges via KV v2 **metadata** delete, fail-soft | Accepted |
 | [0040](0040-warehouse-inventory-sync-table-enumeration-seam.md) | Warehouse inventory sync + the **table-enumeration seam** — one per-datasource `enumerate_tables` capability (Snowflake/UC `information_schema`, engine-native case = the identity-safe path, connection-database scoping, ephemera/system schemas excluded) feeding three consumers: **inventory sync** (opt-in per connection, daily crontab beat, `upsert_assets(preserve_provenance=True)` so `last_seen` advancement keeps live tables out of the orphan sweep and dropped tables age out through it — no new column, no new guard; no "discovered" badge, ADR 0037's neutral unmonitored rendering IS the marker), **GET_LINEAGE seeds**, and future pickers; `ASSET_INVENTORY_MAX_TABLES` cap (default 2000) with loud truncation; **decided**: S3 namespace stays `s3://{bucket}` for AWS, becomes `s3://{host[:port]}/{bucket}` only when `endpoint_url` is set | Accepted |
-| [0041](0041-history-audit-strategy.md) | History & audit posture for v1.x+ (amends 0020) — **one append-only `audit_events` table** (actor/action/entity/before/after/ts) recording **deliberate acts by a principal only**, with `entity_id` deliberately **FK-less** so the row outlives the entity it describes (an FK would either cascade the audit away or block the delete); the data-**read** audit (gap G1) is **phase 2 on the same table**, discriminated by `action_class` — not a second table — with the opposite latency contract (phase 1 writes inside the mutation's transaction, fail-closed; phase-2 reads must stay off the critical path); **(a) preserving `check_versions` past delete rejected** — `RESTRICT` makes checks undeletable, `SET NULL` orphans rows needing self-contained identity (a worse audit log scoped to one entity), tombstone = soft-delete for one table — the audit log's delete event answers it instead and **cascade stands**; **(b) soft-delete re-deferred** on a narrowed argument (its headline motivation is already met — an earlier 409 guard means a connection can no longer be deleted out from under its runs; the column is the easy part vs. "deleted means inert" for live credentials/bindings/schedules; and a delete-that-doesn't-delete fights the G2 Art-17 erasure work), mitigated by a follow-up blast-radius confirmation; **(d) SCD-2 closed permanently**, not deferred; Type-4 tables stay the **product** surface (version drawer/restore), the audit log is the **durable record**; payloads are **per-entity allow-lists** reusing the snapshot builders, never `dict(row)`, never a secret value, never `sample_failures`/`observed_value`, and reuse only the **credential subset** of `_PII_KEYS` (the full set redacts `name`/`display_name`/`user_id` — the very content of a rename and the point of the actor record); append-only via `REVOKE UPDATE, DELETE` — **a guard against accidental in-app mutation, explicitly NOT tamper-resistance** (`dataq_app` owns the table and can re-grant; splitting the role is rejected because the single-role model is the whole mitigation for the unpatched Postgres RI owner-cast escalation, so real tamper-evidence needs the G1 external anchor); coverage guarded off FastAPI's **route table**, not an audit registry (the ADR-0039 tautology) | Accepted (phase-1 build; follow-ups filed; amended 2026-10-20 — the second `TamperAnchor` class, S3 Object Lock / Azure immutable blob, with read-back verification) |
+| [0041](0041-history-audit-strategy.md) | History & audit posture for v1.x+ (amends 0020) — **one append-only `audit_events` table** (actor/action/entity/before/after/ts) recording **deliberate acts by a principal only**, with `entity_id` deliberately **FK-less** so the row outlives the entity it describes (an FK would either cascade the audit away or block the delete); the data-**read** audit (gap G1) is **phase 2 on the same table**, discriminated by `action_class` — not a second table — with the opposite latency contract (phase 1 writes inside the mutation's transaction, fail-closed; phase-2 reads must stay off the critical path); **(a) preserving `check_versions` past delete rejected** — `RESTRICT` makes checks undeletable, `SET NULL` orphans rows needing self-contained identity (a worse audit log scoped to one entity), tombstone = soft-delete for one table — the audit log's delete event answers it instead and **cascade stands**; **(b) soft-delete re-deferred** on a narrowed argument (its headline motivation is already met — an earlier 409 guard means a connection can no longer be deleted out from under its runs; the column is the easy part vs. "deleted means inert" for live credentials/bindings/schedules; and a delete-that-doesn't-delete fights the G2 Art-17 erasure work), mitigated by a follow-up blast-radius confirmation; **(d) SCD-2 closed permanently**, not deferred; Type-4 tables stay the **product** surface (version drawer/restore), the audit log is the **durable record**; payloads are **per-entity allow-lists** reusing the snapshot builders, never `dict(row)`, never a secret value, never `sample_failures`/`observed_value`, and reuse only the **credential subset** of `_PII_KEYS` (the full set redacts `name`/`display_name`/`user_id` — the very content of a rename and the point of the actor record); append-only via `REVOKE UPDATE, DELETE` — **a guard against accidental in-app mutation, explicitly NOT tamper-resistance** (`dataq_app` owns the table and can re-grant; splitting the role is rejected because the single-role model is the whole mitigation for the unpatched Postgres RI owner-cast escalation, so real tamper-evidence needs the G1 external anchor); coverage guarded off FastAPI's **route table**, not an audit registry (the ADR-0039 tautology) | Accepted (phase-1 build; follow-ups filed; amended 2026-10-20 — the second `TamperAnchor` class, S3 Object Lock / Azure immutable blob, with read-back verification; amended 2026-11-08 — an audited scrub of a check event's `config`, the one exception to append-only, verified by a chained scrub event and an anchored receipt) |
 | [0042](0042-llm-provider-seam.md) | `LLMProvider` seam — outbound LLM for authoring assistance (NL→SQL generation, check suggestions, future RCA narrative), **admin-configured, BYO credential, default-OFF**; two wire impls only (`anthropic` official SDK + `openai_compatible` httpx — the latter covers Azure OpenAI, Bedrock chat-completions, and local Ollama/vLLM/TGI; no model server in the image per 0025); structured output is a `native \| prompt_json` capability ladder and **never a trust boundary** — callers re-validate, generated SQL rides the 0019 validator + dry-run, suggestions the server-side allowlist; config = `llm_settings` DB singleton behind `require_workspace_admin`, API key write-only in `SecretStore` with the credential-destination re-supply rule on `base_url`; execution worker-side through `llm_invocations` (poll + audit + token/cost record; G4 posture reads it); prompt context = schema + masked aggregate profiler stats only, never sample rows; rejected: proxying a vendor key we own, bundling weights, MCP exposure, per-feature providers | Accepted |
 | [0043](0043-in-app-workspace-membership.md) | In-app workspace membership — one `workspace_members` table an admin manages from Admin → Members; **empty table = today's behaviour, non-empty = member if in the env allowlist OR the table**, checked on every request at four points (`_upsert_user`, OTP session resolve, PAT resolve, OTP eligibility) so removing someone stops their browser session and their PATs on the next request; env allowlists become a starting seed plus an emergency way in that can only grant (OTP mode still needs a non-empty one to boot); the first row imports every existing user as a **provisional** member shown for review, never a silent backfill; last-admin removal refused, self-removal confirmed; `initial_role` applies only when the user row is first created; the IdP account stays a prerequisite — DataQ controls its own door only; REST denies with 403, `/mcp` with 401 | Accepted |
 | [0044](0044-mssql-tds-driver-and-entra-auth.md) | MSSQL / T-SQL adapter driver + auth — **`python-tds` + `sqlalchemy-pytds` (MIT, pure Python, FEDAUTH token) by default** for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); **Fabric SQL endpoints via an optional ODBC lane** (`mssql+pyodbc` when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic `mssql` type with `sql` / `entra_service_principal` auth, `destination_fields` host/port/tenant_id/auth_type | Accepted |
@@ -18733,7 +18733,7 @@ An audit payload is a **JSONB write that never passes through structlog**, so CL
 
 ### 7. Append-only is a guard against accidental mutation — **not** tamper-resistance, and the difference is recorded
 
-No UPDATE or DELETE code path in the app, **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
+No UPDATE or DELETE code path in the app (one deliberate exception since 2026-11-08: the audited payload scrub, amendment at the end of §9), **plus** `REVOKE UPDATE, DELETE ON audit_events FROM dataq_app`.
 
 **What that buys, stated honestly, because an earlier draft of this section overclaimed it.** The deployed app owns its schema: the Azure stack creates the database `OWNER dataq_app` and hands the migrate job the *same* `DATABASE_URL` as the api and worker, so Alembic will create `audit_events` owned by `dataq_app` — and a table's owner can `GRANT` the privileges back in one statement, or `TRUNCATE`/`DROP` it regardless of any grant. The REVOKE therefore stops an accidental in-app `UPDATE`/`DELETE` (a stray ORM call, a careless bulk statement) and nothing stronger. It is worth doing and it is not tamper-evidence.
 
@@ -18918,6 +18918,108 @@ unit-tested against the SDK's documented call shape only, and the docs say so.
 Still out of scope: alerting on a detected break or mismatch beyond the ERROR
 log and the admin surface; a per-object retention read-back (the payload records
 `retain_until`, the store's own retention is not re-queried).
+
+### Amendment (2026-11-08) — the audited payload scrub
+
+**Problem.** Redacting a check version (ADR 0020 amendment, 2026-10-25) empties that
+snapshot's `config`, but the `check.create` / `check.update` / `check.restore` /
+`check.delete` events that carried the same value keep it in `before`/`after`, because
+`_CHECK_FIELDS` includes `config`. Deleting a check cascades its versions, so the version
+redaction cannot reach a deleted check's history at all. Connection payloads carry no config
+and are not affected.
+
+**Decision: one deliberate exception to append-only, a scrub of named payload paths.** The
+row stays, along with every hashed column except the scrubbed values. Each scrub is a chained
+audit event. When an anchor is configured, each scrub is also published to it. Decision 7's
+"no UPDATE or DELETE code path" becomes "no UPDATE code path except the scrub, and no DELETE
+code path except retention".
+
+1. **What can be scrubbed is an allow-list, per entity type: `check` → `config`, on either
+   side.** A scrubbed `config` keeps `KEPT_CHECK_KEYS` (the tested `column`), exactly as a
+   redacted version does, so masking and data-subject searches still find the event. The
+   action, entity, actor, timestamps and every other payload key are never scrubbable. A new
+   path needs an amendment, not a config switch.
+2. **Two ways in.**
+   - **Automatically, with a version redaction.** In the same transaction,
+     `redact_check_version` scrubs every `check` event for that check whose `before.config`
+     or `after.config` equals the version's config as it was before it was emptied. That
+     covers the event that wrote the value and the one that edited it out. Matching is on the
+     serialized value the audit payload stores; the build proves the version snapshot and the
+     audit serializer produce the same JSON for every check kind.
+   - **Directly, by a workspace admin, one event at a time**
+     (`POST /admin/audit-events/{id}/scrub`, with a required reason). This covers what the
+     automatic path cannot reach: a deleted check, and versions redacted before this shipped,
+     whose config is already gone, so there is nothing left to match on.
+
+   The automatic path rides the version redaction's own gate (the suite's owner or admin).
+   That widens who can change the audit log beyond workspace admins. The scope is one check's
+   events, and only a value equal to the one being redacted, which the actor could already
+   read. The direct path is admin-only, like reading the log.
+3. **The flag is a column, never a marker inside the JSONB**, the same rule as the
+   version-redaction amendment. A nullable `scrubbed_at` column is added for display, so the
+   audit page can say "scrubbed". Verification never trusts that column (see 4).
+4. **The hash chain and anchors keep verifying, because `row_hash` is never rewritten.**
+   - **Precondition.** The scrub refuses a row whose content does not currently recompute
+     to its stored `row_hash`, so it cannot launder a row that was already tampered with.
+   - **The `audit.scrub` event.** It is chained like any event, with
+     `entity_type = 'audit_event'` and `entity_id` = the target. It records:
+     - the target's `row_hash`;
+     - the scrubbed paths;
+     - the **residual hash**: `compute_row_hash` over the row as it is after the scrub;
+     - the reason.
+
+     It never records the value.
+   - **What `verify_chain` checks.** A row whose content no longer recomputes to its
+     `row_hash` is not a break if two things hold:
+     1. the latest `audit.scrub` event naming that row records the same `row_hash`;
+     2. the row's current content recomputes to that event's residual hash.
+
+     The links (`prev_hash`) and every anchored head are untouched, because `row_hash` is
+     unchanged. A scrubbed row counts as verified and is also reported in a new
+     `scrubbed_count`, so an operator can see how many rows rely on a scrub record rather than
+     their own hash. Anything else is still a break, including a column changed beside the
+     scrubbed path.
+5. **Each scrub is published to the anchor, which closes the gap a scrub record opens.**
+   - **The gap.** A scrubbed row is vouched for by its scrub event, not its original hash.
+     An actor with direct database write access, the §9 threat model, could edit any field of
+     an anchored row and append a forged `audit.scrub` event whose residual matches the edit.
+     The chain alone cannot tell that from a real scrub.
+   - **The receipt.** Each scrub therefore publishes a receipt through the `TamperAnchor`
+     seam after it commits: target id, original `row_hash`, residual hash, scrub event id.
+     It uses a new `publish_scrub` method beside `publish`, because a head's payload has no
+     place for a target id. A forged scrub event has no receipt, because the receipt
+     lives under different control than the database.
+   - **`object_lock`.** `verify_anchors` reads receipts back. It reports a scrub event with
+     no receipt as `unanchored_scrub` and a receipt with no scrub event as `orphan_receipt`.
+     The daily `verify_audit_chain` task logs the first at ERROR.
+   - **`webhook`.** The sink holds the receipts for an auditor; DataQ cannot read them back,
+     the same as for heads.
+   - **`none`.** A scrub is exactly as trustworthy as the database, the posture §9 already
+     states for an unanchored chain.
+   - **A publish failure never blocks the scrub.** It is logged at ERROR. Erasing a value
+     that should not be held is the obligation, the same trade retention makes.
+6. **The privilege is granted per transaction, not permanently.** The scrub runs
+   `GRANT UPDATE (before, after, scrubbed_at) ON audit_events TO CURRENT_USER`, the UPDATE,
+   then the REVOKE, all in one transaction, mirroring retention's DELETE. A stray ORM update
+   to a payload still fails at any other moment. This is a guard against accident, not
+   against the owner, for the reasons decision 7 already records.
+7. **Retention needs no change.** A scrub event is always newer than the row it names, so
+   retention purges the target first. A purged scrub event can never leave a live scrubbed
+   row unexplained.
+
+**Alternatives considered.**
+- **A commitment hash scheme for new rows.** Each scrubbable value would be hashed as a
+  salted digest, so a scrub deletes the value and its salt and verification stays
+  self-contained. Rejected: it does not help any existing row, which is the backlog this
+  exists for, and it leaves two hash schemes to verify forever. The residual hash plus
+  receipt covers old and new rows the same way.
+- **Re-hashing the chain forward from the scrubbed row.** Rejected: it invalidates every
+  anchored head after it, which is exactly the signature of the tamper the anchor exists to
+  catch.
+
+**Out of scope.** G2's payload erasure. `actor_label` is unhashed and is pseudonymized in
+place by its own path (decision 6.5). A future erasure of payload PII would add paths to the
+allow-list in 1 through its own amendment, reusing this mechanism.
 
 
 ---
