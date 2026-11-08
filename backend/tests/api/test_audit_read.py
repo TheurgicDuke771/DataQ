@@ -204,6 +204,15 @@ def test_an_unknown_entity_type_is_refused_not_answered_with_an_empty_page(
     assert ok.status_code == 200
 
 
+@pytest.mark.parametrize("entity_type", ["run", "result", "data_subject_request", "audit_event"])
+def test_a_type_written_without_a_snapshot_is_filterable(
+    client: TestClient, entity_type: str
+) -> None:
+    """#2624: these are written with a hand-built payload, and were refused as unknown."""
+    resp = client.get(f"/api/v1/admin/audit-events?entity_type={entity_type}")
+    assert resp.status_code == 200, resp.text
+
+
 def test_a_naive_since_is_read_as_utc(client: TestClient, db_session: Any) -> None:
     """A naive datetime compared against a `timestamptz` column is interpreted in
     the DATABASE session's `TimeZone`, so the same request would cover a different
