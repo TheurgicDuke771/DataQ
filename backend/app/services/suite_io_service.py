@@ -47,7 +47,8 @@ from backend.app.services.check_service import (
     validate_threshold_ordering,
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
-from backend.app.services.value_set_redaction import ValueSetMasker, reject_masked_value_set
+from backend.app.services.value_set_guard import reject_masked_value_set
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 log = get_logger(__name__)
 

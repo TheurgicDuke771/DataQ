@@ -5,30 +5,23 @@ stores one) is the check's definition, but its literals are values of the tested
 column is classified as sensitive (the suite's policy, a warehouse tag, fail-closed mode, or an
 affirmative PII signal) they are held to the bar a failing sample of it is: each value is replaced
 by the redaction marker, the list keeps its length, and the read names the column and the rung
-that decided. Saving a config that still holds the marker is refused, so a round-trip edit can
-never write the marker over the real values.
-"""
+that decided."""
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import DataQError
-from backend.app.db.models import Suite
-from backend.app.services.run_service import _REDACTED_VALUE, RedactionReason
+from backend.app.db.models import Asset, Suite
+from backend.app.services import column_tags
+from backend.app.services.value_set_guard import REDACTED_MARKER, VALUE_SET_KEY
 
-VALUE_SET_KEY = "value_set"
-REDACTED_MARKER = _REDACTED_VALUE
-
-
-class ValueSetRedactedError(DataQError):
-    status_code = 422
-    code = "value_set_redacted"
+if TYPE_CHECKING:
+    from backend.app.services.run_service import RedactionReason
 
 
 @dataclass(frozen=True)
@@ -36,6 +29,25 @@ class MaskedConfig:
     config: dict[str, Any]
     redacted_columns: list[str] = field(default_factory=list)
     redaction_reasons: dict[str, RedactionReason] = field(default_factory=dict)
+
+
+def value_set_sensitivity(
+    session: Session, suite: Suite
+) -> Callable[[str, list[Any]], RedactionReason | None]:
+    """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
+    a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
+    or an affirmative name/value PII signal. A value set shown in a check is held to the same
+    bar as a failing sample of that column. Answers which rung decided; ``None`` = not sensitive."""
+    from backend.app.services.run_service import _known_sensitive_reason
+
+    asset = session.get(Asset, suite.asset_id) if suite.asset_id else None
+    tags = column_tags.effective_column_tags(session, asset)
+    policy = suite.column_policy
+
+    def reason(column: str, values: list[Any]) -> RedactionReason | None:
+        return _known_sensitive_reason(column, values, policy, tags)
+
+    return reason
 
 
 class ValueSetMasker:
@@ -49,8 +61,6 @@ class ValueSetMasker:
         self, suite_id: uuid.UUID
     ) -> Callable[[str, list[Any]], RedactionReason | None] | None:
         if suite_id not in self._tests:
-            from backend.app.services.suggestion_service import value_set_sensitivity
-
             suite = self._session.get(Suite, suite_id)
             self._tests[suite_id] = (
                 value_set_sensitivity(self._session, suite) if suite is not None else None
@@ -69,15 +79,3 @@ class ValueSetMasker:
             return MaskedConfig(config)
         config[VALUE_SET_KEY] = [REDACTED_MARKER for _ in values]
         return MaskedConfig(config, [column], {column: reason})
-
-
-def reject_masked_value_set(config: dict[str, Any] | None, *, check: str | None = None) -> None:
-    """Refuse a config whose value set still holds the redaction marker: it came from a masked
-    read, and saving it would replace the real values with the marker."""
-    values = (config or {}).get(VALUE_SET_KEY)
-    if isinstance(values, list) and REDACTED_MARKER in values:
-        raise ValueSetRedactedError(
-            "this value set holds withheld values (the column is classified as sensitive); "
-            "send the full list of real values, or leave config out to keep the stored ones",
-            detail={"field": f"config.{VALUE_SET_KEY}", **({"check": check} if check else {})},
-        )

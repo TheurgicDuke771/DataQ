@@ -39,6 +39,7 @@ from backend.app.services import (
 )
 from backend.app.services.suggestion_claims import fingerprint
 from backend.app.services.suite_authz import require_permission
+from backend.app.services.value_set_redaction import value_set_sensitivity
 
 if TYPE_CHECKING:
     from backend.app.services.run_service import RedactionReason
@@ -96,25 +97,6 @@ def propose(
         .returning(CheckSuggestion.id)
     )
     return inserted is not None
-
-
-def value_set_sensitivity(
-    session: Session, suite: Suite
-) -> Callable[[str, list[Any]], RedactionReason | None]:
-    """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
-    a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
-    or an affirmative name/value PII signal. A value set shown in a check is held to the same
-    bar as a failing sample of that column. Answers which rung decided; ``None`` = not sensitive."""
-    from backend.app.services.run_service import _known_sensitive_reason
-
-    asset = session.get(Asset, suite.asset_id) if suite.asset_id else None
-    tags = column_tags.effective_column_tags(session, asset)
-    policy = suite.column_policy
-
-    def reason(column: str, values: list[Any]) -> RedactionReason | None:
-        return _known_sensitive_reason(column, values, policy, tags)
-
-    return reason
 
 
 def value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:

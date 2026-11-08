@@ -15,7 +15,7 @@ from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.mcp import server
 from backend.app.services import check_service
-from backend.app.services.value_set_redaction import ValueSetRedactedError
+from backend.app.services.value_set_guard import ValueSetRedactedError
 
 _MASKED = ["<redacted>", "<redacted>"]
 
