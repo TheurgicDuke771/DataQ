@@ -233,21 +233,26 @@ def _flatfile_name(target: dict[str, Any], conn_type: str) -> str:
         return path.lstrip("/")
     pattern = _str_or_none(target.get("pattern"))
     if pattern:
-        return _pattern_base_prefix(pattern)
+        return _pattern_base_prefix(pattern, prefix=_str_or_none(target.get("prefix")))
     raise ValueError(f"{conn_type} asset identity requires a target 'path' or 'pattern'")
 
 
-def _pattern_base_prefix(pattern: str) -> str:
-    """The literal directory prefix in front of the first regex metacharacter."""
+def _pattern_base_prefix(pattern: str, *, prefix: str | None = None) -> str:
+    """The literal directory a batch target reads: its listing ``prefix`` joined with the
+    pattern's literal part (before its first regex metacharacter), cut at the last ``/``.
+
+    Batch resolution lists ``prefix`` and searches ``pattern`` over each full key, so the
+    pattern is usually written relative to the prefix (#2481); one that already spells the
+    prefix out is not prefixed twice.
+    """
     match = _REGEX_METACHARS.search(pattern)
-    prefix = pattern[: match.start()] if match else pattern
-    if "/" in prefix:
-        base = prefix[: prefix.rfind("/") + 1]
-    elif prefix:
-        base = prefix
-    else:
-        base = pattern
-    return base.lstrip("/")
+    literal = (pattern[: match.start()] if match else pattern).lstrip("/")
+    listed = (prefix or "").lstrip("/")
+    if listed and not literal.startswith(listed):
+        literal = listed + literal
+    if "/" in literal:
+        return literal[: literal.rfind("/") + 1]
+    return literal or pattern.lstrip("/")
 
 
 def _normalize_part(part: str, *, engine: str) -> str:
