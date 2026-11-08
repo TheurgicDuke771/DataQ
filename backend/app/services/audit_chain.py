@@ -13,7 +13,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -191,6 +191,19 @@ class ChainBreak:
 
 
 @dataclass(frozen=True)
+class VerifiedScrub:
+    """A scrub event reached and verified on the walk from the head: the only kind trusted."""
+
+    event_id: uuid.UUID
+    #: Chain position, 0 at the head; larger is older. Unlike `occurred_at`, it cannot be set by
+    #: whoever writes the row.
+    position: int
+    target_event_id: uuid.UUID
+    target_row_hash: str | None
+    residual_hash: str | None
+
+
+@dataclass(frozen=True)
 class ChainVerification:
     """The chain's state as of this call — every field an admin needs to answer
     "has this been tampered with", not just a boolean.
@@ -205,6 +218,11 @@ class ChainVerification:
     #: Rows whose content no longer recomputes to their own hash because a payload path was
     #: scrubbed, each vouched for by a verified scrub event. Included in `verified_count`.
     scrubbed_count: int = 0
+    #: Target id -> (its row_hash, its hash after the scrub), from the newest verified scrub event.
+    scrub_claims: dict[uuid.UUID, tuple[str | None, str | None]] = field(default_factory=dict)
+    verified_scrubs: tuple[VerifiedScrub, ...] = ()
+    #: row_hash -> chain position, for every row the walk verified.
+    positions: dict[str, int] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -257,6 +275,8 @@ def verify_chain(session: Session) -> ChainVerification:
     # scrub event. The walk runs newest-first and a scrub is always chained after its target, so
     # every claim is collected before the row it names is reached.
     scrub_claims: dict[uuid.UUID, tuple[str | None, str | None]] = {}
+    verified_scrubs: list[VerifiedScrub] = []
+    positions: dict[str, int] = {}
     first_break: ChainBreak | None = None
     # What a dangling pointer should be blamed on: initially the head itself.
     blame_id = state.head_event_id if state else None
@@ -281,6 +301,9 @@ def verify_chain(session: Session) -> ChainVerification:
         claim = _scrub_claim(row)
         if claim is not None:
             scrub_claims.setdefault(claim[0], claim[1])
+            verified_scrubs.append(VerifiedScrub(row.id, verified, claim[0], *claim[1]))
+        if row.row_hash is not None:
+            positions[row.row_hash] = verified
         verified += 1
         blame_id = row.id
         prev = row.prev_hash
@@ -295,6 +318,9 @@ def verify_chain(session: Session) -> ChainVerification:
         chain_head_hash=head_hash,
         first_break=first_break,
         scrubbed_count=scrubbed,
+        scrub_claims=scrub_claims,
+        verified_scrubs=tuple(verified_scrubs),
+        positions=positions,
     )
 
 

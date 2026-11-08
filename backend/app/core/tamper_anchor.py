@@ -215,6 +215,9 @@ class ScrubReceiptRecord:
     as_of: datetime | None
     #: The object under the receipt prefix is not a receipt DataQ wrote.
     malformed: bool = False
+    target_event_id: str | None = None
+    target_row_hash: str | None = None
+    residual_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -274,7 +277,19 @@ def _parse_receipt(key: str, body: bytes) -> ScrubReceiptRecord:
     as_of = _parse_timestamp(data.get("as_of"))
     if data.get("label") != SCRUB_RECEIPT_LABEL or not isinstance(scrub_id, str) or as_of is None:
         return ScrubReceiptRecord(key, None, None, malformed=True)
-    return ScrubReceiptRecord(key, scrub_id, as_of)
+
+    def _opt(name: str) -> str | None:
+        value = data.get(name)
+        return value if isinstance(value, str) else None
+
+    return ScrubReceiptRecord(
+        key,
+        scrub_id,
+        as_of,
+        target_event_id=_opt("target_event_id"),
+        target_row_hash=_opt("target_row_hash"),
+        residual_hash=_opt("residual_hash"),
+    )
 
 
 class ObjectLockAnchor:

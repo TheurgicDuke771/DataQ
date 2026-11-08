@@ -340,3 +340,112 @@ def test_a_receipt_for_no_scrub_event_is_an_orphan(
     assert result is not None
     assert result.orphan_receipt_count == 2
     assert result.status == "ok"
+
+
+# ───────────── forged scrub claims (an actor with direct database access) ─────────────
+
+
+def _forged_claim(db_session: Any, target: AuditEvent, **row: Any) -> AuditEvent:
+    """A scrub event the app never wrote, vouching for `target` exactly as it is now."""
+    db_session.refresh(target)
+    claim = AuditEvent(
+        action_class="config",
+        action=audit_chain.SCRUB_ACTION,
+        entity_type=audit_chain.SCRUB_ENTITY_TYPE,
+        entity_id=target.id,
+        actor_kind="user",
+        after={
+            "target_row_hash": target.row_hash,
+            "residual_hash": audit_chain.compute_row_hash(target, target.prev_hash),
+        },
+        **row,
+    )
+    db_session.add(claim)
+    return claim
+
+
+def test_an_unchained_claim_never_vouches_for_a_scrub(db_session: Any, anchor: _Anchor) -> None:
+    """An altered row plus a hand-inserted claim must not let a real scrub launder it."""
+    target = _event(db_session, after={"config": _HELD})
+    _tamper(db_session, target, action="check.delete")
+    _forged_claim(db_session, target, row_hash=None)
+    db_session.flush()
+    db_session.commit()
+
+    with pytest.raises(audit_scrub.AuditEventUnverifiedError):
+        audit_scrub.scrub_event(db_session, target.id, actor=None, reason="r")
+    db_session.rollback()
+    entity = target.entity_id
+    assert entity is not None
+    assert (
+        audit_scrub.scrub_matching(
+            db_session,
+            entity_type="check",
+            entity_id=entity,
+            key="config",
+            value=_HELD,
+            actor=None,
+            reason="r",
+        )
+        == 0
+    )
+
+
+def test_a_backdated_forged_scrub_is_judged_by_chain_position(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The forged claim is chained at the head but claims a time before the anchor began."""
+    store = _Store()
+    anchor = _object_lock(monkeypatch, store)
+    target = _event(db_session, after={"config": _HELD})
+    _publish_head(db_session, anchor, as_of=datetime.now(UTC) - timedelta(minutes=5))
+    _tamper(db_session, target, action="check.delete")
+    forged = _forged_claim(db_session, target, occurred_at=datetime.now(UTC) - timedelta(days=30))
+    db_session.info.setdefault(audit_chain.PENDING_CHAIN_KEY, []).append(forged)
+    db_session.commit()
+
+    chain = audit_chain.verify_chain(db_session)
+    assert chain.first_break is None and chain.scrubbed_count == 1  # the chain alone is fooled
+    result = audit_anchor_service.verify_anchors(db_session, anchor)
+    assert result is not None
+    assert result.status == "mismatch"
+    assert result.unanchored_scrub_event_ids == [str(forged.id)]
+
+
+def test_a_receipt_must_match_the_scrub_it_names(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real scrub with a receipt; then the target is altered further, the scrub event's residual
+    rewritten to match and the unanchored tail rehashed. The receipt id still matches.
+    """
+    store = _Store()
+    anchor = _object_lock(monkeypatch, store)
+    target = _event(db_session, after={"config": _HELD})
+    _publish_head(db_session, anchor, as_of=datetime.now(UTC) - timedelta(minutes=5))
+    audit_scrub.scrub_event(db_session, target.id, actor=None, reason="r")
+    db_session.commit()
+
+    _tamper(db_session, target, action="check.delete")
+    db_session.refresh(target)
+    scrub = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == audit_chain.SCRUB_ACTION)
+    ).one()
+    _tamper(
+        db_session,
+        scrub,
+        after={
+            **scrub.after,
+            "residual_hash": audit_chain.compute_row_hash(target, target.prev_hash),
+        },
+    )
+    db_session.refresh(scrub)
+    rehashed = audit_chain.compute_row_hash(scrub, scrub.prev_hash)
+    _tamper(db_session, scrub, row_hash=rehashed)
+    db_session.execute(text("UPDATE audit_chain_state SET head_hash = :h"), {"h": rehashed})
+    db_session.commit()
+
+    assert audit_chain.verify_chain(db_session).first_break is None  # the chain alone is fooled
+    result = audit_anchor_service.verify_anchors(db_session, anchor)
+    assert result is not None
+    assert result.status == "mismatch"
+    assert result.unanchored_scrub_event_ids == [str(scrub.id)]

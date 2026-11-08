@@ -851,7 +851,7 @@ def verify_audit_chain() -> bool:
                 expected_prev_hash=result.first_break.expected_prev_hash,
                 actual_prev_hash=result.first_break.actual_prev_hash,
             )
-        anchors = audit_anchor_service.verify_anchors(session)
+        anchors = audit_anchor_service.verify_anchors(session, chain=result)
         if anchors is not None and anchors.status == "mismatch":
             log.error(
                 "audit_anchor_mismatch",

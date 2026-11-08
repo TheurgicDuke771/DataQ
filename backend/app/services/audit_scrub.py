@@ -87,35 +87,16 @@ def _pending(row: AuditEvent, *, only: Any = None) -> list[_Scrub]:
     return found
 
 
-def _latest_claim(session: Session, row: AuditEvent) -> dict[str, Any] | None:
-    latest = session.scalars(
-        select(AuditEvent)
-        .where(
-            AuditEvent.action == audit_chain.SCRUB_ACTION,
-            AuditEvent.entity_type == audit_chain.SCRUB_ENTITY_TYPE,
-            AuditEvent.entity_id == row.id,
-        )
-        .order_by(AuditEvent.occurred_at.desc())
-        .limit(1)
-    ).first()
-    return latest.after if latest is not None and isinstance(latest.after, dict) else None
-
-
-def _verifies(session: Session, row: AuditEvent) -> bool:
-    """The row is intact now: by its own hash, or (already scrubbed) by its latest scrub claim.
-    A row written before the chain shipped has no hash and nothing to protect.
+def _verifies(row: AuditEvent, claims: Mapping[uuid.UUID, tuple[str | None, str | None]]) -> bool:
+    """The row is intact now: by its own hash, or (already scrubbed) by the claim of the newest
+    scrub event the chain walk verified. A claim read straight from the table is never trusted:
+    anyone who can write the table can write one. A row written before the chain shipped has no
+    hash and nothing to protect.
     """
     if row.row_hash is None:
         return True
     recomputed = audit_chain.compute_row_hash(row, row.prev_hash)
-    if recomputed == row.row_hash:
-        return True
-    claim = _latest_claim(session, row)
-    return (
-        claim is not None
-        and claim.get("target_row_hash") == row.row_hash
-        and claim.get("residual_hash") == recomputed
-    )
+    return recomputed == row.row_hash or claims.get(row.id) == (row.row_hash, recomputed)
 
 
 def _write(session: Session, row: AuditEvent, values: dict[str, Any]) -> None:
@@ -203,7 +184,7 @@ def scrub_event(session: Session, event_id: uuid.UUID, *, actor: Any, reason: st
             "scrubbed, and it keeps the tested column",
             detail={"event_id": str(event_id), "entity_type": row.entity_type},
         )
-    if not _verifies(session, row):
+    if not _verifies(row, audit_chain.verify_chain(session).scrub_claims):
         raise AuditEventUnverifiedError(
             "this event no longer matches its hash; investigate it with the chain verification "
             "before scrubbing",
@@ -236,11 +217,14 @@ def scrub_matching(
         .with_for_update()
     ).all()
     scrubbed = 0
+    claims: Mapping[uuid.UUID, tuple[str | None, str | None]] | None = None
     for row in rows:
         scrubs = [s for s in _pending(row, only=stored) if s.key == key]
         if not scrubs:
             continue
-        if not _verifies(session, row):
+        if claims is None:  # one chain walk, and only when something needs scrubbing
+            claims = audit_chain.verify_chain(session).scrub_claims
+        if not _verifies(row, claims):
             log.error("audit_scrub_skipped_unverified", event_id=str(row.id))
             continue
         _scrub(session, row, scrubs, actor=actor, reason=reason, trigger="version_redaction")

@@ -26,13 +26,20 @@ from backend.app.core.tamper_anchor import (
     get_tamper_anchor,
 )
 from backend.app.db.models import AuditChainCheckpoint, AuditEvent
-from backend.app.services.audit_chain import SCRUB_ACTION
+from backend.app.services.audit_chain import (
+    SCRUB_ACTION,
+    ChainVerification,
+    VerifiedScrub,
+    verify_chain,
+)
 
 AnchorMatch = Literal["present", "purged", "missing", "malformed"]
 AnchorStatus = Literal["ok", "mismatch", "empty", "unavailable"]
 
 #: How many non-matching anchors a report itemises; the counts are always complete.
 MAX_REPORTED = 20
+#: Receipts are one per scrub, so far rarer than heads: read them all, up to this bound.
+MAX_RECEIPTS_READ = 5000
 
 
 @dataclass(frozen=True)
@@ -105,19 +112,24 @@ def _legitimate_purge_cutoff(session: Session) -> datetime | None:
 
 
 def verify_anchors(
-    session: Session, anchor: TamperAnchor | None = None
+    session: Session,
+    anchor: TamperAnchor | None = None,
+    chain: ChainVerification | None = None,
 ) -> AnchorVerification | None:
-    """``None`` when the configured anchor cannot be read back (none / webhook)."""
+    """``None`` when the configured anchor cannot be read back (none / webhook). ``chain`` is the
+    caller's `verify_chain` result, when it already has one.
+    """
     anchor = anchor if anchor is not None else get_tamper_anchor()
     if not isinstance(anchor, ObjectLockAnchor):
         return None
     try:
         read = anchor.read_anchors()
-        receipts = anchor.read_scrub_receipts()
+        receipts = anchor.read_scrub_receipts(limit=MAX_RECEIPTS_READ)
     except TamperAnchorUnavailableError as exc:
         return AnchorVerification(status="unavailable", error=str(exc))
     purge_cutoff = _legitimate_purge_cutoff(session)
-    scrubs = _check_scrubs(session, read.records, receipts, purge_cutoff)
+    chain = chain if chain is not None else verify_chain(session)
+    scrubs = _check_scrubs(session, chain, read.records, receipts, purge_cutoff)
     if not read.records and not scrubs.unanchored:
         return _with_scrubs(AnchorVerification(status="empty", truncated=read.truncated), scrubs)
 
@@ -171,32 +183,55 @@ def _with_scrubs(verification: AnchorVerification, scrubs: _ScrubCheck) -> Ancho
 
 def _check_scrubs(
     session: Session,
+    chain: ChainVerification,
     heads: list[AnchorRecord],
     receipts: ScrubReceiptReadResult,
     purge_cutoff: datetime | None,
 ) -> _ScrubCheck:
-    """Match scrub events against their receipts. A scrub from before the anchor's first publish
-    (or, when the receipt listing was truncated, older than its oldest receipt read) is not judged:
-    nothing could have anchored it, or its receipt was not read.
+    """Match the scrub events the chain verified against their receipts.
+
+    A receipt counts only if its target and both hashes equal the scrub event's own: a scrub's
+    residual edited after its receipt was published does not pass on the id alone. Which scrubs
+    are judged is decided by chain position, never by `occurred_at`, which whoever writes the row
+    sets: every verified scrub chained after the oldest published head, or at or after the oldest
+    scrub with a receipt, must have a matching receipt. Older scrubs predate the anchor.
     """
-    valid = [r for r in receipts.records if not r.malformed and r.as_of is not None]
-    receipt_times = [r.as_of for r in valid if r.as_of is not None]
-    published = [r.as_of for r in heads if r.as_of is not None] + receipt_times
-    floor = min(published) if published else None
-    if receipts.truncated and receipt_times:
-        floor = max(floor, min(receipt_times)) if floor is not None else min(receipt_times)
-    events = session.execute(
-        select(AuditEvent.id, AuditEvent.occurred_at).where(
-            AuditEvent.action == SCRUB_ACTION, AuditEvent.row_hash.isnot(None)
-        )
-    ).all()
-    anchored = {r.scrub_event_id for r in valid}
-    unanchored = [
-        str(event_id)
-        for event_id, occurred_at in sorted(events, key=lambda e: e[1], reverse=True)
-        if str(event_id) not in anchored and floor is not None and occurred_at >= floor
+    valid = [r for r in receipts.records if not r.malformed]
+    by_id = {r.scrub_event_id: r for r in valid}
+    scrub_positions = {str(v.event_id): v.position for v in chain.verified_scrubs}
+    # The oldest anchored head was the chain's head when anchoring began, so only scrubs chained
+    # after it are judged. Any receipt, matching or not, proves anchoring was live at its scrub.
+    head_points = [
+        chain.positions[r.head_hash]
+        for r in heads
+        if r.head_hash is not None and r.head_hash in chain.positions
     ]
-    live = {str(event_id) for event_id, _ in events}
+    receipt_points = [
+        scrub_positions[r.scrub_event_id] for r in valid if r.scrub_event_id in scrub_positions
+    ]
+    oldest_head = max(head_points) if head_points else None
+    oldest_receipt = max(receipt_points) if receipt_points else None
+
+    def _judged(scrub: VerifiedScrub) -> bool:
+        return (oldest_head is not None and scrub.position < oldest_head) or (
+            oldest_receipt is not None and scrub.position <= oldest_receipt
+        )
+
+    def _matches(scrub: VerifiedScrub) -> bool:
+        receipt = by_id.get(str(scrub.event_id))
+        return receipt is not None and (
+            receipt.target_event_id,
+            receipt.target_row_hash,
+            receipt.residual_hash,
+        ) == (str(scrub.target_event_id), scrub.target_row_hash, scrub.residual_hash)
+
+    unanchored = [str(v.event_id) for v in chain.verified_scrubs if _judged(v) and not _matches(v)]
+    live = {
+        str(event_id)
+        for event_id in session.scalars(
+            select(AuditEvent.id).where(AuditEvent.action == SCRUB_ACTION)
+        )
+    }
     orphans = sum(1 for r in receipts.records if r.malformed) + sum(
         1
         for r in valid

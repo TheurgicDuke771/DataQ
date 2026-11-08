@@ -875,7 +875,7 @@ def scrub_audit_event(
 def verify_audit_chain(db: Annotated[Session, Depends(get_db)]) -> AuditChainStatus:
     """The verification tooling for the tamper-evidence hash chain (#1460)."""
     result = audit_chain.verify_chain(db)
-    anchors = audit_anchor_service.verify_anchors(db)
+    anchors = audit_anchor_service.verify_anchors(db, chain=result)
     if result.first_break is not None:
         status: Literal["ok", "broken", "empty"] = "broken"
     elif result.verified_count == 0:

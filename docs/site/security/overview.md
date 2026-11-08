@@ -915,8 +915,10 @@ grants itself `UPDATE` on the payload columns for its own statement only.
 
 Each scrub also publishes a **receipt** to the anchor, because a scrub event is evidence only
 if the app wrote it. With `object_lock`, verification reads the receipts back. It reports a scrub
-event with no receipt as a mismatch: one the app did not write, or a publish that failed. Scrubs
-from before the anchor's first publish are not judged. With `webhook`, the sink holds the
+event with no receipt, or with one that does not match it, as a mismatch: one the app did not
+write, or a publish that failed. Which scrubs are judged is decided by their position in the
+chain, not by their stored time, so a forged scrub cannot date itself out of the check; scrubs
+chained before the anchor's first published head are not judged. With `webhook`, the sink holds the
 receipts. With no anchor, a scrub is exactly as trustworthy as the database.
 
 ### Organizational artifacts

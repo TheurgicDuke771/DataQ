@@ -345,8 +345,9 @@ than its own columns or statement.
 4. **The hash chain and anchors keep verifying, because `row_hash` is never rewritten.**
    - **Precondition.** The scrub refuses a row that does not currently verify, so it cannot
      launder a row that was already tampered with. A row verifies when its content recomputes
-     to its stored `row_hash`, or, if it was scrubbed before, to the residual hash of the latest
-     scrub event naming it. A second scrub of one row is normal: a `check.update` whose
+     to its stored `row_hash`, or, if it was scrubbed before, to the residual hash of the newest
+     scrub event naming it that the chain walk reached and verified. A claim read straight from
+     the table is never trusted: anyone who can write the table can write one. A second scrub of one row is normal: a `check.update` whose
      `before` is scrubbed when v1 is redacted has its `after` scrubbed when v2 is.
    - **A row from before the chain** (`row_hash` NULL, the oldest events) has no hash to
      protect, so it can be scrubbed. Its scrub event records NULL for both hashes, and the row
@@ -383,9 +384,13 @@ than its own columns or statement.
    - **`object_lock`.** `verify_anchors` reads receipts back, from a prefix beside the heads'
      (`<prefix>-scrubs/`) so a head listing never reads one. A scrub event with no receipt is
      an `unanchored_scrub` and makes the status `mismatch`; the daily `verify_audit_chain` task
-     logs it at ERROR. Only scrubs since the anchor's first publish are judged, because nothing
-     could have anchored an earlier one. A receipt with no scrub event, or an object the app
-     did not write, is an `orphan_receipt`: reported, not a mismatch.
+     logs it at ERROR. A receipt counts only if its target and both hashes equal the scrub
+     event's, so a residual edited after its receipt was published does not pass on the id.
+     Which scrubs are judged is decided by **chain position**, never by `occurred_at`, which
+     whoever writes the row sets: every verified scrub chained after the oldest published head,
+     or at or after the oldest scrub with any receipt. An older scrub predates the anchor. A
+     receipt with no scrub event, or an object the app did not write, is an `orphan_receipt`:
+     reported, not a mismatch.
    - **`webhook`.** The sink holds the receipts for an auditor; DataQ cannot read them back,
      the same as for heads.
    - **`none`.** A scrub is exactly as trustworthy as the database, the posture §9 already
