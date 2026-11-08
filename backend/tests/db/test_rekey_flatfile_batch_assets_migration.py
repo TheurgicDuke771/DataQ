@@ -160,9 +160,124 @@ def test_a_target_whose_name_does_not_change_is_left_alone(
         {"prefix": "retail/", "pattern": r"(\d+)\.csv"},
         {"prefix": "a/b/", "pattern": r"c/d_(\d+)"},
         {"prefix": "/lead/", "pattern": r"x_(\d+)"},
+        {"prefix": " orders/", "pattern": r"orders_(\d+)\.csv"},
+        {"prefix": "orders/", "pattern": r" orders_(\d+)\.csv"},
         {"pattern": r"(\d+)\.csv"},
     ],
 )
 def test_the_frozen_naming_matches_the_app_at_this_revision(target: dict[str, Any]) -> None:
     frozen = load_migration(_FILE).batch_asset_name(target)
     assert frozen == resolve_asset_identity("s3", {"bucket": "landing"}, target).name
+
+
+def _check(db: Any, suite_id: uuid.UUID) -> uuid.UUID:
+    check_id = uuid.uuid4()
+    db.execute(
+        text(
+            "INSERT INTO checks (id, suite_id, name, expectation_type, config)"
+            " VALUES (:id, :suite, :name, 'expect_column_values_to_not_be_null',"
+            ' \'{"column": "id"}\'::jsonb)'
+        ),
+        {"id": check_id, "suite": suite_id, "name": f"k-{check_id.hex[:8]}"},
+    )
+    return check_id
+
+
+def _incident(db: Any, suite_id: uuid.UUID, check_id: uuid.UUID, asset_id: uuid.UUID) -> uuid.UUID:
+    incident_id = uuid.uuid4()
+    db.execute(
+        text(
+            "INSERT INTO incidents (id, asset_id, check_id, suite_id, status)"
+            " VALUES (:id, :asset, :check, :suite, 'open')"
+        ),
+        {"id": incident_id, "asset": asset_id, "check": check_id, "suite": suite_id},
+    )
+    return incident_id
+
+
+def test_history_of_a_suite_that_moved_away_is_not_relabelled(
+    db_session: Any, conn: uuid.UUID
+) -> None:
+    """The sales suite shared `orders_`, then changed to a full-path pattern: its suite link moved
+    to `sales/` but its runs stayed on `orders_`. Renaming `orders_` in place would file them
+    under `orders/`.
+    """
+    shared, sales_now = _asset(db_session, "orders_"), _asset(db_session, "sales/")
+    orders = _suite(db_session, conn, shared, _ORDERS)
+    sales = _suite(db_session, conn, sales_now, {"pattern": r"sales/orders_(\d+)\.csv"})
+    orders_run, sales_run = _run(db_session, orders, shared), _run(db_session, sales, shared)
+
+    _upgrade(db_session)
+
+    assert _asset_of(db_session, "runs", sales_run) == (shared, "orders_")
+    moved = _asset_of(db_session, "suites", orders)
+    assert moved[1] == "orders/" and moved[0] != shared
+    assert _asset_of(db_session, "runs", orders_run) == moved
+
+
+def test_a_prefix_is_kept_byte_for_byte_like_the_app(db_session: Any, conn: uuid.UUID) -> None:
+    target = {"prefix": " orders/", "pattern": r"orders_(\d+)\.csv"}
+    asset_id = _asset(db_session, "orders_")
+    suite = _suite(db_session, conn, asset_id, target)
+
+    _upgrade(db_session)
+
+    expected = resolve_asset_identity("s3", {"bucket": "landing"}, target).name
+    assert expected == " orders/"
+    assert _asset_of(db_session, "suites", suite) == (asset_id, expected)
+
+
+def test_an_active_incident_never_collides_with_one_on_the_destination(
+    db_session: Any, conn: uuid.UUID
+) -> None:
+    """The suite moved from a full-path pattern to prefix + relative pattern, so its check has an
+    open incident on both `retail/` and the old `orders_`. Moving the old one would break the
+    active (asset, check) unique index and abort the upgrade.
+    """
+    old, existing = _asset(db_session, "orders_"), _asset(db_session, "retail/")
+    suite = _suite(db_session, conn, old, {"prefix": "retail/", "pattern": r"orders_(\d+)\.csv"})
+    check = _check(db_session, suite)
+    stale = _incident(db_session, suite, check, old)
+    current = _incident(db_session, suite, check, existing)
+
+    _upgrade(db_session)
+
+    assert _asset_of(db_session, "suites", suite)[0] == existing
+    assert _asset_of(db_session, "incidents", current)[0] == existing
+    assert _asset_of(db_session, "incidents", stale)[0] == old
+    statuses = db_session.execute(
+        text("SELECT status FROM incidents WHERE id = ANY(:ids)"), {"ids": [stale, current]}
+    ).scalars()
+    assert set(statuses) == {"open"}
+
+
+@pytest.mark.parametrize("order", ["first", "second"])
+def test_a_destination_is_never_renamed_after_something_moved_onto_it(
+    db_session: Any, conn: uuid.UUID, order: str
+) -> None:
+    """`orders_` becomes `retail/`, while the current `retail/` becomes `archive/retail/`. Both
+    assets end under their own new name, whichever is processed first.
+    """
+    a, b = (
+        (_asset(db_session, "orders_"), _asset(db_session, "retail/"))
+        if order == "first"
+        else tuple(reversed((_asset(db_session, "retail/"), _asset(db_session, "orders_"))))
+    )
+    s1 = _suite(db_session, conn, a, {"prefix": "retail/", "pattern": r"orders_(\d+)"})
+    s2 = _suite(db_session, conn, b, {"prefix": "archive/", "pattern": r"retail/orders_(\d+)"})
+
+    _upgrade(db_session)
+
+    assert _asset_of(db_session, "suites", s1) == (a, "retail/")
+    assert _asset_of(db_session, "suites", s2) == (b, "archive/retail/")
+
+
+def test_two_assets_may_swap_names(db_session: Any, conn: uuid.UUID) -> None:
+    a, b = _asset(db_session, "x/"), _asset(db_session, "y/")
+    s1 = _suite(db_session, conn, a, {"prefix": "y/", "pattern": r"(\d+)\.csv"})
+    s2 = _suite(db_session, conn, b, {"prefix": "x/", "pattern": r"(\d+)\.csv"})
+
+    _upgrade(db_session)
+
+    assert _asset_of(db_session, "suites", s1) == (a, "y/")
+    assert _asset_of(db_session, "suites", s2) == (b, "x/")
