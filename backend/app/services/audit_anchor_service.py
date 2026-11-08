@@ -61,7 +61,7 @@ class AnchorVerification:
     malformed_count: int = 0
     #: The non-matching anchors, newest first, at most `MAX_REPORTED`.
     findings: list[AnchorCheck] = field(default_factory=list)
-    #: More anchors exist than were read; only the newest were checked.
+    #: More anchors (heads or scrub receipts) exist than were read; only the newest were checked.
     truncated: bool = False
     #: Why the store could not be read — set only with status "unavailable".
     error: str | None = None
@@ -82,6 +82,7 @@ class _ScrubCheck:
     receipt_count: int = 0
     unanchored: list[str] = field(default_factory=list)
     orphan_count: int = 0
+    truncated: bool = False
 
 
 def _match(record: AnchorRecord, known: set[str], purge_cutoff: datetime | None) -> AnchorMatch:
@@ -178,6 +179,7 @@ def _with_scrubs(verification: AnchorVerification, scrubs: _ScrubCheck) -> Ancho
         unanchored_scrub_count=len(scrubs.unanchored),
         orphan_receipt_count=scrubs.orphan_count,
         unanchored_scrub_event_ids=scrubs.unanchored[:MAX_REPORTED],
+        truncated=verification.truncated or scrubs.truncated,
     )
 
 
@@ -194,7 +196,8 @@ def _check_scrubs(
     residual edited after its receipt was published does not pass on the id alone. Which scrubs
     are judged is decided by chain position, never by `occurred_at`, which whoever writes the row
     sets: every verified scrub chained after the oldest published head, or at or after the oldest
-    scrub with a receipt, must have a matching receipt. Older scrubs predate the anchor.
+    scrub with a receipt, must have a matching receipt. Older scrubs predate the anchor. When the
+    receipt listing was truncated, only scrubs at or after the oldest receipt read are judged.
     """
     valid = [r for r in receipts.records if not r.malformed]
     by_id = {r.scrub_event_id: r for r in valid}
@@ -213,6 +216,8 @@ def _check_scrubs(
     oldest_receipt = max(receipt_points) if receipt_points else None
 
     def _judged(scrub: VerifiedScrub) -> bool:
+        if receipts.truncated and oldest_receipt is not None:
+            return scrub.position <= oldest_receipt
         return (oldest_head is not None and scrub.position < oldest_head) or (
             oldest_receipt is not None and scrub.position <= oldest_receipt
         )
@@ -239,5 +244,8 @@ def _check_scrubs(
         and not (purge_cutoff is not None and r.as_of is not None and r.as_of < purge_cutoff)
     )
     return _ScrubCheck(
-        receipt_count=len(receipts.records), unanchored=unanchored, orphan_count=orphans
+        receipt_count=len(receipts.records),
+        unanchored=unanchored,
+        orphan_count=orphans,
+        truncated=receipts.truncated,
     )

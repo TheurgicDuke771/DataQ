@@ -388,8 +388,9 @@ than its own columns or statement.
      event's, so a residual edited after its receipt was published does not pass on the id.
      Which scrubs are judged is decided by **chain position**, never by `occurred_at`, which
      whoever writes the row sets: every verified scrub chained after the oldest published head,
-     or at or after the oldest scrub with any receipt. An older scrub predates the anchor. A
-     receipt with no scrub event, or an object the app did not write, is an `orphan_receipt`:
+     or at or after the oldest scrub with any receipt. An older scrub predates the anchor. When
+     more receipts exist than one read returns, only scrubs at or after the oldest receipt read
+     are judged, and the result says `truncated`. A receipt with no scrub event, or an object the app did not write, is an `orphan_receipt`:
      reported, not a mismatch.
    - **`webhook`.** The sink holds the receipts for an auditor; DataQ cannot read them back,
      the same as for heads.

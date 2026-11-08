@@ -449,3 +449,23 @@ def test_a_receipt_must_match_the_scrub_it_names(
     assert result is not None
     assert result.status == "mismatch"
     assert result.unanchored_scrub_event_ids == [str(scrub.id)]
+
+
+def test_a_truncated_receipt_read_judges_only_scrubs_it_could_see(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two anchored scrubs, but only the newest receipt is read: the older one is not unanchored."""
+    store = _Store()
+    anchor = _object_lock(monkeypatch, store)
+    older = _event(db_session, after={"config": _HELD})
+    newer = _event(db_session, after={"config": _HELD})
+    _publish_head(db_session, anchor, as_of=datetime.now(UTC) - timedelta(minutes=5))
+    for target in (older, newer):
+        audit_scrub.scrub_event(db_session, target.id, actor=None, reason="r")
+        db_session.commit()
+    monkeypatch.setattr(audit_anchor_service, "MAX_RECEIPTS_READ", 1)
+
+    result = audit_anchor_service.verify_anchors(db_session, anchor)
+    assert result is not None
+    assert result.status == "ok" and result.unanchored_scrub_count == 0
+    assert result.scrub_receipt_count == 1 and result.truncated
