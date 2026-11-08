@@ -1459,6 +1459,7 @@
         "type": "object"
       },
       "AuditEventScrubRequest": {
+        "additionalProperties": false,
         "properties": {
           "reason": {
             "maxLength": 500,
