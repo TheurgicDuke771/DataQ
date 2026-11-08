@@ -12,6 +12,25 @@ section below.
 
 ### Security
 
+- **Redacting a check version now clears the value from the audit log too.** Before, a literal
+  pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
+  redacted from the version history but stayed in the audit events that recorded the edit. A
+  redaction now also scrubs every check event that carried the same config down to the tested
+  column. A workspace admin can scrub one check event directly, with a reason, from the audit log
+  (**Scrub config**, or `POST /api/v1/admin/audit-events/{id}/scrub`), for a deleted check or a
+  version redacted before this release.
+
+  This is the one exception to the append-only audit log, and the hash chain and its anchors still
+  verify:
+  - A scrubbed row keeps its hash.
+  - Each scrub is its own chained `audit_event.scrub` event, with the reason and the hashes, never
+    the value.
+  - `GET /admin/audit-events/verify` reports `scrubbed_count`.
+  - With an object-lock anchor, every scrub leaves a receipt in the store, and verification
+    reports a scrub event without one (`unanchored_scrub_count`).
+
+  A row that already fails verification is never scrubbed. New column `audit_events.scrubbed_at`,
+  from the previous migration.
 - **Dependency security updates.** `fastmcp` moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own `/mcp` server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). `dompurify`, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.
 - **filelock upgraded past its 3.x advisory batch.** The backend image now ships filelock 4.2.8,
   which fixes a set of local-attacker lock-file advisories, including one in the Unix file lock the

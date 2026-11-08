@@ -3457,9 +3457,14 @@ an outbound model request.</p>
 <td>The append-only audit log (config + data-access events, ADR 0041).</td>
 </tr>
 <tr>
+<td>POST</td>
+<td><code>/admin/audit-events/{event_id}/scrub</code></td>
+<td>Scrub a check event's <code>config</code> to its tested <code>column</code> (the one audited exception to append-only), with a required <code>reason</code>. 409 when nothing is left to scrub or the event no longer matches its hash.</td>
+</tr>
+<tr>
 <td>GET</td>
 <td><code>/admin/audit-events/verify</code></td>
-<td>Verify the audit log's hash chain for tampering. With an <code>object_lock</code> anchor, <code>anchors</code> reads the published heads back and reports each as present / purged / missing / malformed (<code>unavailable</code> when the store cannot be read).</td>
+<td>Verify the audit log's hash chain for tampering. With an <code>object_lock</code> anchor, <code>anchors</code> reads the published heads back and reports each as present / purged / missing / malformed (<code>unavailable</code> when the store cannot be read), and matches scrub receipts against scrub events (<code>unanchored_scrub_count</code>). <code>scrubbed_count</code> counts rows vouched for by a scrub record.</td>
 </tr>
 <tr>
 <td>POST</td>

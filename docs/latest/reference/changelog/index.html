@@ -2858,34 +2858,51 @@ section below.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
 <ul>
-<li><strong>Dependency security updates.</strong> <code>fastmcp</code> moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own <code>/mcp</code> server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). <code>dompurify</code>, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.</li>
-<li><strong>filelock upgraded past its 3.x advisory batch.</strong> The backend image now ships filelock 4.2.8,
+<li><strong>Redacting a check version now clears the value from the audit log too.</strong> Before, a literal
+  pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
+  redacted from the version history but stayed in the audit events that recorded the edit. A
+  redaction now also scrubs every check event that carried the same config down to the tested
+  column. A workspace admin can scrub one check event directly, with a reason, from the audit log
+  (<strong>Scrub config</strong>, or <code>POST /api/v1/admin/audit-events/{id}/scrub</code>), for a deleted check or a
+  version redacted before this release.</li>
+</ul>
+<p>This is the one exception to the append-only audit log, and the hash chain and its anchors still
+  verify:
+  - A scrubbed row keeps its hash.
+  - Each scrub is its own chained <code>audit_event.scrub</code> event, with the reason and the hashes, never
+    the value.
+  - <code>GET /admin/audit-events/verify</code> reports <code>scrubbed_count</code>.
+  - With an object-lock anchor, every scrub leaves a receipt in the store, and verification
+    reports a scrub event without one (<code>unanchored_scrub_count</code>).</p>
+<p>A row that already fails verification is never scrubbed. New column <code>audit_events.scrubbed_at</code>,
+  from the previous migration.
+- <strong>Dependency security updates.</strong> <code>fastmcp</code> moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own <code>/mcp</code> server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). <code>dompurify</code>, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.
+- <strong>filelock upgraded past its 3.x advisory batch.</strong> The backend image now ships filelock 4.2.8,
   which fixes a set of local-attacker lock-file advisories, including one in the Unix file lock the
   Snowflake connector takes around its OCSP-response and CRL caches. The Snowflake connector moves
-  to 4.8.1 (a patch release) to allow it; no configuration change is needed.</li>
-<li><strong>Dependency security updates.</strong> The CA bundle (<code>certifi</code>) moves to 2026.10.19 for PYSEC-2026-4320. <code>follow-redirects</code>, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.</li>
-<li><strong>A run with a PII drift check no longer shows failing samples before that run's detections are
+  to 4.8.1 (a patch release) to allow it; no configuration change is needed.
+- <strong>Dependency security updates.</strong> The CA bundle (<code>certifi</code>) moves to 2026.10.19 for PYSEC-2026-4320. <code>follow-redirects</code>, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+- <strong>A run with a PII drift check no longer shows failing samples before that run's detections are
   saved.</strong> Such a run now publishes all its results together when it finishes, so a column the
   run's profile detects for the first time is already masked when its samples can be read. The
-  run-progress view of these suites shows their checks completing together at the end.</li>
-<li><strong>Stale or replayed Azure Monitor alerts no longer start a pipeline poll.</strong> A fired alert older
+  run-progress view of these suites shows their checks completing together at the end.
+- <strong>Stale or replayed Azure Monitor alerts no longer start a pipeline poll.</strong> A fired alert older
   than <code>ORCHESTRATION_ALERT_MAX_AGE_MINUTES</code> (default 60), dated in the future, or without a fired
-  time is acknowledged and ignored. The regular ten-minute poll still records the run.</li>
-<li><strong>Dependency security updates.</strong> <code>databricks-sql-connector</code> moves to 4.8.0, which allows
+  time is acknowledged and ignored. The regular ten-minute poll still records the run.
+- <strong>Dependency security updates.</strong> <code>databricks-sql-connector</code> moves to 4.8.0, which allows
   <code>oauthlib</code> 4, and <code>oauthlib</code> moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
   as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP
   callback injection in the token-revocation endpoint. Both are in oauthlib's
   authorization-server code, which DataQ never runs (it only acts as an OAuth client), so
   neither reached the product. The connector's new geospatial and catalog-name-escaping
-  options are opt-in and off by default, so Unity Catalog connections behave as before.</li>
-<li><strong>A min or max aggregate no longer exposes a sensitive cell through its metric.</strong> An <code>aggregate</code>
+  options are opt-in and off by default, so Unity Catalog connections behave as before.
+- <strong>A min or max aggregate no longer exposes a sensitive cell through its metric.</strong> An <code>aggregate</code>
   check measuring min or max records one cell of its column as <code>metric_value</code>. On a column the
   suite's column policy or the warehouse's tags mark sensitive, that value is now withheld on
   every read surface (run results, run comparison, the per-check trend, incident evidence,
   alerts, webhooks, the API and MCP): <code>metric_value</code> is null and the new <code>metric_value_redaction</code>
   field names the rule that masked it. Stored incident evidence is masked when read; the
-  <code>redact_stale_incident_evidence</code> backfill also rewrites it on disk.</li>
-</ul>
+  <code>redact_stale_incident_evidence</code> backfill also rewrites it on disk.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li><strong>Anomaly checks on a value per day or week.</strong> Two new anomaly metrics,

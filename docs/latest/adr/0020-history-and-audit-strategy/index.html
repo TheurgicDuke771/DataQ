@@ -2570,9 +2570,9 @@ history is gated above editing it, and an <code>edit</code> share can restore a 
 one. A redacted check version can no longer be restored (there is no config to apply). Each
 redaction is an audit event (<code>connection.version_redact</code> / <code>check.version_redact</code>, ADR 0041)
 naming <strong>which</strong> version numbers, never what they held. Connection audit payloads never carry
-config, so a redacted connection value is gone; a check's <code>check.update</code> audit event records
-its config, so the append-only audit log may still hold an edited-out check literal — the
-redaction clears the product surface, not the durable record.</p>
+config, so a redacted connection value is gone. A check's audit events record its config;
+since ADR 0041's 2026-11-08 amendment, a check-version redaction also scrubs the audit events
+that carried the same config, through the one audited exception to append-only.</p>
 </blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p>The internal Postgres data has no general history/versioning framework. <strong>Alembic versions the <em>schema</em> (DDL), not the <em>data</em></strong> — it cannot answer "what was this connection's config last Tuesday." A consistency/SCD review (2026-06-20) found:</p>

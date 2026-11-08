@@ -1441,6 +1441,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#scrubbing-a-check-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scrubbing a check event
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#data-subject-rights" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3201,6 +3212,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#scrubbing-a-check-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scrubbing a check event
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#data-subject-rights" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3788,6 +3810,20 @@ from the store and matched against the chain. Each is <em>present</em>, <em>expl
 to before that head was published, or the chain was rewritten — or <em>not an anchor</em> (an
 object under the prefix DataQ did not write). An unreachable store reads as <strong>not checked</strong>,
 never as "nothing published".</p>
+<h3 id="scrubbing-a-check-event">Scrubbing a check event<a class="headerlink" href="#scrubbing-a-check-event" title="Permanent link">¶</a></h3>
+<p>A check's audit events record its config, so a literal pasted into a check by mistake also
+sits in the audit log. Redacting the check version that held it scrubs those events for you.
+Where that cannot reach — a deleted check, or a version redacted before scrubbing existed —
+<strong>Scrub config</strong> on a check event in the audit log does the same for that one event. It asks
+for a reason, which the audit log keeps.</p>
+<p>A scrub replaces the event's config with the column it tested. Nothing else in the event
+changes, and it cannot be undone. It is recorded as its own <code>audit_event.scrub</code> event, and
+the scrubbed row is marked <strong>Scrubbed</strong>. The chain still verifies: the card's <strong>Scrubbed</strong>
+count says how many rows are vouched for by a scrub record rather than their own hash. An
+event that no longer matches its hash is refused; verify the chain first.</p>
+<p>With an immutable object store anchor, each scrub also leaves a receipt in the store.
+<strong>Anchors read back</strong> reports any scrub event without one, as a scrub the app did not write
+or whose receipt failed to publish.</p>
 <h3 id="data-subject-rights">Data-subject rights<a class="headerlink" href="#data-subject-rights" title="Permanent link">¶</a></h3>
 <p>The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)
 request against the sample data DataQ itself has captured. <strong>They never touch your

@@ -2862,7 +2862,7 @@
 <li><strong>Payload cap with loud truncation.</strong> A custom-SQL body or a <code>schema_drift</code> baseline can be large; the payload is capped and a truncation marker is stored. No silent caps — the same rule as ADR 0040 §5.</li>
 </ol>
 <h3 id="7-append-only-is-a-guard-against-accidental-mutation-not-tamper-resistance-and-the-difference-is-recorded">7. Append-only is a guard against accidental mutation — <strong>not</strong> tamper-resistance, and the difference is recorded<a class="headerlink" href="#7-append-only-is-a-guard-against-accidental-mutation-not-tamper-resistance-and-the-difference-is-recorded" title="Permanent link">¶</a></h3>
-<p>No UPDATE or DELETE code path in the app (one deliberate exception since 2026-11-08: the audited payload scrub, amendment at the end of §9), <strong>plus</strong> <code>REVOKE UPDATE, DELETE ON audit_events FROM dataq_app</code>.</p>
+<p>No UPDATE or DELETE code path in the app beyond three named ones, <strong>plus</strong> <code>REVOKE UPDATE, DELETE ON audit_events FROM dataq_app</code>.</p>
 <p><strong>What that buys, stated honestly, because an earlier draft of this section overclaimed it.</strong> The deployed app owns its schema: the Azure stack creates the database <code>OWNER dataq_app</code> and hands the migrate job the <em>same</em> <code>DATABASE_URL</code> as the api and worker, so Alembic will create <code>audit_events</code> owned by <code>dataq_app</code> — and a table's owner can <code>GRANT</code> the privileges back in one statement, or <code>TRUNCATE</code>/<code>DROP</code> it regardless of any grant. The REVOKE therefore stops an accidental in-app <code>UPDATE</code>/<code>DELETE</code> (a stray ORM call, a careless bulk statement) and nothing stronger. It is worth doing and it is not tamper-evidence.</p>
 <p><strong>Splitting the role to make it stronger is explicitly rejected.</strong> A second, less-trusted role in the <code>dataq</code> database is precisely what the project's standing Postgres constraint forbids: the referential-integrity check runs implicit casts as the <em>referenced table's owner</em>, an unpatched escalation whose whole mitigation is that <code>dataq_app</code> is the only role in there. Buying weak tamper-resistance at the price of that mitigation is a bad trade, and the trade is named here so the phase-1 build does not discover it. <strong>Retention therefore runs as <code>dataq_app</code></strong> — a dedicated maintenance task on its own clock (<code>AUDIT_RETENTION_DAYS</code>, default 365), deliberately <strong>not</strong> coupled to <code>sample_failures_retention_days</code> (they protect opposite things: one keeps a record, the other destroys one) — with the ownership caveat above understood rather than papered over.</p>
 <p>Real tamper-evidence — G1's word — needs cryptographic chaining anchored <em>outside</em> the database, and is <strong>deferred to G1</strong> where the requirement actually lives.</p>
@@ -3038,8 +3038,10 @@ and are not affected.</p>
 <p><strong>Decision: one deliberate exception to append-only, a scrub of named payload paths.</strong> The
 row stays, along with every hashed column except the scrubbed values. Each scrub is a chained
 audit event. When an anchor is configured, each scrub is also published to it. Decision 7's
-"no UPDATE or DELETE code path" becomes "no UPDATE code path except the scrub, and no DELETE
-code path except retention".</p>
+"no UPDATE or DELETE code path" now names its three exceptions: the chain sealing
+<code>prev_hash</code>/<code>row_hash</code> under a standing column grant (migration <code>0ef2edb2ea38</code>), retention's
+DELETE, and this scrub's UPDATE of <code>before</code>/<code>after</code>/<code>scrubbed_at</code>. Each grants itself no more
+than its own columns or statement.</p>
 <ol>
 <li><strong>What can be scrubbed is an allow-list, per entity type: <code>check</code> → <code>config</code>, on either
    side.</strong> A scrubbed <code>config</code> keeps <code>KEPT_CHECK_KEYS</code> (the tested <code>column</code>), exactly as a
@@ -3051,8 +3053,10 @@ code path except retention".</p>
      <code>redact_check_version</code> scrubs every <code>check</code> event for that check whose <code>before.config</code>
      or <code>after.config</code> equals the version's config as it was before it was emptied. That
      covers the event that wrote the value and the one that edited it out. Matching is on the
-     serialized value the audit payload stores; the build proves the version snapshot and the
-     audit serializer produce the same JSON for every check kind.</li>
+     value the audit payload stores: the version's config is put through the audit
+     serializer first, because the payload scrubs credential-shaped keys and strings and the
+     version snapshot does not. An event that fails the precondition (4) is skipped and logged
+     at ERROR, and the redaction still goes ahead.</li>
 <li><strong>Directly, by a workspace admin, one event at a time</strong>
      (<code>POST /admin/audit-events/{id}/scrub</code>, with a required reason). This covers what the
      automatic path cannot reach: a deleted check, and versions redacted before this shipped,
@@ -3066,9 +3070,16 @@ code path except retention".</p>
    version-redaction amendment. A nullable <code>scrubbed_at</code> column is added for display, so the
    audit page can say "scrubbed". Verification never trusts that column (see 4).
 4. <strong>The hash chain and anchors keep verifying, because <code>row_hash</code> is never rewritten.</strong>
-   - <strong>Precondition.</strong> The scrub refuses a row whose content does not currently recompute
-     to its stored <code>row_hash</code>, so it cannot launder a row that was already tampered with.
-   - <strong>The <code>audit.scrub</code> event.</strong> It is chained like any event, with
+   - <strong>Precondition.</strong> The scrub refuses a row that does not currently verify, so it cannot
+     launder a row that was already tampered with. A row verifies when its content recomputes
+     to its stored <code>row_hash</code>, or, if it was scrubbed before, to the residual hash of the newest
+     scrub event naming it that the chain walk reached and verified. A claim read straight from
+     the table is never trusted: anyone who can write the table can write one. A second scrub of one row is normal: a <code>check.update</code> whose
+     <code>before</code> is scrubbed when v1 is redacted has its <code>after</code> scrubbed when v2 is.
+   - <strong>A row from before the chain</strong> (<code>row_hash</code> NULL, the oldest events) has no hash to
+     protect, so it can be scrubbed. Its scrub event records NULL for both hashes, and the row
+     stays in <code>unverifiable_legacy_count</code>: a scrub does not bring it into the chain.
+   - <strong>The <code>audit_event.scrub</code> event.</strong> It is chained like any event, with
      <code>entity_type = 'audit_event'</code> and <code>entity_id</code> = the target. It records:
      - the target's <code>row_hash</code>;
      - the scrubbed paths;
@@ -3081,7 +3092,7 @@ code path except retention".</p>
 <p><strong>What <code>verify_chain</code> checks.</strong> A row whose content no longer recomputes to its
      <code>row_hash</code> is not a break if two things hold:</p>
 <ol>
-<li>the latest <code>audit.scrub</code> event naming that row records the same <code>row_hash</code>;</li>
+<li>the latest <code>audit_event.scrub</code> event naming that row records the same <code>row_hash</code>;</li>
 <li>the row's current content recomputes to that event's residual hash.</li>
 </ol>
 <p>The links (<code>prev_hash</code>) and every anchored head are untouched, because <code>row_hash</code> is
@@ -3092,16 +3103,25 @@ code path except retention".</p>
 5. <strong>Each scrub is published to the anchor, which closes the gap a scrub record opens.</strong>
    - <strong>The gap.</strong> A scrubbed row is vouched for by its scrub event, not its original hash.
  An actor with direct database write access, the §9 threat model, could edit any field of
- an anchored row and append a forged <code>audit.scrub</code> event whose residual matches the edit.
+ an anchored row and append a forged <code>audit_event.scrub</code> event whose residual matches
+ the edit.
  The chain alone cannot tell that from a real scrub.
    - <strong>The receipt.</strong> Each scrub therefore publishes a receipt through the <code>TamperAnchor</code>
  seam after it commits: target id, original <code>row_hash</code>, residual hash, scrub event id.
  It uses a new <code>publish_scrub</code> method beside <code>publish</code>, because a head's payload has no
  place for a target id. A forged scrub event has no receipt, because the receipt
  lives under different control than the database.
-   - <strong><code>object_lock</code>.</strong> <code>verify_anchors</code> reads receipts back. It reports a scrub event with
- no receipt as <code>unanchored_scrub</code> and a receipt with no scrub event as <code>orphan_receipt</code>.
- The daily <code>verify_audit_chain</code> task logs the first at ERROR.
+   - <strong><code>object_lock</code>.</strong> <code>verify_anchors</code> reads receipts back, from a prefix beside the heads'
+ (<code>&lt;prefix&gt;-scrubs/</code>) so a head listing never reads one. A scrub event with no receipt is
+ an <code>unanchored_scrub</code> and makes the status <code>mismatch</code>; the daily <code>verify_audit_chain</code> task
+ logs it at ERROR. A receipt counts only if its target and both hashes equal the scrub
+ event's, so a residual edited after its receipt was published does not pass on the id.
+ Which scrubs are judged is decided by <strong>chain position</strong>, never by <code>occurred_at</code>, which
+ whoever writes the row sets: every verified scrub chained after the oldest published head,
+ or at or after the oldest scrub with any receipt. An older scrub predates the anchor. When
+ more receipts exist than one read returns, only scrubs at or after the oldest receipt read
+ are judged, and the result says <code>truncated</code>. A receipt with no scrub event, or an object the app did not write, is an <code>orphan_receipt</code>:
+ reported, not a mismatch.
    - <strong><code>webhook</code>.</strong> The sink holds the receipts for an auditor; DataQ cannot read them back,
  the same as for heads.
    - <strong><code>none</code>.</strong> A scrub is exactly as trustworthy as the database, the posture §9 already
@@ -3113,9 +3133,11 @@ code path except retention".</p>
    then the REVOKE, all in one transaction, mirroring retention's DELETE. A stray ORM update
    to a payload still fails at any other moment. This is a guard against accident, not
    against the owner, for the reasons decision 7 already records.
-7. <strong>Retention needs no change.</strong> A scrub event is always newer than the row it names, so
-   retention purges the target first. A purged scrub event can never leave a live scrubbed
-   row unexplained.</p>
+7. <strong>Retention.</strong> A scrub event is always newer than the row it names, so retention purges
+   the target first, and a purged scrub event can never leave a live scrubbed row unexplained.
+   Its receipt outlives it in the store, so a receipt older than the latest legitimate purge
+   cutoff is counted as purged, not as an orphan: the rule the head read-back already applies,
+   with the same guard against a forged far-future checkpoint.</p>
 </li>
 </ul>
 <p><strong>Alternatives considered.</strong>

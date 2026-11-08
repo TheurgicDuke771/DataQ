@@ -333,6 +333,24 @@ to before that head was published, or the chain was rewritten — or *not an anc
 object under the prefix DataQ did not write). An unreachable store reads as **not checked**,
 never as "nothing published".
 
+### Scrubbing a check event
+
+A check's audit events record its config, so a literal pasted into a check by mistake also
+sits in the audit log. Redacting the check version that held it scrubs those events for you.
+Where that cannot reach — a deleted check, or a version redacted before scrubbing existed —
+**Scrub config** on a check event in the audit log does the same for that one event. It asks
+for a reason, which the audit log keeps.
+
+A scrub replaces the event's config with the column it tested. Nothing else in the event
+changes, and it cannot be undone. It is recorded as its own `audit_event.scrub` event, and
+the scrubbed row is marked **Scrubbed**. The chain still verifies: the card's **Scrubbed**
+count says how many rows are vouched for by a scrub record rather than their own hash. An
+event that no longer matches its hash is refused; verify the chain first.
+
+With an immutable object store anchor, each scrub also leaves a receipt in the store.
+**Anchors read back** reports any scrub event without one, as a scrub the app did not write
+or whose receipt failed to publish.
+
 ### Data-subject rights
 
 The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)

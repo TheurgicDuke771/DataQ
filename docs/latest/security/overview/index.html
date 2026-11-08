@@ -3546,9 +3546,11 @@ are the reason this mode is opt-in rather than the default:</p>
   <code>edit</code> share can restore a version but not redact one. The current version is refused — it
   is the live config, visible on the entity itself; edit it first, then redact the old one. A
   redacted check version cannot be restored. Each redaction is an audit event naming the
-  version numbers, never the values. Connection audit events never hold config; a check's
-  update event does, so an edited-out check literal can remain in the audit log, which only
-  workspace admins read.</li>
+  version numbers, never the values. Connection audit events never hold config. A check's
+  events do, so redacting a check version also <strong>scrubs</strong> every check event that carried the
+  same config down to the tested column. A workspace admin can scrub one check event directly,
+  for a deleted check or a version redacted before this existed. See
+  <a href="#audit-log-tamper-evidence">Audit-log tamper-evidence</a> for how a scrub stays verifiable.</li>
 </ul>
 <h2 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">¶</a></h2>
 <ul>
@@ -4273,6 +4275,22 @@ the two classes:</p>
 </ul>
 <p>A failed publish, in either class, is logged at ERROR and recorded on the purge
 checkpoint as not anchored — it never blocks the retention sweep.</p>
+<p><strong>The one exception to append-only: the audited scrub.</strong> A check event's <code>config</code> can be
+scrubbed to the column it tested — by a check-version redaction, or by a workspace admin for one
+event. Nothing else in any event can be scrubbed. The row keeps its hash, so the chain's links
+and every anchored head still verify. Each scrub writes its own chained <code>audit_event.scrub</code>
+event, recording the scrubbed row's hash, the hash of its content after the scrub, the reason
+and who did it. It never records the value. Verification accepts a row that no longer matches
+its own hash only against that event, and reports how many rows rely on one. Any other change
+to the row is still a break. A row that already fails verification is never scrubbed. The scrub
+grants itself <code>UPDATE</code> on the payload columns for its own statement only.</p>
+<p>Each scrub also publishes a <strong>receipt</strong> to the anchor, because a scrub event is evidence only
+if the app wrote it. With <code>object_lock</code>, verification reads the receipts back. It reports a scrub
+event with no receipt, or with one that does not match it, as a mismatch: one the app did not
+write, or a publish that failed. Which scrubs are judged is decided by their position in the
+chain, not by their stored time, so a forged scrub cannot date itself out of the check; scrubs
+chained before the anchor's first published head are not judged. With <code>webhook</code>, the sink holds the
+receipts. With no anchor, a scrub is exactly as trustworthy as the database.</p>
 <h3 id="organizational-artifacts">Organizational artifacts<a class="headerlink" href="#organizational-artifacts" title="Permanent link">¶</a></h3>
 <p>Templates and reference documents for the parts of compliance that are genuinely
 organizational, published alongside this page:</p>
