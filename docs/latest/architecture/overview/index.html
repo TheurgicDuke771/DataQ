@@ -2818,7 +2818,7 @@
 <h1 id="dataq-system-architecture">DataQ — System Architecture<a class="headerlink" href="#dataq-system-architecture" title="Permanent link">¶</a></h1>
 <blockquote>
 <p>Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.</p>
-<p>☁️ <strong>These diagrams are drawn using Azure's component names</strong> (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on <strong>AWS</strong> (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see <a href="../../operate/deployment-parity/">deployment parity</a> for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.</p>
+<p>☁️ <strong>These diagrams are drawn using Azure's component names</strong> (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ is equally supported on <strong>AWS</strong> (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see <a href="../../operate/deployment-parity/">deployment parity</a> for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.</p>
 </blockquote>
 <pre class="mermaid"><code>%%{init: {'flowchart': {'curve': 'linear'}}}%%
 flowchart LR

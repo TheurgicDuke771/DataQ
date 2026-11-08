@@ -3412,6 +3412,16 @@ catalog knowing about them (mechanism ④).</p>
 <td>Runs on a pipeline/DAG/dbt-job <strong>success</strong> — ADF + Airflow + dbt, see <a href="../../guides/orchestration/">Orchestration</a></td>
 </tr>
 <tr>
+<td>Upstream suite</td>
+<td>Suite detail → Triggers</td>
+<td>Runs when another suite's run succeeds with no check at fail or critical; loops are refused and a chain stops at depth 5, see <a href="../../guides/orchestration/">Orchestration</a></td>
+</tr>
+<tr>
+<td>Pipeline gate</td>
+<td><code>POST /orchestration/gate</code></td>
+<td>A pipeline stage starts its bound suites for this run (or only reads the verdict) and waits for the answer, see <a href="../../guides/orchestration/#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a></td>
+</tr>
+<tr>
 <td>API / MCP</td>
 <td><code>POST /suites/{id}/run</code> · <code>trigger_suite_run</code> MCP tool</td>
 <td>Same authz as the UI</td>
@@ -3608,6 +3618,12 @@ they already hold.</p>
 <td>Connections: test (unsaved draft)</td>
 <td>✅</td>
 <td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Data contracts: import / delete</td>
+<td>✅</td>
+<td>✅</td>
 <td>❌</td>
 </tr>
 <tr>

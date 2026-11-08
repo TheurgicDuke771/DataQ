@@ -2826,7 +2826,10 @@ not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behin
 <strong>common alert schema enabled</strong>) POSTs to <code>/api/v1/orchestration/events/adf</code>
 (shared-secret authenticated). The alert names the factory/pipeline but no run id, so a
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
-feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.</p>
+feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
+A fired alert older than <code>ORCHESTRATION_ALERT_MAX_AGE_MINUTES</code> (default 60), dated in the
+future, or without a fired time is acknowledged and starts no poll, so a captured alert
+cannot be replayed to start work; the 10-min poll still records the run.</p>
 <p><strong>Getting the webhook URL:</strong> a workspace admin opens <strong>Admin → Integrations</strong> in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
 secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key

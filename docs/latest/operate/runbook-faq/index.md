@@ -32,7 +32,7 @@
 
 Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
-## Live smoke (deployed stack + harness data)
+## Live smoke (after a deploy)
 
 > Scale numbers are in [perf-baseline.md](../architecture/perf-baseline.md).
 
@@ -47,10 +47,10 @@ Automated, opt-in (never CI):
 
 Manual checklist (the mutating tail):
 
-- Trigger a live suite run (Run now) on a harness suite → completes green on real
-  warehouse/file data.
-- Let a harness pipeline (ADF or Airflow) succeed → the bound suite auto-runs and
-  correlates on **Results → Pipelines**.
+- Trigger a run (**Run now**) on one of your suites → it completes against the real
+  warehouse or file data.
+- Let a pipeline with a trigger binding (ADF, Airflow or dbt) succeed → the bound suite
+  runs and correlates on **Results → Pipelines**.
 - Force a failing run → the Teams/Slack/email alert arrives with the right severity;
   a repeat failure is deduped.
 - MCP: point Claude Desktop at `https://<frontend-host>/mcp/` (trailing slash — see
@@ -66,8 +66,9 @@ Manual checklist (the mutating tail):
   appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
   triggered, not continuous.
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
-- Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+- **Datasource browsing** lists one bounded level at a time (up to 200 names); past that,
+  type the target. See [Browsing for a run target](../guides/datasources-checks.md#browsing-for-a-run-target).
+  JSON flat files (JSON Lines or an array of
   flat objects) are read beside CSV/Parquet; nested JSON is refused.
 - Auth is one of **OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
@@ -76,14 +77,16 @@ Manual checklist (the mutating tail):
 
 ## FAQ
 
-**Is ADF/Airflow a datasource?** No — they're orchestration providers DataQ monitors and
-can trigger from. You never write checks against them. See **[Concepts](../get-started/concepts.md)**.
+**Is ADF, Airflow or dbt a datasource?** No — they're orchestration providers DataQ monitors
+and can trigger from. You never write checks against them. See **[Concepts](../get-started/concepts.md)**.
 
 **Do I need Azure to run it locally?** No. The compose stacks sign you in with an emailed
 one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
 there is no IdP *and* no SMTP relay to bring — `scripts/setup.sh` just asks which address
 may sign in.
-Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.
+For production, deploy on Azure or AWS: both are supported at the same level, each with a
+reference OpenTofu stack behind the app's seams (ADR 0010/0013), and neither is primary. The
+[Helm chart](kubernetes.md) runs it on any Kubernetes cluster.
 
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.

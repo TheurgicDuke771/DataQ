@@ -2792,6 +2792,26 @@ vulnerability open, the change can take effect immediately. It is still announce
 <td>On <code>PATCH /suites/{id}/checks/{id}</code>, an explicit <code>null</code> for <code>warn_threshold</code>, <code>fail_threshold</code> or <code>critical_threshold</code> now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did.</td>
 <td>It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and <code>null</code> had no documented meaning there. The Python client is unaffected (it omits fields you do not set).</td>
 </tr>
+<tr>
+<td>v1.3.0</td>
+<td>A run that evaluated no check (every check disabled or skipped) answers <code>error</code> from the pipeline gate rather than a pass.</td>
+<td>A gate that passes on a run that verified nothing lets bad data through.</td>
+</tr>
+<tr>
+<td>v1.3.0</td>
+<td>A value set over a column classified as sensitive reads <code>&lt;redacted&gt;</code> on every check read; saving a config that still holds <code>&lt;redacted&gt;</code> returns <code>422 value_set_redacted</code>, and an export holding withheld values cannot be imported. Accepting such a suggested rule returns <code>409 suggestion_values_sensitive</code>.</td>
+<td>Security: the raw values would otherwise stay readable after the column was classified.</td>
+</tr>
+<tr>
+<td>v1.3.0</td>
+<td>A min/max <code>aggregate</code> result on a sensitive column returns <code>metric_value: null</code>, with <code>metric_value_redaction</code> naming the rule.</td>
+<td>Security: that metric is one cell of the column.</td>
+</tr>
+<tr>
+<td>v1.3.0</td>
+<td>A flat-file batch target's asset name includes its prefix (<code>orders/…</code>), so existing assets are renamed or split on upgrade.</td>
+<td>The old name merged different folders into one asset, mixing their health, lineage and incidents.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="the-export-documents-version">The export document's <code>version</code><a class="headerlink" href="#the-export-documents-version" title="Permanent link">¶</a></h2>

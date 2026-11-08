@@ -218,7 +218,7 @@ are the reason this mode is opt-in rather than the default:
 ## Secrets
 
 - Datasource credentials, webhook signing keys, and channel secrets are held in a **secret
-  store behind a seam** — Azure Key Vault in the primary reference deployment, AWS Secrets
+  store behind a seam** — Azure Key Vault on the Azure reference stack, AWS Secrets
   Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
   app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
@@ -333,7 +333,7 @@ What encrypts what, with which key, and where the vendor says so. This exists be
 "encrypted at rest" is only useful to a reviewer with the mechanism attached; each row
 below is checkable against a first-party citation rather than our assertion.
 
-**Azure (primary reference deployment)**
+**Azure reference deployment**
 
 | Resource | Encrypted at rest | Key | Citation |
 |---|---|---|---|
@@ -342,7 +342,7 @@ below is checkable against a first-party citation rather than our assertion.
 | Container Apps images / revisions (GHCR-sourced) | Registry-side | Provider-managed | — |
 | Log Analytics + Application Insights (telemetry, PII-redacted at the logger) | Yes | Microsoft-managed by default | [Azure Monitor data security](https://learn.microsoft.com/azure/azure-monitor/logs/data-security) |
 
-**AWS (second reference deployment)**
+**AWS reference deployment**
 
 | Resource | Encrypted at rest | Key | Notes |
 |---|---|---|---|

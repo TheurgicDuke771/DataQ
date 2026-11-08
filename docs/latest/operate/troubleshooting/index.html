@@ -2766,6 +2766,22 @@ shows a <strong>redaction-safe reason</strong> — one of:</p>
 <p><strong>A check is <code>error</code> or <code>skip</code>, not pass/fail.</strong> These are <em>operational</em> statuses, kept
 distinct from data failures: <code>error</code> = the check couldn't be evaluated (e.g. a missing
 column); <code>skip</code> = a precondition wasn't met (e.g. a batch file hasn't landed yet).</p>
+<p><strong>A check reports "A query ran longer than the datasource query limit".</strong> Every query DataQ
+sends a SQL datasource carries a wall-clock limit, <code>DATASOURCE_QUERY_TIMEOUT_S</code> (default 1800
+seconds), applied through the engine's own setting, and this one hit it and was cancelled.
+Narrow the check or the run target (a sample, a smaller table), or raise the setting if the
+query legitimately needs longer. Keep it under <code>STUCK_RUN_THRESHOLD_MINUTES</code>. A lower limit
+the datasource already gives DataQ's user (a role, user, account, warehouse or workspace
+setting) is kept and can be the one that fired. On Snowflake and Unity Catalog, a warehouse
+that refuses the setting is logged as <code>query_limit_not_applied</code> and its queries run without it.</p>
+<p><strong>A run reads <em>Nothing evaluated</em>.</strong> Every check in the suite was disabled or skipped, so the
+run verified nothing. It is not counted as a pass: the pipeline gate answers <code>error</code> for it,
+and it does not count toward the dashboard's <em>Assets watched</em>. Enable a check, or fix what made
+them skip (for example a batch file that has not landed).</p>
+<p><strong>A run says some results were removed.</strong> Checks were deleted after the run finished, which
+deletes their results. The outcome shown (checks passed, worst severity) is the one recorded
+when the run finished, so it still counts them; the API returns the count as
+<code>results_removed</code>.</p>
 <p><strong><code>checks_total</code> reads 0 / <code>—</code>.</strong> A run that failed before any check executed evaluated
 nothing, so its data-quality outcome is empty — that's truthful, distinct from the suite's
 defined check count shown on the progress view.</p>
@@ -2787,6 +2803,10 @@ runs. See <a href="../../guides/scheduling/">Scheduling</a>.</p>
 <code>(provider, pipeline/DAG/job, env)</code> exactly, and that the webhook is configured (or the
 10-minute poll fallback can reach the artifacts/REST API). Failure events <strong>alert but never
 trigger</strong> a run — by design. See <a href="../../guides/orchestration/">Orchestration</a>.</p>
+<p><strong>An ADF alert arrived but started no poll.</strong> A fired Azure Monitor alert older than
+<code>ORCHESTRATION_ALERT_MAX_AGE_MINUTES</code> (default 60), dated in the future, or without a fired time
+is acknowledged and ignored, so a replayed or stale alert cannot start work. The regular
+ten-minute poll still records the pipeline run.</p>
 <h2 id="alerts">Alerts<a class="headerlink" href="#alerts" title="Permanent link">¶</a></h2>
 <p><strong>No alert arrived for a failing run.</strong></p>
 <ul>

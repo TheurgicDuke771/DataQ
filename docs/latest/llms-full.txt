@@ -73,10 +73,11 @@ watches what you point it at, plus every table of a warehouse connection you swi
 |---|---|
 | **Catch the incidents that page people** | Freshness, volume and schema-drift monitors notice a load that did not arrive, arrived half-empty, or changed shape — before a value-level rule ever runs. |
 | **Author precise checks without code** | Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, comparisons against a second dataset, anomaly detection on a learned baseline. Let the built-in assistant suggest checks from a column profile. |
+| **Hold data to its contract** | Import an ODCS v3 data contract: its enforceable rules become checks, and each clause reports its compliance from the latest run ([Data contracts](guides/data-contracts.md)). |
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a Helm chart for your own Kubernetes; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
-| **Let assistants do the work** | Fifty-six MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Let assistants do the work** | Fifty-nine MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
 | **Built with accessibility in mind** | Every screen of the app is scanned for serious accessibility violations in light and dark themes on every change, colour contrast is held to WCAG ratios, severity and run status carry a text label or pattern as well as colour, and core navigation works from the keyboard. A full WCAG conformance review is planned, so this describes the checks, not a conformance claim. |
 
 ## Who it is for
@@ -258,13 +259,15 @@ flowchart LR
 
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
   **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
-  **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
+  **Google Cloud Storage**, **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
   **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
   and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery**. Fabric **OneLake** files are reached through an ADLS Gen2 connection.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
-  Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
-  pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
-  pipeline finishes successfully**. They are **not** datasources — you never write checks
+  Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does four things with them: monitor
+  pipeline/DAG/build runs, detect failures in near-real-time, **trigger a check suite when a
+  pipeline finishes successfully**, and answer a pipeline stage that asks whether its data
+  passed (the [pipeline gate](../guides/orchestration.md)). DataQ never pauses or fails a
+  pipeline itself; the pipeline acts on the answer. They are **not** datasources — you never write checks
   against ADF/Airflow/dbt.
 
 !!! note
@@ -588,7 +591,7 @@ The short version is below; the full walk-through is [Run it automatically](conn
 Three tracks, matched to why you're here:
 
 - **Production and enterprise teams** → deploy on a cloud platform with a reference stack:
-  Azure Container Apps (primary) or AWS ECS Fargate. See
+  Azure Container Apps or AWS ECS Fargate, both supported at the same level. See
   [Production deployment](../operate/deployment.md). This is the recommended way to run DataQ
   for a team: managed Postgres and Redis, a cloud secret store, your identity provider, and
   the frontend as the only public surface.
@@ -1023,7 +1026,16 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
     ---
 
     Cron [schedules](scheduling.md), or trigger a suite when an ADF, Airflow or dbt
-    pipeline finishes — [orchestration](orchestration.md).
+    pipeline finishes, or when another suite does — [orchestration](orchestration.md).
+
+-   :material-file-document-check:{ .lg .middle } **Hold data to its contract**
+
+    ---
+
+    Import an ODCS v3 data contract: its rules become checks and each clause reports its
+    compliance.
+
+    [:octicons-arrow-right-24: Data contracts](data-contracts.md)
 
 -   :material-bell-ring:{ .lg .middle } **Alert the right people**
 
@@ -3223,6 +3235,9 @@ target still works everywhere.
   works the same way, its schemas being the databases the user has privileges on, and
   **Trino** inside the connection's catalog, listing what the cluster's access control
   lets the user see. **SQL Server / Azure SQL** likewise, inside the connection's database.
+  **Redshift** lists the schemas the user has `USAGE` on, as PostgreSQL does. **Athena** lists
+  the Glue databases the IAM principal can see; each listing is itself a billed query.
+  **BigQuery** lists the project's datasets through the free metadata API, not a query.
 - **Snowflake — Browse schemas…** lists the schemas of the connection's database, then a
   schema's tables and views, from that database's `INFORMATION_SCHEMA` — already filtered
   to what the connection's role can see.
@@ -3979,6 +3994,15 @@ A **suite** is a named set of checks bound to one connection + target
 - **Tags** — workspace-shared labels on suites, assets, connections and checks; the Suites
   and Assets lists filter by them (all of the chosen tags). See [Tags](#tags).
 
+## Data contracts
+
+Import an [ODCS v3](https://bitol-io.github.io/open-data-contract-standard/) data contract under
+**Contracts** in the sidebar: its enforceable rules become ordinary checks in a suite per schema
+object, and the rules DataQ does not enforce are listed as such. Each clause then reports its
+compliance from the latest run, a check edited since the import is flagged as drifted, and an
+incident a contract check opens names the clause it broke. The contract exports back as ODCS,
+with the checks added since. See [Data contracts](data-contracts.md).
+
 ## Tags
 
 A **tag** is a short workspace-shared label — `finance`, `team:core-data`, `tier-1` — that
@@ -4603,6 +4627,9 @@ Azure Monitor raises an alert on pipeline events → an **Action Group webhook**
 (shared-secret authenticated). The alert names the factory/pipeline but no run id, so a
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
 feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
+A fired alert older than `ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the
+future, or without a fired time is acknowledged and starts no poll, so a captured alert
+cannot be replayed to start work; the 10-min poll still records the run.
 
 **Getting the webhook URL:** a workspace admin opens **Admin → Integrations** in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
@@ -5463,6 +5490,10 @@ Changes that took effect without the deprecation window above, and why:
 |---|---|---|
 | v1.2.0 | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
 | v1.2.0 | On `PATCH /suites/{id}/checks/{id}`, an explicit `null` for `warn_threshold`, `fail_threshold` or `critical_threshold` now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did. | It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and `null` had no documented meaning there. The Python client is unaffected (it omits fields you do not set). |
+| v1.3.0 | A run that evaluated no check (every check disabled or skipped) answers `error` from the pipeline gate rather than a pass. | A gate that passes on a run that verified nothing lets bad data through. |
+| v1.3.0 | A value set over a column classified as sensitive reads `<redacted>` on every check read; saving a config that still holds `<redacted>` returns `422 value_set_redacted`, and an export holding withheld values cannot be imported. Accepting such a suggested rule returns `409 suggestion_values_sensitive`. | Security: the raw values would otherwise stay readable after the column was classified. |
+| v1.3.0 | A min/max `aggregate` result on a sensitive column returns `metric_value: null`, with `metric_value_redaction` naming the rule. | Security: that metric is one cell of the column. |
+| v1.3.0 | A flat-file batch target's asset name includes its prefix (`orders/…`), so existing assets are renamed or split on upgrade. | The old name merged different folders into one asset, mixing their health, lineage and incidents. |
 
 ## The export document's `version`
 
@@ -5770,7 +5801,7 @@ section below.
   datasource already gives DataQ's user (a PostgreSQL role or database setting, a MySQL global or
   MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
   `statement_timeout` is not yet. On Trino the limit includes the time a query waits in a
-  resource-group queue. Snowflake and Unity Catalog are not covered yet.
+  resource-group queue.
 - **Changelog entries are collected one file per change.** The **Unreleased** section of
   this page is now assembled from small per-change files in the repository's `changelog.d/`
   directory when the site is built, and a release gathers them into a dated section. The
@@ -7673,6 +7704,8 @@ catalog knowing about them (mechanism ④).
 | Run now | Suite detail → Run panel | Live per-check progress + cancel |
 | Cron schedule | Suite detail → Schedules | 5-field cron, IANA timezone, DST-aware, [no backfill](../guides/scheduling.md) |
 | Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG/dbt-job **success** — ADF + Airflow + dbt, see [Orchestration](../guides/orchestration.md) |
+| Upstream suite | Suite detail → Triggers | Runs when another suite's run succeeds with no check at fail or critical; loops are refused and a chain stops at depth 5, see [Orchestration](../guides/orchestration.md) |
+| Pipeline gate | `POST /orchestration/gate` | A pipeline stage starts its bound suites for this run (or only reads the verdict) and waits for the answer, see [Gate a pipeline on DataQ](../guides/orchestration.md#gate-a-pipeline-on-dataq) |
 | API / MCP | `POST /suites/{id}/run` · `trigger_suite_run` MCP tool | Same authz as the UI |
 
 ## Severity & results
@@ -7743,6 +7776,7 @@ they already hold.
 | Connections: list & reference in suites | ✅ | ✅ | list only |
 | Connections: test (saved) | ✅ | ✅ | ❌ |
 | Connections: test (unsaved draft) | ✅ | ❌ | ❌ |
+| Data contracts: import / delete | ✅ | ✅ | ❌ |
 | Mint API tokens (inherit the user's access) | ✅ | ✅ | ✅ |
 | `/admin`, implicit suite-admin, workspace-wide visibility | ✅ | ❌ | ❌ |
 | Manage roles in-app | ✅ | ❌ | ❌ |
@@ -7770,7 +7804,7 @@ risk that carries.
 
 | Term | Meaning |
 |---|---|
-| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL), Amazon Athena, Amazon Redshift, Google BigQuery. |
+| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Google Cloud Storage, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL), Amazon Athena, Amazon Redshift, Google BigQuery. |
 | **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow, dbt. Not a datasource. |
 | **Connection** | Stored credentials + config for one datasource or orchestration provider. |
 | **Suite** | A named set of checks that runs against one connection's target. |
@@ -8796,7 +8830,7 @@ rather than leaving that to be discovered from a wrong answer.
 
 > Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.
 >
-> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
+> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ is equally supported on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
 
 ```mermaid
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
@@ -11494,7 +11528,7 @@ are the reason this mode is opt-in rather than the default:
 ## Secrets
 
 - Datasource credentials, webhook signing keys, and channel secrets are held in a **secret
-  store behind a seam** — Azure Key Vault in the primary reference deployment, AWS Secrets
+  store behind a seam** — Azure Key Vault on the Azure reference stack, AWS Secrets
   Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
   app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
@@ -11609,7 +11643,7 @@ What encrypts what, with which key, and where the vendor says so. This exists be
 "encrypted at rest" is only useful to a reviewer with the mechanism attached; each row
 below is checkable against a first-party citation rather than our assertion.
 
-**Azure (primary reference deployment)**
+**Azure reference deployment**
 
 | Resource | Encrypted at rest | Key | Citation |
 |---|---|---|---|
@@ -11618,7 +11652,7 @@ below is checkable against a first-party citation rather than our assertion.
 | Container Apps images / revisions (GHCR-sourced) | Registry-side | Provider-managed | — |
 | Log Analytics + Application Insights (telemetry, PII-redacted at the logger) | Yes | Microsoft-managed by default | [Azure Monitor data security](https://learn.microsoft.com/azure/azure-monitor/logs/data-security) |
 
-**AWS (second reference deployment)**
+**AWS reference deployment**
 
 | Resource | Encrypted at rest | Key | Notes |
 |---|---|---|---|
@@ -12739,7 +12773,7 @@ a third-party endpoint.
 
 | # | Service (operator-chosen) | What DataQ sends | Personal data? | When active |
 |---|---|---|---|---|
-| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift, Google BigQuery | Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace) | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
+| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Google Cloud Storage, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift, Google BigQuery | Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace) | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
 | 2 | **Orchestration providers** — ADF, Airflow, dbt | Polling reads of pipeline/DAG run status; inbound webhooks | No — pipeline metadata only | When orchestration connections exist |
 | 3 | **Alert delivery** — MS Teams / Slack webhooks, SMTP email (incl. SES) | Check names, statuses, suite names and — when a failing sample is attached — **redacted** sample values | Potentially, in redacted failing samples; recipient addresses | When notifications are configured |
 | 4 | **Sign-in email (OTP)** — the configured SMTP relay | One-time codes to user email addresses | User email addresses (account identifiers, not warehouse content) | `otp` auth mode |
@@ -12837,7 +12871,7 @@ Running DataQ for real: deploying it, watching it, and fixing it.
 
 | Page | What it covers |
 |---|---|
-| [Deployment](deployment.md) | Azure Container Apps and AWS ECS reference deployments, the local Docker stack, every environment variable, and the Azure-free path. |
+| [Deployment](deployment.md) | Azure Container Apps and AWS ECS reference deployments, the local Docker stack, where every environment variable is listed, and the Azure-free path. |
 | [Deployment parity](deployment-parity.md) | What is identical and what differs across Azure, AWS and local, service by service. |
 | [Install on Kubernetes (Helm)](kubernetes.md) | The Helm chart for your own cluster: what it installs, the Secret it reads, values, upgrade and rollback, and a kind test. |
 | [Upgrading](upgrading.md) | Moving to a newer release: the steps per deployment. |
@@ -13085,7 +13119,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Hosting
 
-| Concern | Azure (primary reference) | AWS (second reference) | Local (compose) |
+| Concern | Azure (reference stack) | AWS (reference stack) | Local (compose) |
 |---|---|---|---|
 | Compute | Container Apps: api / worker / beat / frontend + migrate **job** | ECS Fargate: same four services + migrate **run-task** | docker-compose services |
 | Public surface | Frontend Container App (sole public ingress; api internal-only) | CloudFront → ALB → frontend (the ALB security group admits only the CloudFront managed prefix list; nginx re-verifies an origin-secret header) | `localhost` |
@@ -13102,9 +13136,11 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all eleven datasource types, every monitor kind,
+The application feature set — suites/checks across all thirteen datasource types, every monitor kind,
 assets/lineage/incidents, alerting, scheduling, the 59-tool MCP server, PATs, rate limiting —
-is the **same code everywhere**. Where the installations genuinely differ:
+is the **same code everywhere**. Where the installations genuinely differ (the *live-verified* and
+*deployed* notes record what was exercised on the project's reference deployments as of the date
+above; both cloud stacks are supported for your own deployment):
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
@@ -13191,13 +13227,13 @@ pointed at compose services.
 # Production deployment
 
 How to stand DataQ up in production. This is the operator's overview; the exhaustive
-provisioning runbook, the OpenTofu stack, and the complete env-var reference live in the
-repository's `deploy/README.md` and
+provisioning runbook and the OpenTofu stack live in the repository's `deploy/README.md` and
 [`deploy/terraform/azure/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure).
-**Azure is the primary reference target; AWS is a second, live-verified reference stack**
+**Azure and AWS are both supported, at the same level** — deploy on either; each has a
+reference OpenTofu stack
 ([`deploy/terraform/aws/`](https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws) —
-see [AWS reference deployment](#aws-reference-deployment) below). GCP is planned behind the
-same seams.
+see [AWS reference deployment](#aws-reference-deployment) below). On your own Kubernetes
+cluster, use the [Helm chart](kubernetes.md). GCP is planned behind the same seams.
 
 ## Topology
 
@@ -13260,7 +13296,7 @@ Run the **pre-deploy** and **post-deploy smoke** checklists in the repository's
   and MCP — MCP must be `401`, **not** `421`); prod docs are gated (`404`); and the api /
   worker / frontend are on the deployed tag with the migrate job `Succeeded`.
 
-> A side-by-side comparison of the three installations — hosting, features, harness,
+> A side-by-side comparison of the three installations — hosting, features,
 > workflow and config differences — lives on the
 > [Deployment parity](deployment-parity.md) page.
 
@@ -13354,10 +13390,11 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake, ADLS, Athena, Redshift or BigQuery **connection** needs the live service to run against.
-The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
-Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
-SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
+Snowflake, Athena or Redshift **connection** needs the live service to run against. ADLS Gen2,
+Google Cloud Storage and BigQuery also run against their emulators (Azurite, `fake-gcs-server`,
+`goccy/bigquery-emulator`), which is enough to evaluate them. The local-first path keeps flat
+files (local, S3 and S3-compatible stores such as MinIO), Unity Catalog (Databricks Free
+Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino / SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
 to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so `pytest` is green with no cloud credentials of
 any kind.
@@ -13374,8 +13411,9 @@ any kind.
   seeded environment). Remove them before any customer-facing use — see the deploy
   README's operational notes.
 
-For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
-the checklists — see the repository's `deploy/README.md`.
+For the full runbook — one-time provisioning, SSO setup, and the checklists — see the
+repository's `deploy/README.md`. Every setting the app reads, with its default, is listed in
+[`.env.app.example`](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example).
 
 
 ---
@@ -13639,7 +13677,7 @@ is a start-time secret snapshot). Full deploy + ops runbook: the repository's
 
 Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
-## Live smoke (deployed stack + harness data)
+## Live smoke (after a deploy)
 
 > Scale numbers are in [perf-baseline.md](../architecture/perf-baseline.md).
 
@@ -13654,10 +13692,10 @@ Automated, opt-in (never CI):
 
 Manual checklist (the mutating tail):
 
-- Trigger a live suite run (Run now) on a harness suite → completes green on real
-  warehouse/file data.
-- Let a harness pipeline (ADF or Airflow) succeed → the bound suite auto-runs and
-  correlates on **Results → Pipelines**.
+- Trigger a run (**Run now**) on one of your suites → it completes against the real
+  warehouse or file data.
+- Let a pipeline with a trigger binding (ADF, Airflow or dbt) succeed → the bound suite
+  runs and correlates on **Results → Pipelines**.
 - Force a failing run → the Teams/Slack/email alert arrives with the right severity;
   a repeat failure is deduped.
 - MCP: point Claude Desktop at `https://<frontend-host>/mcp/` (trailing slash — see
@@ -13673,8 +13711,9 @@ Manual checklist (the mutating tail):
   appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
   triggered, not continuous.
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
-- Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+- **Datasource browsing** lists one bounded level at a time (up to 200 names); past that,
+  type the target. See [Browsing for a run target](../guides/datasources-checks.md#browsing-for-a-run-target).
+  JSON flat files (JSON Lines or an array of
   flat objects) are read beside CSV/Parquet; nested JSON is refused.
 - Auth is one of **OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
@@ -13683,14 +13722,16 @@ Manual checklist (the mutating tail):
 
 ## FAQ
 
-**Is ADF/Airflow a datasource?** No — they're orchestration providers DataQ monitors and
-can trigger from. You never write checks against them. See **[Concepts](../get-started/concepts.md)**.
+**Is ADF, Airflow or dbt a datasource?** No — they're orchestration providers DataQ monitors
+and can trigger from. You never write checks against them. See **[Concepts](../get-started/concepts.md)**.
 
 **Do I need Azure to run it locally?** No. The compose stacks sign you in with an emailed
 one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
 there is no IdP *and* no SMTP relay to bring — `scripts/setup.sh` just asks which address
 may sign in.
-Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.
+For production, deploy on Azure or AWS: both are supported at the same level, each with a
+reference OpenTofu stack behind the app's seams (ADR 0010/0013), and neither is primary. The
+[Helm chart](kubernetes.md) runs it on any Kubernetes cluster.
 
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
@@ -13780,6 +13821,25 @@ shows a **redaction-safe reason** — one of:
 distinct from data failures: `error` = the check couldn't be evaluated (e.g. a missing
 column); `skip` = a precondition wasn't met (e.g. a batch file hasn't landed yet).
 
+**A check reports "A query ran longer than the datasource query limit".** Every query DataQ
+sends a SQL datasource carries a wall-clock limit, `DATASOURCE_QUERY_TIMEOUT_S` (default 1800
+seconds), applied through the engine's own setting, and this one hit it and was cancelled.
+Narrow the check or the run target (a sample, a smaller table), or raise the setting if the
+query legitimately needs longer. Keep it under `STUCK_RUN_THRESHOLD_MINUTES`. A lower limit
+the datasource already gives DataQ's user (a role, user, account, warehouse or workspace
+setting) is kept and can be the one that fired. On Snowflake and Unity Catalog, a warehouse
+that refuses the setting is logged as `query_limit_not_applied` and its queries run without it.
+
+**A run reads *Nothing evaluated*.** Every check in the suite was disabled or skipped, so the
+run verified nothing. It is not counted as a pass: the pipeline gate answers `error` for it,
+and it does not count toward the dashboard's *Assets watched*. Enable a check, or fix what made
+them skip (for example a batch file that has not landed).
+
+**A run says some results were removed.** Checks were deleted after the run finished, which
+deletes their results. The outcome shown (checks passed, worst severity) is the one recorded
+when the run finished, so it still counts them; the API returns the count as
+`results_removed`.
+
 **`checks_total` reads 0 / `—`.** A run that failed before any check executed evaluated
 nothing, so its data-quality outcome is empty — that's truthful, distinct from the suite's
 defined check count shown on the progress view.
@@ -13807,6 +13867,11 @@ runs. See [Scheduling](../guides/scheduling.md).
 `(provider, pipeline/DAG/job, env)` exactly, and that the webhook is configured (or the
 10-minute poll fallback can reach the artifacts/REST API). Failure events **alert but never
 trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
+
+**An ADF alert arrived but started no poll.** A fired Azure Monitor alert older than
+`ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the future, or without a fired time
+is acknowledged and ignored, so a replayed or stale alert cannot start work. The regular
+ten-minute poll still records the pipeline run.
 
 ## Alerts
 

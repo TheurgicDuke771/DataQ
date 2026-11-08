@@ -281,7 +281,7 @@ section below.
   datasource already gives DataQ's user (a PostgreSQL role or database setting, a MySQL global or
   MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
   `statement_timeout` is not yet. On Trino the limit includes the time a query waits in a
-  resource-group queue. Snowflake and Unity Catalog are not covered yet.
+  resource-group queue.
 - **Changelog entries are collected one file per change.** The **Unreleased** section of
   this page is now assembled from small per-change files in the repository's `changelog.d/`
   directory when the site is built, and a release gathers them into a dated section. The

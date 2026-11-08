@@ -102,6 +102,15 @@ A **suite** is a named set of checks bound to one connection + target
 - **Tags** — workspace-shared labels on suites, assets, connections and checks; the Suites
   and Assets lists filter by them (all of the chosen tags). See [Tags](#tags).
 
+## Data contracts
+
+Import an [ODCS v3](https://bitol-io.github.io/open-data-contract-standard/) data contract under
+**Contracts** in the sidebar: its enforceable rules become ordinary checks in a suite per schema
+object, and the rules DataQ does not enforce are listed as such. Each clause then reports its
+compliance from the latest run, a check edited since the import is flagged as drifted, and an
+incident a contract check opens names the clause it broke. The contract exports back as ODCS,
+with the checks added since. See [Data contracts](data-contracts.md).
+
 ## Tags
 
 A **tag** is a short workspace-shared label — `finance`, `team:core-data`, `tier-1` — that

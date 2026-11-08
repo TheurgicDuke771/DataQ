@@ -916,6 +916,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#data-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tags" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2689,6 +2700,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#data-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tags" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2968,6 +2990,13 @@ schema-drift / anomaly / PII-drift / comparison</strong> monitor kinds:</p>
 <li><strong>Tags</strong> — workspace-shared labels on suites, assets, connections and checks; the Suites
   and Assets lists filter by them (all of the chosen tags). See <a href="#tags">Tags</a>.</li>
 </ul>
+<h2 id="data-contracts">Data contracts<a class="headerlink" href="#data-contracts" title="Permanent link">¶</a></h2>
+<p>Import an <a href="https://bitol-io.github.io/open-data-contract-standard/">ODCS v3</a> data contract under
+<strong>Contracts</strong> in the sidebar: its enforceable rules become ordinary checks in a suite per schema
+object, and the rules DataQ does not enforce are listed as such. Each clause then reports its
+compliance from the latest run, a check edited since the import is flagged as drifted, and an
+incident a contract check opens names the clause it broke. The contract exports back as ODCS,
+with the checks added since. See <a href="../data-contracts/">Data contracts</a>.</p>
 <h2 id="tags">Tags<a class="headerlink" href="#tags" title="Permanent link">¶</a></h2>
 <p>A <strong>tag</strong> is a short workspace-shared label — <code>finance</code>, <code>team:core-data</code>, <code>tier-1</code> — that
 can sit on a suite, an asset, a connection or a check. The vocabulary is one list for the

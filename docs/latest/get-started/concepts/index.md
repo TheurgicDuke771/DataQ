@@ -27,13 +27,15 @@ flowchart LR
 
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
   **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
-  **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
+  **Google Cloud Storage**, **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
   **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
   and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery**. Fabric **OneLake** files are reached through an ADLS Gen2 connection.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
-  Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
-  pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
-  pipeline finishes successfully**. They are **not** datasources — you never write checks
+  Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does four things with them: monitor
+  pipeline/DAG/build runs, detect failures in near-real-time, **trigger a check suite when a
+  pipeline finishes successfully**, and answer a pipeline stage that asks whether its data
+  passed (the [pipeline gate](../guides/orchestration.md)). DataQ never pauses or fails a
+  pipeline itself; the pipeline acts on the answer. They are **not** datasources — you never write checks
   against ADF/Airflow/dbt.
 
 !!! note

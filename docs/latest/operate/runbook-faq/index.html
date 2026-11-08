@@ -2458,10 +2458,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#live-smoke-deployed-stack-harness-data" class="md-nav__link">
+  <a href="#live-smoke-after-a-deploy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Live smoke (deployed stack + harness data)
+        Live smoke (after a deploy)
       
     </span>
   </a>
@@ -2544,10 +2544,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#live-smoke-deployed-stack-harness-data" class="md-nav__link">
+  <a href="#live-smoke-after-a-deploy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Live smoke (deployed stack + harness data)
+        Live smoke (after a deploy)
       
     </span>
   </a>
@@ -2655,7 +2655,7 @@
   waited did not publish: re-run it.</li>
 </ul>
 <p>Full deploy steps + verification: the repository's <strong><code>deploy/README.md</code></strong>.</p>
-<h2 id="live-smoke-deployed-stack-harness-data">Live smoke (deployed stack + harness data)<a class="headerlink" href="#live-smoke-deployed-stack-harness-data" title="Permanent link">¶</a></h2>
+<h2 id="live-smoke-after-a-deploy">Live smoke (after a deploy)<a class="headerlink" href="#live-smoke-after-a-deploy" title="Permanent link">¶</a></h2>
 <blockquote>
 <p>Scale numbers are in <a href="../../architecture/perf-baseline/">perf-baseline.md</a>.</p>
 </blockquote>
@@ -2670,10 +2670,10 @@
 </ol>
 <p>Manual checklist (the mutating tail):</p>
 <ul>
-<li>Trigger a live suite run (Run now) on a harness suite → completes green on real
-  warehouse/file data.</li>
-<li>Let a harness pipeline (ADF or Airflow) succeed → the bound suite auto-runs and
-  correlates on <strong>Results → Pipelines</strong>.</li>
+<li>Trigger a run (<strong>Run now</strong>) on one of your suites → it completes against the real
+  warehouse or file data.</li>
+<li>Let a pipeline with a trigger binding (ADF, Airflow or dbt) succeed → the bound suite
+  runs and correlates on <strong>Results → Pipelines</strong>.</li>
 <li>Force a failing run → the Teams/Slack/email alert arrives with the right severity;
   a repeat failure is deduped.</li>
 <li>MCP: point Claude Desktop at <code>https://&lt;frontend-host&gt;/mcp/</code> (trailing slash — see
@@ -2689,8 +2689,9 @@
   appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
   triggered, not continuous.</li>
 <li><strong>Single tenant</strong>, suite-level access sharing <strong>plus a stored workspace role</strong> — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. <code>WORKSPACE_ADMIN_EMAILS</code> is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.</li>
-<li>Interactive <strong>datasource browsing</strong> (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+<li><strong>Datasource browsing</strong> lists one bounded level at a time (up to 200 names); past that,
+  type the target. See <a href="../../guides/datasources-checks/#browsing-for-a-run-target">Browsing for a run target</a>.
+  JSON flat files (JSON Lines or an array of
   flat objects) are read beside CSV/Parquet; nested JSON is refused.</li>
 <li>Auth is one of <strong>OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)</strong>,
   plus <strong>PATs</strong> (<code>dq_live_…</code>, ADR 0026) for headless/API/MCP clients — no
@@ -2698,13 +2699,15 @@
   phase 2, deferred).</li>
 </ul>
 <h2 id="faq">FAQ<a class="headerlink" href="#faq" title="Permanent link">¶</a></h2>
-<p><strong>Is ADF/Airflow a datasource?</strong> No — they're orchestration providers DataQ monitors and
-can trigger from. You never write checks against them. See <strong><a href="../../get-started/concepts/">Concepts</a></strong>.</p>
+<p><strong>Is ADF, Airflow or dbt a datasource?</strong> No — they're orchestration providers DataQ monitors
+and can trigger from. You never write checks against them. See <strong><a href="../../get-started/concepts/">Concepts</a></strong>.</p>
 <p><strong>Do I need Azure to run it locally?</strong> No. The compose stacks sign you in with an emailed
 one-time code and bundle the mailbox too (a local Mailpit inbox at <code>localhost:8025</code>), so
 there is no IdP <em>and</em> no SMTP relay to bring — <code>scripts/setup.sh</code> just asks which address
 may sign in.
-Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.</p>
+For production, deploy on Azure or AWS: both are supported at the same level, each with a
+reference OpenTofu stack behind the app's seams (ADR 0010/0013), and neither is primary. The
+<a href="../kubernetes/">Helm chart</a> runs it on any Kubernetes cluster.</p>
 <p><strong>Where do failed-row samples go?</strong> Stored with the result, <strong>PII-redacted</strong>, and purged
 after a retention window — never written to logs.</p>
 <p><strong>Can an AI assistant use DataQ?</strong> Yes — 59 MCP tools at <code>/mcp</code> (Claude Desktop / Claude.ai

@@ -4482,7 +4482,10 @@ target still works everywhere.</p>
   with. There is no catalog level: the connection pins one database. <strong>MySQL / MariaDB</strong>
   works the same way, its schemas being the databases the user has privileges on, and
   <strong>Trino</strong> inside the connection's catalog, listing what the cluster's access control
-  lets the user see. <strong>SQL Server / Azure SQL</strong> likewise, inside the connection's database.</li>
+  lets the user see. <strong>SQL Server / Azure SQL</strong> likewise, inside the connection's database.
+  <strong>Redshift</strong> lists the schemas the user has <code>USAGE</code> on, as PostgreSQL does. <strong>Athena</strong> lists
+  the Glue databases the IAM principal can see; each listing is itself a billed query.
+  <strong>BigQuery</strong> lists the project's datasets through the free metadata API, not a query.</li>
 <li><strong>Snowflake — Browse schemas…</strong> lists the schemas of the connection's database, then a
   schema's tables and views, from that database's <code>INFORMATION_SCHEMA</code> — already filtered
   to what the connection's role can see.</li>

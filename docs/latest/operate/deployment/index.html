@@ -2715,13 +2715,13 @@
 
 <h1 id="production-deployment">Production deployment<a class="headerlink" href="#production-deployment" title="Permanent link">¶</a></h1>
 <p>How to stand DataQ up in production. This is the operator's overview; the exhaustive
-provisioning runbook, the OpenTofu stack, and the complete env-var reference live in the
-repository's <code>deploy/README.md</code> and
+provisioning runbook and the OpenTofu stack live in the repository's <code>deploy/README.md</code> and
 <a href="https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/azure"><code>deploy/terraform/azure/</code></a>.
-<strong>Azure is the primary reference target; AWS is a second, live-verified reference stack</strong>
+<strong>Azure and AWS are both supported, at the same level</strong> — deploy on either; each has a
+reference OpenTofu stack
 (<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/deploy/terraform/aws"><code>deploy/terraform/aws/</code></a> —
-see <a href="#aws-reference-deployment">AWS reference deployment</a> below). GCP is planned behind the
-same seams.</p>
+see <a href="#aws-reference-deployment">AWS reference deployment</a> below). On your own Kubernetes
+cluster, use the <a href="../kubernetes/">Helm chart</a>. GCP is planned behind the same seams.</p>
 <h2 id="topology">Topology<a class="headerlink" href="#topology" title="Permanent link">¶</a></h2>
 <div class="highlight"><pre><span></span><code>Browser ──HTTPS──► Frontend Container App (nginx + SPA — the ONLY public ingress)
 AI clients ─MCP──► │  proxies /api + /mcp + /healthz same-origin
@@ -2775,7 +2775,7 @@ run, in order:</p>
   worker / frontend are on the deployed tag with the migrate job <code>Succeeded</code>.</li>
 </ul>
 <blockquote>
-<p>A side-by-side comparison of the three installations — hosting, features, harness,
+<p>A side-by-side comparison of the three installations — hosting, features,
 workflow and config differences — lives on the
 <a href="../deployment-parity/">Deployment parity</a> page.</p>
 </blockquote>
@@ -2893,10 +2893,11 @@ docker-compose<span class="w"> </span>up<span class="w">           </span><span 
 every <code>AZURE_*</code> key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.</p>
 <p><strong>What is not available locally</strong> is <em>datasources</em>, not the platform: a
-Snowflake, ADLS, Athena, Redshift or BigQuery <strong>connection</strong> needs the live service to run against.
-The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
-Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
-SQL Server containers; <code>docker-compose --profile demo up</code> adds a seeded sample warehouse
+Snowflake, Athena or Redshift <strong>connection</strong> needs the live service to run against. ADLS Gen2,
+Google Cloud Storage and BigQuery also run against their emulators (Azurite, <code>fake-gcs-server</code>,
+<code>goccy/bigquery-emulator</code>), which is enough to evaluate them. The local-first path keeps flat
+files (local, S3 and S3-compatible stores such as MinIO), Unity Catalog (Databricks Free
+Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino / SQL Server containers; <code>docker-compose --profile demo up</code> adds a seeded sample warehouse
 to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so <code>pytest</code> is green with no cloud credentials of
 any kind.</p>
@@ -2912,8 +2913,9 @@ any kind.</p>
   seeded environment). Remove them before any customer-facing use — see the deploy
   README's operational notes.</li>
 </ul>
-<p>For the full runbook — one-time provisioning, the complete env-var reference, SSO setup, and
-the checklists — see the repository's <code>deploy/README.md</code>.</p>
+<p>For the full runbook — one-time provisioning, SSO setup, and the checklists — see the
+repository's <code>deploy/README.md</code>. Every setting the app reads, with its default, is listed in
+<a href="https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example"><code>.env.app.example</code></a>.</p>
 
 
 

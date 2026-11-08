@@ -3479,7 +3479,7 @@ are the reason this mode is opt-in rather than the default:</p>
 <h2 id="secrets">Secrets<a class="headerlink" href="#secrets" title="Permanent link">¶</a></h2>
 <ul>
 <li>Datasource credentials, webhook signing keys, and channel secrets are held in a <strong>secret
-  store behind a seam</strong> — Azure Key Vault in the primary reference deployment, AWS Secrets
+  store behind a seam</strong> — Azure Key Vault on the Azure reference stack, AWS Secrets
   Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
   app reads them via a managed identity (Azure) or the task IAM role (AWS).</li>
 <li>Secret <strong>references</strong> (names), not secret values, are stored alongside connections. Deleting
@@ -3591,7 +3591,7 @@ are the reason this mode is opt-in rather than the default:</p>
 <p>What encrypts what, with which key, and where the vendor says so. This exists because
 "encrypted at rest" is only useful to a reviewer with the mechanism attached; each row
 below is checkable against a first-party citation rather than our assertion.</p>
-<p><strong>Azure (primary reference deployment)</strong></p>
+<p><strong>Azure reference deployment</strong></p>
 <table>
 <thead>
 <tr>
@@ -3628,7 +3628,7 @@ below is checkable against a first-party citation rather than our assertion.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>AWS (second reference deployment)</strong></p>
+<p><strong>AWS reference deployment</strong></p>
 <table>
 <thead>
 <tr>
