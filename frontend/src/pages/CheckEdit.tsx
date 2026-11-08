@@ -1,5 +1,6 @@
 import { HistoryOutlined, LineChartOutlined } from '@ant-design/icons';
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -23,6 +24,7 @@ import {
   getCheck,
   getSuite,
   updateCheck,
+  WITHHELD_VALUE,
 } from '../api/suites';
 import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
 import {
@@ -197,6 +199,8 @@ function CheckEditForm({
     }
   }, [selectedType, initialType, form]);
 
+  const withheldColumns = check.redacted_columns ?? [];
+
   const onSubmit = async () => {
     let values: Record<string, unknown>;
     try {
@@ -219,13 +223,33 @@ function CheckEditForm({
               typeof values.critical_threshold === 'number' ? values.critical_threshold : null,
           }
         : (() => {
-            const u = buildCheckPayload(
+            const u: Partial<ReturnType<typeof buildCheckPayload>> = buildCheckPayload(
               values,
               values.expectation_type === check.expectation_type ? check.config : undefined,
             );
             delete u.kind;
+            // A withheld value set left as loaded: the config is not sent, so the stored values
+            // stay. Changing anything else in the config needs the full list re-entered.
+            if (withheldColumns.length > 0 && !form.isFieldTouched(['config', 'value_set'])) {
+              const configTouched =
+                values.expectation_type !== check.expectation_type ||
+                (spec?.fields ?? []).some((f) => form.isFieldTouched(['config', f.name]));
+              if (!configTouched) delete u.config;
+            }
             return u;
           })();
+      const valueSet = update.config?.value_set;
+      if (Array.isArray(valueSet) && valueSet.includes(WITHHELD_VALUE)) {
+        form.setFields([
+          {
+            name: ['config', 'value_set'],
+            errors: [
+              'These values are withheld. Enter the full list of accepted values to change this check.',
+            ],
+          },
+        ]);
+        return;
+      }
       // Same rule for tags: sent only when this page changed them.
       const tags = (values.tags as string[] | undefined) ?? [];
       const tagsChanged = tags.join('\u0000') !== (check.tags ?? []).join('\u0000');
@@ -280,6 +304,15 @@ function CheckEditForm({
   return (
     <>
       <InheritanceNotice check={check} resuming={resuming} onResume={onResume} />
+      {withheldColumns.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title="Accepted values withheld"
+          description={`${withheldColumns.join(', ')} is classified as sensitive, so its values are not shown. The check still runs with them, and saving keeps them unless you replace the whole list.`}
+        />
+      )}
       <Form form={form} layout="vertical" onFinish={onSubmit}>
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="e.g. order_id not null" />

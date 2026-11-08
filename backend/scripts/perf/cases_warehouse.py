@@ -326,6 +326,9 @@ class _EnvSecretStore:
     def get(self, name: str) -> str:
         return os.environ[self._variable]
 
+    def exists(self, name: str) -> bool:  # pragma: no cover — never called
+        return True
+
     def set(self, name: str, value: str) -> None:  # pragma: no cover — never called
         raise NotImplementedError
 

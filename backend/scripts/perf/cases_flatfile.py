@@ -294,6 +294,9 @@ class _StaticSecretStore:
     def get(self, name: str) -> str:
         return _NO_CREDENTIAL
 
+    def exists(self, name: str) -> bool:  # pragma: no cover — never called
+        return True
+
     def set(self, name: str, value: str) -> None:  # pragma: no cover — never called
         raise NotImplementedError
 

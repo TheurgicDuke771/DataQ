@@ -1999,3 +1999,118 @@ def test_openbao_delete_fails_soft_on_error_status(monkeypatch: pytest.MonkeyPat
     # must emit the dead-token event an operator alerts on — not only the generic one.
     assert _events(logs) == ["openbao_permission_denied", "secret_delete_failed"]
     assert logs[1]["credential_still_present"] is True  # the purge did NOT happen
+
+
+# ───────────────────────── exists (#2413) ──────────────────────────
+#
+# Reports presence WITHOUT reading the value, and never reports an outage as absent.
+
+
+def test_env_store_exists_without_reading(
+    clean_kv_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    store = EnvSecretStore()
+    assert store.exists("conn-x") is False
+    store.set("conn-x", "v")
+    assert store.exists("conn-x") is True
+
+
+def _metadata(*, deletion_time: str = "", destroyed: bool = False) -> dict[str, object]:
+    """The KV v2 metadata envelope, as openbao/openbao answered it on the local vault."""
+    version = {"created_time": "2026-11-08T00:00:00Z", "deletion_time": deletion_time}
+    return {"data": {"current_version": 2, "versions": {"2": {**version, "destroyed": destroyed}}}}
+
+
+@pytest.mark.parametrize(
+    ("response", "present"),
+    [
+        (httpx.Response(200, json=_metadata()), True),
+        (httpx.Response(200, json=_metadata(deletion_time="2026-11-08T01:00:00Z")), False),
+        (httpx.Response(200, json=_metadata(destroyed=True)), False),
+        (httpx.Response(404, json={"errors": []}), False),
+    ],
+)
+def test_openbao_exists_reads_the_metadata_path_only(
+    response: httpx.Response, present: bool
+) -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return response
+
+    assert _bao(handler).exists("conn-1") is present
+    assert paths == ["/v1/secret/metadata/conn-1"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(503, json={"errors": ["Vault is sealed"]}),
+        httpx.Response(403, json={"errors": ["permission denied"]}),
+        httpx.Response(404, json={"errors": ["no handler for route 'nope/metadata/x'"]}),
+        httpx.Response(200, json={"data": {}}),
+    ],
+)
+def test_openbao_exists_never_reports_an_outage_as_absent(response: httpx.Response) -> None:
+    with pytest.raises(SecretStoreUnavailableError):
+        _bao(lambda _r: response).exists("conn-1")
+
+
+def test_akv_store_exists_lists_versions_not_the_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    from azure.core.exceptions import ResourceNotFoundError
+
+    store = AzureKeyVaultStore("https://example.vault.azure.net/")
+    versions = {"live": [SimpleNamespace(enabled=True)], "off": [SimpleNamespace(enabled=False)]}
+
+    def _versions(name: str) -> list[SimpleNamespace]:
+        if name not in versions:
+            raise ResourceNotFoundError("gone")
+        return versions[name]
+
+    def _no_read(name: str) -> None:
+        raise AssertionError("exists must not read the value")
+
+    fake = SimpleNamespace(list_properties_of_secret_versions=_versions, get_secret=_no_read)
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake)
+    assert (store.exists("live"), store.exists("off"), store.exists("missing")) == (
+        True,
+        False,
+        False,
+    )
+
+    fake.list_properties_of_secret_versions = lambda name: (_ for _ in ()).throw(
+        RuntimeError("throttled")
+    )
+    with pytest.raises(SecretStoreUnavailableError, match="throttled"):
+        store.exists("live")
+
+
+def test_asm_store_exists_describes_the_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = AwsSecretsManagerStore("dataq/")
+    answers: dict[str, object] = {
+        "dataq/live": {"Name": "dataq/live"},
+        "dataq/scheduled": {"Name": "dataq/scheduled", "DeletedDate": datetime.now(UTC)},
+        "dataq/missing": _client_error("ResourceNotFoundException"),
+        "dataq/denied": _client_error("AccessDeniedException"),
+    }
+
+    def _describe(SecretId: str) -> object:  # noqa: N803  (boto3's own keyword)
+        answer = answers[SecretId]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def _no_read(**_kw: object) -> None:
+        raise AssertionError("exists must not read the value")
+
+    fake = SimpleNamespace(describe_secret=_describe, get_secret_value=_no_read)
+    monkeypatch.setattr(store, "_client_lazy", lambda: fake)
+    assert (store.exists("live"), store.exists("scheduled"), store.exists("missing")) == (
+        True,
+        False,
+        False,
+    )
+    with pytest.raises(SecretStoreUnavailableError):
+        store.exists("denied")

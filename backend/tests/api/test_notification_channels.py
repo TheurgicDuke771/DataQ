@@ -553,6 +553,25 @@ def test_promote_is_admin_only_even_for_the_suite_owner(
     assert after["has_webhook"] is (role != "admin")
 
 
+def test_promote_of_a_webhook_whose_secret_is_gone_is_a_409_and_changes_nothing(
+    client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore
+) -> None:
+    user, headers = as_role("admin")
+    suite = _suite(db_session, user)
+    _legacy(db_session, suite, secret_store)
+    secret_store.data.clear()
+
+    resp = _promote(client, suite, headers)
+
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "promote_secret_missing"
+    channels = client.get("/api/v1/notification-channels", headers=headers).json()
+    assert channels == []
+    after = client.get(f"/api/v1/suites/{suite.id}/notifications", headers=headers).json()
+    assert after["has_webhook"] is True
+    assert secret_store.requested == []
+
+
 def test_promote_returns_the_linked_channel_and_never_the_webhook(
     client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore
 ) -> None:

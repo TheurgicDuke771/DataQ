@@ -97,7 +97,12 @@ def test_a_clear_racing_a_promote_cannot_delete_the_moved_secret(
         with Session(_db_engine) as s:
             try:
                 channel_service.promote_suite_destination(
-                    s, suite_id, destination="teams", name="Race", actor_id=admin_id
+                    s,
+                    suite_id,
+                    destination="teams",
+                    name="Race",
+                    secret_store=store,
+                    actor_id=admin_id,
                 )
             except Exception as exc:
                 errors.append(exc)

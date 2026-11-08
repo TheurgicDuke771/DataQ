@@ -20,6 +20,7 @@ from backend.app.services import coverage_service as cov
 from backend.app.services import coverage_settings_service as svc
 from backend.app.services import suggestion_service, suite_io_service
 from backend.app.services.asset_identity import resolve_asset_identity
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 NOW = datetime(2026, 9, 30, 6, 0, tzinfo=UTC)
 _CONN = {"host": "wh.example.com", "database": "shop", "user": "reader", "auto_coverage": True}
@@ -178,8 +179,11 @@ def test_the_mcp_summary_shows_the_values_in_effect_and_the_level(
     db_session.commit()
     volume = world["volume"]
 
-    summary = mcp_server._check_summary(volume, mcp_server._one_inherited(db_session, volume))
-    without = mcp_server._check_summary(volume)
+    masker = ValueSetMasker(db_session)
+    summary = mcp_server._check_summary(
+        volume, mcp_server._one_inherited(db_session, volume), masker
+    )
+    without = mcp_server._check_summary(volume, None, masker)
 
     assert (summary["warn_threshold"], summary["critical_threshold"]) == (5.0, 9.0)
     assert summary["inherited_from"] == {"sensitivity": "workspace", "baseline": "default"}

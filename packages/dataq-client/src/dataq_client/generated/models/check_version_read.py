@@ -13,6 +13,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.check_version_read_config import CheckVersionReadConfig
+    from ..models.check_version_read_redaction_reasons import CheckVersionReadRedactionReasons
 
 
 T = TypeVar("T", bound="CheckVersionRead")
@@ -46,6 +47,9 @@ class CheckVersionRead:
                 one that no longer matches its hash is left as it is and logged, never scrubbed. Default: False.
             redacted_at (datetime.datetime | None | Unset):
             redacted_by_name (None | str | Unset):
+            redacted_columns (list[str] | Unset): As on a check: a `config.value_set` withheld because its column is
+                sensitive now. Restoring the version still restores the real values.
+            redaction_reasons (CheckVersionReadRedactionReasons | Unset):
             source_connection_id (None | Unset | UUID):
     """
 
@@ -66,6 +70,8 @@ class CheckVersionRead:
     redacted: bool | Unset = False
     redacted_at: datetime.datetime | None | Unset = UNSET
     redacted_by_name: None | str | Unset = UNSET
+    redacted_columns: list[str] | Unset = UNSET
+    redaction_reasons: CheckVersionReadRedactionReasons | Unset = UNSET
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -126,6 +132,14 @@ class CheckVersionRead:
         else:
             redacted_by_name = self.redacted_by_name
 
+        redacted_columns: list[str] | Unset = UNSET
+        if not isinstance(self.redacted_columns, Unset):
+            redacted_columns = self.redacted_columns
+
+        redaction_reasons: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.redaction_reasons, Unset):
+            redaction_reasons = self.redaction_reasons.to_dict()
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -162,6 +176,10 @@ class CheckVersionRead:
             field_dict["redacted_at"] = redacted_at
         if redacted_by_name is not UNSET:
             field_dict["redacted_by_name"] = redacted_by_name
+        if redacted_columns is not UNSET:
+            field_dict["redacted_columns"] = redacted_columns
+        if redaction_reasons is not UNSET:
+            field_dict["redaction_reasons"] = redaction_reasons
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
 
@@ -170,6 +188,9 @@ class CheckVersionRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_version_read_config import CheckVersionReadConfig
+        from ..models.check_version_read_redaction_reasons import (
+            CheckVersionReadRedactionReasons,
+        )
 
         d = dict(src_dict)
 
@@ -269,6 +290,15 @@ class CheckVersionRead:
 
         redacted_by_name = _parse_redacted_by_name(d.pop("redacted_by_name", UNSET))
 
+        redacted_columns = cast(list[str], d.pop("redacted_columns", UNSET))
+
+        _redaction_reasons = d.pop("redaction_reasons", UNSET)
+        redaction_reasons: CheckVersionReadRedactionReasons | Unset
+        if isinstance(_redaction_reasons, Unset):
+            redaction_reasons = UNSET
+        else:
+            redaction_reasons = CheckVersionReadRedactionReasons.from_dict(_redaction_reasons)
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -304,6 +334,8 @@ class CheckVersionRead:
             redacted=redacted,
             redacted_at=redacted_at,
             redacted_by_name=redacted_by_name,
+            redacted_columns=redacted_columns,
+            redaction_reasons=redaction_reasons,
             source_connection_id=source_connection_id,
         )
 

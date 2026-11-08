@@ -335,6 +335,9 @@ class _ResolvedSecret:
     def get(self, name: str) -> str:
         return self._secret
 
+    def exists(self, name: str) -> bool:
+        return True
+
     def set(self, name: str, value: str) -> None:
         raise NotImplementedError
 

@@ -410,9 +410,9 @@ function PromoteModal({
       try {
         result = await promoteSuiteDestination(suiteId, destination, trimmed);
       } catch (err) {
-        // 409: the legacy value changed underneath (another admin promoted or cleared it).
-        // Close and reload, so the card shows the suite's current state beside the error
-        // instead of offering an action that can no longer succeed.
+        // 409: the legacy value changed underneath (another admin promoted or cleared it), or
+        // its webhook secret is gone. Close and reload, so the card shows the suite's current
+        // state beside the error instead of offering an action that can no longer succeed.
         if (fetchFailure(err).status === 409) {
           onClose();
           onChanged();

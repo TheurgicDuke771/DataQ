@@ -105,6 +105,7 @@ from backend.app.services import (
 )
 from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 log = get_logger(__name__)
 
@@ -995,7 +996,9 @@ def _one_inherited(session: Session, check: Check) -> CheckSettings | None:
     return coverage_settings_service.inherited_settings(session, [check]).get(check.id)
 
 
-def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict[str, Any]:
+def _check_summary(
+    check: Check, inherited: CheckSettings | None, masker: ValueSetMasker
+) -> dict[str, Any]:
     """The LLM-shaped view of one check — shared by `list_checks`/`get_check` so
     the two can't describe the same row differently.
 
@@ -1006,6 +1009,14 @@ def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict
     *response* is bounded by `list_checks`' own `limit`, since that cap says
     nothing about how many checks a suite has.
     """
+    masked = masker.mask(
+        check.suite_id,
+        (
+            inherited.shown(dict(check.config))
+            if inherited
+            else coverage_settings_service.strip_flag(check.config)
+        ),
+    )
     return {
         "id": str(check.id),
         "name": check.name,
@@ -1043,11 +1054,11 @@ def _check_summary(check: Check, inherited: CheckSettings | None = None) -> dict
         # An automatic baseline that inherits (ADR 0047) runs on the coverage settings, not on
         # its stored columns: show what it runs on, and say so, or "what does this check alert
         # at?" would be answered from numbers no run uses.
-        "config": (
-            inherited.shown(dict(check.config))
-            if inherited
-            else coverage_settings_service.strip_flag(check.config)
-        ),
+        # A value set over a column that is sensitive now has each value withheld (#2592):
+        # `redacted_columns` names the column, `redaction_reasons` the rung that decided.
+        "config": masked.config,
+        "redacted_columns": masked.redacted_columns,
+        "redaction_reasons": masked.redaction_reasons,
         "warn_threshold": inherited.sensitivity.warn if inherited else _num(check.warn_threshold),
         "fail_threshold": inherited.sensitivity.fail if inherited else _num(check.fail_threshold),
         "critical_threshold": (
@@ -1093,6 +1104,13 @@ def list_checks(
     alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
     for how those checks last performed, use ``get_suite_results``.
 
+    **A value set can be withheld.** When a check's ``config.value_set`` is over a
+    column classified as sensitive now (a warehouse tag, the suite's column policy,
+    fail-closed mode or the PII classifier), every value reads ``<redacted>``, the
+    column is in ``redacted_columns`` and ``redaction_reasons`` says which rule
+    decided. The check still runs with its real values; they are only not shown.
+    Do not describe ``<redacted>`` as the values the check accepts.
+
     **A non-null ``inherited_from`` means the thresholds are not the check's own.** It
     appears on the automatic baselines of a system-created suite (row count, freshness
     and column profile anomaly checks). The three thresholds and the ``window`` /
@@ -1129,12 +1147,13 @@ def list_checks(
         # honest — a bare list would let an LLM report "the suite has 200 checks".
         page = checks[:limit]
         inherited = coverage_settings_service.inherited_settings(session, page)
+        masker = ValueSetMasker(session)
         return {
             "suite_id": suite_id,
             "total": len(checks),
             "returned": min(len(checks), limit),
             "truncated": len(checks) > limit,
-            "checks": [_check_summary(c, inherited.get(c.id)) for c in page],
+            "checks": [_check_summary(c, inherited.get(c.id), masker) for c in page],
         }
 
 
@@ -1149,6 +1168,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
     comparison check diffs against) plus when the check was created and last
     modified. As there, a non-null ``inherited_from`` means the thresholds and window
     shown are the coverage settings in effect now, not values stored on the check.
+    A withheld value set (``redacted_columns``) reads as on ``list_checks``.
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -1157,7 +1177,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
         require_permission(session, sid, user.id, minimum="view")
         check = check_service.get_check(session, sid, cid)
         return {
-            **_check_summary(check, _one_inherited(session, check)),
+            **_check_summary(check, _one_inherited(session, check), ValueSetMasker(session)),
             "suite_id": suite_id,
             "created_at": check.created_at.isoformat(),
             "updated_at": check.updated_at.isoformat(),
@@ -1249,7 +1269,9 @@ def list_check_versions(
     was pointed at a platform-native engine like ``dmf`` **as of that version**),
     dimension, ``config`` (the full stored config, or only ``{"column": …}`` once
     ``redacted`` is true) and the three severity thresholds **as they were at that version**,
-    plus when the change was made and who made it.
+    plus when the change was made and who made it. A value set over a column that
+    is sensitive now is withheld as on ``list_checks`` (``redacted_columns``);
+    ``restore_check_version`` still restores the real values.
 
     ``total`` reports how many versions exist regardless of ``limit``, so a short
     page is not mistaken for the whole history — the oldest versions are the ones
@@ -1301,6 +1323,8 @@ def list_check_versions(
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="view")
         versions = check_service.list_check_versions(session, sid, cid)
+        masker = ValueSetMasker(session)
+        masked = {v.version_no: masker.mask(sid, v.config) for v in versions[:limit]}
         return {
             "suite_id": suite_id,
             "check_id": check_id,
@@ -1326,7 +1350,10 @@ def list_check_versions(
                     # dimension beside an OLD config would misstate what the
                     # check was at that version.
                     "dimension": v.dimension,
-                    "config": v.config,
+                    # Withheld as on `get_check` when the column is sensitive now (#2592).
+                    "config": masked[v.version_no].config,
+                    "redacted_columns": masked[v.version_no].redacted_columns,
+                    "redaction_reasons": masked[v.version_no].redaction_reasons,
                     # `_num`, not the raw attribute: these are NUMERIC columns and
                     # arrive as `Decimal`, which the JSON encoder refuses. REST is
                     # immune because Pydantic coerces on the way out; MCP has no
@@ -2299,7 +2326,10 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     later changes to the coverage settings do not reach it.
 
     A comparison check's baseline connection appears as its ``(name, env)``
-    pair, never as an id or anything resolvable to a secret. Requires view
+    pair, never as an id or anything resolvable to a secret. A value set over a
+    column that is sensitive now is exported with every value ``<redacted>``, and
+    ``import_suite`` refuses a document that still holds them, so such a suite
+    cannot be copied with this tool until the real values are supplied. Requires view
     access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -2772,6 +2802,9 @@ def update_check(
     to change silently drops every other key: raising ``max_value`` on a
     between-check by sending ``{"max_value": 100}`` deletes its ``min_value``, and
     because the result is still a valid check it saves and reports success.
+    A config whose ``value_set`` still holds ``<redacted>`` (a withheld value set,
+    see ``list_checks``) is refused: you cannot read those values, so either send
+    the full list of real values the user gives you, or leave ``config`` out.
 
     **Severity thresholds can be removed** with ``clear_thresholds``: name the
     tiers to clear, e.g. ``["warn"]`` for 'drop the warning threshold'. Passing
@@ -2875,7 +2908,7 @@ def update_check(
             tags=tags,
             actor_id=user.id,
         )
-        return _check_summary(check, _one_inherited(session, check))
+        return _check_summary(check, _one_inherited(session, check), ValueSetMasker(session))
 
 
 @mcp.tool
@@ -2935,7 +2968,7 @@ def restore_check_version(
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.restore_check_version(session, sid, cid, version_no, actor_id=user.id)
         return {
-            **_check_summary(check, _one_inherited(session, check)),
+            **_check_summary(check, _one_inherited(session, check), ValueSetMasker(session)),
             "restored_from_version": version_no,
         }
 
@@ -5287,8 +5320,8 @@ def list_suggested_rules(
     ``redaction_reasons`` says which rule decided. The real values are not
     returned here, and such a suggestion cannot be accepted, even in the app: the
     only decision left is to reject it. An already accepted rule is masked here
-    too, but its check (``check_id``) still holds the values it was created with,
-    and check reads do not mask them. For an AI-proposed rule
+    too, and so is its check (``check_id``) on every check read, by the same test.
+    For an AI-proposed rule
     (``source: "llm"``) the ``name`` is replaced and ``rationale`` is null too,
     since the model's wording may quote the values. An empty ``redacted_columns``
     means nothing was withheld, not that the column was checked against a policy:

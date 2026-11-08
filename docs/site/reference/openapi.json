@@ -2964,6 +2964,31 @@
             "title": "Origin",
             "type": "string"
           },
+          "redacted_columns": {
+            "description": "Columns whose `config.value_set` is withheld: the column is classified as sensitive now, so each value reads as `<redacted>`. Saving a config that still holds `<redacted>` is refused (422 `value_set_redacted`): send the full real list, or leave `config` out to keep the stored values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "description": "Per withheld column, the rule that classified it.",
+            "title": "Redaction Reasons",
+            "type": "object"
+          },
           "source_connection_id": {
             "anyOf": [
               {
@@ -3389,6 +3414,30 @@
               }
             ],
             "title": "Redacted By Name"
+          },
+          "redacted_columns": {
+            "description": "As on a check: a `config.value_set` withheld because its column is sensitive now. Restoring the version still restores the real values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Redacted Columns",
+            "type": "array"
+          },
+          "redaction_reasons": {
+            "additionalProperties": {
+              "enum": [
+                "own_tag",
+                "inherited_tag",
+                "policy",
+                "unclassified",
+                "detected",
+                "classifier",
+                "default_mask"
+              ],
+              "type": "string"
+            },
+            "title": "Redaction Reasons",
+            "type": "object"
           },
           "source_connection_id": {
             "anyOf": [
@@ -21611,7 +21660,7 @@
     },
     "/api/v1/suites/{suite_id}/notifications/promote": {
       "post": {
-        "description": "Creates a channel holding the suite's existing webhook (or recipient list), links\nit to the suite and clears the legacy value. The webhook URL is moved, never read or\nreturned. Admin-only, like every channel mutation.",
+        "description": "Creates a channel holding the suite's existing webhook (or recipient list), links\nit to the suite and clears the legacy value. The webhook URL is moved, never read or\nreturned. A webhook whose secret is missing from the secret store is refused (409\n`promote_secret_missing`), since its channel would never deliver; a secret store that\ncannot answer is a 503. Admin-only, like every channel mutation.",
         "operationId": "promote_suite_destination",
         "parameters": [
           {
