@@ -111,6 +111,13 @@ class SecretStore(Protocol):
 
     def set(self, name: str, value: str) -> None: ...
 
+    def exists(self, name: str) -> bool:
+        """Whether ``name`` holds a readable secret, WITHOUT reading its value (#2413). A
+        soft-deleted secret is absent. Raises `SecretStoreUnavailableError` when the store
+        cannot answer: an outage is never reported as absent (ADR 0039 §6).
+        """
+        ...
+
     def delete(self, name: str) -> None:
         """Best-effort removal (#372): idempotent and fail-soft — never raises
         (cleanup must not 500 the owning entity's delete); failures are logged.
@@ -135,6 +142,9 @@ class EnvSecretStore:
     def set(self, name: str, value: str) -> None:
         """Write into the process env — dev only, NOT persisted across restarts."""
         os.environ[_env_key(name)] = value
+
+    def exists(self, name: str) -> bool:
+        return _env_key(name) in os.environ
 
     def delete(self, name: str) -> None:
         """Remove the env var if present (#372). Idempotent; can't fail."""
@@ -194,6 +204,23 @@ class AzureKeyVaultStore:
         except Exception as exc:
             raise SecretWriteError(
                 f"Key Vault secret {name!r} at {self._vault_url}: {exc}"
+            ) from exc
+
+    def exists(self, name: str) -> bool:
+        """The secret's version properties, never its value. Unverified against a live vault
+        (#2224): `ResourceNotFoundError` is taken as absent, and a secret with no enabled
+        version as unreadable."""
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            versions = self._client_lazy().list_properties_of_secret_versions(name)
+            return any(version.enabled is not False for version in versions)
+        except ResourceNotFoundError:
+            return False
+        except Exception as exc:
+            log.warning("keyvault_unavailable", name=name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Key Vault at {self._vault_url} could not check {name!r}: {exc}"
             ) from exc
 
     def delete(self, name: str) -> None:
@@ -321,6 +348,29 @@ class AwsSecretsManagerStore:
                 ) from create_exc
         except Exception as exc:
             raise SecretWriteError(f"Secrets Manager secret {full_name!r}: {exc}") from exc
+
+    def exists(self, name: str) -> bool:
+        """`DescribeSecret`, which returns metadata only. Unverified against a live account
+        (#2224): a secret scheduled for deletion (`DeletedDate`) is absent, as `get` would refuse
+        it."""
+        from botocore.exceptions import ClientError
+
+        full_name = self._full_name(name)
+        try:
+            response = self._client_lazy().describe_secret(SecretId=full_name)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                return False
+            log.warning("secrets_manager_unavailable", name=full_name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not check {full_name!r}: {exc}"
+            ) from exc
+        except Exception as exc:
+            log.warning("secrets_manager_unavailable", name=full_name, error=str(exc))
+            raise SecretStoreUnavailableError(
+                f"Secrets Manager could not check {full_name!r}: {exc}"
+            ) from exc
+        return not response.get("DeletedDate")
 
     def delete(self, name: str) -> None:
         """Best-effort delete (#372); missing is a no-op, fail-soft. The default
@@ -699,6 +749,35 @@ class OpenBaoSecretStore:
             raise SecretWriteError(
                 f"OpenBao secret {name!r} at {self._addr}: vault unreachable ({exc})"
             ) from exc
+
+    def exists(self, name: str) -> bool:
+        """The KV v2 metadata endpoint, which carries no value: absent on a 404, and when the
+        current version is soft-deleted or destroyed (`get` 404s on both)."""
+        try:
+            response = self._send("GET", self._path("metadata", name))
+        except httpx.HTTPError as exc:
+            self._log_transport_failure(name, None, str(exc))
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} unreachable while checking {name!r} ({exc})"
+            ) from exc
+        if response.status_code == 404 and not _is_missing_mount(response):
+            return False
+        if response.status_code != 200:
+            self._log_transport_failure(name, response.status_code, response.text)
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} could not check {name!r} "
+                f"(HTTP {response.status_code} — {_explain_status(response.status_code)})"
+            )
+        try:
+            data = response.json()["data"]
+            current = data["versions"][str(data["current_version"])]
+        except (ValueError, KeyError, TypeError) as exc:
+            self._log_transport_failure(name, response.status_code, "unexpected metadata")
+            raise SecretStoreUnavailableError(
+                f"OpenBao at {self._addr} returned unexpected metadata for {name!r} "
+                f"— is {self._mount!r} a KV v2 mount? ({exc})"
+            ) from exc
+        return not current.get("deletion_time") and not current.get("destroyed")
 
     def delete(self, name: str) -> None:
         """Best-effort purge of every version (#372); missing is a no-op, fail-soft."""

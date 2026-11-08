@@ -304,10 +304,13 @@ def promote_suite_destination(
     payload: PromoteDestination,
     current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> PromotedChannelRead:
     """Creates a channel holding the suite's existing webhook (or recipient list), links
     it to the suite and clears the legacy value. The webhook URL is moved, never read or
-    returned. Admin-only, like every channel mutation.
+    returned. A webhook whose secret is missing from the secret store is refused (409
+    `promote_secret_missing`), since its channel would never deliver; a secret store that
+    cannot answer is a 503. Admin-only, like every channel mutation.
     """
     require_permission(db, suite_id, current_user.id, minimum="edit")
     channel = svc.promote_suite_destination(
@@ -315,6 +318,7 @@ def promote_suite_destination(
         suite_id,
         destination=payload.destination,
         name=payload.name,
+        secret_store=secret_store,
         actor_id=current_user.id,
     )
     return PromotedChannelRead(

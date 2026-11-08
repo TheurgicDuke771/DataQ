@@ -28,6 +28,7 @@ class FakeSecretStore:
         self.requested: list[str] = []
         self.writes: list[str] = []
         self.deleted: list[str] = []
+        self.checked: list[str] = []
 
     def get(self, name: str) -> str:
         self.requested.append(name)
@@ -44,6 +45,13 @@ class FakeSecretStore:
             raise self._raise_on_set
         self.writes.append(value)
         self.data[name] = value
+
+    def exists(self, name: str) -> bool:
+        """Never records a read: `requested` is the proof a caller did not read the value."""
+        if self._raise_on_get is not None:
+            raise self._raise_on_get
+        self.checked.append(name)
+        return name in self.data or self._default is not None
 
     def delete(self, name: str) -> None:
         if self._raise_on_set is not None:

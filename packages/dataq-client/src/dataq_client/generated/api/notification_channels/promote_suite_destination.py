@@ -75,7 +75,9 @@ def sync_detailed(
 
      Creates a channel holding the suite's existing webhook (or recipient list), links
     it to the suite and clears the legacy value. The webhook URL is moved, never read or
-    returned. Admin-only, like every channel mutation.
+    returned. A webhook whose secret is missing from the secret store is refused (409
+    `promote_secret_missing`), since its channel would never deliver; a secret store that
+    cannot answer is a 503. Admin-only, like every channel mutation.
 
     Args:
         suite_id (UUID):
@@ -111,7 +113,9 @@ def sync(
 
      Creates a channel holding the suite's existing webhook (or recipient list), links
     it to the suite and clears the legacy value. The webhook URL is moved, never read or
-    returned. Admin-only, like every channel mutation.
+    returned. A webhook whose secret is missing from the secret store is refused (409
+    `promote_secret_missing`), since its channel would never deliver; a secret store that
+    cannot answer is a 503. Admin-only, like every channel mutation.
 
     Args:
         suite_id (UUID):
@@ -142,7 +146,9 @@ async def asyncio_detailed(
 
      Creates a channel holding the suite's existing webhook (or recipient list), links
     it to the suite and clears the legacy value. The webhook URL is moved, never read or
-    returned. Admin-only, like every channel mutation.
+    returned. A webhook whose secret is missing from the secret store is refused (409
+    `promote_secret_missing`), since its channel would never deliver; a secret store that
+    cannot answer is a 503. Admin-only, like every channel mutation.
 
     Args:
         suite_id (UUID):
@@ -176,7 +182,9 @@ async def asyncio(
 
      Creates a channel holding the suite's existing webhook (or recipient list), links
     it to the suite and clears the legacy value. The webhook URL is moved, never read or
-    returned. Admin-only, like every channel mutation.
+    returned. A webhook whose secret is missing from the secret store is refused (409
+    `promote_secret_missing`), since its channel would never deliver; a secret store that
+    cannot answer is a 503. Admin-only, like every channel mutation.
 
     Args:
         suite_id (UUID):
