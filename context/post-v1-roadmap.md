@@ -25,10 +25,10 @@
 > generator-friendly: themes with intent, issue refs, and pointers to the detailed design.
 
 **Detailed design docs** (the "why" + the shape):
-- [post-v1-dq-intelligence-notes.md](../docs/post-v1-dq-intelligence-notes.md) — expectation expansion, LLM-assisted authoring, marketplace
+- [post-v1-dq-intelligence-notes.md](https://github.com/TheurgicDuke771/DataQ/blob/97d02f6d0dfa9ea08537c5500bd6271cefb10903/docs/post-v1-dq-intelligence-notes.md) — expectation expansion, LLM-assisted authoring, marketplace
 - ~~post-v1-admin-ui-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: superseded by ADR [0033](../docs/site/adr/0033-workspace-roles-rbac.md) (which records the decision AND the reversal of this doc's defer-RBAC stance); live remnants filed as [#1514](https://github.com/TheurgicDuke771/DataQ/issues/1514) / [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516)
 - ~~post-v1-assets-lineage-incidents-notes.md~~ — **deleted at the v1.1 close (2026-08-21)**: fully shipped; durable decision records are ADRs [0034](../docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md)/[0037](../docs/site/adr/0037-workspace-visible-asset-identity.md)/[0040](../docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md); the one unbuilt design item is [#1515](https://github.com/TheurgicDuke771/DataQ/issues/1515)
-- [Security & data handling](../docs/site/security/overview.md) (now carries its own Compliance section) + [docs/site/compliance/](../docs/site/compliance/) — GDPR / CCPA-CPRA / HIPAA technical controls (published, long-term reference); ~~compliance-posture.md~~ — **deleted 2026-08-28**: it was the internal gap-tracking doc these were built from, G1–G6 all shipped (the #1460 tamper-evidence residual closed 2026-08-27) bar the accepted-exception #1385, and its content was folded into `docs/site/security/overview.md`
+- [Security & data handling](../docs/site/security/overview.md) (now carries its own Compliance section) + [docs/site/security/compliance/](../docs/site/security/compliance/) — GDPR / CCPA-CPRA / HIPAA technical controls (published, long-term reference); ~~compliance-posture.md~~ — **deleted 2026-08-28**: it was the internal gap-tracking doc these were built from, G1–G6 all shipped (the #1460 tamper-evidence residual closed 2026-08-27) bar the accepted-exception #1385, and its content was folded into `docs/site/security/overview.md`
 
 **The big picture:** v1 ships the DQ loop (checks → results → trends → freshness/volume monitors
 → alerts → MCP) end-to-end. Post-v1 layers *intelligence* (more expectations, LLM authoring,
@@ -105,7 +105,7 @@ in Week 7** (out of roadmap — run engine #426 + authoring UI #437). The rest s
 
 ## Theme 2 — DQ-intelligence (expectation expansion, LLM authoring, marketplace)
 
-Full design: **[post-v1-dq-intelligence-notes.md](../docs/post-v1-dq-intelligence-notes.md)**. The enabler is
+Full design: **[post-v1-dq-intelligence-notes.md](https://github.com/TheurgicDuke771/DataQ/blob/97d02f6d0dfa9ea08537c5500bd6271cefb10903/docs/post-v1-dq-intelligence-notes.md)**. The enabler is
 already true in v1 — no server-side expectation allowlist, so "add an expectation" is mostly a
 frontend-catalog + config-validation problem. Four themes: (1) the 5 high-ROI GX built-ins,
 (2) LLM custom-SQL generator, (3) LLM curated check-suggestions, (4a) curated server-served
@@ -269,7 +269,7 @@ the asset page.
 **All six gaps have shipped** (bar the accepted-exception #1385, ElastiCache
 at-rest encryption) — see [Security & data handling](../docs/site/security/overview.md)
 (now carries its own Compliance section) and
-[docs/site/compliance/](../docs/site/compliance/) for the published, long-term
+[docs/site/security/compliance/](../docs/site/security/compliance/) for the published, long-term
 posture. v1 is privacy-by-design (logger PII redaction, default-redact
 samples, retention purge, SecretStore, suite-scoped authz, BYOL
 controller/processor split). These closed the gaps for a credible v2.x "processor-grade controls" claim.
