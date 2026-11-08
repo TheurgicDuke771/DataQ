@@ -1,6 +1,8 @@
 # Post-v1 notes — Expectation expansion, marketplace & LLM-assisted authoring (deferred design)
 
-> **Status: deferred to post-v1 — now filed as discrete backlog issues (2026-08-21):**
+> **Status: shipped in v1.2 (Weeks 2–4).** All five issues closed 2026-08-28 → 2026-08-30;
+> the allowlist this note says is missing now exists (`expectation_allowlist.py`, 25 types).
+> Kept as the design record. Filed as (2026-08-21):
 > [#1509](https://github.com/TheurgicDuke771/DataQ/issues/1509) (Theme 1 — the 5 GX
 > built-ins + the aggregate-stats decision) ·
 > [#1510](https://github.com/TheurgicDuke771/DataQ/issues/1510) (Theme 4a — curated

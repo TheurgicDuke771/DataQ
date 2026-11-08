@@ -1,10 +1,15 @@
 ---
 name: live-verify
-description: Open an ad-hoc harness test window on Azure and verify a change against REAL datasources — wake the harness, run the flows, exercise the app (live-smoke Playwright lane / e2e_smoke.py bearer mode / MCP), record the readings, put the harness back to sleep. Use when a change touches a driver boundary (a value read from a DB connector, pyiceberg, pandas/pyarrow or a cloud SDK), before ticking any docs/site/reference/feature-matrix.md cell, or when the user says "verify this live" / "run a harness window".
+description: RETIRED — the harness this skill drives was torn down 2026-10-03; live verification waits on a new cloud test instance (#2224). Historically: open an ad-hoc harness test window on Azure and verify a change against REAL datasources — wake the harness, run the flows, exercise the app (live-smoke Playwright lane / e2e_smoke.py bearer mode / MCP), record the readings, put the harness back to sleep. Use when a change touches a driver boundary (a value read from a DB connector, pyiceberg, pandas/pyarrow or a cloud SDK), before ticking any docs/site/reference/feature-matrix.md cell, or when the user says "verify this live" / "run a harness window".
 disable-model-invocation: true
 ---
 
 # live-verify
+
+> **Retired.** The harness and its test accounts were torn down 2026-10-03, so there is nothing to wake.
+> Live verification against Snowflake, Unity Catalog, Azure or AWS waits on a cloud test instance
+> ([#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224)); until then, say a change is unverified
+> live rather than run this. The steps below are kept for when an instance exists.
 
 ## Purpose
 

@@ -66,6 +66,8 @@ For each changed router, check (read the code, don't guess):
 
 ### 6. Key Vault access audit (needs `az login`; ⚠️ SKIP with reason if not logged in)
 
+> Skip while no live deployment exists (the project's own estate was retired 2026-10-03); report it as not applicable.
+
 ```bash
 az keyvault list --resource-group dataq-rg --query '[].name' -o tsv
 az role assignment list --scope $(az keyvault list --resource-group dataq-rg --query '[0].id' -o tsv) \
@@ -75,6 +77,8 @@ az role assignment list --scope $(az keyvault list --resource-group dataq-rg --q
 Flag any principal that isn't the app's user-assigned managed identity, the deploy CI identity, or the owner. (KV purge-protection is a RECORDED decision — deliberately off for the demo-scoped vault, see `deploy/README.md`; don't re-litigate it, just flag if the vault's contents stop being demo-scoped.)
 
 ### 7. Credential-rotation register
+
+> Skip while no live deployment exists (the project's own estate was retired 2026-10-03); report it as not applicable.
 
 Check expiry/rotation status of the live credentials — **the source of truth is `docs/ops-log.md`** (its "Expiring soon" register + rotation entries; CLAUDE.md §12 makes it the append-only record, and the credential-expiry surfacing (#838/#1024) reads real expiry off the credential where the platform exposes one). Do NOT re-assert dates from this file: read the ops-log register, then verify the nearest expiries against the live secret-store attributes. Known standing facts: Snowflake PATs have run ~15–25-day lifetimes in practice (not 90); the register also covers the ACCOUNTADMIN PAT and the dbt-artifacts SAS. Webhook shared secret (ADF) + Airflow/dbt HMAC signing keys rotate on any suspicion of exposure (hard-cutover per ADR 0006).
 

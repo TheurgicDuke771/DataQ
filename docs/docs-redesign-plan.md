@@ -1,5 +1,7 @@
 # Docs redesign plan — 2026-09-02 (internal, not published)
 
+> **Status: shipped.** Epic [#1831](https://github.com/TheurgicDuke771/DataQ/issues/1831) closed 2026-09-04 (nine PRs, listed in [progress-v1.2.md](progress-v1.2.md)). Kept as the design record.
+
 Goal: a modern, beginner-first docs site that keeps what already exceeds the
 field (architecture, ADRs, security, compliance, engineering practice) and
 fixes what trails it: zero screenshots, no videos, 16 of 25 check types

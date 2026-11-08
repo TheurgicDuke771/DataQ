@@ -1,11 +1,12 @@
-# DataQ roadmap — v1.2 (current) and v1.3 (proposed)
+# DataQ roadmap — v1.2 (closed) and v1.3 (current)
 
 > Internal planning document (in `context/`, never published). Written 2026-08-29,
 > mid-v1.2, from the gap review + external competitive assessment of the same date.
 > **What this is:** the forward view — where v1.2 is going and what v1.3 should be —
 > so cycle planning starts from a thesis, not a backlog sort. **What this is not:**
-> a schedule ([docs/progress.md](../docs/progress.md) §Cycle plan is the live v1.2
-> schedule; GitHub milestones are the source of truth for status). The themed
+> a schedule ([docs/progress.md](../docs/progress.md) §Cycle plan is the live v1.3
+> schedule; GitHub milestones are the source of truth for status). v1.2 closed with `v1.2.0`
+> on 2026-10-04; v1.3 runs 2026-10-05 → 2026-11-29 and is in Week 7. The themed
 > deferred-work index remains [post-v1-roadmap.md](post-v1-roadmap.md).
 
 ## The thesis (one paragraph)

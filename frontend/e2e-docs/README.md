@@ -32,7 +32,7 @@ the `generate-sql`/`suggest-checks` clips) need a **live** SQL connection — bo
 introspect the target table for real, so a fake config errors on every call. `start` creates
 one, opt-in, when `DOCS_SNOWFLAKE_ACCOUNT` is set (plus `DOCS_SNOWFLAKE_USER` and
 `DOCS_SNOWFLAKE_SECRET` — no defaults, deliberately, so no identifier is committed to this
-file; the rest default to the harness reader's shape — `DATAQ_DB.RETAIL.ORDERS_HEADER`,
+file; the rest default to `DATAQ_DB.RETAIL.ORDERS_HEADER`,
 warehouse `DATAQ_WH`, role `DATAQ_READER`). Without them, `start` aborts rather than
 silently skipping the live-warehouse captures; leave all three unset to run the base set
 with no warehouse credentials at hand.
