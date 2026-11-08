@@ -352,6 +352,26 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
 }
 
 
+#: Entity types written with a hand-built payload rather than an allow-listed snapshot.
+_UNSNAPSHOTTED_ENTITY_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        _audit_chain.SCRUB_ENTITY_TYPE,
+        "check_suggestion",
+        "contract",
+        "data_subject_request",
+        "inventory_sync",
+        "orchestration_poll",
+        "orchestration_webhook",
+        "result",
+        "run",
+        "secret_sweep",
+    }
+)
+
+#: Every entity type an audit event may carry: what `record` accepts and the log can be filtered by.
+AUDIT_ENTITY_TYPES: Final[frozenset[str]] = frozenset(_SERIALIZERS) | _UNSNAPSHOTTED_ENTITY_TYPES
+
+
 class UnknownAuditEntityError(RuntimeError):
     """A caller asked to audit an entity type with no declared allow-list."""
 
@@ -413,6 +433,11 @@ def record(
         raise ValueError(
             f"action_class={action_class!r} is not one of {AUDIT_ACTION_CLASSES} "
             "('access' is phase 2 / G1 #431)"
+        )
+    if entity_type not in AUDIT_ENTITY_TYPES:
+        raise ValueError(
+            f"entity_type={entity_type!r} is not a declared audit entity type — add it to "
+            "audit_service._SERIALIZERS or _UNSNAPSHOTTED_ENTITY_TYPES"
         )
     if actor_kind not in AUDIT_ACTOR_KINDS:
         raise ValueError(
@@ -545,7 +570,5 @@ def declared_entity_types() -> Sequence[str]:
 
 
 def queryable_entity_types() -> Sequence[str]:
-    """The entity types the audit log can be filtered by: the snapshot allow-list plus the types
-    written without a snapshot.
-    """
-    return sorted({*_SERIALIZERS, _audit_chain.SCRUB_ENTITY_TYPE})
+    """The entity types the audit log can be filtered by: every type `record` accepts."""
+    return sorted(AUDIT_ENTITY_TYPES)

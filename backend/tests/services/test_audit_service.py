@@ -531,3 +531,47 @@ def test_if_changed_ignores_a_change_to_an_UNAUDITED_field() -> None:
         if_changed=True,
     )
     assert result is None
+
+
+def test_an_undeclared_entity_type_raises_at_the_call_site() -> None:
+    """An event the log's Entity type filter could never find is refused when written (#2624)."""
+    with pytest.raises(ValueError, match="entity_type"):
+        audit_service.record(
+            cast(Session, None),
+            action="widget.update",
+            entity_type="widget",
+            entity_id=None,
+            actor=None,
+        )
+
+
+def _literal_entity_types() -> dict[str, str]:
+    """Every literal `entity_type="..."` keyword in the app, mapped to where it is written."""
+    import ast
+    from pathlib import Path
+
+    app = Path(audit_service.__file__).resolve().parents[1]
+    found: dict[str, str] = {}
+    for path in sorted(app.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if (
+                    kw.arg == "entity_type"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    found.setdefault(kw.value.value, f"{path.relative_to(app)}:{kw.value.lineno}")
+    return found
+
+
+def test_every_written_entity_type_is_declared() -> None:
+    """The drift guard for #2624: a type written but not declared 422s on the log's filter."""
+    written = _literal_entity_types()
+    assert {"check", "run", "contract"} <= written.keys(), "the scan found the known writers"
+    undeclared = {
+        t: where for t, where in written.items() if t not in audit_service.AUDIT_ENTITY_TYPES
+    }
+    assert not undeclared, f"declare these in audit_service: {undeclared}"
+    assert list(audit_service.queryable_entity_types()) == sorted(audit_service.AUDIT_ENTITY_TYPES)
