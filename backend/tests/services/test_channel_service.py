@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import insert, select, update
 
-from backend.app.core.secrets import SecretNotFoundError
+from backend.app.core.secrets import SecretNotFoundError, SecretStoreUnavailableError
 from backend.app.db.models import (
     AuditEvent,
     Connection,
@@ -27,6 +27,8 @@ from backend.app.services.channel_service import (
     ChannelNotFoundError,
     ChannelTypeInvalidError,
     NothingToPromoteError,
+    PromoteSecretMissingError,
+    PromoteSecretStoreUnavailableError,
     WebhookDestination,
 )
 from backend.app.services.notification_service import (
@@ -1035,7 +1037,7 @@ def test_promote_moves_the_secret_ref_without_reading_or_deleting_it(db_session:
     _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
 
     channel = svc.promote_suite_destination(
-        db_session, suite.id, destination="teams", name="Platform Teams"
+        db_session, suite.id, secret_store=store, destination="teams", name="Platform Teams"
     )
 
     assert (channel.type, channel.webhook_secret_ref) == ("teams", "suite-notif-abc")
@@ -1043,7 +1045,40 @@ def test_promote_moves_the_secret_ref_without_reading_or_deleting_it(db_session:
     assert config is not None and config.webhook_secret_ref is None
     assert [c.id for c in svc.list_channels_for_suite(db_session, suite.id)] == [channel.id]
     assert (store.requested, store.writes, store.deleted) == ([], [], [])
+    assert store.checked == ["suite-notif-abc"]
     assert store.data["suite-notif-abc"] == _TEAMS_URL
+
+
+@pytest.mark.parametrize("destination", ["teams", "slack"])
+def test_promote_refuses_a_ref_whose_secret_is_gone(db_session: Any, destination: str) -> None:
+    # #2413: the channel it made would resolve to nothing on every delivery.
+    suite, store = _suite(db_session), FakeSecretStore()
+    attr = "webhook_secret_ref" if destination == "teams" else "slack_webhook_secret_ref"
+    _legacy_config(db_session, suite, store, **{attr: "suite-notif-gone"})
+    store.data.clear()
+
+    with pytest.raises(PromoteSecretMissingError):
+        svc.promote_suite_destination(
+            db_session, suite.id, destination=destination, name="T", secret_store=store
+        )
+
+    db_session.rollback()
+    assert svc.list_channels(db_session) == []
+    config = notification_service.get_config(db_session, suite.id)
+    assert config is not None and getattr(config, attr) == "suite-notif-gone"
+    assert store.requested == []
+
+
+def test_promote_during_a_secret_store_outage_is_a_503_not_missing(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+    down = FakeSecretStore(store.data, raise_on_get=SecretStoreUnavailableError("sealed"))
+
+    with pytest.raises(PromoteSecretStoreUnavailableError) as excinfo:
+        svc.promote_suite_destination(
+            db_session, suite.id, destination="teams", name="T", secret_store=down
+        )
+    assert excinfo.value.status_code == 503
 
 
 def test_promote_slack_leaves_the_other_legacy_destinations_alone(db_session: Any) -> None:
@@ -1057,7 +1092,9 @@ def test_promote_slack_leaves_the_other_legacy_destinations_alone(db_session: An
         email_recipients="a@x.io",
     )
 
-    channel = svc.promote_suite_destination(db_session, suite.id, destination="slack", name="S")
+    channel = svc.promote_suite_destination(
+        db_session, suite.id, secret_store=store, destination="slack", name="S"
+    )
 
     assert (channel.type, channel.webhook_secret_ref) == ("slack", "suite-notif-slack-s")
     config = notification_service.get_config(db_session, suite.id)
@@ -1070,7 +1107,9 @@ def test_promote_email_copies_the_recipients(db_session: Any) -> None:
     suite, store = _suite(db_session), FakeSecretStore()
     _legacy_config(db_session, suite, store, email_recipients="a@x.io, b@x.io")
 
-    channel = svc.promote_suite_destination(db_session, suite.id, destination="email", name="E")
+    channel = svc.promote_suite_destination(
+        db_session, suite.id, secret_store=store, destination="email", name="E"
+    )
 
     assert (channel.type, channel.email_recipients) == ("email", "a@x.io, b@x.io")
     assert channel.webhook_secret_ref is None
@@ -1084,7 +1123,9 @@ def test_promote_with_nothing_to_move_is_refused(db_session: Any, has_row: bool)
         _legacy_config(db_session, suite, store, slack_webhook_secret_ref="suite-notif-slack-s")
 
     with pytest.raises(NothingToPromoteError):
-        svc.promote_suite_destination(db_session, suite.id, destination="teams", name="T")
+        svc.promote_suite_destination(
+            db_session, suite.id, secret_store=store, destination="teams", name="T"
+        )
     assert svc.list_channels(db_session) == []
 
 
@@ -1092,7 +1133,9 @@ def test_a_clear_after_promote_cannot_delete_the_channels_secret(db_session: Any
     """The legacy clear path deletes the ref it clears; after a promote there is none."""
     suite, store = _suite(db_session), FakeSecretStore()
     _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
-    svc.promote_suite_destination(db_session, suite.id, destination="teams", name="T")
+    svc.promote_suite_destination(
+        db_session, suite.id, secret_store=store, destination="teams", name="T"
+    )
 
     notification_service.upsert_config(
         db_session, suite_id=suite.id, enabled=True, alert_on="warn", webhook="", secret_store=store
@@ -1111,7 +1154,7 @@ def test_promote_is_audited_as_the_three_changes_it_makes(db_session: Any) -> No
     _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
 
     channel = svc.promote_suite_destination(
-        db_session, suite.id, destination="teams", name="T", actor_id=actor.id
+        db_session, suite.id, secret_store=store, destination="teams", name="T", actor_id=actor.id
     )
 
     events = {
@@ -1136,7 +1179,9 @@ def test_promote_refuses_a_recipient_list_that_would_fail_every_send(db_session:
     _legacy_config(db_session, suite, store, email_recipients="ok@x.io, not-an-address")
 
     with pytest.raises(InvalidRecipientsError):
-        svc.promote_suite_destination(db_session, suite.id, destination="email", name="E")
+        svc.promote_suite_destination(
+            db_session, suite.id, secret_store=store, destination="email", name="E"
+        )
 
     db_session.rollback()
     assert svc.list_channels(db_session) == []
@@ -1148,7 +1193,9 @@ def test_promote_on_a_missing_suite_is_a_404(db_session: Any) -> None:
     from backend.app.services.suite_service import SuiteNotFoundError
 
     with pytest.raises(SuiteNotFoundError):
-        svc.promote_suite_destination(db_session, uuid.uuid4(), destination="teams", name="T")
+        svc.promote_suite_destination(
+            db_session, uuid.uuid4(), destination="teams", name="T", secret_store=FakeSecretStore()
+        )
 
 
 def test_a_locked_read_refreshes_a_row_the_session_already_holds(db_session: Any) -> None:
