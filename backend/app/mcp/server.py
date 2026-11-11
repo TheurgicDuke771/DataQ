@@ -4182,6 +4182,9 @@ def _asset_summary_payload(a: Any) -> dict[str, Any]:
         "suite_count": a.suite_count,
         "monitored": a.suite_count > 0,
         # ── data quality ──
+        # Null = nothing evaluated, which is not 0 (0 is "everything evaluated was
+        # critical"). The service already computed it for this row; no extra query.
+        "health_score": _num(a.health_score),
         "worst_severity": a.worst_severity,
         "checks_total": a.checks_total,
         "checks_passed": a.checks_passed,
@@ -4199,18 +4202,26 @@ def _asset_summary_payload(a: Any) -> dict[str, Any]:
 def list_assets(
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
     offset: Annotated[int, Field(ge=0)] = 0,
+    sort: Literal["name", "health_score"] = "name",
 ) -> dict[str, Any]:
     """List the data assets (tables, views, files) DataQ knows about, with health.
 
-    Use this for 'what tables do we monitor?' or as the first step in 'is orders
-    healthy?'.
+    Use this for 'what tables do we monitor?', 'which assets are least healthy?'
+    or as the first step in 'is orders healthy?'.
 
-    **Assets are returned in alphabetical order and there is no health filter or
-    sort.** A truncated page is therefore an alphabetical slice, never "the
-    unhealthiest assets" — to answer that, page with ``offset`` until
-    ``truncated`` is false. An asset appears here only because a suite targets
-    it, lineage emitted it, or its connection has inventory sync enabled, so a
-    table absent from the list may simply never have been enumerated.
+    **By default assets come back in alphabetical order** (``sort="name"``), so a
+    truncated page is an alphabetical slice, never "the unhealthiest assets".
+    For that, pass ``sort="health_score"``: the whole workspace is ordered
+    lowest score first, before paging, so the first page holds the lowest-scored
+    assets. **Assets with no score come last in that order, and no score is not
+    a good score**: an unmonitored asset, one whose suites have never completed
+    a run, and one DataQ cannot reach all sit at the end with
+    ``health_score: null``. "Least healthy" from the top of the list therefore
+    means "lowest among the assets that have a score"; say so, and read the
+    reachability flags below for the rest. There is no health *filter*. An asset
+    appears here only because a suite targets it, lineage emitted it, or its
+    connection has inventory sync enabled, so a table absent from the list may
+    simply never have been enumerated.
 
     Assets are the grain people think in, whereas suites are the grain checks are
     authored in. Returns each asset's namespace, name, environment, how many
@@ -4226,6 +4237,21 @@ def list_assets(
 
     Reading the fields honestly:
 
+    - `health_score` is a **derived** 0-100 figure, not a measurement: each
+      evaluated check result in the latest run of every suite targeting the
+      asset is weighted by severity (the workspace's weights, which an admin can
+      change — `get_health_score` returns them). **`null` means nothing was
+      evaluated and is not 0**: 0 means every evaluated check was critical. What
+      it does not cover: a suite whose latest run did not complete (queued,
+      running, failed or cancelled) contributes nothing, with no fallback to an
+      earlier run, so the score can rest on only some of the asset's suites —
+      `has_failed_run` / `has_active_run` / `has_cancelled_run` say when;
+      skipped and errored checks are left out; `checks_total` is how many
+      results it rests on, and 100 over one check is not the same claim as 100
+      over fifty; it says nothing about columns or dimensions no check tests
+      (`get_asset`'s `scorecard.uncovered`); and it is as old as `last_run_at`.
+      It is not the windowed, caller-scoped `health_score` that
+      `get_health_score` returns.
     - `worst_severity: null` means "nothing is currently failing", which covers
       **both** all-passed and nothing-ever-evaluated. Check `checks_total` and
       `last_run_at` before calling an asset healthy.
@@ -4236,11 +4262,21 @@ def list_assets(
       precondition was not met. An asset can be reachability-broken with
       `worst_severity: null`, and that is a problem, not a pass.
     """
+    # The schema rejects anything else at the protocol; this covers a direct call, where
+    # the service would quietly fall back to name order and the page would be reported
+    # as the least healthy assets.
+    if sort not in ("name", "health_score"):
+        raise ToolError("sort must be 'name' or 'health_score'")
     with _ctx() as (session, _user), _service_errors():
         total = asset_view_service.count_assets(session)
-        assets = asset_view_service.list_visible_assets(session, limit=limit, offset=offset)
+        assets = asset_view_service.list_visible_assets(
+            session, limit=limit, offset=offset, sort=sort
+        )
         return {
             "total": total,
+            # The order this page is a slice of, so a truncated page is not read as a
+            # ranking when it is an alphabetical one.
+            "sort": sort,
             "returned": len(assets),
             # Explicit rather than left to be inferred from `len == limit`, which
             # is wrong on the exact-boundary page (#925 — the same reason the REST
@@ -4256,7 +4292,9 @@ def get_asset(asset_id: str) -> dict[str, Any]:
 
     Use this for 'is the orders table healthy?', 'what checks run on this table?',
     'what feeds this table?' or 'what breaks if this is wrong?'. Returns the
-    workspace-true summary, a per-dimension `scorecard`, the composing suites the
+    workspace-true summary (with the asset's `health_score`: derived, and `null`
+    when nothing evaluated, never 0 — `list_assets` says what it does and does not
+    cover), a per-dimension `scorecard`, the composing suites the
     caller can see (each with its latest run), and the upstream/downstream lineage
     neighbourhood with the edges connecting them.
 
@@ -4275,7 +4313,9 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     before telling someone to write a new one. The scorecard's ``checks_total`` and
     ``unclassified_checks`` count switched-on checks only, and drop a check the
     moment it is switched off; the asset's overall ``summary`` is the latest run's
-    verdict and only changes at the next run, so the two can disagree in between.
+    verdict and only changes at the next run, so the two can disagree in between:
+    `summary.health_score` still counts the last result of a check switched off
+    since, and the dimension scores do not.
 
     A dimension `score` of `null` means nothing evaluated, which
     is neither 0 nor 100. `unclassified_checks` are checks with no dimension

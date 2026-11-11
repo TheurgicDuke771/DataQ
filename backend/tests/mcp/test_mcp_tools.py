@@ -4281,6 +4281,144 @@ def test_list_assets_reports_an_unmonitored_asset_as_unmonitored(
     assert row["checks_total"] == 0
 
 
+def _scored_asset(db_session: Any, user: User, name: str, outcomes: tuple[str, ...]) -> Asset:
+    asset = _asset(db_session, name=name)
+    suite = _suite(db_session, user)
+    suite.asset_id = asset.id
+    _run_with_results(db_session, suite, outcomes=outcomes)
+    return asset
+
+
+def test_asset_tools_return_the_health_score_and_never_zero_for_unknown(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Null is "nothing evaluated"; 0 is "everything evaluated was critical". The two
+    must stay apart, on both tools, for the three ways an asset has nothing to score.
+    """
+    user = _user(db_session)
+    clean = _scored_asset(db_session, user, "clean", ("pass", "pass"))
+    broken = _scored_asset(db_session, user, "broken", ("critical",))
+    mixed = _scored_asset(db_session, user, "mixed", ("pass", "critical"))
+    skipped = _scored_asset(db_session, user, "skipped", ("skip", "error"))
+    unwatched = _asset(db_session, name="unwatched")
+    midrun = _asset(db_session, name="midrun")
+    running = _suite(db_session, user)
+    running.asset_id = midrun.id
+    _run_with_results(db_session, running, status="running", outcomes=("pass",))
+    _as(monkeypatch, db_session, user)
+
+    rows = {a["name"]: a for a in server.list_assets()["assets"]}
+    assert rows["clean"]["health_score"] == 100.0
+    assert rows["broken"]["health_score"] == 0.0
+    assert rows["mixed"]["health_score"] == 50.0
+    for name in ("skipped", "unwatched", "midrun"):
+        assert rows[name]["health_score"] is None
+    assert rows["midrun"]["has_active_run"] is True
+
+    for asset in (clean, broken, mixed, skipped, unwatched, midrun):
+        summary = server.get_asset(str(asset.id))["summary"]
+        assert summary["health_score"] == rows[asset.name]["health_score"]
+        assert type(summary["health_score"]) in (float, type(None))
+
+
+def test_asset_health_score_is_workspace_true(db_session: Any, monkeypatch: Any) -> None:
+    """ADR 0037: the score covers suites the caller holds no grant on."""
+    owner = _user(db_session, "owner@acme.io")
+    asset = _scored_asset(db_session, owner, "shared", ("critical",))
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+
+    (row,) = server.list_assets()["assets"]
+    assert row["health_score"] == 0.0
+    detail = server.get_asset(str(asset.id))
+    assert detail["summary"]["health_score"] == 0.0
+    assert detail["suites"] == [] and detail["restricted_suite_count"] == 1
+
+
+def test_list_assets_sorts_the_whole_workspace_by_health_score_unscored_last(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The order is applied before paging, so a first page is the lowest-scored assets
+    rather than an alphabetical slice re-sorted. Unscored assets trail: no score is not
+    a good score, and it must not sort as 0 either.
+    """
+    user = _user(db_session)
+    _asset(db_session, name="a_unwatched")
+    _scored_asset(db_session, user, "b_clean", ("pass",))
+    _scored_asset(db_session, user, "c_mixed", ("pass", "critical"))
+    _scored_asset(db_session, user, "z_broken", ("critical",))
+    _as(monkeypatch, db_session, user)
+
+    by_name = server.list_assets()
+    assert by_name["sort"] == "name"
+    assert [a["name"] for a in by_name["assets"]] == [
+        "a_unwatched",
+        "b_clean",
+        "c_mixed",
+        "z_broken",
+    ]
+
+    ranked = server.list_assets(sort="health_score")
+    assert ranked["sort"] == "health_score"
+    assert [(a["name"], a["health_score"]) for a in ranked["assets"]] == [
+        ("z_broken", 0.0),
+        ("c_mixed", 50.0),
+        ("b_clean", 100.0),
+        ("a_unwatched", None),
+    ]
+
+    first = server.list_assets(sort="health_score", limit=1)
+    assert [a["name"] for a in first["assets"]] == ["z_broken"]
+    assert first["truncated"] is True
+
+
+def test_list_assets_rejects_an_unknown_sort(db_session: Any, monkeypatch: Any) -> None:
+    """The service falls back to name order for anything it does not know, which would
+    hand back an alphabetical page for a ranking request.
+    """
+    import asyncio
+
+    _as(monkeypatch, db_session, _user(db_session))
+    with pytest.raises(ToolError, match="sort must be"):
+        server.list_assets(sort="worst_first")  # type: ignore[arg-type]
+
+    tool = asyncio.run(server.mcp.get_tool("list_assets"))
+    assert tool is not None
+    assert tool.parameters["properties"]["sort"]["enum"] == ["name", "health_score"]
+
+
+def test_list_assets_health_score_costs_no_query_per_asset(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The score rides on the rollup the page already computes: the statement count is
+    the same for one scored asset and for five, sorted or not.
+    """
+    from sqlalchemy import event
+
+    user = _user(db_session)
+    _scored_asset(db_session, user, "t0", ("pass", "fail"))
+    _as(monkeypatch, db_session, user)
+
+    def statements(**kw: Any) -> int:
+        seen: list[str] = []
+
+        def on_execute(_conn: Any, _cur: Any, statement: str, *_a: Any) -> None:
+            seen.append(statement)
+
+        bind = db_session.get_bind()
+        event.listen(bind, "before_cursor_execute", on_execute)
+        try:
+            server.list_assets(**kw)
+        finally:
+            event.remove(bind, "before_cursor_execute", on_execute)
+        return len(seen)
+
+    one, one_sorted = statements(), statements(sort="health_score")
+    for i in range(1, 5):
+        _scored_asset(db_session, user, f"t{i}", ("pass", "critical"))
+    assert statements() == one
+    assert statements(sort="health_score") == one_sorted
+
+
 def test_list_assets_reports_truncation_against_the_real_total(
     db_session: Any, monkeypatch: Any
 ) -> None:
