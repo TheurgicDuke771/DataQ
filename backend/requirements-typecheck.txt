@@ -24,7 +24,7 @@ httpx==0.28.1
 psycopg2-binary==2.9.13
 pydantic==2.13.5
 pydantic-settings==2.16.1
-sqlalchemy[mypy]==2.0.54
+sqlalchemy[mypy]==2.0.57
 structlog==26.1.0
 types-jsonschema==4.26.0.20261006
 types-redis==4.6.0.20241004
