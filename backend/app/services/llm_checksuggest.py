@@ -55,8 +55,8 @@ MAX_SUGGESTIONS = 8
 _TOP_N = 5
 #: Columns profiled into one prompt (#1734). A wider table is cut to its first N in the
 #: order the datasource lists them, so neither the profile query nor the prompt grows
-#: with the table's width.
-MAX_PROMPT_COLUMNS = 100
+#: with the table's width. One value for every feature kind that profiles into a prompt.
+MAX_PROMPT_COLUMNS = llm_prompt_context.MAX_PROMPT_COLUMNS
 _VALUE_MAX_CHARS = 80
 
 # Bounds for the all-rejected error message (#1780 review): a per-item cap (matching

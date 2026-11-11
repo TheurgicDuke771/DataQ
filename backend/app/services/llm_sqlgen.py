@@ -9,6 +9,7 @@ is the output gate, not prompt hygiene.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -44,6 +45,12 @@ MAX_DESCRIPTION_CHARS = 2000
 #: A join-relevant related table is a small, deliberate list — not a
 #: general-purpose multi-table schema dump (#1649).
 MAX_ADDITIONAL_TABLES = 4
+#: Column names listed per table (#2356). Names are cheap, so this is wider than the
+#: profile's `MAX_PROMPT_COLUMNS`, but the prompt no longer grows with the table's width.
+#: A column the rule names is listed ahead of the cut (`_columns_for_prompt`), and the
+#: prompt says how many were left out.
+MAX_PROMPT_COLUMN_NAMES = 500
+_IDENTIFIER_TOKEN = re.compile(r"[A-Za-z0-9_$]+")
 
 _DIALECT_BY_TYPE = {
     "snowflake": "Snowflake SQL",
@@ -89,15 +96,62 @@ def check_generation_preconditions(suite: Suite, connection: Connection | None) 
     )
 
 
+def _columns_for_prompt(all_columns: list[str], description: str) -> list[str]:
+    """At most `MAX_PROMPT_COLUMN_NAMES` names, in the datasource's order. A column the
+    rule names (case-insensitively, as a whole word) is kept ahead of the cut: the model
+    cannot write SQL for a column it was not shown, so the ones the user asked about are
+    the last to go.
+    """
+    if len(all_columns) <= MAX_PROMPT_COLUMN_NAMES:
+        return all_columns
+    tokens = {t.lower() for t in _IDENTIFIER_TOKEN.findall(description)}
+    named = [i for i, name in enumerate(all_columns) if name.lower() in tokens]
+    keep = set(named[:MAX_PROMPT_COLUMN_NAMES])
+    for index in range(len(all_columns)):
+        if len(keep) >= MAX_PROMPT_COLUMN_NAMES:
+            break
+        keep.add(index)
+    return [name for i, name in enumerate(all_columns) if i in keep]
+
+
+def _columns_block(shown: list[str], total: int) -> str:
+    """The column listing, saying so when it is not the whole table."""
+    block = "Columns:\n" + "\n".join(f"- {name}" for name in shown)
+    if total > len(shown):
+        block += (
+            f"\n(This table has {total} columns; only {len(shown)} are listed above and "
+            f"{total - len(shown)} are not shown. A column is not absent because it is not "
+            "listed. If the rule needs a column that is not listed, say so in the "
+            "explanation rather than guessing its name.)"
+        )
+    return block
+
+
+def _profile_block(profile: llm_prompt_context.MaskedProfile, *, listed: int) -> str:
+    """The aggregate-profile lines, saying so when they cover fewer columns than listed."""
+    lines = _format_profile_lines(profile)
+    block = "\nAggregate profile (value-bearing stats masked on sensitive columns):\n" + "\n".join(
+        lines
+    )
+    if listed > len(lines):
+        block += (
+            f"\n(The profile covers only the first {len(lines)} of the {listed} columns "
+            f"listed; the other {listed - len(lines)} were not profiled, which says nothing "
+            "about their contents.)"
+        )
+    return block
+
+
 def _schema_context(
     session: Session,
     suite: Suite,
     connection: Connection,
+    description: str,
     *,
     secret_store: SecretStore,
     actor: uuid.UUID | None,
 ) -> tuple[str, list[str]]:
-    columns = llm_prompt_context.list_columns_for_prompt(
+    all_columns = llm_prompt_context.list_columns_for_prompt(
         session,
         suite,
         connection,
@@ -105,7 +159,8 @@ def _schema_context(
         actor=actor,
         consumer="llm_sql_generation",
     )
-    return "Columns:\n" + "\n".join(f"- {name}" for name in columns), columns
+    columns = _columns_for_prompt(all_columns, description)
+    return _columns_block(columns, len(all_columns)), columns
 
 
 def _format_profile_lines(profile: llm_prompt_context.MaskedProfile) -> list[str]:
@@ -131,14 +186,15 @@ def _profile_context(
     shared helper) rather than failing, since the prompt is already grounded
     by the column listing. `top_n=0` skips the expensive top-values pass whose
     output the prompt never uses; only null/distinct counts are emitted, so no
-    cell value exists here.
+    cell value exists here. At most `MAX_PROMPT_COLUMNS` of the listed columns are
+    profiled, as for check suggestions (#2356).
     """
     try:
         profile = llm_prompt_context.masked_profile_for_prompt(
             session,
             suite,
             connection,
-            columns,
+            columns[: llm_prompt_context.MAX_PROMPT_COLUMNS],
             top_n=0,
             secret_store=secret_store,
             actor=actor,
@@ -148,10 +204,7 @@ def _profile_context(
         raise
     except LLMRequestInvalidError:
         return "\nAggregate profile: unavailable."
-    lines = _format_profile_lines(profile)
-    return "\nAggregate profile (value-bearing stats masked on sensitive columns):\n" + "\n".join(
-        lines
-    )
+    return _profile_block(profile, listed=len(columns))
 
 
 def _norm_table(value: str) -> str:
@@ -222,6 +275,7 @@ def _additional_table_context(
     suite: Suite,
     connection: Connection,
     ref: dict[str, str | None],
+    description: str,
     *,
     include_profile: bool,
     secret_store: SecretStore,
@@ -237,7 +291,7 @@ def _additional_table_context(
     table = ref["table"]
     schema = ref["schema"]
     catalog = ref["catalog"]
-    columns = llm_prompt_context.list_columns_for_target(
+    all_columns = llm_prompt_context.list_columns_for_target(
         session,
         suite,
         connection,
@@ -248,8 +302,9 @@ def _additional_table_context(
         actor=actor,
         consumer="llm_sql_generation",
     )
+    columns = _columns_for_prompt(all_columns, description)
     qualified = llm_prompt_context.qualify(catalog, schema, table)
-    block = f"Additional table: {qualified}\nColumns:\n" + "\n".join(f"- {c}" for c in columns)
+    block = f"Additional table: {qualified}\n" + _columns_block(columns, len(all_columns))
     if not include_profile:
         return block
     try:
@@ -257,7 +312,7 @@ def _additional_table_context(
             session,
             suite,
             connection,
-            columns,
+            columns[: llm_prompt_context.MAX_PROMPT_COLUMNS],
             top_n=0,
             table=table,
             schema=schema,
@@ -271,12 +326,7 @@ def _additional_table_context(
         raise
     except LLMRequestInvalidError:
         return block + "\nAggregate profile: unavailable."
-    lines = _format_profile_lines(profile)
-    return (
-        block
-        + "\nAggregate profile (value-bearing stats masked on sensitive columns):\n"
-        + "\n".join(lines)
-    )
+    return block + _profile_block(profile, listed=len(columns))
 
 
 def build_prompt(
@@ -305,7 +355,7 @@ def build_prompt(
     # Every table below is on the suite's own connection: one warehouse login (#1645).
     with profile_service.shared_connection():
         context, columns = _schema_context(
-            session, suite, connection, secret_store=secret_store, actor=actor
+            session, suite, connection, description, secret_store=secret_store, actor=actor
         )
         if include_profile:
             context += _profile_context(
@@ -317,6 +367,7 @@ def build_prompt(
                 suite,
                 connection,
                 ref,
+                description,
                 include_profile=include_profile,
                 secret_store=secret_store,
                 actor=actor,
