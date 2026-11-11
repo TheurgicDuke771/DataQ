@@ -2253,21 +2253,27 @@ def get_suite_performance() -> list[dict[str, Any]]:
 
     Use this for 'which suites are in the worst shape?' or 'where should I look
     first?'. Returns, per suite: its id, name, a severity-weighted health score
-    (0-100, or null when its latest run recorded no scoreable outcome — every
-    check skipped or errored), and a state label: ``optimal``, ``stable``,
-    ``critical``, or ``unknown`` for a null score. Ordered worst-first, so the
-    top of the list is where attention belongs.
+    (0-100, or null when the scored run recorded no scoreable outcome — every
+    check skipped or errored), a state label: ``optimal``, ``stable``,
+    ``critical``, or ``unknown`` for a null score, and ``run_id`` /
+    ``run_finished_at``, the run the score was read from. Ordered worst-first, so
+    the top of the list is where attention belongs.
 
-    Each suite is scored from its **latest completed run** only — this is a
-    current-state ranking, not a trend, and it takes no time window. For health
-    over time use ``get_health_score``.
+    Each suite is scored from its **latest run, and only if that run completed**
+    (run status ``succeeded``: DataQ executed it, whatever the checks found).
+    There is **no fallback to an earlier completed run**. This is a current-state
+    ranking, not a trend, and it takes no time window: a suite that last ran
+    months ago is still ranked from that run, so read ``run_finished_at`` before
+    calling a score current. For health over time use ``get_health_score``.
 
-    A suite is **absent** from this list when its latest run produced nothing
-    countable — it has never run, is running now, or its last run failed without
-    a complete account. Absence is therefore "no health to report", not "healthy";
-    use ``list_suites`` to see the full set and which of them are missing here.
-    Scoped to the suites the user can access (a workspace-admin sees the whole
-    workspace).
+    A suite is **absent** from this list when its latest run has no complete
+    account to score: it has never run, its latest run is queued or running, or
+    its latest run failed or was cancelled — even when the run before it
+    completed. Absence is therefore "no health to report", not "healthy" and not
+    "unchanged since the previous run"; use ``list_suites`` to see the full set
+    and which of them are missing here, and ``list_runs`` for what the latest run
+    of a missing suite did. Scoped to the suites the user can access (a
+    workspace-admin sees the whole workspace).
     """
     with _ctx() as (session, user), _service_errors():
         # `window_days` is deliberately ABSENT rather than defaulted:
@@ -2289,6 +2295,8 @@ def get_suite_performance() -> list[dict[str, Any]]:
                 "name": p.name,
                 "score": p.score,
                 "state": p.state,
+                "run_id": str(p.run_id),
+                "run_finished_at": (p.run_finished_at.isoformat() if p.run_finished_at else None),
             }
             for p in summary.suite_performance
         ]
