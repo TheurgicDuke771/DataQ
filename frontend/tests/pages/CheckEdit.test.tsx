@@ -133,7 +133,11 @@ describe('CheckEdit', () => {
     mockUpdate.mockResolvedValue(existing);
     renderPage();
 
-    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+    // The first render in a file is cold; on a CI runner under jsdom 31 it can outlast the
+    // default 1s (#2657).
+    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'), {
+      timeout: 5000,
+    });
     expect(screen.getByLabelText('Warn ≥')).toHaveValue('5');
 
     await user.clear(screen.getByLabelText('Name'));
