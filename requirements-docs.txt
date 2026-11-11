@@ -4,7 +4,7 @@
 # mkdocs-material pulls mkdocs + pymdown-extensions transitively.
 mkdocs-material==9.8.0
 # Click-to-zoom on screenshots (MIT).
-mkdocs-glightbox==0.5.2
+mkdocs-glightbox==0.5.3
 # Old-URL redirects after the 2026-09 site reorganisation (MIT). Pinned BELOW
 # 1.2.3 deliberately: 1.2.3 (2026-03) added a hard dependency on `properdocs`,
 # a MkDocs fork that installs beside mkdocs and prints upgrade adverts during
