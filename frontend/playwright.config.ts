@@ -67,6 +67,12 @@ export default defineConfig({
     liveBaseURL
       ? { name: 'live-smoke', use: { ...devices['Desktop Chrome'] } }
       : { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    ...(liveBaseURL
+      ? []
+      : [
+          { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+          { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+        ]),
     // Own testDir + baseURL, so the dev-bypass specs above are untouched by it.
     ...(docsEnabled
       ? [
