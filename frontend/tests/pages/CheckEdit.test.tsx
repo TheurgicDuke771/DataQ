@@ -131,9 +131,30 @@ describe('CheckEdit', () => {
     mockGetCheck.mockResolvedValue(existing);
     mockGetConnection.mockResolvedValue(connection);
     mockUpdate.mockResolvedValue(existing);
+    const t0 = performance.now();
+    const snap = (tag: string) => {
+      const labels = Array.from(document.querySelectorAll('label')).map((l) => l.textContent);
+      const exp = document.querySelector('#expectation_type')?.closest('.ant-select');
+      process.stderr.write(
+        `DBG2657 ${tag} t=${Math.round(performance.now() - t0)}ms labels=${JSON.stringify(labels)} ` +
+          `expectationSelect=${JSON.stringify(exp?.textContent ?? null)} getCheck=${mockGetCheck.mock.calls.length} ` +
+          `getConnection=${mockGetConnection.mock.calls.length} spin=${document.querySelector('.ant-spin') !== null}\n`,
+      );
+    };
+    const timer = setTimeout(() => snap('at900'), 900);
     renderPage();
 
-    await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'));
+    try {
+      await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'), {
+        timeout: 10000,
+      });
+      snap('found');
+    } catch (e) {
+      snap('never');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
     expect(screen.getByLabelText('Warn ≥')).toHaveValue('5');
 
     await user.clear(screen.getByLabelText('Name'));
