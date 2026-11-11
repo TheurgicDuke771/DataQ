@@ -149,7 +149,7 @@ def test_slack_render_includes_view_run_button_and_metadata() -> None:
     button = next(b for b in blocks if b.get("type") == "actions")
     assert button["elements"][0]["url"] == "https://dataq.example.com/results/abc123"
     text = str(blocks)
-    assert "prod" in text and "ADF" in text  # env + trigger metadata fields
+    assert "prod" in text and "Azure Data Factory" in text  # env + trigger metadata fields
     assert "Ada Lovelace" in text  # owner (#661)
     # expected-vs-observed detail on the failing check.
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in text
@@ -165,7 +165,7 @@ def test_email_html_has_deep_link_and_expected_observed() -> None:
     html = email_mod.render_html_body(_rich_report())
     assert "https://dataq.example.com/results/abc123" in html  # View run link
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in html
-    assert "prod" in html and "ADF" in html  # metadata row
+    assert "prod" in html and "Azure Data Factory" in html  # metadata row
     # #2108: a plain-language block per failing check; the raw detail is kept small.
     assert "What needs attention" in html and "Technical details: expected min_value=0" in html
     assert "<b>Suite</b>" in html and "Orders Header" in html  # suite in the details table
@@ -177,7 +177,7 @@ def test_email_text_has_deep_link_and_metadata() -> None:
     assert "View run: https://dataq.example.com/results/abc123" in text
     assert "Owner: Ada Lovelace" in text
     assert "Environment: prod" in text
-    assert "Triggered by: ADF" in text
+    assert "Triggered by: Azure Data Factory" in text
     assert "Duration: 12.0s" in text
 
 
