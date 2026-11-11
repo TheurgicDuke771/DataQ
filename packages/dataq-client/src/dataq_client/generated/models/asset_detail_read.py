@@ -216,19 +216,13 @@ class AssetDetailRead:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.asset_summary_read import AssetSummaryRead
         from ..models.composing_suite_read import ComposingSuiteRead
-        from ..models.detected_classification_read import (
-            DetectedClassificationRead,
-        )
-        from ..models.inherited_classification_read import (
-            InheritedClassificationRead,
-        )
+        from ..models.detected_classification_read import DetectedClassificationRead
+        from ..models.inherited_classification_read import InheritedClassificationRead
         from ..models.lineage_edge_read import LineageEdgeRead
         from ..models.lineage_node_read import LineageNodeRead
         from ..models.lineage_source_health_read import LineageSourceHealthRead
         from ..models.scorecard_read import ScorecardRead
-        from ..models.warehouse_lineage_status_read import (
-            WarehouseLineageStatusRead,
-        )
+        from ..models.warehouse_lineage_status_read import WarehouseLineageStatusRead
 
         d = dict(src_dict)
         downstream = []

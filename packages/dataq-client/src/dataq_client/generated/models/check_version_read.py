@@ -188,9 +188,7 @@ class CheckVersionRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_version_read_config import CheckVersionReadConfig
-        from ..models.check_version_read_redaction_reasons import (
-            CheckVersionReadRedactionReasons,
-        )
+        from ..models.check_version_read_redaction_reasons import CheckVersionReadRedactionReasons
 
         d = dict(src_dict)
 
