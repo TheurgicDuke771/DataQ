@@ -26,7 +26,7 @@ redis==5.3.1
 croniter==6.2.4                   # cron-expression parsing for suite run schedules (A7)
 
 # ── Database ──
-sqlalchemy==2.0.54
+sqlalchemy==2.0.57
 alembic==1.20.0
 psycopg2-binary==2.9.13           # swap for psycopg2 in the production image
 
@@ -42,7 +42,7 @@ structlog==26.1.0
 opentelemetry-sdk==1.45.2                        # spans (A3) + logs (#524) — vendor-neutral core, ADR 0010
 opentelemetry-instrumentation-fastapi==0.66b2    # server span per request
 opentelemetry-instrumentation-celery==0.66b2     # span per task run
-azure-monitor-opentelemetry-exporter==1.0.0b58   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
+azure-monitor-opentelemetry-exporter==1.0.0b59   # Azure backend for spans + logs (exporter ONLY, not the distro — it would double-configure the log pipeline)
 opentelemetry-exporter-otlp-proto-http==1.45.2   # generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog), vendor-neutral (ADR 0010)
 
 # ── Auth / secrets ──
@@ -73,7 +73,7 @@ openpyxl==3.1.5                  # XLSX comparison-report download (ADR 0015 §4
 trino==0.340.0                    # Trino datasource (#1685) — the client + its SQLAlchemy `trino` dialect (sqlalchemy is pinned above). Apache-2.0 (verified from the package metadata); pulls orjson (Apache-2.0 OR MIT, with MPL-2.0 vendored parts — weak copyleft, OK per rule 40), lz4/zstandard (BSD), tzlocal (MIT)
 pyathena[SQLAlchemy]==4.2.1      # Amazon Athena datasource (#2131) — the client + its `awsathena+rest` SQLAlchemy dialect. MIT (License-Expression, verified from the package metadata); pulls fsspec (BSD-3-Clause), tenacity (Apache-2.0), tzdata (Apache-2.0), boto3/botocore and sqlalchemy (pinned above); v4 dropped python-dateutil (#2448)
 sqlalchemy-redshift==1.0.0         # Amazon Redshift datasource (#1682) — the `redshift+psycopg2` SQLAlchemy dialect GX's Redshift datasource requires, plus the Amazon CA bundle the adapter verifies against. MIT (License field + classifier, verified from the package metadata); pulls only packaging + SQLAlchemy (pinned above); the driver is psycopg2 (pinned above)
-google-cloud-bigquery==3.46.1     # Google BigQuery datasource (#1681) — the client the dialect drives. Apache-2.0 (License field, verified from the package metadata); pulls google-api-core[grpc] → grpcio/grpcio-status (Apache-2.0), google-auth[pyopenssl] (pyOpenSSL pinned above), python-dateutil (Apache-2.0/BSD) and the google-* set google-cloud-storage already pulls. The Storage Read API extra ([bqstorage]: google-cloud-bigquery-storage) is deliberately NOT installed — results are page-fetched over REST
+google-cloud-bigquery==3.47.0     # Google BigQuery datasource (#1681) — the client the dialect drives. Apache-2.0 (License field, verified from the package metadata); pulls google-api-core[grpc] → grpcio/grpcio-status (Apache-2.0), google-auth[pyopenssl] (pyOpenSSL pinned above), python-dateutil (Apache-2.0/BSD) and the google-* set google-cloud-storage already pulls. The Storage Read API extra ([bqstorage]: google-cloud-bigquery-storage) is deliberately NOT installed — results are page-fetched over REST
 sqlalchemy-bigquery==1.17.3       # the `bigquery` SQLAlchemy dialect GX's BigQuery path uses. MIT (classifier, verified from the package metadata); pulls only google-cloud-bigquery/google-auth/google-api-core (above), packaging and SQLAlchemy (pinned above)
 adlfs==2026.8.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 # SQL Server / T-SQL (#1679, ADR 0044). Both pure Python + MIT (License field verified from the installed metadata); both single-maintainer — exact pins, quarterly audit (rule 39). NEVER pyodbc/msodbcsql18 or mssql-python here: the ODBC driver is proprietary-EULA (the ODBC lane is user-installed only)
