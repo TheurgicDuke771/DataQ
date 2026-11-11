@@ -358,6 +358,7 @@ section below.
   does not, or `503` when the secret store cannot be reached. Every secret store gains this check
   (OpenBao verified; AWS Secrets Manager and Azure Key Vault not yet verified against a live
   account).
+- **Admin guide: one Members section.** The guide had two sections headed Members, so its table of contents listed the tab twice and a link to it reached only the first half. Membership, roles and offboarding now sit under one heading.
 - **A suggested value set over a column classified as sensitive after it was proposed is no
   longer readable or acceptable.** A suggested rule's value set was screened only when it was
   proposed, so a column later marked sensitive (by the suite's column policy, a warehouse tag or
