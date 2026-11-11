@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, date, datetime
@@ -102,6 +102,7 @@ from backend.app.services import (
     suite_io_service,
     suite_service,
     trigger_binding_service,
+    trigger_labels,
 )
 from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
@@ -334,6 +335,34 @@ def _page_window(timestamps: list[datetime | None]) -> dict[str, Any]:
     }
 
 
+def _trigger_fields(
+    session: Session, viewer: User | None, runs: Sequence[Run]
+) -> dict[uuid.UUID, dict[str, str | None]]:
+    """``run.id -> {triggered_by, triggered_by_label}`` — the stored marker plus the label
+    the app shows for it, from the one shared builder (`services.trigger_labels`), in one
+    user query for the whole set.
+
+    The marker stays because it is the correlation key; the label is what answers "who
+    started this run?" (`manual:<user id>` is an id nothing in the tool surface resolves).
+    ``viewer`` scopes which upstream-suite names a suite-trigger label may show (ADR 0051).
+    """
+    labels = trigger_labels.trigger_labels(
+        session,
+        [r.triggered_by for r in runs],
+        viewer_id=viewer.id if viewer else None,
+        include_all=is_workspace_admin(viewer) if viewer else False,
+    )
+    return {
+        r.id: {
+            "triggered_by": r.triggered_by,
+            # Null for no marker AND for a marker of a shape DataQ does not know; the
+            # raw field beside it tells the two apart.
+            "triggered_by_label": labels.get(r.triggered_by or ""),
+        }
+        for r in runs
+    }
+
+
 def _run_outcome_fields(
     run: Run, outcome: tuple[int, int, str | None] | None, results_removed: int = 0
 ) -> dict[str, Any]:
@@ -487,6 +516,8 @@ def _run_results_payload(
             "status": run.status,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            # What started the run: the stored marker and its readable label.
+            **_trigger_fields(session, actor, [run])[run.id],
             # Explicit, so a client branches on a field rather than inferring
             # "no checks" means "nothing failed" (#318).
             "results_final": final,
@@ -740,6 +771,8 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     date filter and no way to ask for a particular day. Check the returned
     ``run.started_at`` before answering anything phrased about "today" or "last
     night"; use ``list_runs`` + ``get_run_results`` to reach an earlier run.
+    ``run.triggered_by`` / ``run.triggered_by_label`` say what started it, in the
+    form ``list_runs`` documents (a null label is not "nobody").
 
     Returns the most recent run's lifecycle status plus, per check: the check
     name and id, ``engine`` (ADR 0036 — ``gx`` unless the check runs against a
@@ -1498,7 +1531,8 @@ def list_runs(
     Use this to see recent runs, or to find a run id to drill into with
     ``get_run_results``. Returns, per run: its id, the
     suite it belongs to, the **execution** status (queued / running / succeeded /
-    failed / cancelled), when it started and finished, what triggered it, a
+    failed / cancelled), when it started and finished, what triggered it
+    (``triggered_by`` and ``triggered_by_label``, below), a
     user-safe failure reason when it failed, and its **data-quality** outcome —
     ``checks_total`` / ``checks_passed`` over the evaluated checks plus
     ``worst_severity`` (warn / fail / critical, or null when nothing failed).
@@ -1517,6 +1551,22 @@ def list_runs(
     a **null** outcome (no counts, no severity) — it is still executing, or it
     failed without producing a complete account. Describe such a run by its
     status; it has no data-quality verdict yet.
+
+    ``triggered_by`` is the stored marker (``manual:<user id>``,
+    ``mcp:<user id>``, ``schedule:<schedule id>``, ``suite:<suite id>:<run id>``,
+    ``<provider>:<pipeline>:<provider run id>``) and ``triggered_by_label`` the
+    readable form of it — use the label to answer "who or what started this
+    run?". ``Manual — <name>`` / ``MCP — <name>`` name the person by display name,
+    or email when they have none; the bare word (``Manual``, ``MCP``, ``Suite``)
+    means the kind is known but the name is not — the user no longer exists, or
+    the upstream suite is deleted or one you cannot see — never that nobody
+    started it. A schedule reads ``Schedule`` and is not named. An orchestration
+    label (``Airflow — <pipeline>:<run id>``) carries the rest of the marker
+    whole: the pipeline id and the provider's run id are **not** split, since
+    either may contain a colon, so do not parse one out of it — use
+    ``get_pipeline_status`` for the pipeline run. The label is **null** in two
+    cases the raw field tells apart: ``triggered_by`` is also null (nothing was
+    recorded), or it holds a marker of a shape DataQ does not recognise.
 
     ``queued`` does not mean "about to start". ``queued_reason`` says why a run is
     still queued: ``awaiting_worker_memory`` means the worker is already holding
@@ -1570,6 +1620,8 @@ def list_runs(
         # N+1 an LLM caller cannot see the cost of (#947).
         outcomes = run_service.check_outcome_counts(session, [r.id for r in runs])
         removed = run_service.removed_result_counts(session, [r.id for r in runs])
+        # One user query for the whole page's trigger labels, not one per run.
+        triggers = _trigger_fields(session, user, runs)
         total = run_service.count_runs(
             session,
             user_id=user.id,
@@ -1597,7 +1649,7 @@ def list_runs(
                     "status": r.status,
                     "started_at": r.started_at.isoformat() if r.started_at else None,
                     "finished_at": r.finished_at.isoformat() if r.finished_at else None,
-                    "triggered_by": r.triggered_by,
+                    **triggers[r.id],
                     # A fixed category message from `failure_classifier`, never raw
                     # adapter text (which can carry DSN/credential fragments, #605).
                     "failure_reason": r.failure_reason,
@@ -1617,7 +1669,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     Use this to drill into a run found via ``list_runs`` — 'why did last night's
     orders run fail?' — or to read a historical run rather than the latest one
     (which is what ``get_suite_results`` returns). Returns the run's lifecycle
-    status plus, per check: the check name, ``engine`` (ADR 0036 — ``gx`` unless
+    status and what started it (``run.triggered_by`` / ``run.triggered_by_label``,
+    in the form ``list_runs`` documents) plus, per check: the check name,
+    ``engine`` (ADR 0036 — ``gx`` unless
     the check runs against a platform-native engine like ``dmf`` or ``dqx``; a
     ``dmf`` result's observed/metric value is a Snowflake DMF metric, not a GX
     expectation output, and the two have different semantics — for a
@@ -2428,8 +2482,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     Use this after ``trigger_suite_run`` ('is the orders run finished yet?').
     Returns the run's lifecycle status (queued / running / succeeded / failed /
     cancelled), how many of its checks have completed, a count per result status,
-    the per-check name + current status, and ``elapsed_ms`` — how long the run has
-    been going. Requires view access to the run's suite.
+    the per-check name + current status, ``elapsed_ms`` — how long the run has
+    been going — and what started it (``triggered_by`` / ``triggered_by_label``,
+    in the form ``list_runs`` documents). Requires view access to the run's suite.
 
     ``completed_checks`` can legitimately sit at 0 on a healthy, busy run: a suite
     of ordinary expectations is validated as one atomic batch, so its checks all
@@ -2460,6 +2515,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         return {
             "run_id": str(progress.run.id),
             "status": progress.run.status,
+            **_trigger_fields(session, user, [progress.run])[progress.run.id],
             # The same #318 gate `list_runs` and `get_run_results` apply, which
             # this tool was missing: while false, `counts` and the per-check
             # statuses describe only the phases committed so far. A 30-check

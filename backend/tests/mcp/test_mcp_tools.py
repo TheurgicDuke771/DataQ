@@ -1356,6 +1356,78 @@ def _run_with_results(
     return run
 
 
+def test_list_runs_labels_what_triggered_each_run(db_session: Any, monkeypatch: Any) -> None:
+    """`manual:<user id>` is an id nothing in the tool surface resolves, so the label the
+    app shows rides beside the marker. A null label is not one fact: the raw marker says
+    whether nothing was recorded or the shape is unknown.
+    """
+    user = _user(db_session)
+    user.display_name = "Ada Lovelace"
+    other = _user(db_session, "grace@acme.io")
+    suite = _suite(db_session, user)
+    gone = uuid.uuid4()
+    markers = {
+        f"manual:{user.id}": "Manual — Ada Lovelace",
+        f"mcp:{other.id}": "MCP — grace@acme.io",
+        f"manual:{gone}": "Manual",
+        "schedule:abc": "Schedule",
+        "airflow:etl:daily:run-1": "Airflow — etl:daily:run-1",
+        "something-else": None,
+        None: None,
+    }
+    for marker in markers:
+        db_session.add(Run(suite_id=suite.id, status="succeeded", triggered_by=marker))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    runs = server.list_runs()["runs"]
+    assert {r["triggered_by"]: r["triggered_by_label"] for r in runs} == markers
+
+
+def test_a_suite_trigger_label_names_only_an_upstream_suite_the_caller_can_see(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """ADR 0051: a run the caller may read must not leak the name of an upstream suite
+    they hold no grant on. The MCP door gets the same viewer scoping as the REST one.
+    """
+    owner = _user(db_session, "owner@acme.io")
+    hidden_upstream = _suite(db_session, owner)
+    hidden_upstream.name = "Payroll"
+    viewer = _user(db_session, "viewer@acme.io")
+    suite = _suite(db_session, viewer)
+    marker = f"suite:{hidden_upstream.id}:{uuid.uuid4()}"
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by=marker)
+    db_session.add(run)
+    db_session.commit()
+
+    _as(monkeypatch, db_session, viewer)
+    (listed,) = server.list_runs()["runs"]
+    assert listed["triggered_by_label"] == "Suite"
+    assert server.get_run_results(str(run.id))["run"]["triggered_by_label"] == "Suite"
+    assert server.get_run_status(str(run.id))["triggered_by_label"] == "Suite"
+
+
+def test_the_single_run_tools_carry_the_trigger_marker_and_label(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The siblings that hand back one run had no trigger at all."""
+    user = _user(db_session)
+    user.display_name = "Ada Lovelace"
+    suite = _suite(db_session, user)
+    run = _run_with_results(db_session, suite)
+    run.triggered_by = f"manual:{user.id}"
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    expected = {"triggered_by": f"manual:{user.id}", "triggered_by_label": "Manual — Ada Lovelace"}
+    for payload in (
+        server.get_run_results(str(run.id))["run"],
+        server.get_suite_results(str(suite.id))["run"],
+        server.get_run_status(str(run.id)),
+    ):
+        assert {k: payload[k] for k in expected} == expected
+
+
 def test_list_runs_reports_execution_status_and_dq_outcome_separately(
     db_session: Any, monkeypatch: Any
 ) -> None:
