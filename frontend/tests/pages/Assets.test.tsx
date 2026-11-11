@@ -370,8 +370,8 @@ describe('Assets page — table view (#925 server-side paging)', () => {
       expect.any(AbortSignal),
     );
 
-    // antd renders page-number items with title="2"; go to page 2.
-    await userEvent.click(screen.getByTitle('2'));
+    // antd 6.7+ puts the click handler on the page link (aria-label "Page 2"), not the <li>.
+    await userEvent.click(screen.getByRole('button', { name: 'Page 2' }));
 
     expect(await screen.findByText('ANALYTICS.PUBLIC.B0')).toBeInTheDocument();
     expect(screen.queryByText('ANALYTICS.PUBLIC.A0')).not.toBeInTheDocument();
@@ -408,7 +408,7 @@ describe('Assets page — table view (#925 server-side paging)', () => {
     renderPage();
     await switchToTable();
     await screen.findByText('T0');
-    await userEvent.click(screen.getByTitle('2'));
+    await userEvent.click(screen.getByRole('button', { name: 'Page 2' }));
     await waitFor(() =>
       expect(mockList).toHaveBeenCalledWith(
         { limit: 50, offset: 50, sort: 'name' },
