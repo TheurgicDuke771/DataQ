@@ -24,6 +24,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
     STREAM_CHUNK,
     RangeReader,
+    StoreSession,
     format_from_path,
     json_schema,
     read_csv_head,
@@ -431,6 +432,10 @@ class _SharedConnections:
         # A loaded Iceberg table per (connection, identifier): listing then profiling it would
         # otherwise load the catalog and the table twice (#2105).
         self.iceberg_tables: dict[tuple[Any, str], _LoadedIcebergTable] = {}
+        # The resolved secret and the store client per flat-file connection: reading a
+        # file's header and then its sample would otherwise read the secret and build
+        # the client twice (#2235).
+        self.file_stores: dict[Any, _FileStore] = {}
 
     @staticmethod
     def _key(connection: Connection) -> Any:
@@ -477,10 +482,26 @@ class _SharedConnections:
         except Exception as exc:
             log.warning("profile_shared_connection_close_failed", error_type=type(exc).__name__)
 
+    def drop_file_store(self, connection: Connection) -> None:
+        """Forget a flat-file store after a failed read, so the next call builds its own."""
+        held = self.file_stores.pop(self._key(connection), None)
+        if held is not None:
+            self._close_file_store(held)
+
+    @staticmethod
+    def _close_file_store(store: _FileStore) -> None:
+        try:
+            store.session.close()
+        except Exception as exc:
+            log.warning("profile_shared_file_store_close_failed", error_type=type(exc).__name__)
+
     def close(self) -> None:
         while self._live:
             _, (_, opener) = self._live.popitem()
             self._close(opener)
+        while self.file_stores:
+            _, store = self.file_stores.popitem()
+            self._close_file_store(store)
 
 
 _SHARED_CONNECTIONS: ContextVar[_SharedConnections | None] = ContextVar(
@@ -518,6 +539,61 @@ def _datasource_connection(connection: Connection, secret_store: SecretStore) ->
         yield conn
     except BaseException:
         shared.recover(connection, conn)
+        raise
+
+
+@dataclass(frozen=True)
+class _FileStore:
+    """A flat-file connection's resolved secret and the one store client its reads share."""
+
+    secret: str | None
+    session: StoreSession
+
+    def reader_args(self, connection: Connection, path: str) -> dict[str, Any]:
+        return {
+            "conn_type": connection.type,
+            "config": connection.config,
+            "path": path,
+            "secret": self.secret,
+            "session": self.session,
+        }
+
+
+@contextmanager
+def _file_store(connection: Connection, secret_store: SecretStore) -> Iterator[_FileStore]:
+    """The connection's secret and store client: the scope's own inside `shared_connection`
+    (read and built once, closed with the scope — #2235), otherwise built for this call and
+    closed after it. A read that fails drops the scope's store rather than reuse it.
+    """
+    shared = _SHARED_CONNECTIONS.get()
+    if shared is not None:
+        held = shared.file_stores.get(_SharedConnections._key(connection))
+        if held is not None:
+            try:
+                yield held
+            except BaseException:
+                shared.drop_file_store(connection)
+                raise
+            return
+    secret = resolve_flatfile_secret(
+        conn_type=connection.type,
+        config=dict(connection.config),
+        secret_ref=connection.secret_ref,
+        secret_store=secret_store,
+    )
+    store = _FileStore(
+        secret,
+        StoreSession(conn_type=connection.type, config=dict(connection.config), secret=secret),
+    )
+    if shared is None:
+        with store.session:
+            yield store
+        return
+    shared.file_stores[_SharedConnections._key(connection)] = store
+    try:
+        yield store
+    except BaseException:
+        shared.drop_file_store(connection)
         raise
 
 
@@ -852,47 +928,31 @@ def _read_dataframe(
     secret_store: SecretStore,
 ) -> Any:
     """Read `path` from the flat-file datasource into a sampled dataframe."""
-    secret = resolve_flatfile_secret(
-        conn_type=connection.type,
-        config=dict(connection.config),
-        secret_ref=connection.secret_ref,
-        secret_store=secret_store,
-    )
+    with _file_store(connection, secret_store) as store:
+        reader_args = store.reader_args(connection, path)
+        if file_format == "parquet":
+            return _read_parquet_sample(**reader_args, columns=columns)
 
-    if file_format == "parquet":
-        return _read_parquet_sample(
-            conn_type=connection.type,
-            config=connection.config,
-            path=path,
-            secret=secret,
-            columns=columns,
+        if file_format == "json":
+            frame = read_json_head(**reader_args, rows=_SAMPLE_ROWS)
+            # Projected after the parse: a JSON line names its own fields, so there is no
+            # header to project against the way the CSV reader does.
+            return frame[[c for c in columns if c in frame.columns]]
+
+        wanted = set(columns)
+        return read_csv_projected_sample(
+            **reader_args, rows=_SAMPLE_ROWS, usecols=lambda name: name in wanted
         )
-
-    if file_format == "json":
-        frame = read_json_head(
-            conn_type=connection.type,
-            config=connection.config,
-            path=path,
-            secret=secret,
-            rows=_SAMPLE_ROWS,
-        )
-        # Projected after the parse: a JSON line names its own fields, so there is no
-        # header to project against the way the CSV reader does.
-        return frame[[c for c in columns if c in frame.columns]]
-
-    wanted = set(columns)
-    return read_csv_projected_sample(
-        conn_type=connection.type,
-        config=connection.config,
-        path=path,
-        secret=secret,
-        rows=_SAMPLE_ROWS,
-        usecols=lambda name: name in wanted,
-    )
 
 
 def _read_parquet_sample(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str | None, columns: list[str]
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str | None,
+    columns: list[str],
+    session: StoreSession | None = None,
 ) -> Any:
     """Sample a Parquet file's projected columns without downloading it (#1001)."""
     import pandas as pd
@@ -900,7 +960,12 @@ def _read_parquet_sample(
     import pyarrow.parquet as pq
 
     with RangeReader(
-        conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
+        conn_type=conn_type,
+        config=config,
+        path=path,
+        secret=secret,
+        chunk=STREAM_CHUNK,
+        session=session,
     ) as reader:
         parquet_file = pq.ParquetFile(reader)
         available = set(parquet_file.schema.names)
@@ -1255,26 +1320,16 @@ def list_file_columns(
     """Column (header) names of a flat file on `connection` (ADLS Gen2 / S3 / GCS)."""
     fmt = infer_file_format(path, file_format)
     try:
-        secret = resolve_flatfile_secret(
-            conn_type=connection.type,
-            config=dict(connection.config),
-            secret_ref=connection.secret_ref,
-            secret_store=secret_store,
-        )
-        reader_args: dict[str, Any] = {
-            "conn_type": connection.type,
-            "config": connection.config,
-            "path": path,
-            "secret": secret,
-        }
-        if fmt == "csv":
-            return [str(c) for c in read_csv_head(**reader_args, rows=0).columns]
-        if fmt == "json":
-            return [str(name) for name in json_schema(**reader_args).names]
-        import pyarrow.parquet as pq
+        with _file_store(connection, secret_store) as store:
+            reader_args = store.reader_args(connection, path)
+            if fmt == "csv":
+                return [str(c) for c in read_csv_head(**reader_args, rows=0).columns]
+            if fmt == "json":
+                return [str(name) for name in json_schema(**reader_args).names]
+            import pyarrow.parquet as pq
 
-        with RangeReader(**reader_args) as reader:
-            return [str(name) for name in pq.ParquetFile(reader).schema.names]
+            with RangeReader(**reader_args) as reader:
+                return [str(name) for name in pq.ParquetFile(reader).schema.names]
     except Exception as exc:
         log.warning(
             "column_list_failed", connection_type=connection.type, error_type=type(exc).__name__
