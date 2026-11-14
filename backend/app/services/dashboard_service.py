@@ -68,6 +68,9 @@ class SuitePerformance:
     name: str
     score: float | None
     state: str
+    #: The run the score was read from: the suite's latest run, which had completed.
+    run_id: uuid.UUID
+    run_finished_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -211,30 +214,43 @@ def _run_trend(
 def _suite_performance(
     session: Session, accessible: Select[tuple[uuid.UUID]], weights: Weights
 ) -> list[SuitePerformance]:
-    """Per-suite health from each suite's **latest** run, worst (lowest) first."""
+    """Per-suite health from each suite's **latest** run, worst (lowest) first.
+
+    A suite whose latest run did not complete is left out: there is no fallback to an
+    earlier completed run.
+    """
     # The shared latest-run-per-suite statement (#889) — kept in SQL here and inner-joined, which is
     # what drops a suite whose latest run wrote no results.
     latest = (
         latest_runs_per_suite_stmt(accessible).with_only_columns(Run.id, Run.suite_id).subquery()
     )
     stmt = (
-        select(Suite.id, Suite.name, Result.status, func.count())
+        select(Suite.id, Suite.name, Run.id, Run.finished_at, Result.status, func.count())
         .select_from(latest)
         .join(Suite, Suite.id == latest.c.suite_id)
         .join(Result, Result.run_id == latest.c.id)
         .join(Run, Run.id == latest.c.id)
         .where(Run.status.in_(AGGREGATABLE_RUN_STATUSES))
-        .group_by(Suite.id, Suite.name, Result.status)
+        .group_by(Suite.id, Suite.name, Run.id, Run.finished_at, Result.status)
     )
     counts: dict[uuid.UUID, dict[str, int]] = {}
     names: dict[uuid.UUID, str] = {}
-    for sid, name, status, count in session.execute(stmt):
+    scored_runs: dict[uuid.UUID, tuple[uuid.UUID, datetime | None]] = {}
+    for sid, name, run_id, finished_at, status, count in session.execute(stmt):
         counts.setdefault(sid, {})[status] = count
         names[sid] = name
+        scored_runs[sid] = (run_id, finished_at)
 
     scores = {sid: health_score(c, weights) for sid, c in counts.items()}
     out = [
-        SuitePerformance(suite_id=sid, name=names[sid], score=s, state=performance_state(s))
+        SuitePerformance(
+            suite_id=sid,
+            name=names[sid],
+            score=s,
+            state=performance_state(s),
+            run_id=scored_runs[sid][0],
+            run_finished_at=scored_runs[sid][1],
+        )
         for sid, s in scores.items()
     ]
     # Worst first (lowest score), suites with no severity result (score None) last.
