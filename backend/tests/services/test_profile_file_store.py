@@ -232,4 +232,3 @@ def test_a_file_replaced_between_the_listing_and_the_profile_is_read_at_its_new_
 def test_the_held_store_does_not_print_its_secret() -> None:
     held = svc._FileStore("s3cr3t", flatfile.StoreSession(conn_type="s3", config={}, secret="x"))
     assert "s3cr3t" not in repr(held)
-
