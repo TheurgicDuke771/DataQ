@@ -2165,6 +2165,53 @@ def test_get_suite_performance_omits_a_suite_with_no_countable_run(
     assert str(running.id) not in listed
 
 
+def test_get_suite_performance_does_not_fall_back_to_an_earlier_completed_run(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The latest run is scored only if it completed. A suite whose latest run failed
+    or was cancelled is absent even though the run before it completed; "latest
+    completed run" read as a fallback that does not exist.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _user(db_session)
+    now = datetime.now(UTC)
+    for latest_status in ("failed", "cancelled"):
+        suite = _suite(db_session, user)
+        _run_with_results(db_session, suite, created_at=now - timedelta(days=1))
+        _run_with_results(db_session, suite, status=latest_status, outcomes=(), created_at=now)
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_suite_performance() == []
+    doc = " ".join((server.get_suite_performance.__doc__ or "").split())
+    assert "latest completed run" not in doc
+    assert "no fallback to an earlier completed run" in doc
+
+
+def test_get_suite_performance_names_the_run_it_scored(db_session: Any, monkeypatch: Any) -> None:
+    """Nothing else in the row says how old the score is: the ranking takes no window,
+    so a suite that last ran months ago is ranked from that run.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    finished = datetime.now(UTC) - timedelta(days=90)
+    _run_with_results(db_session, suite, created_at=finished - timedelta(days=1))
+    scored = _run_with_results(db_session, suite, outcomes=("fail",), created_at=finished)
+    scored.finished_at = finished
+    unfinished = _suite(db_session, user)
+    no_timestamp = _run_with_results(db_session, unfinished)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    rows = {p["suite_id"]: p for p in server.get_suite_performance()}
+    assert rows[str(suite.id)]["run_id"] == str(scored.id)
+    assert rows[str(suite.id)]["run_finished_at"] == finished.isoformat()
+    assert rows[str(unfinished.id)]["run_id"] == str(no_timestamp.id)
+    assert rows[str(unfinished.id)]["run_finished_at"] is None
+
+
 def test_get_suite_performance_hides_unowned_suites(db_session: Any, monkeypatch: Any) -> None:
     owner = _user(db_session, "owner@acme.io")
     suite = _suite(db_session, owner)
