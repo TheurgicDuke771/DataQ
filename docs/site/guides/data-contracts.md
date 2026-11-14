@@ -116,13 +116,15 @@ What is withheld:
 What is **not** withheld, even over a sensitive column: patterns (`arguments.pattern`,
 `logicalTypeOptions.pattern`), bounds (`logicalTypeOptions.minimum` / `maximum`, a rule's
 comparison operands), SQL text, the implementation of a custom rule on another engine, and
-custom-property values and descriptions. Review those before sharing an export.
+custom-property values and descriptions, and a rule argument that is not a list. Review those
+before sharing an export. An object that a new version both renames and moves to another table
+is a new object: classifications made for the old one do not follow it.
 
 **Who decides.** A column's sensitivity is judged for the schema object, not for one imported
 version: every suite linked to any version of the contract for that object is asked, and so are
 the table's warehouse tags and every other suite on the same table, plus the `classification`
 the document gives its properties. If nothing stands behind an object — no suite of any version
-and no known table — DataQ cannot tell, and withholds all of its value lists with the reason
+and no table whose classifications DataQ has read — DataQ cannot tell, and withholds all of its value lists with the reason
 `sensitivity_unknown`.
 
 **The export says what it withheld.** The property or rule carries a `dataq.valuesWithheld`

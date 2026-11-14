@@ -64,6 +64,8 @@ NOT_WITHHELD: Final[tuple[str, ...]] = (
     "SQL text: a sql rule's query, and custom SQL inside a custom rule",
     "the implementation of a custom rule whose engine is neither greatExpectations nor dataq",
     "customProperties values, descriptions, and any other free text",
+    "a rule argument that is not a list (a scalar or a mapping beside a withheld list), "
+    "and a custom rule's like-pattern lists",
 )
 _PREFIX = f"{tr.DATAQ_VENDOR}."
 #: The keys of a custom rule's `kwargs` / `config` that hold values of the column.
@@ -317,7 +319,8 @@ class _ContractSensitivity:
 
     def for_object(self, obj: dict[str, Any]) -> tuple[_Sensitivity, bool]:
         """`(test, known)` — the ladder over everything that can speak for the object, and
-        whether anything could. ``known`` False = no suite and no asset: fail closed."""
+        whether anything could. ``known`` False = no suite and no asset with classification
+        evidence: fail closed."""
         name = _object_name(obj)
         suites = {s.id: s for s in self._linked if name is not None and s.contract_object == name}
         targets, identities = self._places(tr._object_target(obj)) if name is not None else ([], [])
@@ -350,11 +353,20 @@ class _ContractSensitivity:
 
         policy = _document_policy(obj)
         tests = [value_set_sensitivity(self._session, suite) for suite in suites.values()]
-        tests += [
-            policy_sensitivity(policy, column_tags.effective_column_tags(self._session, asset))
+        asset_tags = {
+            asset.id: column_tags.effective_column_tags(self._session, asset)
             for asset in assets.values()
-        ]
+        }
+        tests += [policy_sensitivity(policy, tags) for tags in asset_tags.values()]
         tests.append(policy_sensitivity(policy, None))
+        # An asset row speaks for the table only if it carries classification evidence: its
+        # tags were read from the warehouse at least once, or it has some tag now (inherited
+        # or detected). A bare row — created by a lineage or catalog crawl — says nothing
+        # about the columns, and must not turn "nobody can say" into "not sensitive".
+        informed = any(
+            asset.column_tags_refreshed_at is not None or bool(asset_tags[asset.id])
+            for asset in assets.values()
+        )
 
         def reason(column: str, values: list[Any]) -> str | None:
             for test in tests:
@@ -363,7 +375,7 @@ class _ContractSensitivity:
                     return found
             return None
 
-        return reason, bool(suites or assets)
+        return reason, bool(suites) or informed
 
 
 def mask_document(
@@ -404,7 +416,9 @@ def mask_document(
             for column in (slot.column if slot.column is not None else "", *slot.also):
                 found = found or test(column, clear)
             if found is None and already:
-                found = upstream.get((name, slot.column))
+                # The suite export keys a check that names no column as the string "None".
+                for key in (slot.column, *slot.also, str(slot.column)):
+                    found = found or upstream.get((name, key))
             if found is None and (already or not known):
                 found = SENSITIVITY_UNKNOWN
             if found is None:

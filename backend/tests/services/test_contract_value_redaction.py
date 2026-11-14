@@ -405,6 +405,28 @@ def test_an_object_with_no_suite_is_judged_by_its_tables_warehouse_tags(db_sessi
     assert redaction.sensitivity_unknown_objects(exported) == []
 
 
+def test_an_asset_row_with_no_classification_evidence_does_not_make_the_object_known(
+    db_session: Any,
+) -> None:
+    """A bare asset row (a lineage or catalog crawl made it; its tags were never read) says
+    nothing about the columns, so the object is still unknown and its lists are withheld."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc_with_tier())
+    db_session.delete(_suite(db_session, outcome, "orders"))  # `refunds` keeps the connection
+    identity = resolve_asset_identity(
+        conn.type, conn.config, {"schema": "FINANCE", "table": "ORDERS"}
+    )
+    db_session.add(Asset(namespace=identity.namespace, name=identity.name, connection_id=conn.id))
+    db_session.commit()
+    db_session.refresh(outcome.contract)
+
+    exported = _export(db_session, outcome, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.sensitivity_unknown_objects(exported) == ["orders"]
+    assert set(redaction.redacted_columns(exported).values()) == {redaction.SENSITIVITY_UNKNOWN}
+
+
 def test_an_object_with_no_suite_is_judged_by_a_suite_on_the_same_table(db_session: Any) -> None:
     """A suite unlinked by hand still points at the table, and its policy still counts."""
     actor = _user(db_session)

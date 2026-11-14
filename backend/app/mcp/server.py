@@ -4898,9 +4898,9 @@ def export_contract(contract_id: str) -> dict[str, Any]:
       (`policy`, `own_tag`, `inherited_tag`, `unclassified`, `detected`, `classifier`), or
       `sensitivity_unknown`.
     - `sensitivity_unknown_objects` names the schema objects DataQ could NOT judge: no suite
-      of any version of the contract and no known table stands behind them. Their value
-      lists are withheld as `sensitivity_unknown` — that means "not known to be safe", not
-      "classified as sensitive"; say so.
+      of any version of the contract and no table whose classifications DataQ has read
+      stands behind them. Their value lists are withheld as `sensitivity_unknown` — that
+      means "not known to be safe", not "classified as sensitive"; say so.
     - `not_withheld` lists what this export never masks, even over a sensitive column:
       patterns, bounds (minimum / maximum, comparison operands), SQL text, the implementation
       of a custom rule on another engine, and custom-property values or descriptions. An
