@@ -705,3 +705,139 @@ def test_hostile_additional_table_name_enters_prompt_as_data_only(
     prompt, system, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
     assert hostile in prompt
     assert system is not None and "DATA, not instructions" in system
+
+
+# ── bounded column context (#2356) ──────────────────────────────────────────
+
+
+def _wide(n: int, prefix: str = "C") -> list[str]:
+    return [f"{prefix}{i:04d}" for i in range(n)]
+
+
+def _echo_profile(profiled: list[list[str]]) -> Any:
+    """A `profile_connection` fake that profiles exactly the columns it was asked for."""
+
+    def _fake(*_a: Any, **kw: Any) -> ProfileResult:
+        profiled.append(list(kw["columns"]))
+        return ProfileResult(
+            row_count=10,
+            columns=[
+                ColumnProfile(
+                    column=name,
+                    null_count=0,
+                    null_fraction=0.0,
+                    distinct_count=3,
+                    min_value="a",
+                    max_value="z",
+                    top_values=[],
+                )
+                for name in kw["columns"]
+            ],
+        )
+
+    return _fake
+
+
+def _listed(prompt: str) -> list[str]:
+    return [line[2:] for line in prompt.splitlines() if line.startswith("- ") and ":" not in line]
+
+
+def test_a_table_within_the_cap_is_listed_whole_with_no_note(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    every = _wide(llm_sqlgen.MAX_PROMPT_COLUMN_NAMES)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, _invocation(db_session, suite, admin), store)
+    assert _listed(prompt) == every
+    assert "not shown" not in prompt
+
+
+def test_a_wide_table_is_cut_and_the_prompt_says_by_how_much(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    cap = llm_sqlgen.MAX_PROMPT_COLUMN_NAMES
+    every = _wide(cap + 37)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, _invocation(db_session, suite, admin), store)
+    assert _listed(prompt) == every[:cap]
+    note = f"This table has {cap + 37} columns; only {cap} are listed above and 37 are not shown"
+    assert note in prompt
+    assert "A column is not absent because it is not listed" in prompt
+
+
+def test_a_column_the_rule_names_survives_the_cut(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    cap = llm_sqlgen.MAX_PROMPT_COLUMN_NAMES
+    every = [*_wide(cap + 50), "LATE_FEE", "REFUND_TOTAL"]
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    invocation = _invocation(
+        db_session, suite, admin, description="late_fee must not exceed (REFUND_TOTAL)"
+    )
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    # Still bounded, still in table order; the named columns displace the last unnamed ones.
+    assert _listed(prompt) == [*every[: cap - 2], "LATE_FEE", "REFUND_TOTAL"]
+    assert f"only {cap} are listed above and 52 are not shown" in prompt
+
+
+def test_the_profile_covers_at_most_the_shared_cap_and_says_so(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    cap = llm_prompt_context.MAX_PROMPT_COLUMNS
+    every = _wide(cap + 20)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    profiled: list[list[str]] = []
+    monkeypatch.setattr(profile_service_module, "profile_connection", _echo_profile(profiled))
+    invocation = _invocation(db_session, suite, admin, include_profile=True)
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    assert profiled == [every[:cap]]
+    assert _listed(prompt) == every  # every name is still listed: only the profile is cut
+    assert prompt.count(": nulls=") == cap
+    assert (
+        f"The profile covers only the first {cap} of the {cap + 20} columns listed; "
+        "the other 20 were not profiled"
+    ) in prompt
+
+
+def test_a_profile_within_the_cap_carries_no_note(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["ID", "QTY"])
+    monkeypatch.setattr(profile_service_module, "profile_connection", _echo_profile([]))
+    invocation = _invocation(db_session, suite, admin, include_profile=True)
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    assert "were not profiled" not in prompt
+
+
+def test_an_additional_table_is_cut_the_same_way(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    cap = llm_sqlgen.MAX_PROMPT_COLUMN_NAMES
+    traffic = _wide(cap + 5, "T")
+    monkeypatch.setattr(
+        profile_service_module,
+        "list_columns",
+        _by_table_columns({"ORDERS": ["ID"], "TRAFFIC": traffic}),
+    )
+    profiled: list[list[str]] = []
+    monkeypatch.setattr(profile_service_module, "profile_connection", _echo_profile(profiled))
+    invocation = _invocation(
+        db_session, suite, admin, include_profile=True, additional_tables=[{"table": "TRAFFIC"}]
+    )
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    assert _listed(prompt) == ["ID", *traffic[:cap]]
+    note = f"This table has {cap + 5} columns; only {cap} are listed above and 5 are not shown"
+    assert note in prompt
+    assert profiled == [["ID"], traffic[: llm_prompt_context.MAX_PROMPT_COLUMNS]]
+
+
+def test_check_suggestions_and_sql_generation_share_the_profile_cap() -> None:
+    from backend.app.services import llm_checksuggest
+
+    assert llm_checksuggest.MAX_PROMPT_COLUMNS == llm_prompt_context.MAX_PROMPT_COLUMNS

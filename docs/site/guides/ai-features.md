@@ -148,6 +148,12 @@ hand-written one. For a rule that spans several tables on the *same* connection,
 structurally, because reconciling two datasources is what the
 [comparison check](datasources-checks.md) is for.
 
+On a very wide table the model is not shown everything. At most 500 column names per table
+are listed, in table order, and a column your description names is always among them; the
+profile, if you asked for it, covers the first 100 of the listed columns. The prompt tells
+the model how many columns were left out, so name the columns the rule is about when the
+table has more than 500.
+
 ??? note "Scripted / MCP access"
     ```bash
     curl -X POST https://<your-dataq-host>/api/v1/llm/sql_generation \

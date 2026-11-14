@@ -31,6 +31,11 @@ from backend.app.services.profile_service import ColumnProfile
 
 log = get_logger(__name__)
 
+#: Columns profiled into one prompt (#1734, #2356). A wider table is cut to its first N
+#: in the order the datasource lists them, so neither the profile query nor the prompt
+#: grows with the table's width.
+MAX_PROMPT_COLUMNS = 100
+
 
 def _clean(value: Any) -> str | None:
     text = str(value).strip() if value is not None else ""
