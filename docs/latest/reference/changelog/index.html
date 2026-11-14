@@ -3217,6 +3217,11 @@ section below.</p>
   suite page marks it <strong>Values withheld</strong> and disables <strong>Accept</strong>.
 - <strong>A volume check can have only a minimum or only a maximum.</strong> "At least N rows" no longer needs an
   invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- <strong>The MCP <code>get_suite_performance</code> tool says which run it scored.</strong> Its description read as
+  "the most recent run that completed"; the ranking scores each suite's latest run only if that
+  run completed, with no fallback to an earlier one, and now says so. Each row also carries
+  <code>run_id</code> and <code>run_finished_at</code>, so an assistant can tell a score from this morning from one
+  that is months old.
 - <strong>Alerts name an orchestration provider the way the app does.</strong> A Teams, Slack or email alert now says "Azure Data Factory" where it used to say "ADF", and pipeline-timing alerts and the incident evidence in an alert show the provider's name rather than its identifier (<code>adf</code>, <code>airflow</code>). The webhook payload is unchanged: <code>triggered_by</code> and the evidence still carry the identifier.
 - <strong>Deleting a check no longer rewrites the history of past runs.</strong> A run now records its outcome
   (checks passed, worst severity) when it finishes, and the run page, runs list, recent-runs widget, PDF
