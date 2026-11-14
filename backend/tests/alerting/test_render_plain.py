@@ -234,11 +234,12 @@ def test_an_unrecorded_pipeline_trigger_is_not_called_a_manual_run() -> None:
     }
     facts = dict(render.incident_facts(_card(evidence)))
     assert facts["Triggered by"] == (
-        "The ADF pipeline (its run isn't recorded in DataQ yet, so its status isn't known)."
+        "The Azure Data Factory pipeline "
+        "(its run isn't recorded in DataQ yet, so its status isn't known)."
     )
     clause = render.evidence_summary_clause(evidence)
     assert "manual or scheduled" not in clause
-    assert "triggered by the ADF pipeline" in clause
+    assert "triggered by the Azure Data Factory pipeline" in clause
 
 
 def test_an_ambiguous_pipeline_trigger_says_so() -> None:

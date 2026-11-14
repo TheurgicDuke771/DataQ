@@ -19,6 +19,19 @@ _PROVIDERS: dict[str, OrchestrationProvider] = {
 }
 
 
+def provider_display_names() -> dict[str, str]:
+    """Provider value → the name shown to people, for every registered provider."""
+    return {value: impl.display_name for value, impl in _PROVIDERS.items()}
+
+
+def provider_display_name(provider: str) -> str:
+    """The provider's display name; a value that is not a registered provider is returned
+    as given, so an unknown or legacy value is shown rather than hidden.
+    """
+    impl = _PROVIDERS.get(provider)
+    return impl.display_name if impl is not None else provider
+
+
 def get_orchestration_provider(provider: str) -> OrchestrationProvider:
     impl = _PROVIDERS.get(provider)
     if impl is None:

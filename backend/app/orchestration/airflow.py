@@ -103,6 +103,7 @@ class AirflowProvider:
     """`OrchestrationProvider` for Apache Airflow — signed-callback parse (v1)."""
 
     provider = "airflow"
+    display_name = "Airflow"
     resource_config_key = "base_url"
     # Signed-callback (HMAC) auth scheme — ADR 0007.
     webhook_auth = WebhookAuthDescriptor(
