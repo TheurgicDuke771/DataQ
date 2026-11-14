@@ -14,6 +14,7 @@ from backend.app.alerting.base import (
     RunReport,
     WorkspaceSignalReport,
 )
+from backend.app.orchestration.registry import provider_display_name
 from backend.app.services.incident_evidence import blast_radius_assets_and_qualifiers
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
@@ -26,14 +27,19 @@ _MAX_SAMPLE_VALUES = 3
 _MAX_QUALIFIER_CLAUSE = 200
 
 # triggered_by is stored as "<provider>:<...>" (schedule/adf/airflow/dbt) or NULL
-# for a manual run. Map the prefix to a friendly source name for the alert.
+# for a manual run. These are the prefixes that are not an orchestration provider; a
+# provider's name comes from the provider itself (`_source_label`).
 _TRIGGER_LABELS = {
     "schedule": "Schedule",
-    "adf": "ADF",
-    "airflow": "Airflow",
-    "dbt": "dbt",
     "manual": "Manual",
 }
+
+
+def _source_label(prefix: str) -> str:
+    """Display name for a trigger prefix or a provider value. Every alert text that names a
+    provider goes through here, so an alert and the app use one name for it (#2354).
+    """
+    return _TRIGGER_LABELS.get(prefix) or provider_display_name(prefix)
 
 
 def format_number(value: float | int) -> str:
@@ -180,7 +186,7 @@ def _unlinked_pipeline_trigger(trigger: Any) -> str:
         # No layer (captured before it existed) or one that failed to build: don't guess.
         return "unknown"
     provider = str(trigger.get("provider", "pipeline"))
-    label = _TRIGGER_LABELS.get(provider, provider)
+    label = _source_label(provider)
     state = trigger.get("pipeline_run")
     if state == "ambiguous":
         return f"{label} pipeline (its run matches more than one recorded pipeline run)"
@@ -203,7 +209,7 @@ def _upstream_pipeline_clause(pipeline: Any, trigger: Any = None) -> str:
         return f"triggered by the {unlinked}"
     if not isinstance(pipeline, dict):
         return "upstream pipeline: unavailable"
-    provider = pipeline.get("provider", "?")
+    provider = _source_label(str(pipeline.get("provider", "?")))
     status = pipeline.get("status", "unknown")
     delay = pipeline.get("delay_seconds_vs_history")
     if not isinstance(delay, int | float):
@@ -543,7 +549,7 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
             facts.append(
                 (
                     "Triggered by",
-                    f"{pipeline.get('provider', 'pipeline')} run "
+                    f"{_source_label(str(pipeline.get('provider', 'pipeline')))} run "
                     f"({pipeline.get('status', 'status unknown')}).",
                 )
             )
@@ -587,13 +593,13 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
 
 
 def triggered_source(triggered_by: str | None) -> str:
-    """Friendly trigger source: ``Schedule`` / ``ADF`` / ``Airflow`` / ``dbt`` /
-    ``Manual`` (from the ``<provider>:...`` prefix), else the raw prefix.
+    """Friendly trigger source: ``Schedule`` / ``Azure Data Factory`` / ``Airflow`` /
+    ``dbt`` / ``Manual`` (from the ``<provider>:...`` prefix), else the raw prefix.
     """
     if not triggered_by:
         return "Manual"
     prefix = triggered_by.split(":", 1)[0]
-    return _TRIGGER_LABELS.get(prefix, prefix)
+    return _source_label(prefix)
 
 
 def format_duration(seconds: float | None) -> str | None:
@@ -698,7 +704,7 @@ def staleness_impact(report: PollStalenessReport) -> str:
 
 
 def _pipeline_label(report: PipelineBaselineReport) -> str:
-    return f"{report.provider} {report.pipeline_or_dag_id} ({report.env})"
+    return f"{_source_label(report.provider)} {report.pipeline_or_dag_id} ({report.env})"
 
 
 def pipeline_headline(report: PipelineBaselineReport) -> str:
@@ -718,7 +724,7 @@ def pipeline_facts(report: PipelineBaselineReport) -> list[tuple[str, str]]:
     """``(label, value)`` pairs for a pipeline-baseline edge."""
     pairs: list[tuple[str, str | None]] = [
         ("Pipeline", report.pipeline_or_dag_id),
-        ("Provider", report.provider),
+        ("Provider", _source_label(report.provider)),
         ("Environment", report.env),
         ("Last run took", format_duration(report.duration_seconds)),
         ("Usually takes", format_duration(report.mean_duration_seconds)),

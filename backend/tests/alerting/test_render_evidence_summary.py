@@ -39,7 +39,7 @@ def test_upstream_clause_with_delay() -> None:
     clause = render._upstream_pipeline_clause(
         {"provider": "airflow", "status": "succeeded", "delay_seconds_vs_history": 540.0}
     )
-    assert clause == "upstream airflow run succeeded (+540s vs history)"
+    assert clause == "upstream Airflow run succeeded (+540s vs history)"
 
 
 def test_upstream_clause_negative_delay_keeps_the_sign() -> None:
@@ -145,7 +145,7 @@ def test_evidence_summary_clause_composes_all_three_parts() -> None:
     }
     clause = render.evidence_summary_clause(evidence)
     assert clause == (
-        "upstream airflow run succeeded; no other checks in this run; "
+        "upstream Airflow run succeeded; no other checks in this run; "
         "1 downstream asset(s) potentially affected"
     )
 

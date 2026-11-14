@@ -126,6 +126,7 @@ class AdfProvider:
     """`OrchestrationProvider` for Azure Data Factory — webhook parse (v1)."""
 
     provider = "adf"
+    display_name = "Azure Data Factory"
     resource_config_key = "factory_name"
     # Shared-secret-in-URL auth scheme — ADR 0006.
     webhook_auth = WebhookAuthDescriptor(
