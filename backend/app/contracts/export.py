@@ -153,7 +153,7 @@ def export_contract(session: Session, contract: Contract, suites: list[Suite]) -
             for column, reason in masker.mask(suite.id, check.config).redaction_reasons.items():
                 withheld[(suite.contract_object, column)] = reason
     # Last, so the rules above were found by the ids the importer recorded (a content key).
-    # Every linked suite is asked, not only the caller's: the stored document names them all.
-    mask_document(session, doc, list(contract.suites), withheld_upstream=withheld)
+    # The caller's visible suites play no part: the stored document names every object.
+    mask_document(session, doc, contract, withheld_upstream=withheld)
     validated = odcs.validate_document(doc)
     return validated.document

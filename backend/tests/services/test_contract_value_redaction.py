@@ -5,15 +5,18 @@ from __future__ import annotations
 
 import copy
 import json
+import uuid
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
 from backend.app.contracts import odcs, redaction
 from backend.app.contracts import translate as tr
 from backend.app.contracts.export import export_contract
-from backend.app.db.models import Check, Share
+from backend.app.db.models import Asset, Check, Contract, Share, Suite
 from backend.app.services import contract_service as svc
+from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.value_set_guard import ValueSetRedactedError
 from backend.tests.services.test_contract_service import (
     _connection,
@@ -33,6 +36,17 @@ _SECRETS = (
     "n/a-tier",
     "gx-opal",
 )
+
+
+def _gx(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "custom",
+        "engine": "greatExpectations",
+        "implementation": {
+            "expectation_type": "expect_column_values_to_be_in_set",
+            "kwargs": kwargs,
+        },
+    }
 
 
 def _tier_property() -> dict[str, Any]:
@@ -266,6 +280,22 @@ def test_an_export_with_withheld_values_cannot_be_imported(db_session: Any) -> N
             ]
         },
         {"properties": [{"name": "inner", "enum": [{"value": _M}]}]},
+        {"items": {"name": "item", "examples": [_M]}},
+        {"logicalType": "map", "map": {"key": {"examples": [_M]}}},
+        {"logicalType": "map", "map": {"value": {"enum": [{"value": _M}]}}},
+        {
+            "logicalType": "map",
+            "map": {
+                "value": {
+                    "quality": [{"metric": "invalidValues", "arguments": {"validValues": [_M]}}]
+                }
+            },
+        },
+        {"quality": [{"metric": "invalidValues", "arguments": {"invalidValues": [_M]}}]},
+        {"quality": [_gx({"value_set": _M})]},
+        {"quality": [_gx({"value_set": {"a": _M}})]},
+        {"quality": [_gx({"value_pairs_set": [["a", _M]], "column_A": "tier", "column_B": "x"})]},
+        {"quality": [_gx({"regex_list": ["^a$", _M]})]},
     ],
 )
 def test_the_marker_is_refused_in_every_place_a_value_list_lives(place: dict[str, Any]) -> None:
@@ -285,7 +315,196 @@ def test_the_v30_spelling_is_withheld_in_both_places(db_session: Any) -> None:
     prop = {"name": "tier", "classification": "restricted", "quality": [rule]}
     doc = tr.normalize_document({"schema": [{"name": "orders", "properties": [prop]}]})
 
-    assert redaction.mask_document(db_session, doc, []) == {"orders.tier": "policy"}
+    contract = Contract(odcs_id=f"legacy-{uuid.uuid4().hex[:8]}")
+    assert redaction.mask_document(db_session, doc, contract) == {"orders.tier": "policy"}
     masked = doc["schema"][0]["properties"][0]["quality"][0]
     assert masked["validValues"] == [_M] and masked["arguments"]["validValues"] == [_M]
     assert "v30-jade" not in json.dumps(doc)
+
+
+# ───────────── sensitivity is per (contract, object), not per contract row ─────────────
+
+
+def test_an_older_version_whose_suite_moved_to_a_newer_one_still_withholds(
+    db_session: Any,
+) -> None:
+    """Scenario A: v2 takes over the orders suite, so v1 has no suite for `orders` — the column
+    is exactly as sensitive as before."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc_with_tier())
+    orders = _suite(db_session, v1, "orders")
+    _classify(db_session, orders, "tier")
+    _import(db_session, actor, conn, _doc_with_tier("2.0.0"), suite_ids=[orders.id])
+    db_session.refresh(v1.contract)
+    assert orders.id not in {s.id for s in v1.contract.suites}
+
+    exported = _export(db_session, v1, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "policy"}
+    assert redaction.sensitivity_unknown_objects(exported) == []
+
+
+def test_a_newer_version_with_fresh_suites_asks_the_older_versions_suites(
+    db_session: Any,
+) -> None:
+    """Scenario B: v2 is imported without `suite_ids`; its fresh suite knows only the
+    document's classifications, the v1 suite knows `tier` was classified since."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc_with_tier())
+    _classify(db_session, _suite(db_session, v1, "orders"), "tier")
+    v2 = _import(db_session, actor, conn, _doc_with_tier("2.0.0"))
+    assert (_suite(db_session, v2, "orders").column_policy or {}).get("pii_columns") == ["email"]
+
+    exported = _export(db_session, v2, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "policy"}
+
+
+def test_an_object_with_no_suite_is_judged_by_its_tables_warehouse_tags(db_session: Any) -> None:
+    """No suite points at `orders` any more and the document classifies nothing: the table's
+    own asset still says `tier` is sensitive."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc_with_tier())
+    db_session.delete(_suite(db_session, outcome, "orders"))  # `refunds` keeps the connection
+    identity = resolve_asset_identity(
+        conn.type, conn.config, {"schema": "FINANCE", "table": "ORDERS"}
+    )
+    db_session.add(
+        Asset(
+            namespace=identity.namespace,
+            name=identity.name,
+            connection_id=conn.id,
+            column_tags={"tier": "sensitive"},
+        )
+    )
+    db_session.commit()
+    db_session.refresh(outcome.contract)
+
+    exported = _export(db_session, outcome, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "own_tag"}
+    assert redaction.sensitivity_unknown_objects(exported) == []
+
+
+def test_an_object_with_no_suite_is_judged_by_a_suite_on_the_same_table(db_session: Any) -> None:
+    """A suite unlinked by hand still points at the table, and its policy still counts."""
+    actor = _user(db_session)
+    outcome = _import(db_session, actor, _connection(db_session, actor), _doc_with_tier())
+    orders = _suite(db_session, outcome, "orders")
+    _classify(db_session, orders, "tier")
+    orders.contract_id = orders.contract_object = None
+    db_session.commit()
+    db_session.refresh(outcome.contract)
+
+    exported = _export(db_session, outcome, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "policy"}
+
+
+def test_an_object_nothing_can_speak_for_is_withheld_as_unknown(db_session: Any) -> None:
+    """No suite, no asset: not known to be safe, so withheld — under its own reason, and the
+    object is named, so "withheld because unknown" is not read as "classified"."""
+    actor = _user(db_session)
+    outcome = _import(db_session, actor, _connection(db_session, actor), _doc_with_tier())
+    for suite in db_session.scalars(select(Suite).where(Suite.contract_id == outcome.contract.id)):
+        db_session.delete(suite)
+    db_session.commit()
+    db_session.refresh(outcome.contract)
+
+    exported = export_contract(db_session, outcome.contract, [])
+    odcs.validate_document(exported)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "sensitivity_unknown"}
+    assert redaction.sensitivity_unknown_objects(exported) == ["orders", "refunds"]
+    assert _custom(_tier(exported), "valuesWithheld")["reason"] == "sensitivity_unknown"
+
+
+# ───────────── every shape and every nesting the walker must reach ─────────────
+
+_NESTED_SECRETS = (
+    "map-key-ex",
+    "map-val-enum",
+    "map-val-valid",
+    "item-ex",
+    "arg-invalid",
+    "bare-string-set",
+    "dict-set-value",
+    "pair-left",
+    "pair-right",
+    "^regex-one$",
+)
+
+
+def test_nested_properties_and_every_value_shape_are_withheld(db_session: Any) -> None:
+    doc = _doc()
+    doc["schema"][0]["properties"] += [
+        {
+            "name": "tier",
+            "logicalType": "string",
+            "classification": "restricted",
+            "quality": [
+                {
+                    "id": "q-args",
+                    "metric": "invalidValues",
+                    "arguments": {"validValues": ["ok"], "invalidValues": ["arg-invalid"]},
+                    "mustBe": 0,
+                },
+                {"id": "q-str", **_gx({"value_set": "bare-string-set"})},
+                {"id": "q-dict", **_gx({"value_set": {"k": "dict-set-value"}})},
+                {
+                    "id": "q-pairs",
+                    **_gx({"value_pairs_set": [["pair-left", "pair-right"]], "column_A": "a"}),
+                },
+                {"id": "q-regex", **_gx({"regex_list": ["^regex-one$"]})},
+            ],
+        },
+        {
+            "name": "tags",
+            "logicalType": "array",
+            "classification": "restricted",
+            "items": {"logicalType": "string", "examples": ["item-ex"]},
+        },
+        {
+            "name": "attrs",
+            "logicalType": "map",
+            "classification": "restricted",
+            "map": {
+                "key": {"logicalType": "string", "examples": ["map-key-ex"]},
+                "value": {
+                    "logicalType": "string",
+                    "enum": [{"value": "map-val-enum"}],
+                    "quality": [
+                        {
+                            "metric": "invalidValues",
+                            "arguments": {"validValues": ["map-val-valid"]},
+                            "mustBe": 0,
+                        }
+                    ],
+                },
+            },
+        },
+    ]
+    odcs.validate_document(doc)
+    contract = Contract(odcs_id=f"shapes-{uuid.uuid4().hex[:8]}")
+    redaction.mask_document(db_session, doc, contract)
+
+    text = json.dumps(doc)
+    assert not [secret for secret in _NESTED_SECRETS if secret in text]
+    odcs.validate_document(doc)  # still a valid document
+    tier, tags, attrs = doc["schema"][0]["properties"][-3:]
+    args, bare, mapping, pairs, regex = tier["quality"]
+    assert args["arguments"] == {"validValues": [_M], "invalidValues": [_M]}
+    assert bare["implementation"]["kwargs"]["value_set"] == _M
+    assert mapping["implementation"]["kwargs"]["value_set"] == _M
+    assert pairs["implementation"]["kwargs"]["value_pairs_set"] == [[_M, _M]]
+    assert regex["implementation"]["kwargs"]["regex_list"] == [_M]
+    assert tags["items"]["examples"] == [_M]
+    assert attrs["map"]["key"]["examples"] == [_M]
+    assert attrs["map"]["value"]["enum"] == [{"value": _M}]
+    assert attrs["map"]["value"]["quality"][0]["arguments"]["validValues"] == [_M]
+    # The column list of a duplicateValues rule names columns, not values: left alone.
+    rule = {"metric": "duplicateValues", "arguments": {"properties": ["a", "b"]}}
+    assert list(redaction._rule_slots("orders", None, rule)) == []
