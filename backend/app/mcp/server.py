@@ -1255,6 +1255,16 @@ def get_check_history(
     produced a result, not that it has never failed, and points may include
     results from runs that never completed.
 
+    **A history that stops is not a check that recovered.** ``check_enabled``
+    says whether the check is switched on now. When it is ``false`` the check is
+    left out of every run, so the history simply ends at ``newest_in_page``: the
+    newest point is its last result before it was switched off, not its current
+    state, and a missing recent failure means "not evaluated", never "stopped
+    failing". When it is ``true`` and the newest point is still old, the suite
+    has not run since (``list_runs``). The points do not say when the check was
+    switched off or back on, so a gap in the middle may be a disabled spell —
+    ``list_check_versions`` records each change of ``enabled``.
+
     Requires view access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
@@ -1266,6 +1276,9 @@ def get_check_history(
         return {
             "suite_id": suite_id,
             "check_id": check_id,
+            # Whether the check is switched on NOW (#2369). False ⇒ the history has
+            # stopped because nothing evaluates the check, not because it recovered.
+            "check_enabled": check_service.get_check(session, sid, cid).enabled,
             # Against a real total, not `len(points) == limit` — that inference
             # is wrong on the exact-boundary page, the #925 mistake `/assets`
             # grew `X-Total-Count` to avoid. Getting it wrong here is not
@@ -2856,7 +2869,8 @@ def update_check(
     ``trigger_suite_run`` if the user wants that now. Three things it does **not**
     do: it does not cancel a run already in progress, it does not resolve an incident
     that is already open on the check (resolve that yourself with
-    ``resolve_incident``, since no later run can pass and close it), and it does not
+    ``resolve_incident``, since no later run can pass and close it; until then
+    ``list_incidents`` shows it unresolved with ``check_enabled: false``), and it does not
     remove the check's results from past runs.
 
     ``config`` is the exception, and it matters: passing it **replaces the whole
@@ -3097,6 +3111,15 @@ def snooze_check(
     this when the user wants the check to stop evaluating: that is
     ``update_check`` with ``enabled=false``. Requires edit access.
 
+    **A check that is switched off can still be snoozed, and the snooze then
+    suppresses nothing.** The call is accepted and ``alert_snoozed_until`` is
+    stored, but ``check_enabled: false`` in the result means the check is not
+    running, so there are no alerts to mute: report "the snooze is recorded, but
+    the check is disabled and was not alerting anyway", not "alerts are muted
+    until then". The snooze is not tied to the check being off — if the check is
+    switched back on before ``alert_snoozed_until``, the snooze applies from
+    that moment.
+
     There is no separate unsnooze tool — omitting ``hours`` is how you
     un-mute. **The consequence is that "un-mute", "un-snooze", "turn
     alerts back on" and "start alerting again" are all served by this tool too,
@@ -3115,6 +3138,8 @@ def snooze_check(
         return {
             "check_id": check_id,
             "name": check.name,
+            # False ⇒ the check is not running, so this snooze mutes nothing for now.
+            "check_enabled": check.enabled,
             "snoozed": check.alert_snoozed_until is not None,
             "alert_snoozed_until": (
                 check.alert_snoozed_until.isoformat() if check.alert_snoozed_until else None
@@ -4588,7 +4613,17 @@ def trace_column_lineage(
         }
 
 
-def _incident_payload(incident: Any) -> dict[str, Any]:
+def _checks_enabled(session: Session, check_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, bool]:
+    """``check_id -> switched on now``, one query for the whole set. An id with no row
+    is absent, so a caller reports null rather than guessing.
+    """
+    if not check_ids:
+        return {}
+    rows = session.execute(select(Check.id, Check.enabled).where(Check.id.in_(set(check_ids))))
+    return dict(rows.tuples().all())
+
+
+def _incident_payload(incident: Any, enabled: dict[uuid.UUID, bool]) -> dict[str, Any]:
     ev: dict[str, Any] = incident.evidence if isinstance(incident.evidence, dict) else {}
 
     def _layer(key: str) -> dict[str, Any]:
@@ -4607,6 +4642,11 @@ def _incident_payload(incident: Any) -> dict[str, Any]:
         "suite_id": str(incident.suite_id),
         "check_id": str(incident.check_id),
         "check_name": check.get("name"),
+        # Whether the check is switched on NOW. False on an unresolved incident means
+        # it is stale, not live: no run evaluates the check any more, so nothing can
+        # breach again and nothing can pass and auto-resolve it. "Still open" is then
+        # not "still failing". Null = the check row could not be read.
+        "check_enabled": enabled.get(incident.check_id),
         "asset_id": str(incident.asset_id),
         "asset_namespace": asset.get("namespace"),
         "asset_name": asset.get("name"),
@@ -4668,6 +4708,17 @@ def list_incidents(
     `list_runs` or `get_check_history` instead; a confidently empty page here
     does not mean nothing failed in the window, only that nothing is currently
     unresolved.
+
+    **An unresolved incident is not proof the check is still failing.**
+    `check_enabled` says whether the incident's check is switched on now. When
+    it is `false` the check was switched off after the incident opened: no run
+    evaluates it, so it cannot breach again and cannot pass and auto-resolve.
+    The incident stays `open` / `acknowledged` until a person resolves it, and
+    `last_seen_at` is the last breach before it was switched off. Report such an
+    incident as "open, but its check is disabled", never as an active failure;
+    whether the data is still wrong is unknown. (`check_enabled` is the check's
+    state now, on resolved incidents too; null means the check could not be
+    read.)
 
     Filter by `status` (`open`, `acknowledged`, `resolved`), `suite_id`, or
     `asset_id`. Default is every status — pass `status="open"` for "what is
@@ -4738,12 +4789,14 @@ def list_incidents(
             since_hours=since_hours,
             until_hours=until_hours,
         )
+        # One query for the page, not one per incident.
+        enabled = _checks_enabled(session, [i.check_id for i in incidents])
         return {
             "total": total,
             "returned": len(incidents),
             "truncated": offset + len(incidents) < total,
             **_page_window([i.last_seen_at for i in incidents]),
-            "incidents": [_incident_payload(i) for i in incidents],
+            "incidents": [_incident_payload(i, enabled) for i in incidents],
         }
 
 
@@ -4771,7 +4824,14 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     only way to tell is checking the column's policy/tags directly.
 
     The evidence card is a **snapshot taken at the last occurrence**, not a live
-    read — describe it as "when this last failed", not "right now". It carries no
+    read — describe it as "when this last failed", not "right now".
+    `check_enabled` (live, beside the lifecycle fields) says whether the check
+    is switched on now: when `false`, no run evaluates it any more, so an
+    unresolved incident here is stale rather than live — it cannot breach again
+    or auto-resolve, only a person can close it, and the evidence is the last
+    failure before the check was switched off. The sibling lists in the card
+    are part of the snapshot and do not say which of those checks are still
+    on; `list_checks` does. The card carries no
     failing sample rows by design, so it cannot show which specific records were
     bad; use the run results for that.
 
@@ -4886,7 +4946,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
             session, iid, user_id=user.id, for_action=False
         )
         return {
-            **_incident_payload(incident),
+            **_incident_payload(incident, _checks_enabled(session, [incident.check_id])),
             "evidence": incident_service.evidence_for_caller(session, incident, user_id=user.id),
         }
 
@@ -5008,10 +5068,17 @@ def ack_incident(
     incident as being investigated'. An optional ``note`` records why or who.
 
     **Acknowledging changes nothing about the data and does not stop alerts.**
-    The check still runs, still fails, and still fires notifications on its own
-    schedule; this only moves the incident from `open` to `acknowledged` so the
-    workspace can see it is owned. To stop the alerting itself, use
-    ``snooze_check``; to declare the problem over, use ``resolve_incident``.
+    A check that is switched on still runs, still fails, and still fires
+    notifications on its own schedule; this only moves the incident from `open`
+    to `acknowledged` so the workspace can see it is owned. To stop the alerting
+    itself, use ``snooze_check``; to declare the problem over, use
+    ``resolve_incident``.
+
+    The returned ``check_enabled`` says whether the incident's check is switched
+    on now. When it is ``false`` the check no longer runs at all: nothing is
+    being investigated run over run, the incident cannot auto-resolve, and it
+    stays acknowledged until someone resolves it. Say so rather than "it is
+    being looked at and will clear when it passes".
 
     Acknowledging an already-acknowledged incident is fine — it records the newer
     actor and note. Acknowledging a **resolved** one is refused: a resolved
@@ -5030,7 +5097,7 @@ def ack_incident(
         incident = incident_service.acknowledge_incident(
             session, incident, user_id=user.id, note=note
         )
-        return _incident_payload(incident)
+        return _incident_payload(incident, _checks_enabled(session, [incident.check_id]))
 
 
 @mcp.tool
@@ -5064,6 +5131,14 @@ def resolve_incident(
     result unless the suite has that turned off, so an incident may already be
     closed without anyone acting.
 
+    The returned ``check_enabled`` says whether the incident's check is switched
+    on now. When it is ``false``, this tool was the only way the incident could
+    close (a disabled check never passes), **and no new incident will open if
+    the problem is still there**, because nothing evaluates the check: the
+    resolved state then says the incident was closed, not that the data is
+    known to be good. ``trigger_suite_run`` cannot confirm the fix either,
+    since the run leaves the check out.
+
     Requires edit access to the incident's suite.
     """
     iid = _parse_uuid(incident_id, field="incident_id")
@@ -5076,7 +5151,7 @@ def resolve_incident(
         incident = incident_service.resolve_incident(
             session, incident, user_id=user.id, note=note, resolution=resolution
         )
-        return _incident_payload(incident)
+        return _incident_payload(incident, _checks_enabled(session, [incident.check_id]))
 
 
 @mcp.tool

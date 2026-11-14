@@ -4675,6 +4675,131 @@ def test_list_incidents_rejects_until_hours_not_less_than_since_hours(
         server.list_incidents(since_hours=24, until_hours=48)
 
 
+def _incident_on(db_session: Any, owner: User, *, enabled: bool, name: str = "c") -> Incident:
+    asset = _asset(db_session, name=f"tbl_{name}")
+    suite = _suite(db_session, owner)
+    check = Check(
+        suite_id=suite.id, name=name, expectation_type="expect_x", config={}, enabled=enabled
+    )
+    db_session.add(check)
+    db_session.commit()
+    return _incident(db_session, asset=asset, check=check, suite=suite)
+
+
+def test_incident_tools_say_when_the_check_is_switched_off(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An incident open on a disabled check stays open for good: no run evaluates the
+    check, so nothing can pass and auto-resolve it. Without `check_enabled` every one of
+    these payloads reads "still open" as "still failing".
+    """
+    owner = _user(db_session)
+    live = _incident_on(db_session, owner, enabled=True, name="live")
+    stale = _incident_on(db_session, owner, enabled=False, name="stale")
+    _as(monkeypatch, db_session, owner)
+
+    listed = {i["id"]: i for i in server.list_incidents(status="open")["incidents"]}
+    assert listed[str(live.id)]["check_enabled"] is True
+    assert listed[str(stale.id)]["check_enabled"] is False
+    assert listed[str(stale.id)]["status"] == "open"
+
+    assert server.get_incident(str(live.id))["check_enabled"] is True
+    assert server.get_incident(str(stale.id))["check_enabled"] is False
+
+    assert server.ack_incident(str(live.id))["check_enabled"] is True
+    acked = server.ack_incident(str(stale.id))
+    assert (acked["status"], acked["check_enabled"]) == ("acknowledged", False)
+
+    assert server.resolve_incident(str(live.id))["check_enabled"] is True
+    resolved = server.resolve_incident(str(stale.id))
+    assert (resolved["status"], resolved["check_enabled"]) == ("resolved", False)
+
+
+def test_incident_check_enabled_is_the_state_now_not_when_it_opened(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session)
+    incident = _incident_on(db_session, owner, enabled=True)
+    _as(monkeypatch, db_session, owner)
+    assert server.get_incident(str(incident.id))["check_enabled"] is True
+
+    server.update_check(str(incident.suite_id), str(incident.check_id), enabled=False)
+    assert server.get_incident(str(incident.id))["check_enabled"] is False
+    (row,) = server.list_incidents()["incidents"]
+    assert row["check_enabled"] is False
+
+
+def test_list_incidents_reads_check_state_once_for_the_page(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from sqlalchemy import event
+
+    owner = _user(db_session)
+    _incident_on(db_session, owner, enabled=False, name="n0")
+    _as(monkeypatch, db_session, owner)
+
+    def statements() -> int:
+        seen: list[str] = []
+
+        def on_execute(_conn: Any, _cur: Any, statement: str, *_a: Any) -> None:
+            seen.append(statement)
+
+        bind = db_session.get_bind()
+        event.listen(bind, "before_cursor_execute", on_execute)
+        try:
+            assert server.list_incidents()["returned"] >= 1
+        finally:
+            event.remove(bind, "before_cursor_execute", on_execute)
+        return len(seen)
+
+    one = statements()
+    for n in range(1, 5):
+        _incident_on(db_session, owner, enabled=bool(n % 2), name=f"n{n}")
+    assert statements() == one
+
+
+def test_get_check_history_says_when_the_check_is_switched_off(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A disabled check's history just stops; a stale newest point otherwise reads as
+    "it stopped failing".
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    assert server.get_check_history(str(suite.id), str(check.id))["check_enabled"] is True
+    server.update_check(str(suite.id), str(check.id), enabled=False)
+    out = server.get_check_history(str(suite.id), str(check.id))
+    assert out["check_enabled"] is False
+    assert [p["status"] for p in out["points"]] == ["fail"]
+
+
+def test_snooze_check_on_a_disabled_check_says_the_check_is_off(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The snooze is accepted and `alert_snoozed_until` looks like active suppression of
+    a check that is not running at all.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite)
+    _as(monkeypatch, db_session, user)
+
+    assert server.snooze_check(str(suite.id), str(check.id), hours=4)["check_enabled"] is True
+    server.update_check(str(suite.id), str(check.id), enabled=False)
+    out = server.snooze_check(str(suite.id), str(check.id), hours=4)
+    assert out["snoozed"] is True and out["alert_snoozed_until"] is not None
+    assert out["check_enabled"] is False
+    assert server.snooze_check(str(suite.id), str(check.id))["check_enabled"] is False
+
+
 def test_ack_incident_records_the_actor_and_leaves_it_unresolved(
     db_session: Any, monkeypatch: Any
 ) -> None:
