@@ -73,9 +73,7 @@ class IncidentDetailRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.incident_detail_read_evidence_type_0 import (
-            IncidentDetailReadEvidenceType0,
-        )
+        from ..models.incident_detail_read_evidence_type_0 import IncidentDetailReadEvidenceType0
 
         acknowledge_note: None | str
         acknowledge_note = self.acknowledge_note
@@ -190,9 +188,7 @@ class IncidentDetailRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.incident_detail_read_evidence_type_0 import (
-            IncidentDetailReadEvidenceType0,
-        )
+        from ..models.incident_detail_read_evidence_type_0 import IncidentDetailReadEvidenceType0
 
         d = dict(src_dict)
 

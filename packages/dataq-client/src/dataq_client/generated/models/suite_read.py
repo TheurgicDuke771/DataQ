@@ -53,9 +53,7 @@ class SuiteRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.suite_read_column_policy_type_0 import (
-            SuiteReadColumnPolicyType0,
-        )
+        from ..models.suite_read_column_policy_type_0 import SuiteReadColumnPolicyType0
         from ..models.suite_read_target_type_0 import SuiteReadTargetType0
 
         connection_id = str(self.connection_id)
@@ -152,9 +150,7 @@ class SuiteRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.suite_read_column_policy_type_0 import (
-            SuiteReadColumnPolicyType0,
-        )
+        from ..models.suite_read_column_policy_type_0 import SuiteReadColumnPolicyType0
         from ..models.suite_read_target_type_0 import SuiteReadTargetType0
 
         d = dict(src_dict)

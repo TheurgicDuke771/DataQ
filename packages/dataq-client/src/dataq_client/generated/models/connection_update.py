@@ -37,9 +37,7 @@ class ConnectionUpdate:
     tags: list[str] | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.connection_update_config_type_0 import (
-            ConnectionUpdateConfigType0,
-        )
+        from ..models.connection_update_config_type_0 import ConnectionUpdateConfigType0
 
         catalog_secret: None | str | Unset
         if isinstance(self.catalog_secret, Unset):
@@ -98,9 +96,7 @@ class ConnectionUpdate:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.connection_update_config_type_0 import (
-            ConnectionUpdateConfigType0,
-        )
+        from ..models.connection_update_config_type_0 import ConnectionUpdateConfigType0
 
         d = dict(src_dict)
 

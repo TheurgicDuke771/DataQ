@@ -194,9 +194,7 @@ class CheckRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_read_config import CheckReadConfig
-        from ..models.check_read_contract_ref_type_0 import (
-            CheckReadContractRefType0,
-        )
+        from ..models.check_read_contract_ref_type_0 import CheckReadContractRefType0
         from ..models.check_read_redaction_reasons import CheckReadRedactionReasons
         from ..models.inherited_from import InheritedFrom
 

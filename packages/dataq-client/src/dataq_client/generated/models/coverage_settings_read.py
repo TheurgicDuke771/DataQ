@@ -80,9 +80,7 @@ class CoverageSettingsRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.coverage_settings_read_setting import (
-            CoverageSettingsReadSetting,
-        )
+        from ..models.coverage_settings_read_setting import CoverageSettingsReadSetting
         from ..models.effective_coverage_read import EffectiveCoverageRead
 
         d = dict(src_dict)

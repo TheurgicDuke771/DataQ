@@ -144,3 +144,4 @@ Client setup for Claude, VS Code / Copilot and Cursor: [MCP setup →](https://t
 - [AI-assistant guide](CLAUDE.md)
 - [Security policy](.github/SECURITY.md)
 - [LICENSE](LICENSE) (MIT)
+- [Third-party notices](https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/third-party-notices/) — the licences of everything the images and the client wheel ship; the same file is in both images and attached to each release
