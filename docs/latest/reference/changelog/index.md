@@ -28,6 +28,7 @@ section below.
   stored contract and its checks keep the real values. Importing a document that still holds
   `<redacted>` in one of those places is refused (`422 value_set_redacted`), so an export can no
   longer overwrite a contract's real values or switch off the checks they back.
+- **A table DataQ has never read classifications for no longer vouches for a contract object.** The contract export treated any known table as able to speak for an object, even one whose warehouse tags were never read. With no suite left on that object, its listed values were exported in full. Such an object is now reported as not judged and its value lists are withheld, as when no table is known at all.
 - **Redacting a check version now clears the value from the audit log too.** Before, a literal
   pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
   redacted from the version history but stayed in the audit events that recorded the edit. A

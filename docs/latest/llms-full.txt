@@ -2215,13 +2215,15 @@ What is withheld:
 What is **not** withheld, even over a sensitive column: patterns (`arguments.pattern`,
 `logicalTypeOptions.pattern`), bounds (`logicalTypeOptions.minimum` / `maximum`, a rule's
 comparison operands), SQL text, the implementation of a custom rule on another engine, and
-custom-property values and descriptions. Review those before sharing an export.
+custom-property values and descriptions, and a rule argument that is not a list. Review those
+before sharing an export. An object that a new version both renames and moves to another table
+is a new object: classifications made for the old one do not follow it.
 
 **Who decides.** A column's sensitivity is judged for the schema object, not for one imported
 version: every suite linked to any version of the contract for that object is asked, and so are
 the table's warehouse tags and every other suite on the same table, plus the `classification`
 the document gives its properties. If nothing stands behind an object — no suite of any version
-and no known table — DataQ cannot tell, and withholds all of its value lists with the reason
+and no table whose classifications DataQ has read — DataQ cannot tell, and withholds all of its value lists with the reason
 `sensitivity_unknown`.
 
 **The export says what it withheld.** The property or rule carries a `dataq.valuesWithheld`
@@ -5591,6 +5593,7 @@ section below.
   stored contract and its checks keep the real values. Importing a document that still holds
   `<redacted>` in one of those places is refused (`422 value_set_redacted`), so an export can no
   longer overwrite a contract's real values or switch off the checks they back.
+- **A table DataQ has never read classifications for no longer vouches for a contract object.** The contract export treated any known table as able to speak for an object, even one whose warehouse tags were never read. With no suite left on that object, its listed values were exported in full. Such an object is now reported as not judged and its value lists are withheld, as when no table is known at all.
 - **Redacting a check version now clears the value from the audit log too.** Before, a literal
   pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
   redacted from the version history but stayed in the audit events that recorded the edit. A
