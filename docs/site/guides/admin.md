@@ -113,6 +113,11 @@ has not earned.
 
 ## Members
 
+The Members tab manages two different things, and it helps to keep them apart:
+
+- **Workspace membership** — *who is allowed into this workspace at all.*
+- **Roles and access grants** — *what someone who is already in can do.*
+
 ### Roles and access grants
 
 The **Members** table carries every user with their workspace role, editable in place. The
@@ -140,49 +145,6 @@ removed, so the trail survives the row.
 
 An **owner** row is not a grant and has no Revoke: ownership is not something a share
 carries, and it moves by transfer instead.
-
-## Suites
-
-### Transferring ownership
-
-**Transfer** hands a suite to another user — the offboarding primitive. When somebody
-leaves, their suites keep running, but nobody can manage sharing or delete them until an
-owner exists again.
-
-- The new owner gets full control: the suite, its checks and its history.
-- The previous owner keeps an **editor** grant by default, so a handover does not lock the
-  person still doing the work out of it. Clearing that checkbox removes their access
-  entirely, which is what an offboarding wants.
-- **Workspace viewers cannot own a suite.** Viewers are read-only everywhere, so they are
-  not listed in the picker and the transfer is refused if attempted another way. Change
-  their workspace role to member first.
-- A previous owner who is themselves a viewer keeps **view**, not edit, for the same
-  reason.
-
-Both owners are recorded in the audit event.
-
-### Deleting any suite
-
-**Delete** removes any suite in the workspace. Before the confirmation appears, DataQ
-counts exactly what the delete would destroy — checks, runs, results, and any schedules or
-trigger bindings pointing at the suite — and states it plainly. The counts are exact, never
-estimated; if they cannot be read, the confirmation says so rather than showing a number it
-does not have, and the delete is still available.
-
-Because this runs on a suite the Admin may not recognise, the confirmation requires the
-suite's **name to be typed**. The delete cascades and **cannot be undone**: the run history,
-results and monitor baselines go with the suite. The audit event records the counts, so
-what was destroyed is still answerable afterwards.
-
-If the goal is to stop a suite running rather than erase it, disable its schedules and
-trigger bindings instead — that keeps the history.
-
-## Members
-
-The Members tab manages two different things, and it helps to keep them apart:
-
-- **Workspace membership** — *who is allowed into this workspace at all.*
-- **Roles and access grants** — *what someone who is already in can do.*
 
 ### Adding a member
 
@@ -301,6 +263,42 @@ restart. That path exists precisely so a mistake in the app is recoverable outsi
 Local and evaluation stacks that run without any identity provider are exempt from
 membership enforcement entirely, so adding a member there cannot lock you out of your own
 laptop.
+
+## Suites
+
+### Transferring ownership
+
+**Transfer** hands a suite to another user — the offboarding primitive. When somebody
+leaves, their suites keep running, but nobody can manage sharing or delete them until an
+owner exists again.
+
+- The new owner gets full control: the suite, its checks and its history.
+- The previous owner keeps an **editor** grant by default, so a handover does not lock the
+  person still doing the work out of it. Clearing that checkbox removes their access
+  entirely, which is what an offboarding wants.
+- **Workspace viewers cannot own a suite.** Viewers are read-only everywhere, so they are
+  not listed in the picker and the transfer is refused if attempted another way. Change
+  their workspace role to member first.
+- A previous owner who is themselves a viewer keeps **view**, not edit, for the same
+  reason.
+
+Both owners are recorded in the audit event.
+
+### Deleting any suite
+
+**Delete** removes any suite in the workspace. Before the confirmation appears, DataQ
+counts exactly what the delete would destroy — checks, runs, results, and any schedules or
+trigger bindings pointing at the suite — and states it plainly. The counts are exact, never
+estimated; if they cannot be read, the confirmation says so rather than showing a number it
+does not have, and the delete is still available.
+
+Because this runs on a suite the Admin may not recognise, the confirmation requires the
+suite's **name to be typed**. The delete cascades and **cannot be undone**: the run history,
+results and monitor baselines go with the suite. The audit event records the counts, so
+what was destroyed is still answerable afterwards.
+
+If the goal is to stop a suite running rather than erase it, disable its schedules and
+trigger bindings instead — that keeps the history.
 
 ## Compliance
 

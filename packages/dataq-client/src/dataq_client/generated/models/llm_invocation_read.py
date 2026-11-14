@@ -47,9 +47,7 @@ class LlmInvocationRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.llm_invocation_read_response_type_0 import (
-            LlmInvocationReadResponseType0,
-        )
+        from ..models.llm_invocation_read_response_type_0 import LlmInvocationReadResponseType0
 
         created_at = self.created_at.isoformat()
 
@@ -111,9 +109,7 @@ class LlmInvocationRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.llm_invocation_read_response_type_0 import (
-            LlmInvocationReadResponseType0,
-        )
+        from ..models.llm_invocation_read_response_type_0 import LlmInvocationReadResponseType0
 
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))

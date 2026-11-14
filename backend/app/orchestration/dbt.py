@@ -316,6 +316,7 @@ class DbtProvider:
     """`OrchestrationProvider` for dbt — signed-callback parse + artifacts poll."""
 
     provider = "dbt"
+    display_name = "dbt"
     resource_config_key = "project_name"
     # Signed-callback (HMAC) auth scheme — ADR 0029.
     webhook_auth = WebhookAuthDescriptor(
