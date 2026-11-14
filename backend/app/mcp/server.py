@@ -31,6 +31,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
+from backend.app.contracts import redaction as _contract_redaction
 from backend.app.contracts.export import export_contract as _export_contract
 from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
@@ -4876,23 +4877,59 @@ def export_contract(contract_id: str) -> dict[str, Any]:
     """Export a data contract as an Open Data Contract Standard (ODCS v3) document.
 
     Use this for 'give me the orders contract as ODCS' or to hand a contract to another tool.
-    Returns `document`: the contract exactly as it was imported (every schema object and rule
-    the producer wrote), in the newest ODCS v3 vocabulary DataQ knows, plus `dataq.*` custom
+    Returns `document`: the contract as it was imported (every schema object and rule the
+    producer wrote), in the newest ODCS v3 vocabulary DataQ knows, plus `dataq.*` custom
     properties naming the check behind each rule on the suites you can see; checks people
     added to those suites appear as `type: custom, engine: dataq` rules. Read-only.
 
+    One thing is NOT as imported: the listed values of a column that is classified as
+    sensitive now. Each reads `<redacted>` — an `enum` collapses to one entry — and the
+    property or rule carries a `dataq.valuesWithheld` custom property with the column, the
+    reason and how many values each field held. What is withheld: a property's `enum` and
+    `examples` (nested fields, array `items` and `map` keys and values included), every list
+    argument of a library rule (`validValues`, `missingValues`, …), and a custom rule's
+    `value_set`, `value_pairs_set` and `regex_list` (GX or DataQ engine). Never read
+    `<redacted>` as an accepted value, and never report a withheld list as an empty one. A
+    document with withheld values cannot be imported: DataQ refuses it.
+
+    - `redacted_columns` lists every `<object>.<column>` with withheld values — the bare
+      `<object>` for an object-level rule that names no column — and `redaction_reasons`
+      gives each one's reason, never null: a rung of the redaction ladder as on `get_check`
+      (`policy`, `own_tag`, `inherited_tag`, `unclassified`, `detected`, `classifier`), or
+      `sensitivity_unknown`.
+    - `sensitivity_unknown_objects` names the schema objects DataQ could NOT judge: no suite
+      of any version of the contract and no known table stands behind them. Their value
+      lists are withheld as `sensitivity_unknown` — that means "not known to be safe", not
+      "classified as sensitive"; say so.
+    - `not_withheld` lists what this export never masks, even over a sensitive column:
+      patterns, bounds (minimum / maximum, comparison operands), SQL text, the implementation
+      of a custom rule on another engine, and custom-property values or descriptions. An
+      empty `redacted_columns` therefore means no LISTED value was withheld — not that the
+      document holds nothing sensitive. Sensitivity is judged from the suites of every
+      version of the contract, the table's warehouse tags and the PII classifier; a column
+      nobody classified and the classifier does not recognise is shown.
+
     Objects and rules of suites you cannot see are still in the document (they come from the
-    stored contract) but carry no `dataq.*` annotations — their absence does not mean those
-    rules are unenforced. `restricted_suite_count` says how many linked suites that applies
-    to. Importing a contract is not available over MCP; it is done in the app or REST API.
+    stored contract) but carry no `dataq.*` check annotations — their absence does not mean
+    those rules are unenforced. `restricted_suite_count` says how many linked suites that
+    applies to; withholding does not depend on which suites you can see. Importing a contract
+    is not available over MCP; it is done in the app or REST API.
     """
     cid = _parse_uuid(contract_id, field="contract_id")
     with _ctx() as (session, user), _service_errors():
         visible = contract_service.get_contract(session, cid, user.id)
+        document = _export_contract(session, visible.contract, visible.suites)
+        reasons = _contract_redaction.redacted_columns(document)
         return {
             "contract_id": str(visible.contract.id),
             "restricted_suite_count": visible.restricted_suite_count,
-            "document": _export_contract(session, visible.contract, visible.suites),
+            "redacted_columns": list(reasons),
+            "redaction_reasons": reasons,
+            "sensitivity_unknown_objects": _contract_redaction.sensitivity_unknown_objects(
+                document
+            ),
+            "not_withheld": list(_contract_redaction.NOT_WITHHELD),
+            "document": document,
         }
 
 
