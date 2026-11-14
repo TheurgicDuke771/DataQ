@@ -81,15 +81,9 @@ class ResultRead:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.check_as_of_read import CheckAsOfRead
-        from ..models.result_read_expected_value_type_0 import (
-            ResultReadExpectedValueType0,
-        )
-        from ..models.result_read_observed_value_type_0 import (
-            ResultReadObservedValueType0,
-        )
-        from ..models.result_read_sample_failures_type_0 import (
-            ResultReadSampleFailuresType0,
-        )
+        from ..models.result_read_expected_value_type_0 import ResultReadExpectedValueType0
+        from ..models.result_read_observed_value_type_0 import ResultReadObservedValueType0
+        from ..models.result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
         from ..models.result_read_sampling_type_0 import ResultReadSamplingType0
 
         check_id = str(self.check_id)
@@ -194,18 +188,10 @@ class ResultRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.check_as_of_read import CheckAsOfRead
-        from ..models.result_read_expected_value_type_0 import (
-            ResultReadExpectedValueType0,
-        )
-        from ..models.result_read_observed_value_type_0 import (
-            ResultReadObservedValueType0,
-        )
-        from ..models.result_read_redaction_reasons import (
-            ResultReadRedactionReasons,
-        )
-        from ..models.result_read_sample_failures_type_0 import (
-            ResultReadSampleFailuresType0,
-        )
+        from ..models.result_read_expected_value_type_0 import ResultReadExpectedValueType0
+        from ..models.result_read_observed_value_type_0 import ResultReadObservedValueType0
+        from ..models.result_read_redaction_reasons import ResultReadRedactionReasons
+        from ..models.result_read_sample_failures_type_0 import ResultReadSampleFailuresType0
         from ..models.result_read_sampling_type_0 import ResultReadSamplingType0
 
         d = dict(src_dict)

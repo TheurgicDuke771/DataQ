@@ -64,9 +64,7 @@ class ChannelRead:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.channel_read_payload_template_type_0 import (
-            ChannelReadPayloadTemplateType0,
-        )
+        from ..models.channel_read_payload_template_type_0 import ChannelReadPayloadTemplateType0
 
         email_recipients: None | str
         email_recipients = self.email_recipients
@@ -141,9 +139,7 @@ class ChannelRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.channel_read_payload_template_type_0 import (
-            ChannelReadPayloadTemplateType0,
-        )
+        from ..models.channel_read_payload_template_type_0 import ChannelReadPayloadTemplateType0
 
         d = dict(src_dict)
 
