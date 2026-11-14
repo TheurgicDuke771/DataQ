@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.contracts import odcs
 from backend.app.contracts import translate as tr
+from backend.app.contracts.redaction import reject_masked_document
+from backend.app.contracts.targets import target_for as _target_for
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import SCHEMA_DRIFT
@@ -38,7 +40,6 @@ from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import record_check_version
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES, latest_runs_per_suite_stmt
-from backend.app.services.run_target import SuiteTargetInvalidError, validate_target
 from backend.app.services.suite_io_service import (
     EXPORT_VERSION,
     _load_target_connection,
@@ -102,36 +103,6 @@ class ImportOutcome:
 
 
 # ───────────────────────────── targets ──────────────────────────────
-
-
-def _target_for(connection_type: str, physical: str) -> dict[str, Any] | None:
-    """Map an ODCS `physicalName` (`table`, `schema.table`, `catalog.schema.table`, or a file
-    path) onto this datasource's run-target shape, or `None` when it does not resolve."""
-    parts = [p for p in physical.split(".") if p] if "/" not in physical else []
-    target: dict[str, Any]
-    if connection_type in {"adls_gen2", "s3", "gcs"}:
-        target = {"path": physical}
-    elif connection_type == "unity_catalog":
-        if len(parts) != 3:
-            return None
-        target = {"catalog": parts[0], "schema": parts[1], "table": parts[2]}
-    elif connection_type == "iceberg":
-        if not parts:
-            return None
-        target = {"table": parts[-1]}
-        if len(parts) > 1:
-            target["namespace"] = ".".join(parts[:-1])
-    else:
-        if not parts or len(parts) > 2:
-            return None
-        target = {"table": parts[-1]}
-        if len(parts) == 2:
-            target["schema"] = parts[0]
-    try:
-        validate_target(connection_type, target)
-    except SuiteTargetInvalidError:
-        return None
-    return target
 
 
 # ───────────────────────────── checks ───────────────────────────────
@@ -363,6 +334,9 @@ def import_contract(
     """
     raw = odcs.load_document(document=document, document_yaml=document_yaml)
     validated = odcs.validate_document(raw)
+    # An export with withheld values is not the contract: storing it would replace the real
+    # values with the marker and switch off the checks they back (#2615).
+    reject_masked_document(validated.document)
     connection = _load_target_connection(session, EXPORT_VERSION, connection_id)
     translated = tr.translate(validated.document, connection_type=connection.type)
 

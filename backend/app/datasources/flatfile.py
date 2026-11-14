@@ -1022,6 +1022,7 @@ def read_csv_projected_sample(
     secret: str | None,
     rows: int,
     usecols: CsvUseCols = None,
+    session: StoreSession | None = None,
 ) -> Any:
     """The column profiler's bounded CSV read (#2000): the first ``rows`` data
     rows, projected to ``usecols`` at parse time, via the same growing head
@@ -1036,9 +1037,9 @@ def read_csv_projected_sample(
     profiler could not previously produce for a CSV, since the old
     whole-object read either succeeded or failed on the download itself.
     """
-    with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
+    with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
         reader_args = _reader_args(
-            conn_type=conn_type, config=config, path=path, secret=secret, session=session
+            conn_type=conn_type, config=config, path=path, secret=secret, session=ses
         )
         return _csv_head_frame(reader_args, limit=rows, usecols=usecols)
 
