@@ -150,7 +150,7 @@ structurally, because reconciling two datasources is what the
 
 On a very wide table the model is not shown everything. At most 500 column names per table
 are listed, in table order, and a column your description names is always among them; the
-profile, if you asked for it, covers the first 100 of the listed columns. The prompt tells
+profile, if you asked for it, covers 100 of the listed columns, the ones you named first. The prompt tells
 the model how many columns were left out, so name the columns the rule is about when the
 table has more than 500.
 

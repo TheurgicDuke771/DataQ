@@ -50,7 +50,6 @@ MAX_ADDITIONAL_TABLES = 4
 #: A column the rule names is listed ahead of the cut (`_columns_for_prompt`), and the
 #: prompt says how many were left out.
 MAX_PROMPT_COLUMN_NAMES = 500
-_IDENTIFIER_TOKEN = re.compile(r"[A-Za-z0-9_$]+")
 
 _DIALECT_BY_TYPE = {
     "snowflake": "Snowflake SQL",
@@ -96,19 +95,31 @@ def check_generation_preconditions(suite: Suite, connection: Connection | None) 
     )
 
 
-def _columns_for_prompt(all_columns: list[str], description: str) -> list[str]:
-    """At most `MAX_PROMPT_COLUMN_NAMES` names, in the datasource's order. A column the
-    rule names (case-insensitively, as a whole word) is kept ahead of the cut: the model
-    cannot write SQL for a column it was not shown, so the ones the user asked about are
-    the last to go.
+def _named_in(description: str, name: str) -> bool:
+    """Whether the rule names this column: its name appears in the description, any case,
+    not as part of a longer identifier. Matched on the whole name rather than on words of
+    the description, so a name with a space, a hyphen, a dot or a non-ASCII letter
+    (`order date`, `customer-id`, `größe`) is found too.
     """
-    if len(all_columns) <= MAX_PROMPT_COLUMN_NAMES:
+    if not name:
+        return False
+    return re.search(rf"(?<![\w$]){re.escape(name.lower())}(?![\w$])", description) is not None
+
+
+def _columns_for_prompt(
+    all_columns: list[str], description: str, cap: int = MAX_PROMPT_COLUMN_NAMES
+) -> list[str]:
+    """At most `cap` names, in the datasource's order. A column the rule names is kept
+    ahead of the cut: the model cannot write SQL for a column it was not shown, nor weigh
+    one it has no profile for, so the ones the user asked about are the last to go.
+    """
+    if len(all_columns) <= cap:
         return all_columns
-    tokens = {t.lower() for t in _IDENTIFIER_TOKEN.findall(description)}
-    named = [i for i, name in enumerate(all_columns) if name.lower() in tokens]
-    keep = set(named[:MAX_PROMPT_COLUMN_NAMES])
+    lowered = description.lower()
+    named = [i for i, name in enumerate(all_columns) if _named_in(lowered, name)]
+    keep = set(named[:cap])
     for index in range(len(all_columns)):
-        if len(keep) >= MAX_PROMPT_COLUMN_NAMES:
+        if len(keep) >= cap:
             break
         keep.add(index)
     return [name for i, name in enumerate(all_columns) if i in keep]
@@ -135,9 +146,9 @@ def _profile_block(profile: llm_prompt_context.MaskedProfile, *, listed: int) ->
     )
     if listed > len(lines):
         block += (
-            f"\n(The profile covers only the first {len(lines)} of the {listed} columns "
-            f"listed; the other {listed - len(lines)} were not profiled, which says nothing "
-            "about their contents.)"
+            f"\n(The profile covers {len(lines)} of the {listed} columns listed: the ones "
+            f"the rule names, then the first in table order. The other {listed - len(lines)} "
+            "were not profiled, which says nothing about their contents.)"
         )
     return block
 
@@ -178,6 +189,7 @@ def _profile_context(
     suite: Suite,
     connection: Connection,
     columns: list[str],
+    description: str,
     *,
     secret_store: SecretStore,
     actor: uuid.UUID | None,
@@ -187,14 +199,14 @@ def _profile_context(
     by the column listing. `top_n=0` skips the expensive top-values pass whose
     output the prompt never uses; only null/distinct counts are emitted, so no
     cell value exists here. At most `MAX_PROMPT_COLUMNS` of the listed columns are
-    profiled, as for check suggestions (#2356).
+    profiled, as for check suggestions (#2356), the ones the rule names first.
     """
     try:
         profile = llm_prompt_context.masked_profile_for_prompt(
             session,
             suite,
             connection,
-            columns[: llm_prompt_context.MAX_PROMPT_COLUMNS],
+            _columns_for_prompt(columns, description, llm_prompt_context.MAX_PROMPT_COLUMNS),
             top_n=0,
             secret_store=secret_store,
             actor=actor,
@@ -312,7 +324,7 @@ def _additional_table_context(
             session,
             suite,
             connection,
-            columns[: llm_prompt_context.MAX_PROMPT_COLUMNS],
+            _columns_for_prompt(columns, description, llm_prompt_context.MAX_PROMPT_COLUMNS),
             top_n=0,
             table=table,
             schema=schema,
@@ -359,7 +371,13 @@ def build_prompt(
         )
         if include_profile:
             context += _profile_context(
-                session, suite, connection, columns, secret_store=secret_store, actor=actor
+                session,
+                suite,
+                connection,
+                columns,
+                description,
+                secret_store=secret_store,
+                actor=actor,
             )
         for ref in additional:
             context += "\n\n" + _additional_table_context(

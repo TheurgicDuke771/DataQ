@@ -797,10 +797,56 @@ def test_the_profile_covers_at_most_the_shared_cap_and_says_so(
     assert profiled == [every[:cap]]
     assert _listed(prompt) == every  # every name is still listed: only the profile is cut
     assert prompt.count(": nulls=") == cap
-    assert (
-        f"The profile covers only the first {cap} of the {cap + 20} columns listed; "
-        "the other 20 were not profiled"
-    ) in prompt
+    assert f"The profile covers {cap} of the {cap + 20} columns listed" in prompt
+    assert "The other 20 were not profiled" in prompt
+
+
+def test_a_column_the_rule_names_is_profiled_even_past_the_cap(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The named column is the one whose null and distinct counts the rule turns on.
+    suite = make_sql_suite(db_session, admin)
+    cap = llm_prompt_context.MAX_PROMPT_COLUMNS
+    every = [*_wide(cap + 20), "LATE_FEE"]
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    profiled: list[list[str]] = []
+    monkeypatch.setattr(profile_service_module, "profile_connection", _echo_profile(profiled))
+    invocation = _invocation(
+        db_session, suite, admin, description="late_fee is never null", include_profile=True
+    )
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, invocation, store)
+    assert profiled == [[*every[: cap - 1], "LATE_FEE"]]
+    assert "- LATE_FEE: nulls=" in prompt
+
+
+@pytest.mark.parametrize(
+    ("column", "description"),
+    [
+        ("order date", "the order date is never in the future"),
+        ("customer-id", 'each "customer-id" appears once'),
+        ("größe", "GRÖSSE-free rows aside, größe must be positive"),
+        ("addr.city", "addr.city is filled in"),
+        ("CITY", "orders.city is filled in"),
+    ],
+)
+def test_a_named_column_with_an_unusual_name_survives_the_cut(
+    column: str, description: str
+) -> None:
+    every = [*_wide(llm_sqlgen.MAX_PROMPT_COLUMN_NAMES + 50), column]
+    assert llm_sqlgen._columns_for_prompt(every, description)[-1] == column
+
+
+@pytest.mark.parametrize(
+    ("column", "description"),
+    [
+        ("ID", "the order_id is unique"),  # part of a longer identifier
+        ("FEE", "late_fees are capped"),
+        ("", "anything at all"),
+    ],
+)
+def test_a_name_inside_a_longer_identifier_is_not_a_mention(column: str, description: str) -> None:
+    every = [*_wide(llm_sqlgen.MAX_PROMPT_COLUMN_NAMES + 50), column]
+    assert column not in llm_sqlgen._columns_for_prompt(every, description)
 
 
 def test_a_profile_within_the_cap_carries_no_note(
