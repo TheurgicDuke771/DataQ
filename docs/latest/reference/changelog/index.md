@@ -287,6 +287,7 @@ section below.
   directory when the site is built, and a release gathers them into a dated section. The
   list a reader sees is unchanged; what changed is that two pull requests can each record
   an entry without conflicting with each other.
+- **SQL generation no longer sends every column of a very wide table.** The prompt lists at most 500 column names per table, keeping any column your description names, and profiles at most 100 of them, the named ones first; it tells the model how many columns were left out, so the model does not treat the list as the whole table.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
   you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each

@@ -2810,6 +2810,11 @@ hand-written one. For a rule that spans several tables on the <em>same</em> conn
 <code>additional_tables</code> (up to four) via the API; cross-connection joins are refused
 structurally, because reconciling two datasources is what the
 <a href="../datasources-checks/">comparison check</a> is for.</p>
+<p>On a very wide table the model is not shown everything. At most 500 column names per table
+are listed, in table order, and a column your description names is always among them; the
+profile, if you asked for it, covers 100 of the listed columns, the ones you named first. The prompt tells
+the model how many columns were left out, so name the columns the rule is about when the
+table has more than 500.</p>
 <details class="note">
 <summary>Scripted / MCP access</summary>
 <p></p><div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/sql_generation<span class="w"> </span><span class="se">\</span>
