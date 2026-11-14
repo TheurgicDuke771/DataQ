@@ -69,6 +69,9 @@ class OrchestrationProvider(Protocol):
     """Provider-agnostic monitoring interface — ADF reference impl, Airflow next."""
 
     provider: str
+    # What a person reads wherever the provider is named — run labels, alerts (#2354). The
+    # `provider` value above stays the identifier in markers, bindings and API payloads.
+    display_name: str
     # The `connections.config` JSONB key whose value a `RunUpdate.resource_name` is matched against
     # to attribute a run to an orchestrator connection (`factory_name` for ADF, `base_url` for
     # Airflow).

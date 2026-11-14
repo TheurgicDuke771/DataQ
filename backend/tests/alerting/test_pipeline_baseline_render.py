@@ -24,10 +24,10 @@ RECOVERED = _report(state=HEALTH_RECOVERED)
 @pytest.mark.parametrize(
     ("report", "headline"),
     [
-        (SLOW, "pipeline ran much slower than usual: airflow load_orders (prod)"),
-        (FAST, "pipeline ran much faster than usual: airflow load_orders (prod)"),
-        (OVERDUE, "pipeline overdue: airflow load_orders (prod)"),
-        (RECOVERED, "pipeline back to normal: airflow load_orders (prod)"),
+        (SLOW, "pipeline ran much slower than usual: Airflow load_orders (prod)"),
+        (FAST, "pipeline ran much faster than usual: Airflow load_orders (prod)"),
+        (OVERDUE, "pipeline overdue: Airflow load_orders (prod)"),
+        (RECOVERED, "pipeline back to normal: Airflow load_orders (prod)"),
     ],
 )
 def test_every_channel_carries_the_headline(report: PipelineBaselineReport, headline: str) -> None:

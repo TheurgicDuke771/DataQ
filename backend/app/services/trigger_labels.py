@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import SUITE_TRIGGER_PROVIDER, Suite, User
 from backend.app.orchestration.markers import parse_suite_marker
+from backend.app.orchestration.registry import provider_display_names
 from backend.app.services import suite_service
 
 _USER_KINDS = {"manual": "Manual", "mcp": "MCP", "probe": "Probe"}
 _SUITE_LABEL = "Suite"
-PROVIDER_LABELS = {"adf": "Azure Data Factory", "airflow": "Airflow", "dbt": "dbt"}
+# One source for a provider's name — the provider itself — so a run label and an alert agree.
+PROVIDER_LABELS = provider_display_names()
 _SCHEDULE_LABEL = "Schedule"
 
 
