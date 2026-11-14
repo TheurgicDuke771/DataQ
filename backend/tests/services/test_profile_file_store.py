@@ -185,3 +185,51 @@ def test_a_failed_read_does_not_leave_its_client_for_the_next_call(
         ) == ["id", "email"]
     assert (store.built, store.closed) == (2, 2)
     assert secrets.requested == ["ref", "ref"]
+
+
+def test_a_failed_read_on_a_reused_client_drops_it_too(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The reuse path is the one the scope exists for: its failure must not keep the client.
+    store = _install(monkeypatch, "s3", "csv")
+    secrets = FakeSecretStore({"ref": "s"})
+    conn = _conn("s3")
+    path = "orders/a.csv"
+    with svc.shared_connection():
+        svc.list_columns(conn, session=db_session, path=path, secret_store=secrets)
+        assert (store.built, store.closed) == (1, 0)  # held for the scope
+        store.fail_reads = True
+        with pytest.raises(ProfileFailedError):
+            svc.list_columns(conn, session=db_session, path=path, secret_store=secrets)
+        assert (store.built, store.closed) == (1, 1)  # the reused client was dropped
+        store.fail_reads = False
+        svc.list_columns(conn, session=db_session, path=path, secret_store=secrets)
+        assert store.built == 2
+    assert (store.built, store.closed) == (2, 2)
+
+
+def test_a_file_replaced_between_the_listing_and_the_profile_is_read_at_its_new_size(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Parquet is read from its footer, so a size remembered from the listing would point the
+    # profile's read at the wrong bytes of the replacement file.
+    store = _install(monkeypatch, "s3", "parquet")
+    secrets = FakeSecretStore({"ref": "s"})
+    conn = _conn("s3")
+    path = "orders/a.parquet"
+    with svc.shared_connection():
+        columns = svc.list_columns(conn, session=db_session, path=path, secret_store=secrets)
+        bigger = io.BytesIO()
+        pd.concat([_frame()] * 50, ignore_index=True).to_parquet(bigger, index=False)
+        store.content = bigger.getvalue()
+        result = svc.profile_connection(
+            conn, session=db_session, columns=columns, top_n=3, path=path, secret_store=secrets
+        )
+    assert result.row_count == 150
+    assert store.built == 1  # still one client: only the remembered size was let go
+
+
+def test_the_held_store_does_not_print_its_secret() -> None:
+    held = svc._FileStore("s3cr3t", flatfile.StoreSession(conn_type="s3", config={}, secret="x"))
+    assert "s3cr3t" not in repr(held)
+

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import column, distinct, func, literal_column, null, select, union_all
@@ -546,7 +546,9 @@ def _datasource_connection(connection: Connection, secret_store: SecretStore) ->
 class _FileStore:
     """A flat-file connection's resolved secret and the one store client its reads share."""
 
-    secret: str | None
+    # Kept out of the repr: the store is held for a whole scope, so a log line or an error
+    # message that formats it must not carry the credential.
+    secret: str | None = field(repr=False)
     session: StoreSession
 
     def reader_args(self, connection: Connection, path: str) -> dict[str, Any]:
@@ -563,12 +565,18 @@ class _FileStore:
 def _file_store(connection: Connection, secret_store: SecretStore) -> Iterator[_FileStore]:
     """The connection's secret and store client: the scope's own inside `shared_connection`
     (read and built once, closed with the scope — #2235), otherwise built for this call and
-    closed after it. A read that fails drops the scope's store rather than reuse it.
+    closed after it. A read that fails drops the scope's store rather than reuse it, and a
+    reused store forgets the object sizes an earlier read saw.
     """
     shared = _SHARED_CONNECTIONS.get()
     if shared is not None:
         held = shared.file_stores.get(_SharedConnections._key(connection))
         if held is not None:
+            # The client is shared across the scope's reads; the object sizes it has seen are
+            # not. Each read stats afresh, so a file replaced between the listing and the
+            # profile is read at its current length, as it was when each read built its own
+            # session (the size memo dedups one read's count→take pair only).
+            held.session.sizes.clear()
             try:
                 yield held
             except BaseException:
