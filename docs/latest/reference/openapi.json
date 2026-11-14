@@ -17106,7 +17106,7 @@
                 }
               }
             },
-            "description": "The stored document plus `dataq.*` custom properties for the checks the caller's visible suites hold, in the newest vendored ODCS v3 vocabulary \u2014 JSON, or YAML text with `format=yaml`."
+            "description": "The stored document plus `dataq.*` custom properties for the checks the caller's visible suites hold, in the newest vendored ODCS v3 vocabulary \u2014 JSON, or YAML text with `format=yaml`. The listed values of a column classified as sensitive read `<redacted>`: a property's `enum` and `examples` (nested fields, array `items` and `map` keys and values included), every list argument of a library rule, and a custom rule's `value_set`, `value_pairs_set` and `regex_list`. `dataq.valuesWithheld` on the property or rule gives the column, the reason and the count; `dataq.redactedColumns` on the document lists every object and column (the column is null for an object-level rule that names none). A schema object DataQ cannot judge \u2014 no suite of any version of the contract and no known table \u2014 has its lists withheld with the reason `sensitivity_unknown` and is named in `dataq.sensitivityUnknownObjects`. NOT withheld, even over a sensitive column: patterns, bounds (minimum / maximum, comparison operands), SQL text, the implementation of a custom rule on another engine, and custom-property values or descriptions \u2014 so the absence of `dataq.redactedColumns` does not mean the document holds nothing sensitive. A document with withheld values is refused on import (`422 value_set_redacted`)."
           },
           "422": {
             "content": {

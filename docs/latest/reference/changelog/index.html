@@ -2858,6 +2858,22 @@ section below.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>A contract export no longer shows the listed values of a column marked sensitive.</strong> A data
+  contract can list a column's values: a property's <code>enum</code> and <code>examples</code> (nested fields, array
+  items and map keys and values included), the list arguments of a rule such as <code>validValues</code> or
+  <code>missingValues</code>, and a custom rule's <code>value_set</code>, <code>value_pairs_set</code> or <code>regex_list</code>. When that
+  column is classified as sensitive after the contract was imported (a suite's column policy, a
+  warehouse tag, fail-closed mode or the PII classifier), the exported ODCS document now shows
+  <code>&lt;redacted&gt;</code> in their place, on the REST export and the MCP <code>export_contract</code> tool, for every
+  reader. Every suite of every version of the contract and the table's own tags are asked; a
+  schema object nothing stands behind is withheld with the reason <code>sensitivity_unknown</code>. The
+  document names what it withheld: <code>dataq.valuesWithheld</code> on the property or rule,
+  <code>dataq.redactedColumns</code> and <code>dataq.sensitivityUnknownObjects</code> on the document, and the MCP tool
+  also returns <code>redacted_columns</code>, <code>redaction_reasons</code>, <code>sensitivity_unknown_objects</code> and
+  <code>not_withheld</code>. Patterns, bounds, SQL text and custom-property values are not withheld. The
+  stored contract and its checks keep the real values. Importing a document that still holds
+  <code>&lt;redacted&gt;</code> in one of those places is refused (<code>422 value_set_redacted</code>), so an export can no
+  longer overwrite a contract's real values or switch off the checks they back.</li>
 <li><strong>Redacting a check version now clears the value from the audit log too.</strong> Before, a literal
   pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
   redacted from the version history but stayed in the audit events that recorded the edit. A

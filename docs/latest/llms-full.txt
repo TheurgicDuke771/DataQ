@@ -2196,6 +2196,45 @@ or `{"contract": null}` to detach it. Linking adds no checks; importing the cont
 rule, and every check people added to the suites as a `type: custom, engine: dataq` rule.
 Importing the export recreates every check.
 
+**Values of a sensitive column are withheld.** A contract can list a column's values. When
+that column is classified as sensitive, including after the contract was imported (a suite's
+column policy, a warehouse tag, fail-closed mode or the PII classifier), the export shows
+`<redacted>` in place of each value. This is the one place the export differs from the document
+you imported, and it applies to every reader, whichever suites they can see.
+
+What is withheld:
+
+- a property's `enum` and `examples`, on the property and on anything nested in it (object
+  fields, array `items`, `map` keys and values). An `enum` is reduced to a single `<redacted>`
+  entry, because its entries must be unique;
+- every list argument of a library rule (`validValues`, `missingValues` and any list beside
+  them), and the older `validValues` key;
+- a custom rule's `value_set`, `value_pairs_set` and `regex_list`, for the Great Expectations
+  and DataQ engines.
+
+What is **not** withheld, even over a sensitive column: patterns (`arguments.pattern`,
+`logicalTypeOptions.pattern`), bounds (`logicalTypeOptions.minimum` / `maximum`, a rule's
+comparison operands), SQL text, the implementation of a custom rule on another engine, and
+custom-property values and descriptions. Review those before sharing an export.
+
+**Who decides.** A column's sensitivity is judged for the schema object, not for one imported
+version: every suite linked to any version of the contract for that object is asked, and so are
+the table's warehouse tags and every other suite on the same table, plus the `classification`
+the document gives its properties. If nothing stands behind an object — no suite of any version
+and no known table — DataQ cannot tell, and withholds all of its value lists with the reason
+`sensitivity_unknown`.
+
+**The export says what it withheld.** The property or rule carries a `dataq.valuesWithheld`
+custom property with the column, the reason and how many values each field held. The document
+carries `dataq.redactedColumns`, a list of every such object and column, and
+`dataq.sensitivityUnknownObjects`, the objects DataQ could not judge. The MCP `export_contract`
+tool returns the same as `redacted_columns`, `redaction_reasons` and
+`sensitivity_unknown_objects`, plus `not_withheld`. The stored contract and its checks keep the
+real values, and the checks run on them.
+
+An export with withheld values cannot be imported (`422 value_set_redacted`): it would replace
+the real values with `<redacted>`. Import the producer's own document instead.
+
 ## Who sees a contract
 
 You see a contract when you can view at least one of its suites; the response counts the linked
@@ -5536,6 +5575,22 @@ section below.
 
 ### Security
 
+- **A contract export no longer shows the listed values of a column marked sensitive.** A data
+  contract can list a column's values: a property's `enum` and `examples` (nested fields, array
+  items and map keys and values included), the list arguments of a rule such as `validValues` or
+  `missingValues`, and a custom rule's `value_set`, `value_pairs_set` or `regex_list`. When that
+  column is classified as sensitive after the contract was imported (a suite's column policy, a
+  warehouse tag, fail-closed mode or the PII classifier), the exported ODCS document now shows
+  `<redacted>` in their place, on the REST export and the MCP `export_contract` tool, for every
+  reader. Every suite of every version of the contract and the table's own tags are asked; a
+  schema object nothing stands behind is withheld with the reason `sensitivity_unknown`. The
+  document names what it withheld: `dataq.valuesWithheld` on the property or rule,
+  `dataq.redactedColumns` and `dataq.sensitivityUnknownObjects` on the document, and the MCP tool
+  also returns `redacted_columns`, `redaction_reasons`, `sensitivity_unknown_objects` and
+  `not_withheld`. Patterns, bounds, SQL text and custom-property values are not withheld. The
+  stored contract and its checks keep the real values. Importing a document that still holds
+  `<redacted>` in one of those places is refused (`422 value_set_redacted`), so an export can no
+  longer overwrite a contract's real values or switch off the checks they back.
 - **Redacting a check version now clears the value from the audit log too.** Before, a literal
   pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
   redacted from the version history but stayed in the audit events that recorded the edit. A
@@ -20943,6 +20998,34 @@ on the contract `dataq.exportedAt`. A check with no ODCS-native shape (an `anoma
 `import(export(suite))` recreates every check — the round-trip the acceptance criteria ask for.
 On import those properties are honoured when present and ignored when absent; a document that
 never saw DataQ imports cleanly.
+
+**Amendment (2026-11-11) — value literals of a sensitive column are withheld.** The stored
+document lists column values: a property's `enum` / `examples` (nested fields, array `items`
+and `map` keys and values included), the list arguments of a library rule, and a custom rule's
+`value_set` / `value_pairs_set` / `regex_list`. On export those are held to the same redaction
+ladder as a check's value set: each reads `<redacted>` once the column is classified as
+sensitive, with `dataq.valuesWithheld` on the node and `dataq.redactedColumns` on the document
+naming what was withheld and why.
+
+Sensitivity is resolved per `(odcs_id, schema object)`, never per contract row: every suite
+linked to any version of the contract for that object, the object's asset resolved from its
+physical name on the contract's connections, every suite on the same table, and the document's
+own `classification`. A row-scoped lookup lost the answer whenever a suite moved to a newer
+version, a newer version got fresh suites, or a suite was unlinked. The caller's visible suites
+play no part. An object nothing stands behind (no suite, no asset) cannot be judged: it fails
+closed, its lists withheld under the distinct reason `sensitivity_unknown` and the object named
+in `dataq.sensitivityUnknownObjects`.
+
+This is the one exception to "the stored spec is the base" and to the round-trip: a document
+holding the marker in one of those places is refused on import, because storing it would replace
+the real values and retire the checks they back. Withholding the whole document, and leaving the
+document unredacted as consumer-authored source material, were both rejected: the first hides
+what the contract says about every other column, the second keeps the leak.
+
+Not withheld, by decision of scope and stated to every reader: patterns, bounds
+(`logicalTypeOptions.minimum` / `maximum`, comparison operands), SQL text, the implementation
+of a custom rule on an engine other than Great Expectations or DataQ, and custom-property
+values and descriptions. The check-read masker has the same boundary.
 
 ### 5. Versions of the standard
 

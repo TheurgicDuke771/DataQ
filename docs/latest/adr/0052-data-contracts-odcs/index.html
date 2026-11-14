@@ -2811,6 +2811,30 @@ on the contract <code>dataq.exportedAt</code>. A check with no ODCS-native shape
 <code>import(export(suite))</code> recreates every check — the round-trip the acceptance criteria ask for.
 On import those properties are honoured when present and ignored when absent; a document that
 never saw DataQ imports cleanly.</p>
+<p><strong>Amendment (2026-11-11) — value literals of a sensitive column are withheld.</strong> The stored
+document lists column values: a property's <code>enum</code> / <code>examples</code> (nested fields, array <code>items</code>
+and <code>map</code> keys and values included), the list arguments of a library rule, and a custom rule's
+<code>value_set</code> / <code>value_pairs_set</code> / <code>regex_list</code>. On export those are held to the same redaction
+ladder as a check's value set: each reads <code>&lt;redacted&gt;</code> once the column is classified as
+sensitive, with <code>dataq.valuesWithheld</code> on the node and <code>dataq.redactedColumns</code> on the document
+naming what was withheld and why.</p>
+<p>Sensitivity is resolved per <code>(odcs_id, schema object)</code>, never per contract row: every suite
+linked to any version of the contract for that object, the object's asset resolved from its
+physical name on the contract's connections, every suite on the same table, and the document's
+own <code>classification</code>. A row-scoped lookup lost the answer whenever a suite moved to a newer
+version, a newer version got fresh suites, or a suite was unlinked. The caller's visible suites
+play no part. An object nothing stands behind (no suite, no asset) cannot be judged: it fails
+closed, its lists withheld under the distinct reason <code>sensitivity_unknown</code> and the object named
+in <code>dataq.sensitivityUnknownObjects</code>.</p>
+<p>This is the one exception to "the stored spec is the base" and to the round-trip: a document
+holding the marker in one of those places is refused on import, because storing it would replace
+the real values and retire the checks they back. Withholding the whole document, and leaving the
+document unredacted as consumer-authored source material, were both rejected: the first hides
+what the contract says about every other column, the second keeps the leak.</p>
+<p>Not withheld, by decision of scope and stated to every reader: patterns, bounds
+(<code>logicalTypeOptions.minimum</code> / <code>maximum</code>, comparison operands), SQL text, the implementation
+of a custom rule on an engine other than Great Expectations or DataQ, and custom-property
+values and descriptions. The check-read masker has the same boundary.</p>
 <h3 id="5-versions-of-the-standard">5. Versions of the standard<a class="headerlink" href="#5-versions-of-the-standard" title="Permanent link">¶</a></h3>
 <p>The importer accepts <code>apiVersion</code> <strong>v3.0.0 through the newest v3 minor it knows</strong> (v3.2.0 today),
 validated against the vendored ODCS JSON Schema for that version (Apache-2.0, pinned under
