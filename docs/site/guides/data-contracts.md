@@ -97,24 +97,44 @@ or `{"contract": null}` to detach it. Linking adds no checks; importing the cont
 rule, and every check people added to the suites as a `type: custom, engine: dataq` rule.
 Importing the export recreates every check.
 
-**Values of a sensitive column are withheld.** A contract can list a column's values: a
-property's `enum` and `examples`, a rule's `validValues` or `missingValues`, a custom rule's
-`value_set`. When that column is classified as sensitive, including after the contract was
-imported (the suite's column policy, a warehouse tag, fail-closed mode or the PII classifier),
-the export shows `<redacted>` in place of each value. An `enum` is reduced to a single
-`<redacted>` entry, because its entries must be unique. This is the one place the export differs
-from the document you imported, and it applies to every reader, whichever suites they can see.
+**Values of a sensitive column are withheld.** A contract can list a column's values. When
+that column is classified as sensitive, including after the contract was imported (a suite's
+column policy, a warehouse tag, fail-closed mode or the PII classifier), the export shows
+`<redacted>` in place of each value. This is the one place the export differs from the document
+you imported, and it applies to every reader, whichever suites they can see.
 
-The export says what it withheld. The property or rule carries a `dataq.valuesWithheld` custom
-property with the column, the rule that decided and how many values each field held, and the
-document carries `dataq.redactedColumns`, a list of every such object and column. The MCP
-`export_contract` tool returns the same list as `redacted_columns` and `redaction_reasons`. The
-stored contract and its checks keep the real values, and the checks run on them.
+What is withheld:
+
+- a property's `enum` and `examples`, on the property and on anything nested in it (object
+  fields, array `items`, `map` keys and values). An `enum` is reduced to a single `<redacted>`
+  entry, because its entries must be unique;
+- every list argument of a library rule (`validValues`, `missingValues` and any list beside
+  them), and the older `validValues` key;
+- a custom rule's `value_set`, `value_pairs_set` and `regex_list`, for the Great Expectations
+  and DataQ engines.
+
+What is **not** withheld, even over a sensitive column: patterns (`arguments.pattern`,
+`logicalTypeOptions.pattern`), bounds (`logicalTypeOptions.minimum` / `maximum`, a rule's
+comparison operands), SQL text, the implementation of a custom rule on another engine, and
+custom-property values and descriptions. Review those before sharing an export.
+
+**Who decides.** A column's sensitivity is judged for the schema object, not for one imported
+version: every suite linked to any version of the contract for that object is asked, and so are
+the table's warehouse tags and every other suite on the same table, plus the `classification`
+the document gives its properties. If nothing stands behind an object — no suite of any version
+and no known table — DataQ cannot tell, and withholds all of its value lists with the reason
+`sensitivity_unknown`.
+
+**The export says what it withheld.** The property or rule carries a `dataq.valuesWithheld`
+custom property with the column, the reason and how many values each field held. The document
+carries `dataq.redactedColumns`, a list of every such object and column, and
+`dataq.sensitivityUnknownObjects`, the objects DataQ could not judge. The MCP `export_contract`
+tool returns the same as `redacted_columns`, `redaction_reasons` and
+`sensitivity_unknown_objects`, plus `not_withheld`. The stored contract and its checks keep the
+real values, and the checks run on them.
 
 An export with withheld values cannot be imported (`422 value_set_redacted`): it would replace
-the real values with `<redacted>`. Import the producer's own document instead. A schema object
-no suite is linked to is judged by the `classification` the document gives its properties and
-by the PII classifier.
+the real values with `<redacted>`. Import the producer's own document instead.
 
 ## Who sees a contract
 

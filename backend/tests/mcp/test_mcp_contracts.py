@@ -179,6 +179,9 @@ def test_export_contract_withholds_values_of_a_sensitive_column_and_says_so(
     shown = server.export_contract(str(outcome.contract.id))
     assert "tier-gold" in json.dumps(shown["document"])
     assert shown["redacted_columns"] == [] and shown["redaction_reasons"] == {}
+    # "Nothing withheld" is not "nothing sensitive": the blind spots are data, not prose.
+    assert shown["sensitivity_unknown_objects"] == []
+    assert any("patterns" in item for item in shown["not_withheld"])
 
     orders = db_session.query(Suite).filter_by(contract_object="orders").one()
     orders.column_policy = {"pii_columns": ["tier"]}
@@ -192,3 +195,23 @@ def test_export_contract_withholds_values_of_a_sensitive_column_and_says_so(
     odcs.validate_document(body["document"])
     # `get_contract` carries no value list at all: neither the document nor a check config.
     assert "tier-gold" not in json.dumps(server.get_contract(str(outcome.contract.id)))
+
+
+def test_export_contract_names_the_objects_it_could_not_judge(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An object nothing stands behind is withheld as unknown, and the payload says which."""
+    owner = _user(db_session)
+    document = copy.deepcopy(_DOC)
+    document["schema"][1]["properties"].append({"name": "tier", "examples": ["tier-gold"]})
+    monkeypatch.setattr(sys.modules[__name__], "_DOC", document)
+    outcome = _imported(db_session, owner)
+    db_session.delete(db_session.query(Suite).filter_by(contract_object="refunds").one())
+    db_session.flush()
+    _as(monkeypatch, db_session, owner)
+
+    body = server.export_contract(str(outcome.contract.id))
+    assert "tier-gold" not in json.dumps(body)
+    assert body["sensitivity_unknown_objects"] == ["refunds"]
+    assert body["redaction_reasons"] == {"refunds.tier": "sensitivity_unknown"}
+    assert None not in body["redaction_reasons"].values()

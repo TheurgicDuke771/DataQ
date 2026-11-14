@@ -362,6 +362,22 @@ def test_a_newer_version_with_fresh_suites_asks_the_older_versions_suites(
     assert redaction.redacted_columns(exported) == {"orders.tier": "policy"}
 
 
+def test_a_renamed_table_is_still_judged_by_the_older_versions_suite(db_session: Any) -> None:
+    """v2 moves `orders` to another table, so no suite on the new table knows `tier` was
+    classified: only the object's suites on other versions of the contract do."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    v1 = _import(db_session, actor, conn, _doc_with_tier())
+    _classify(db_session, _suite(db_session, v1, "orders"), "tier")
+    moved = _doc_with_tier("2.0.0")
+    moved["schema"][0]["physicalName"] = "FINANCE.ORDERS_V2"
+    v2 = _import(db_session, actor, conn, moved)
+
+    exported = _export(db_session, v2, actor)
+    assert not [secret for secret in _SECRETS if secret in json.dumps(exported)]
+    assert redaction.redacted_columns(exported) == {"orders.tier": "policy"}
+
+
 def test_an_object_with_no_suite_is_judged_by_its_tables_warehouse_tags(db_session: Any) -> None:
     """No suite points at `orders` any more and the document classifies nothing: the table's
     own asset still says `tier` is sensitive."""
@@ -456,7 +472,13 @@ def test_nested_properties_and_every_value_shape_are_withheld(db_session: Any) -
                 {"id": "q-dict", **_gx({"value_set": {"k": "dict-set-value"}})},
                 {
                     "id": "q-pairs",
-                    **_gx({"value_pairs_set": [["pair-left", "pair-right"]], "column_A": "a"}),
+                    **_gx(
+                        {
+                            "value_pairs_set": [["pair-left", "pair-right"]],
+                            "column_A": "other",
+                            "column_B": "tier",  # either side being sensitive withholds the pair
+                        }
+                    ),
                 },
                 {"id": "q-regex", **_gx({"regex_list": ["^regex-one$"]})},
             ],
