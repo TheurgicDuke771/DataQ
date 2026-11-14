@@ -121,6 +121,17 @@ _INSTRUCTIONS = (
 mcp: FastMCP = FastMCP(name="DataQ", instructions=_INSTRUCTIONS, auth=build_auth_provider())
 
 
+def _tool(gate: str, annotations: ToolAnnotations) -> Callable[[_F], _F]:
+    """Register a tool on this server with its authorization gate and its
+    read-only / state-changing / live-probe classification (`tool_gates`).
+
+    Every tool goes through here. A bare ``@mcp.tool`` would reach clients with no
+    safety annotations and be swept by no RBAC test; `tool_gates.unclassified` fails
+    the build for one.
+    """
+    return classified_tool(mcp, gate, annotations)
+
+
 # ─────────────────────────── shared plumbing ───────────────────────────────
 
 
@@ -664,7 +675,7 @@ def _redacted_metric(
 # ─────────────────────────────── read tools ────────────────────────────────
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_suites() -> list[dict[str, Any]]:
     """List the data-quality suites the current user can access.
 
@@ -761,7 +772,7 @@ def list_suites() -> list[dict[str, Any]]:
         return out
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_suite_results(suite_id: str) -> dict[str, Any]:
     """Get the latest data-quality run results for one suite.
 
@@ -861,7 +872,7 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
         return {"suite_id": suite_id, **_run_results_payload(session, suite, latest, actor=user)}
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_health_score(window_days: int = 7) -> dict[str, Any]:
     """Get the workspace data-quality health score and its trend.
 
@@ -919,7 +930,7 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_pipeline_status(
     provider: str | None = None,
     status: str | None = None,
@@ -1007,7 +1018,7 @@ def get_pipeline_status(
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_adf_pipeline_status(
     provider: str | None = None,
     status: str | None = None,
@@ -1117,7 +1128,7 @@ def _check_summary(
     }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def list_checks(
     suite_id: str,
     limit: Annotated[int, Field(ge=1, le=500)] = 200,
@@ -1190,7 +1201,7 @@ def list_checks(
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
     """Get one check's full definition by id.
 
@@ -1217,7 +1228,7 @@ def get_check(suite_id: str, check_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_check_history(
     suite_id: str,
     check_id: str,
@@ -1300,7 +1311,7 @@ def get_check_history(
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def list_check_versions(
     suite_id: str,
     check_id: str,
@@ -1420,7 +1431,7 @@ def list_check_versions(
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_seasonal_periods() -> list[dict[str, Any]]:
     """List the workspace's declared (admin-maintained) seasonal calendar: the named
     sale periods and fixed dates an anomaly check can attach.
@@ -1459,7 +1470,7 @@ def list_seasonal_periods() -> list[dict[str, Any]]:
         ]
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any]:
     """Detect the sale seasons and one-off peaks in an anomaly check's own stored
     history (read-only; changes no verdict): runs of days or weeks at or above
@@ -1530,7 +1541,7 @@ def get_detected_seasonal_periods(suite_id: str, check_id: str) -> dict[str, Any
         }
 
 
-@mcp.tool
+@_tool("read:suite-optional", READ_ONLY)
 def list_runs(
     suite_id: str | None = None,
     status: str | None = None,
@@ -1675,7 +1686,7 @@ def list_runs(
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_run_results(run_id: str) -> dict[str, Any]:
     """Get the per-check results of one specific run, by run id.
 
@@ -1743,7 +1754,7 @@ def get_run_results(run_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_connections(type: str | None = None, env: str | None = None) -> list[dict[str, Any]]:
     """List the configured datasource and orchestration connections, with health.
 
@@ -1888,7 +1899,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
         return out
 
 
-@mcp.tool
+@_tool("read:suite-optional", READ_ONLY)
 def list_schedules(
     suite_id: str | None = None, enabled: bool | None = None
 ) -> list[dict[str, Any]]:
@@ -1961,7 +1972,7 @@ def list_schedules(
         ]
 
 
-@mcp.tool
+@_tool("read:suite-optional", READ_ONLY)
 def list_trigger_bindings(
     provider: str | None = None,
     env: str | None = None,
@@ -2058,7 +2069,7 @@ def _channel_summary(channel: NotificationChannel) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_notification_channels() -> list[dict[str, Any]]:
     """List every reusable notification channel defined in the workspace.
 
@@ -2109,7 +2120,7 @@ def list_notification_channels() -> list[dict[str, Any]]:
         return [_channel_summary(c) for c in channel_service.list_channels(session)]
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def list_suite_channels(suite_id: str) -> list[dict[str, Any]]:
     """List the reusable notification channels linked to one suite.
 
@@ -2143,7 +2154,7 @@ def list_suite_channels(suite_id: str) -> list[dict[str, Any]]:
         return [_channel_summary(c) for c in channel_service.list_channels_for_suite(session, sid)]
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_notification_config(suite_id: str) -> dict[str, Any]:
     """Get a suite's alert notification settings.
 
@@ -2314,7 +2325,7 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_suite_performance() -> list[dict[str, Any]]:
     """Rank the suites by data-quality health, worst first.
 
@@ -2369,7 +2380,7 @@ def get_suite_performance() -> list[dict[str, Any]]:
         ]
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def export_suite(suite_id: str) -> dict[str, Any]:
     """Export a suite as a portable document you can review or re-create elsewhere.
 
@@ -2434,7 +2445,7 @@ def export_suite(suite_id: str) -> dict[str, Any]:
 # ─────────────────────────────── action tools ──────────────────────────────
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=False))
 def trigger_suite_run(suite_id: str) -> dict[str, Any]:
     """Trigger an asynchronous run of a suite's checks; returns a run id to poll.
 
@@ -2488,7 +2499,7 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_run_status(run_id: str) -> dict[str, Any]:
     """Poll the live, check-by-check progress of a suite run.
 
@@ -2547,7 +2558,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=False))
 def create_check(
     suite_id: str,
     name: str,
@@ -2831,7 +2842,7 @@ def create_check(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def update_check(
     suite_id: str,
     check_id: str,
@@ -2989,7 +3000,7 @@ def update_check(
         return _check_summary(check, _one_inherited(session, check), ValueSetMasker(session))
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def restore_check_version(
     suite_id: str,
     check_id: str,
@@ -3051,7 +3062,7 @@ def restore_check_version(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
     """Permanently delete a check from a suite — **and every result it ever
     recorded**.
@@ -3084,7 +3095,7 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
         return {"deleted": True, "check_id": check_id, "name": name}
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def snooze_check(
     suite_id: str,
     check_id: str,
@@ -3147,7 +3158,7 @@ def snooze_check(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", LIVE_PROBE)
 def dryrun_check(
     suite_id: str,
     expectation_type: str,
@@ -3277,7 +3288,7 @@ def dryrun_check(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def cancel_run(run_id: str) -> dict[str, Any]:
     """Cancel a queued or still-running suite run.
 
@@ -3306,7 +3317,7 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         return {"run_id": run_id, "status": run.status}
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=False))
 def create_schedule(
     suite_id: str,
     # Bounded to the column (`schedules.cron` is String(128)) like the REST twin.
@@ -3371,7 +3382,7 @@ def create_schedule(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def update_schedule(
     schedule_id: str,
     # Bounded to the columns, exactly as `create_schedule` is: an unbounded
@@ -3453,7 +3464,7 @@ def update_schedule(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def delete_schedule(schedule_id: str) -> dict[str, Any]:
     """Delete a suite's cron schedule so it stops running automatically.
 
@@ -3485,7 +3496,7 @@ def delete_schedule(schedule_id: str) -> dict[str, Any]:
         return {"deleted": True, "schedule_id": schedule_id, **deleted}
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=False))
 def create_trigger_binding(
     provider: str,
     # Same bound as the REST twin: the column is String(256) NOT NULL, and an
@@ -3572,7 +3583,7 @@ def create_trigger_binding(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
     """Enable or disable an orchestration trigger without deleting it.
 
@@ -3617,7 +3628,7 @@ def update_trigger_binding(binding_id: str, enabled: bool) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def delete_trigger_binding(binding_id: str) -> dict[str, Any]:
     """Delete an orchestration trigger so a pipeline stops running its suite.
 
@@ -3647,7 +3658,7 @@ def delete_trigger_binding(binding_id: str) -> dict[str, Any]:
         return {"deleted": True, "binding_id": binding_id, **deleted}
 
 
-@mcp.tool
+@_tool("suite:edit", LIVE_PROBE)
 def suggest_column_policy(suite_id: str) -> dict[str, Any]:
     """Suggest which of a table's columns hold PII, by profiling it live.
 
@@ -3697,7 +3708,7 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("role:member", LIVE_PROBE)
 def test_connection(connection_id: str) -> dict[str, Any]:
     """Check whether a stored connection can actually reach its datasource.
 
@@ -3758,7 +3769,7 @@ def test_connection(connection_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("role:member", LIVE_PROBE)
 def browse_connection(
     connection_id: str,
     catalog: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
@@ -3893,7 +3904,7 @@ def _browse_listing(
     }
 
 
-@mcp.tool
+@_tool("role:member", changes_state(destructive=False))
 def import_suite(
     connection_id: str,
     # Bounded to the COLUMNS (`suites.name` is String(128), `description` is
@@ -3974,7 +3985,7 @@ def import_suite(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def update_suite(
     suite_id: str,
     name: Annotated[str, Field(min_length=1, max_length=128)] | None = None,
@@ -4077,7 +4088,7 @@ def update_suite(
         }
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def get_column_policy(suite_id: str) -> dict[str, Any]:
     """Get the suite's failing-sample redaction policy — which columns are masked.
 
@@ -4109,7 +4120,7 @@ def get_column_policy(suite_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("suite:edit", changes_state(destructive=True))
 def set_column_policy(
     suite_id: str,
     # Bounded like the REST twin: the policy is walked on every read-time
@@ -4223,7 +4234,7 @@ def _asset_summary_payload(a: Any) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_assets(
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -4311,7 +4322,7 @@ def list_assets(
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_asset(asset_id: str) -> dict[str, Any]:
     """Get one asset's health, the suites that check it, and its lineage neighbours.
 
@@ -4519,7 +4530,7 @@ def _lineage_node_payload(node: Any) -> dict[str, Any]:
     }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def trace_column_lineage(
     asset_id: str,
     column: Annotated[str, Field(min_length=1, max_length=255)],
@@ -4682,7 +4693,7 @@ def _incident_payload(incident: Any, enabled: dict[uuid.UUID, bool]) -> dict[str
     }
 
 
-@mcp.tool
+@_tool("read:suite-optional", READ_ONLY)
 def list_incidents(
     status: str | None = None,
     suite_id: str | None = None,
@@ -4800,7 +4811,7 @@ def list_incidents(
         }
 
 
-@mcp.tool
+@_tool("incident:view", READ_ONLY)
 def get_incident(incident_id: str) -> dict[str, Any]:
     """Get one incident with its evidence card — why it opened and what else broke.
 
@@ -4958,7 +4969,7 @@ def _contract_payload(visible: contract_service.VisibleContract) -> dict[str, An
     return ContractRead.of(visible).model_dump(mode="json")
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def list_contracts(
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -4991,7 +5002,7 @@ def list_contracts(
         }
 
 
-@mcp.tool
+@_tool("contract:view", READ_ONLY)
 def get_contract(contract_id: str) -> dict[str, Any]:
     """Get one data contract with its compliance rollup — is each clause holding?
 
@@ -5026,7 +5037,7 @@ def get_contract(contract_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("contract:view", READ_ONLY)
 def export_contract(contract_id: str) -> dict[str, Any]:
     """Export a data contract as an Open Data Contract Standard (ODCS v3) document.
 
@@ -5057,7 +5068,7 @@ def export_contract(contract_id: str) -> dict[str, Any]:
 _NOTE_MAX_LEN = 2000
 
 
-@mcp.tool
+@_tool("incident:edit", changes_state(destructive=True))
 def ack_incident(
     incident_id: str,
     note: Annotated[str, Field(max_length=_NOTE_MAX_LEN)] | None = None,
@@ -5100,7 +5111,7 @@ def ack_incident(
         return _incident_payload(incident, _checks_enabled(session, [incident.check_id]))
 
 
-@mcp.tool
+@_tool("incident:edit", changes_state(destructive=True))
 def resolve_incident(
     incident_id: str,
     note: Annotated[str, Field(max_length=_NOTE_MAX_LEN)] | None = None,
@@ -5154,7 +5165,7 @@ def resolve_incident(
         return _incident_payload(incident, _checks_enabled(session, [incident.check_id]))
 
 
-@mcp.tool
+@_tool("read:suite-optional", READ_ONLY)
 def get_near_misses(suite_id: str | None = None) -> dict[str, Any]:
     """Find orchestration triggers that are silently never firing.
 
@@ -5213,7 +5224,7 @@ def get_near_misses(suite_id: str | None = None) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_doc(
     page: Annotated[str, Field(json_schema_extra={"enum": docs_catalog.list_pages()})],
 ) -> dict[str, Any]:
@@ -5246,7 +5257,7 @@ def get_doc(
         return {"page": page, "content": content}
 
 
-@mcp.tool
+@_tool("suite:edit", LIVE_PROBE)
 def list_columns(
     suite_id: str,
     table: str | None = None,
@@ -5406,7 +5417,7 @@ def _profile_target_defaults(
     return concrete, schema or resolved.schema, catalog or resolved.catalog, None, file_format
 
 
-@mcp.tool
+@_tool("read", READ_ONLY)
 def get_coverage(
     false_positive_window_days: Annotated[int, Field(ge=1, le=90)] = 30,
 ) -> dict[str, Any]:
@@ -5470,7 +5481,7 @@ def get_coverage(
         )
 
 
-@mcp.tool
+@_tool("suite:view", READ_ONLY)
 def list_suggested_rules(
     suite_id: str,
     status: Literal["pending", "accepted", "rejected", "all"] = "pending",
@@ -5546,7 +5557,7 @@ def list_suggested_rules(
         }
 
 
-@mcp.tool
+@_tool("suite:edit", LIVE_PROBE)
 def profile_column(
     suite_id: str,
     columns: list[str],
