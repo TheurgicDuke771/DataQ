@@ -96,9 +96,7 @@ class OffboardReceiptRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.offboard_receipt_read_skipped_item import (
-            OffboardReceiptReadSkippedItem,
-        )
+        from ..models.offboard_receipt_read_skipped_item import OffboardReceiptReadSkippedItem
 
         d = dict(src_dict)
         api_keys_revoked = d.pop("api_keys_revoked")
