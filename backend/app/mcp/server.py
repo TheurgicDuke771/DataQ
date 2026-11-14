@@ -2267,13 +2267,14 @@ def get_suite_performance() -> list[dict[str, Any]]:
     calling a score current. For health over time use ``get_health_score``.
 
     A suite is **absent** from this list when its latest run has no complete
-    account to score: it has never run, its latest run is queued or running, or
-    its latest run failed or was cancelled — even when the run before it
-    completed. Absence is therefore "no health to report", not "healthy" and not
-    "unchanged since the previous run"; use ``list_suites`` to see the full set
-    and which of them are missing here, and ``list_runs`` for what the latest run
-    of a missing suite did. Scoped to the suites the user can access (a
-    workspace-admin sees the whole workspace).
+    account to score: it has never run, its latest run is queued or running, its
+    latest run failed or was cancelled — even when the run before it completed —
+    or that run completed but none of its results remain (every check it ran has
+    since been deleted). Absence is therefore "no health to report", not "healthy"
+    and not "unchanged since the previous run"; use ``list_suites`` to see the
+    full set and which of them are missing here, and ``list_runs`` for what the
+    latest run of a missing suite did. Scoped to the suites the user can access
+    (a workspace-admin sees the whole workspace).
     """
     with _ctx() as (session, user), _service_errors():
         # `window_days` is deliberately ABSENT rather than defaulted:
