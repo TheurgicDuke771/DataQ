@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import contains_nul
 from backend.app.contracts.export import export_contract as _export_contract
+from backend.app.contracts.redaction import redacted_columns as _redacted_columns
 from backend.app.core import usage_telemetry
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
@@ -4867,23 +4868,38 @@ def export_contract(contract_id: str) -> dict[str, Any]:
     """Export a data contract as an Open Data Contract Standard (ODCS v3) document.
 
     Use this for 'give me the orders contract as ODCS' or to hand a contract to another tool.
-    Returns `document`: the contract exactly as it was imported (every schema object and rule
-    the producer wrote), in the newest ODCS v3 vocabulary DataQ knows, plus `dataq.*` custom
+    Returns `document`: the contract as it was imported (every schema object and rule the
+    producer wrote), in the newest ODCS v3 vocabulary DataQ knows, plus `dataq.*` custom
     properties naming the check behind each rule on the suites you can see; checks people
     added to those suites appear as `type: custom, engine: dataq` rules. Read-only.
 
+    One thing is NOT as imported: the listed values of a column that is classified as
+    sensitive now (a property's `enum` and `examples`, a rule's `validValues` /
+    `missingValues`, a custom rule's `value_set`). Each reads `<redacted>` — an `enum`
+    collapses to one entry — and the property or rule carries a `dataq.valuesWithheld` custom
+    property with the column, the reason and how many values each field held.
+    `redacted_columns` lists every such `<object>.<column>` and `redaction_reasons` the rule
+    that decided (as on `get_check`); both are empty when nothing was withheld. Never read
+    `<redacted>` as an accepted value, and never report a withheld list as an empty one. A
+    document with withheld values cannot be imported: DataQ refuses it.
+
     Objects and rules of suites you cannot see are still in the document (they come from the
-    stored contract) but carry no `dataq.*` annotations — their absence does not mean those
-    rules are unenforced. `restricted_suite_count` says how many linked suites that applies
-    to. Importing a contract is not available over MCP; it is done in the app or REST API.
+    stored contract) but carry no `dataq.*` check annotations — their absence does not mean
+    those rules are unenforced. `restricted_suite_count` says how many linked suites that
+    applies to. Importing a contract is not available over MCP; it is done in the app or REST
+    API.
     """
     cid = _parse_uuid(contract_id, field="contract_id")
     with _ctx() as (session, user), _service_errors():
         visible = contract_service.get_contract(session, cid, user.id)
+        document = _export_contract(session, visible.contract, visible.suites)
+        reasons = _redacted_columns(document)
         return {
             "contract_id": str(visible.contract.id),
             "restricted_suite_count": visible.restricted_suite_count,
-            "document": _export_contract(session, visible.contract, visible.suites),
+            "redacted_columns": list(reasons),
+            "redaction_reasons": reasons,
+            "document": document,
         }
 
 

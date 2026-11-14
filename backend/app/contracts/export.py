@@ -7,6 +7,9 @@ backed by a suite (`suiteId`, `connectionType`), and on each quality rule a chec
 person added to the suite, or any kind the table cannot express — is appended to its object as a
 `type: custom, engine: dataq` rule whose `implementation` is the suite-document check, so
 importing the export recreates every check.
+
+Value literals over a column that is sensitive now are withheld (`contracts.redaction`): the
+export then says so on the document and on each node, and cannot be imported.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.contracts import odcs
 from backend.app.contracts import translate as tr
+from backend.app.contracts.redaction import mask_document
 from backend.app.db.models import (
     CHECK_ORDER,
     CONTRACT_CHECK_ORIGIN,
@@ -30,6 +34,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.services.suite_io_service import export_suite
+from backend.app.services.value_set_redaction import ValueSetMasker
 
 _PREFIX = f"{tr.DATAQ_VENDOR}."
 
@@ -122,6 +127,8 @@ def export_contract(session: Session, contract: Contract, suites: list[Suite]) -
         select(Check).where(Check.suite_id.in_(list(checks_by_suite))).order_by(*CHECK_ORDER)
     ):
         checks_by_suite[check.suite_id].append(check)
+    masker = ValueSetMasker(session)
+    withheld: dict[tuple[str | None, str | None], Any] = {}
     for suite in suites:
         obj = objects.get(suite.contract_object)
         if obj is None:
@@ -142,5 +149,11 @@ def export_contract(session: Session, contract: Contract, suites: list[Suite]) -
                 if rule is not None or not ref.get("rule_id"):
                     continue
             obj.setdefault("quality", []).append(_native_rule(check, document))
+            # `export_suite` already withheld this check's value set; keep the reason for the note.
+            for column, reason in masker.mask(suite.id, check.config).redaction_reasons.items():
+                withheld[(suite.contract_object, column)] = reason
+    # Last, so the rules above were found by the ids the importer recorded (a content key).
+    # Every linked suite is asked, not only the caller's: the stored document names them all.
+    mask_document(session, doc, list(contract.suites), withheld_upstream=withheld)
     validated = odcs.validate_document(doc)
     return validated.document

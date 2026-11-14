@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.contracts import odcs
 from backend.app.contracts import translate as tr
+from backend.app.contracts.redaction import reject_masked_document
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources.monitors import SCHEMA_DRIFT
@@ -363,6 +364,9 @@ def import_contract(
     """
     raw = odcs.load_document(document=document, document_yaml=document_yaml)
     validated = odcs.validate_document(raw)
+    # An export with withheld values is not the contract: storing it would replace the real
+    # values with the marker and switch off the checks they back (#2615).
+    reject_masked_document(validated.document)
     connection = _load_target_connection(session, EXPORT_VERSION, connection_id)
     translated = tr.translate(validated.document, connection_type=connection.type)
 

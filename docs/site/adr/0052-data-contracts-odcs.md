@@ -114,6 +114,19 @@ on the contract `dataq.exportedAt`. A check with no ODCS-native shape (an `anoma
 On import those properties are honoured when present and ignored when absent; a document that
 never saw DataQ imports cleanly.
 
+**Amendment (2026-11-11) — value literals of a sensitive column are withheld.** The stored
+document lists column values (a property's `enum` / `examples`, a rule's `validValues` /
+`missingValues`, a custom rule's `value_set`). On export those are held to the same redaction
+ladder as a check's value set: each reads `<redacted>` once the column is classified as
+sensitive, with `dataq.valuesWithheld` on the node and `dataq.redactedColumns` on the document
+naming what was withheld and why. Every linked suite is asked, not only the caller's visible
+ones, and an object with no suite is held to the document's own `classification`. This is the
+one exception to "the stored spec is the base" and to the round-trip: a document holding the
+marker in one of those places is refused on import, because storing it would replace the real
+values and retire the checks they back. Withholding the whole document, and leaving the document
+unredacted as consumer-authored source material, were both rejected: the first hides what the
+contract says about every other column, the second keeps the leak.
+
 ### 5. Versions of the standard
 
 The importer accepts `apiVersion` **v3.0.0 through the newest v3 minor it knows** (v3.2.0 today),

@@ -311,7 +311,12 @@ def get_contract(
             "description": (
                 "The stored document plus `dataq.*` custom properties for the checks the "
                 "caller's visible suites hold, in the newest vendored ODCS v3 vocabulary — JSON, "
-                "or YAML text with `format=yaml`."
+                "or YAML text with `format=yaml`. The listed values of a column classified as "
+                "sensitive (`enum`, `examples`, a rule's `validValues` / `missingValues`, a "
+                "custom rule's `value_set`) read `<redacted>`; `dataq.valuesWithheld` on the "
+                "property or rule and `dataq.redactedColumns` on the document name what was "
+                "withheld and why. Such a document is refused on import "
+                "(`422 value_set_redacted`)."
             ),
         }
     },

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+import json
+import sys
 import uuid
 from typing import Any
 
@@ -153,3 +156,39 @@ def test_get_check_and_list_suites_name_the_contract(db_session: Any, monkeypatc
     suites = server.list_suites()
     entry = next(x for x in suites if x["id"] == str(orders.id))
     assert entry["contract_id"] == str(outcome.contract.id)
+
+
+def test_export_contract_withholds_values_of_a_sensitive_column_and_says_so(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#2615: the REST export's MCP twin — same document, plus the names in the payload."""
+    owner = _user(db_session)
+    document = copy.deepcopy(_DOC)
+    document["schema"][0]["properties"].append(
+        {
+            "name": "tier",
+            "logicalType": "string",
+            "enum": [{"value": "tier-gold"}, {"value": "tier-silver"}],
+            "examples": ["tier-gold"],
+        }
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_DOC", document)
+    outcome = _imported(db_session, owner)
+    _as(monkeypatch, db_session, owner)
+
+    shown = server.export_contract(str(outcome.contract.id))
+    assert "tier-gold" in json.dumps(shown["document"])
+    assert shown["redacted_columns"] == [] and shown["redaction_reasons"] == {}
+
+    orders = db_session.query(Suite).filter_by(contract_object="orders").one()
+    orders.column_policy = {"pii_columns": ["tier"]}
+    db_session.flush()
+    body = server.export_contract(str(outcome.contract.id))
+    assert "tier-gold" not in json.dumps(body) and "tier-silver" not in json.dumps(body)
+    assert body["redacted_columns"] == ["orders.tier"]
+    assert body["redaction_reasons"] == {"orders.tier": "policy"}
+    tier = body["document"]["schema"][0]["properties"][1]
+    assert tier["enum"] == [{"value": "<redacted>"}] and tier["examples"] == ["<redacted>"]
+    odcs.validate_document(body["document"])
+    # `get_contract` carries no value list at all: neither the document nor a check config.
+    assert "tier-gold" not in json.dumps(server.get_contract(str(outcome.contract.id)))
