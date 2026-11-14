@@ -308,7 +308,9 @@ class _ContractSensitivity:
             targets.append((connection.id, target))
             try:
                 identity = resolve_asset_identity(connection.type, connection.config, target)
-            except Exception:  # noqa: S112 — an unresolvable target has no asset to ask
+            except (ValueError, KeyError, TypeError):
+                # A target this connection cannot place has no asset to ask. It still counts
+                # in `targets`, and with no suite or asset the object is withheld as unknown.
                 continue
             identities.add((identity.namespace, identity.name))
         return targets, identities
