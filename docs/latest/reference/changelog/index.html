@@ -2953,6 +2953,12 @@ section below.</p>
   applying a file that does not mention <code>enabled</code> leaves each check's switch alone; over
   MCP, <code>update_check</code> takes <code>enabled</code>, <code>list_suites</code> adds <code>enabled_check_count</code>,
   <code>trigger_suite_run</code> returns <code>enabled_checks</code>, and each result carries <code>check_enabled</code>.</li>
+<li><strong>MCP run tools say who or what started a run.</strong> <code>list_runs</code> returns <code>triggered_by_label</code>
+  beside the stored <code>triggered_by</code> marker (<code>Manual — &lt;name&gt;</code>, <code>Schedule</code>,
+  <code>Airflow — &lt;pipeline and run&gt;</code>), the same label the app shows, and <code>get_run_results</code>,
+  <code>get_suite_results</code> and <code>get_run_status</code> now carry both fields too. The label is null when
+  no trigger was recorded or the marker has a shape DataQ does not recognise, and an upstream
+  suite is named only when the caller can see it.</li>
 <li><strong>A second audit tamper-anchor class: write-once objects.</strong> <code>TAMPER_ANCHOR=object_lock</code>
   writes each audit hash-chain head as its own immutable object — S3 Object Lock (AWS or any
   S3-compatible store with lock enabled, such as MinIO) in COMPLIANCE or GOVERNANCE mode, or an
