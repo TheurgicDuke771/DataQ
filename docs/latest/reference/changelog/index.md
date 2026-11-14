@@ -288,6 +288,7 @@ section below.
   list a reader sees is unchanged; what changed is that two pull requests can each record
   an entry without conflicting with each other.
 - **SQL generation no longer sends every column of a very wide table.** The prompt lists at most 500 column names per table, keeping any column your description names, and profiles at most 100 of them, the named ones first; it tells the model how many columns were left out, so the model does not treat the list as the whole table.
+- **Suggesting a redaction policy for a file reads the credential once.** On an S3, ADLS Gen2 or Google Cloud Storage target, listing the columns and profiling the sample now share one secret read and one store client, where each step used to read the secret and connect again. The PII-drift monitor on a file gains the same saving.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
   you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each
