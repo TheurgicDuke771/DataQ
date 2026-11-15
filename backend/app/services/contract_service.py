@@ -36,6 +36,7 @@ from backend.app.db.models import (
     Suite,
 )
 from backend.app.services import audit_service, cron, suite_authz
+from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import record_check_version
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -403,6 +404,10 @@ def import_contract(
                 description=f"Enforces data contract {contract.name} {version}"[:1024],
                 connection_id=connection.id,
                 target=target,
+                # Its asset, as every other way of creating a suite resolves it (ADR 0034):
+                # a run takes its asset from the suite, and so do incidents, the asset pages
+                # and the tag-based masking of the suite's reads. Fail-soft, never blocks.
+                asset_id=resolve_and_upsert_asset(session, connection, target),
                 created_by=actor_id,
                 contract_id=contract.id,
                 contract_object=obj.name,
