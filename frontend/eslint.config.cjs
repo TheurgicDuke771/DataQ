@@ -91,7 +91,8 @@ module.exports = tseslint.config(
   {
     // #2466: every dialog opens with a fade, not antd's zoom. A Select inside a zooming
     // modal sizes its dropdown from the half-scaled trigger and opens as a sliver. These
-    // two files are where the fade is applied; everything else goes through them.
+    // files are where the fade (and, for Popconfirm, keyboard focus #1672) is applied;
+    // everything else goes through them.
     files: ['src/**/*.{ts,tsx}'],
     ignores: [
       'src/components/shared/Modal.tsx',
@@ -121,6 +122,16 @@ module.exports = tseslint.config(
               group: ['antd/es/modal', 'antd/es/modal/*', 'antd/lib/modal', 'antd/lib/modal/*'],
               message:
                 "Use Modal from 'components/shared/Modal' (fades instead of zooming, #2466).",
+            },
+            {
+              group: [
+                'antd/es/popconfirm',
+                'antd/es/popconfirm/*',
+                'antd/lib/popconfirm',
+                'antd/lib/popconfirm/*',
+              ],
+              message:
+                "Use Popconfirm from 'components/shared/Popconfirm' (keyboard focus, #1672).",
             },
           ],
         },
