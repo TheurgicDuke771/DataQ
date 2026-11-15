@@ -11,6 +11,7 @@ import {
   ratchet,
   toRecords,
 } from '../scripts/a11y/ratchet';
+import { scanUntilStable, stillLoadingMessage } from '../scripts/a11y/coverage';
 import { settle } from '../scripts/a11y/settle';
 
 // Automated a11y floor, Playwright half (#1670 item 1): scans the app's main routes with
@@ -51,11 +52,17 @@ async function checkRoute(
   page: import('@playwright/test').Page,
   route: string,
 ): Promise<void> {
-  await settle(page);
   // A dark scan that silently rendered light would pass for the wrong reason.
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
   const surface = theme === 'dark' ? `${route}@dark` : route;
-  const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
+  // Scanned until it stops growing (#2051): fewer violations than the baseline is always green,
+  // so a scan of a half-loaded page must fail here instead.
+  const scan = await scanUntilStable(
+    () => new AxeBuilder({ page }).options({ ancestry: true }).analyze(),
+    () => settle(page),
+  );
+  expect(scan.settled, stillLoadingMessage(surface, scan.counts)).toBe(true);
+  const results = scan.result;
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
   const { newViolations } = ratchet(surface, records, { path: BASELINE_PATH, capture: CAPTURE });
