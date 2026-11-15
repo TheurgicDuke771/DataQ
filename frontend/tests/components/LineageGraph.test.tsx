@@ -47,7 +47,7 @@ function renderGraph(onOpenAsset = vi.fn()) {
 describe('LineageGraph (#805)', () => {
   it('draws one edge per real backend edge, with direction arrows', () => {
     renderGraph();
-    const graph = screen.getByRole('img', { name: /Lineage graph/ });
+    const graph = screen.getByRole('group', { name: /Lineage graph/ });
     expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(3);
   });
 
@@ -59,13 +59,13 @@ describe('LineageGraph (#805)', () => {
 
   it('reaches a depth-2 node — the blast radius is not truncated to one hop', async () => {
     const onOpen = renderGraph();
-    await userEvent.click(screen.getByLabelText('Open asset BI.DASH.SALES'));
+    await userEvent.click(screen.getByLabelText('Open asset BI.DASH.SALES (downstream, 2 hops)'));
     expect(onOpen).toHaveBeenCalledWith('d2');
   });
 
   it('is keyboard operable (Enter on a focused node)', async () => {
     const onOpen = renderGraph();
-    const target = screen.getByLabelText('Open asset RAW.ORDERS');
+    const target = screen.getByLabelText('Open asset RAW.ORDERS (upstream, 1 hop)');
     target.focus();
     await userEvent.keyboard('{Enter}');
     expect(onOpen).toHaveBeenCalledWith('u1');
@@ -74,12 +74,29 @@ describe('LineageGraph (#805)', () => {
   it('signals "monitored" without relying on colour alone (WCAG 1.4.1)', () => {
     renderGraph();
     // d1 is monitored: it says so in its accessible name…
-    expect(screen.getByLabelText('Open asset ANALYTICS.MART.REVENUE (monitored)')).toBeVisible();
+    expect(
+      screen.getByLabelText('Open asset ANALYTICS.MART.REVENUE (downstream, 1 hop, monitored)'),
+    ).toBeVisible();
     // …and an unmonitored node does not claim to be.
-    expect(screen.getByLabelText('Open asset BI.DASH.SALES')).toBeVisible();
+    expect(screen.getByLabelText('Open asset BI.DASH.SALES (downstream, 2 hops)')).toBeVisible();
     // …plus a non-colour glyph marks it on the node itself.
-    const graph = screen.getByRole('img', { name: /Lineage graph/ });
+    const graph = screen.getByRole('group', { name: /Lineage graph/ });
     expect(graph.querySelectorAll('circle')).toHaveLength(1);
+  });
+
+  it('exposes every node to a screen reader, saying where it sits (#1672)', () => {
+    renderGraph();
+    // A named group, not an image: an image's children are hidden from assistive technology.
+    expect(screen.queryByRole('img', { name: /Lineage graph/ })).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Open asset / })
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual([
+      'Open asset RAW.ORDERS (upstream, 1 hop)',
+      'Open asset ANALYTICS.MART.REVENUE (downstream, 1 hop, monitored)',
+      'Open asset BI.DASH.SALES (downstream, 2 hops)',
+    ]);
   });
 
   it('labels but does not make the centre asset actionable', () => {
@@ -90,7 +107,7 @@ describe('LineageGraph (#805)', () => {
 
   it('scrolls the graph inside its card rather than overflowing the page (mobile)', () => {
     renderGraph();
-    const svg = screen.getByRole('img', { name: /Lineage graph/ });
+    const svg = screen.getByRole('group', { name: /Lineage graph/ });
     const scroller = svg.parentElement as HTMLElement;
     expect(scroller.style.overflowX).toBe('auto');
   });
@@ -107,7 +124,7 @@ describe('LineageGraph (#805)', () => {
     );
     // The asset's own box stays on screen — an <Empty> icon in its place read as "there is nothing
     // here", when the truth is "here is the asset, with nothing attached to it yet".
-    const graph = screen.getByRole('img', { name: /Lineage graph/ });
+    const graph = screen.getByRole('group', { name: /Lineage graph/ });
     expect(graph).toBeInTheDocument();
     expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(0);
     expect(screen.getByLabelText(`${CENTER.name} (this asset)`)).toBeInTheDocument();

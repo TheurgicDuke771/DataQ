@@ -54,6 +54,16 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
+  // Each neighbour's side and distance, for its spoken name: the picture shows them by
+  // position, and a screen reader gets no picture (#1672).
+  const placement = useMemo(() => {
+    const where = new Map<string, string>();
+    const describe = (side: string, depth: number) =>
+      `${side}, ${depth} ${depth === 1 ? 'hop' : 'hops'}`;
+    for (const n of upstream) where.set(n.id, describe('upstream', n.depth));
+    for (const n of downstream) where.set(n.id, describe('downstream', n.depth));
+    return where;
+  }, [upstream, downstream]);
   // #915: one Alert covering both states let "last refresh FAILED" render at the same INFO weight
   // as "answers at a coarser tier".
   const warehouseFailing = useMemo(
@@ -252,10 +262,14 @@ export function LineageGraph({
           This div is also the ONLY scroll container: a wide graph scrolls inside the card,
           so the page itself never overflows horizontally on a phone (#805). */}
       <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        {/* A named group, not role="img": an image's children are presentational, so its
+            node buttons were invisible to a screen reader and only the summary was read
+            (#1672). Each node says which side it is on and how far, in place of the
+            picture. */}
         <svg
           width={layout.width}
           height={layout.height}
-          role="img"
+          role="group"
           aria-label={`Lineage graph: ${upstream.length} upstream and ${downstream.length} downstream assets around ${center.name}`}
           style={{ display: 'block' }}
         >
@@ -288,6 +302,7 @@ export function LineageGraph({
             <GraphNode
               key={n.id}
               node={n}
+              placement={placement.get(n.id)}
               onOpen={n.isCenter ? undefined : () => onOpenAsset(n.id)}
             />
           ))}
@@ -330,9 +345,12 @@ export function LineageGraph({
  *  centre — you are already looking at that asset. */
 function GraphNode({
   node,
+  placement,
   onOpen,
 }: {
   node: ReturnType<typeof buildLineageLayout>['nodes'][number];
+  /** "upstream, 2 hops" — where the node sits relative to the asset under view. */
+  placement?: string;
   onOpen?: () => void;
 }) {
   const interactive = onOpen !== undefined;
@@ -356,7 +374,9 @@ function GraphNode({
       // announces which asset the graph is centred on.
       aria-label={
         interactive
-          ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
+          ? `Open asset ${node.name} (${[placement, node.isMonitored ? 'monitored' : null]
+              .filter(Boolean)
+              .join(', ')})`
           : `${node.name} (this asset)`
       }
       style={{ cursor: interactive ? 'pointer' : 'default' }}
