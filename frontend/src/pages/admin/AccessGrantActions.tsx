@@ -26,7 +26,8 @@ export function AccessGrantActions({
           size="small"
           type="text"
           disabled
-          aria-label={`Revoke ${grant.user_email}'s access to ${grant.suite_name}`}
+          // The reason in the name: the tooltip cannot be reached on a disabled button.
+          aria-label={`Revoke: not available, ${grant.user_email} owns ${grant.suite_name}; transfer the suite instead`}
         >
           Revoke
         </Button>

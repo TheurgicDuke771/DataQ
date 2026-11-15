@@ -282,8 +282,11 @@ function IncidentsTable({
   );
 }
 
-/** What an incident's row actions name it by (#1673): its check, or its id when the check is
- *  gone, so identical "Acknowledge" / "Resolve" buttons say which incident they act on. */
+/** What an incident's row actions name it by (#1673): its check (or its id when the check is
+ *  gone) and when it opened, so identical "Acknowledge" / "Resolve" buttons say which incident
+ *  they act on. */
 function incidentName(incident: Incident): string {
-  return incident.check_name ?? `incident ${incident.id.slice(0, 8)}`;
+  // When it opened too: one check reopens as a new incident, and the history lists each.
+  const check = incident.check_name ?? `incident ${incident.id.slice(0, 8)}`;
+  return `${check}, opened ${formatTimestamp(incident.created_at)}`;
 }

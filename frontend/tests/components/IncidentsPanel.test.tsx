@@ -119,11 +119,13 @@ describe('IncidentsPanel', () => {
     renderPanel({ s1: 'edit' });
     // Each row's actions say which incident they act on (#1673).
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Acknowledge orders not null' }),
+      await screen.findByRole('button', { name: /^Acknowledge orders not null, opened / }),
     );
-    expect(screen.getByRole('button', { name: 'Resolve orders not null' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'View evidence: orders not null' }),
+      screen.getByRole('button', { name: /^Resolve orders not null, opened / }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^View evidence: orders not null, opened / }),
     ).toBeInTheDocument();
     await waitFor(() => expect(mockAck).toHaveBeenCalledWith('inc-1'));
     // Reloads the list after the mutation.

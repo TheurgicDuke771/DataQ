@@ -394,7 +394,7 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
     await screen.findByText('order_id not null');
 
-    await user.click(screen.getByRole('button', { name: /^Snooze\b/ }));
+    await user.click(screen.getByRole('button', { name: /^Snooze(?! selected)\b/ }));
     await user.click(await screen.findByText('24 hours'));
 
     await waitFor(() => expect(mockSnoozeCheck).toHaveBeenCalledWith('s1', 'chk1', 24));
@@ -699,7 +699,7 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
     await screen.findByText(/Snoozed until/);
 
-    await user.click(screen.getByRole('button', { name: /^Unsnooze\b/ }));
+    await user.click(screen.getByRole('button', { name: /^Unsnooze(?! selected)\b/ }));
 
     await waitFor(() => expect(mockClearSnooze).toHaveBeenCalledWith('s1', 'chk1'));
     await waitFor(() => expect(screen.queryByText(/Snoozed until/)).not.toBeInTheDocument());
@@ -716,7 +716,7 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
 
     expect(screen.queryByText(/Snoozed until/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Snooze\b/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Snooze(?! selected)\b/ })).toBeInTheDocument();
   });
 
   it('hides snooze AND re-baseline controls (but keeps the badge) for a view-only user', async () => {
@@ -740,8 +740,12 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
 
     expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Snooze\b/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Unsnooze\b/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Snooze(?! selected)\b/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Unsnooze(?! selected)\b/ }),
+    ).not.toBeInTheDocument();
     // Re-baseline is edit-gated the same way (#592) — a viewer must never see it.
     expect(screen.queryByRole('button', { name: /^Re-baseline\b/ })).not.toBeInTheDocument();
   });
@@ -762,7 +766,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
+    await user.click(await screen.findByRole('button', { name: /^Delete(?! selected)\b/ }));
 
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -785,7 +789,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
+    await user.click(await screen.findByRole('button', { name: /^Delete(?! selected)\b/ }));
 
     const dialog = await screen.findByRole('dialog');
     expect(mockGetSuiteDeletionImpact).toHaveBeenCalledWith('s1');
@@ -805,7 +809,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
+    await user.click(await screen.findByRole('button', { name: /^Delete(?! selected)\b/ }));
 
     // Never blocks the delete itself — the confirm dialog still opens, degraded.
     const dialog = await screen.findByRole('dialog');
