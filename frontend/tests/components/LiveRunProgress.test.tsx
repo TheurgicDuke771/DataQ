@@ -134,6 +134,8 @@ describe('LiveRunProgress', () => {
     await waitFor(() => expect(mockCancel).toHaveBeenCalledWith('r1'));
     // The drawer reflects the terminal state and drops the cancel control.
     expect(await screen.findByText('cancelled')).toBeInTheDocument();
+    // Said once, by the live region: no role="alert" toast on top of it (#1673).
+    expect(screen.getByTestId('run-announce')).toHaveTextContent(/^Run cancelled:/);
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
     // A never-run check on a now-terminal run reads "not run", not a live spinner.
     expect(screen.getByText('not run')).toBeInTheDocument();
@@ -347,6 +349,12 @@ describe('LiveRunProgress', () => {
       );
       renderDrawer();
       expect(await announced()).toBe('Run running.');
+    });
+
+    it('does not call a still-running run with every check done "100%"', async () => {
+      mockProgress.mockResolvedValue(progress('running', { total_checks: 2, completed_checks: 2 }));
+      renderDrawer();
+      expect(await announced()).toBe('Run running: all checks done, finishing.');
     });
 
     it('sums up the outcome when the run ends', async () => {
