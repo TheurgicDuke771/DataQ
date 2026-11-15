@@ -100,6 +100,7 @@ def test_the_run_results_api_withholds_the_set(client: TestClient, leaked: dict[
     (row,) = body["results"]
     assert row["expected_value"]["value_set"] == [_M, _M]
     assert row["expected_value"]["mostly"] == 1.0  # options are kept
+    assert row["expected_value_redaction"] == "policy"  # and the reason is named (#2691)
     assert _clean(body)
 
 
@@ -111,6 +112,8 @@ def test_the_mcp_run_results_tool_withholds_the_set(
     monkeypatch.setattr(server, "resolve_current_user", lambda _session: leaked["owner"])
     out = server.get_run_results(str(leaked["run"].id))
     assert _clean(out)
+    (row,) = out["checks"]
+    assert row["expected_value_redaction"] == "policy"
 
 
 def test_a_new_evidence_card_is_written_withheld(db_session: Any, leaked: dict[str, Any]) -> None:
@@ -154,6 +157,7 @@ def test_an_unclassified_column_keeps_its_set(client: TestClient, leaked: dict[s
     app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
     row = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]
     assert row["expected_value"]["value_set"] == list(SECRETS)
+    assert row["expected_value_redaction"] is None
 
 
 # ── #2691: the alert channels, more shapes, and the stored card ───────────────

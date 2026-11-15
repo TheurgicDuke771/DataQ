@@ -8,6 +8,9 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..models.result_read_expected_value_redaction_type_0 import (
+    ResultReadExpectedValueRedactionType0,
+)
 from ..models.result_read_metric_value_redaction_type_0 import ResultReadMetricValueRedactionType0
 from ..models.result_read_redaction_type_0 import ResultReadRedactionType0
 from ..types import UNSET, Unset
@@ -49,6 +52,11 @@ class ResultRead:
             sample_failures (None | ResultReadSampleFailuresType0):
             status (str):
             check (CheckAsOfRead | None | Unset):
+            expected_value_redaction (None | ResultReadExpectedValueRedactionType0 | Unset): Non-null when values in
+                `expected_value` were withheld (each reads `<redacted>`): they are values of the tested column, which is
+                sensitive. Every key that does not describe the check (a value set, a pattern, a bound, a DQX limit) is
+                withheld. The value names the rung that masked them, in the `redaction_reasons` vocabulary. Null means
+                `expected_value` is as recorded.
             metric_value_redaction (None | ResultReadMetricValueRedactionType0 | Unset): Non-null when `metric_value` was
                 withheld (sent as null): the metric is one literal cell of the tested column (an `aggregate` min/max) and that
                 column is sensitive. The value names the rung that masked it, in the `redaction_reasons` vocabulary. Null means
@@ -72,6 +80,7 @@ class ResultRead:
     sample_failures: None | ResultReadSampleFailuresType0
     status: str
     check: CheckAsOfRead | None | Unset = UNSET
+    expected_value_redaction: None | ResultReadExpectedValueRedactionType0 | Unset = UNSET
     metric_value_redaction: None | ResultReadMetricValueRedactionType0 | Unset = UNSET
     redacted_columns: list[str] | Unset = UNSET
     redaction: None | ResultReadRedactionType0 | Unset = UNSET
@@ -124,6 +133,14 @@ class ResultRead:
         else:
             check = self.check
 
+        expected_value_redaction: None | str | Unset
+        if isinstance(self.expected_value_redaction, Unset):
+            expected_value_redaction = UNSET
+        elif isinstance(self.expected_value_redaction, ResultReadExpectedValueRedactionType0):
+            expected_value_redaction = self.expected_value_redaction.value
+        else:
+            expected_value_redaction = self.expected_value_redaction
+
         metric_value_redaction: None | str | Unset
         if isinstance(self.metric_value_redaction, Unset):
             metric_value_redaction = UNSET
@@ -172,6 +189,8 @@ class ResultRead:
         )
         if check is not UNSET:
             field_dict["check"] = check
+        if expected_value_redaction is not UNSET:
+            field_dict["expected_value_redaction"] = expected_value_redaction
         if metric_value_redaction is not UNSET:
             field_dict["metric_value_redaction"] = metric_value_redaction
         if redacted_columns is not UNSET:
@@ -277,6 +296,27 @@ class ResultRead:
 
         check = _parse_check(d.pop("check", UNSET))
 
+        def _parse_expected_value_redaction(
+            data: object,
+        ) -> None | ResultReadExpectedValueRedactionType0 | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                expected_value_redaction_type_0 = ResultReadExpectedValueRedactionType0(data)
+
+                return expected_value_redaction_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | ResultReadExpectedValueRedactionType0 | Unset, data)
+
+        expected_value_redaction = _parse_expected_value_redaction(
+            d.pop("expected_value_redaction", UNSET)
+        )
+
         def _parse_metric_value_redaction(
             data: object,
         ) -> None | ResultReadMetricValueRedactionType0 | Unset:
@@ -351,6 +391,7 @@ class ResultRead:
             sample_failures=sample_failures,
             status=status,
             check=check,
+            expected_value_redaction=expected_value_redaction,
             metric_value_redaction=metric_value_redaction,
             redacted_columns=redacted_columns,
             redaction=redaction,

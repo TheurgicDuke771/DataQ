@@ -47,7 +47,7 @@ from backend.app.services.comparison_report import (
     build_report,
 )
 from backend.app.services.suite_authz import require_permission
-from backend.app.services.value_set_redaction import redact_expected_value
+from backend.app.services.value_set_redaction import redact_expected_value_with_state
 
 router = APIRouter(tags=["runs"])
 
@@ -144,6 +144,16 @@ class ResultRead(ApiModel):
     duration_ms: int | None
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
+    expected_value_redaction: svc.RedactionReason | None = Field(
+        default=None,
+        description=(
+            "Non-null when values in `expected_value` were withheld (each reads `<redacted>`): "
+            "they are values of the tested column, which is sensitive. Every key that does not "
+            "describe the check (a value set, a pattern, a bound, a DQX limit) is withheld. The "
+            "value names the rung that masked them, in the `redaction_reasons` vocabulary. Null "
+            "means `expected_value` is as recorded."
+        ),
+    )
     sample_failures: dict[str, Any] | None  # column-aware redaction (#415); see `redaction` below
     redaction: Literal["full", "partial", "none", "zero_sample"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
@@ -423,6 +433,10 @@ def _result_read(
         engine=as_of.engine,
         zero_sample_mode=zero_sample_mode,
     )
+    expected = redact_expected_value_with_state(
+        result.expected_value, tested_column=tested_column, policy=policy, tags=tags
+    )
+    expected_redaction = next(iter(expected.redaction_reasons.values()), None) if expected else None
     sample, redaction, redacted_columns, redaction_reasons = svc.redact_sample_failures_with_state(
         result.sample_failures,
         tested_column=tested_column,
@@ -444,14 +458,10 @@ def _result_read(
             policy=policy,
             tags=tags,
         ),
-        # A GX result echoes the check's kwargs here: held to the check-read rule (#2686).
-        expected_value=redact_expected_value(
-            result.expected_value,
-            tested_column=tested_column,
-            expectation_type=expectation_type,
-            policy=policy,
-            tags=tags,
-        ),
+        # A GX result echoes the check's kwargs here (#2686); what was withheld, and why, is
+        # named beside it (#2691).
+        expected_value=expected.config if expected is not None else result.expected_value,
+        expected_value_redaction=expected_redaction,
         sample_failures=sample,
         redaction=redaction,
         redacted_columns=redacted_columns,
