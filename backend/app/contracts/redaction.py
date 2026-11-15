@@ -4,11 +4,11 @@ A contract document lists values of its columns in a second place beside a check
 `config.value_set` (#2592): a property's `enum` and `examples`, its `logicalTypeOptions` pattern
 and bounds, a library rule's `arguments` (`validValues`, `missingValues`, `pattern`, any sibling
 but the column list), the v3.0 `validValues` key, and a `type: custom` rule's `implementation`
-(the value keys under a GX `kwargs` or a DataQ `config`; the whole implementation for any other
-engine, which DataQ cannot read). Once the column is classified as sensitive they are held to the
-bar a check read is: each value becomes the redaction marker — or, where the schema types the
-field as a number, the field is removed — and the node says what was withheld, for which column
-and why (#2682).
+(every key of a GX `kwargs` or DataQ `config` but its options; the whole implementation for any
+other engine, or one that does not parse, which DataQ cannot read). Once the column is
+classified as sensitive they are held to the bar a check read is: each value becomes the
+redaction marker — or, where the schema types the field as a number, the field is removed — and
+the node says what was withheld, for which column and why (#2682).
 
 Sensitivity is a fact about the column, not about one contract row: every suite linked to ANY
 version of the contract for that schema object is asked, and so are the object's asset and every
@@ -41,7 +41,6 @@ from backend.app.services import column_tags
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.value_set_guard import (
     REDACTED_MARKER,
-    VALUE_SET_KEY,
     ValueSetRedactedError,
 )
 from backend.app.services.value_set_redaction import policy_sensitivity, value_set_sensitivity
@@ -68,22 +67,54 @@ NOT_WITHHELD: Final[tuple[str, ...]] = (
     "the metric, not a value of the column; on a sql rule it is compared with the query's result "
     "and the standard requires it, so it is kept",
     "a type's shape options: logicalTypeOptions lengths, format, multipleOf and the like",
-    "customProperties values, descriptions, names and any other free text",
+    "customProperties values, descriptions, names, a physicalType's literals (an enum type) "
+    "and any other free text",
 )
 _PREFIX = f"{tr.DATAQ_VENDOR}."
-#: The keys of a custom rule's `kwargs` / `config` that hold values of the column: sets, patterns
-#: and bounds, in a list or alone (#2682).
-_IMPLEMENTATION_VALUE_KEYS: Final = (
-    VALUE_SET_KEY,
-    "value_pairs_set",
-    "regex",
-    "regex_list",
-    "like_pattern",
-    "like_pattern_list",
-    "min_value",
-    "max_value",
-    "strftime_format",
-    "json_schema",
+#: How deep `_masked` keeps a list's shape; deeper, the rest is one marker.
+_MAX_SHAPE_DEPTH: Final = 8
+#: The keys of a GX `kwargs` / DataQ `config` that are options, not values of the column. Every
+#: OTHER key is withheld on a sensitive column: an expectation can hold the column's values under
+#: any name (`value_set`, `regex`, `min_value`, `partition_object`, `quantile_ranges`, …), so the
+#: list names what is safe to show rather than what to hide (#2682).
+_IMPLEMENTATION_OPTION_KEYS: Final = frozenset(
+    {
+        "column",
+        "column_A",
+        "column_B",
+        "column_list",
+        "mostly",
+        "result_format",
+        "ignore_row_if",
+        "type_",
+        "type_list",
+        "or_equal",
+        "strict_min",
+        "strict_max",
+        "strictly",
+        "catch_exceptions",
+        "include_config",
+        "meta",
+        "parse_strings_as_datetimes",
+        "match_on",
+        "aggregate",
+    }
+)
+#: The top level of a GX or DataQ implementation that names the check rather than holding
+#: values; any other top-level key (a DataQ `row_filter`, say) is withheld like a `kwargs` value.
+_IMPLEMENTATION_SHAPE_KEYS: Final = frozenset(
+    {
+        "expectation_type",
+        "type",
+        "kind",
+        "engine",
+        "kwargs",
+        "config",
+        "dimension",
+        "name",
+        "description",
+        "meta",
+    }
 )
 #: A property's `logicalTypeOptions` that hold a value of the column: a pattern, or a bound.
 #: The standard types the numeric bounds as numbers, so they are removed rather than replaced.
@@ -103,18 +134,26 @@ _Sensitivity = Callable[[str, list[Any]], "str | None"]
 
 
 def _leaves(value: Any) -> list[Any]:
-    """Every scalar under ``value``: a list of pairs, or a mapping, hides values one level down."""
-    if isinstance(value, list):
-        return [leaf for item in value for leaf in _leaves(item)]
-    if isinstance(value, dict):
-        return [leaf for item in value.values() for leaf in _leaves(item)]
-    return [value]
+    """Every scalar under ``value``: a list of pairs, or a mapping, hides values one level down.
+    Walked with an explicit stack, so an arbitrarily deep implementation cannot exhaust it."""
+    leaves: list[Any] = []
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            stack.extend(reversed(node))
+        elif isinstance(node, dict):
+            stack.extend(reversed(list(node.values())))
+        else:
+            leaves.append(node)
+    return leaves
 
 
-def _masked(value: Any) -> Any:
-    """The marker in ``value``'s shape: a list keeps its length (and a pair its two places)."""
-    if isinstance(value, list):
-        return [_masked(item) for item in value]
+def _masked(value: Any, depth: int = 0) -> Any:
+    """The marker in ``value``'s shape: a list keeps its length (and a pair its two places).
+    Past a nesting depth no value list has, the whole remainder is one marker."""
+    if isinstance(value, list) and depth < _MAX_SHAPE_DEPTH:
+        return [_masked(item, depth + 1) for item in value]
     return REDACTED_MARKER
 
 
@@ -190,28 +229,52 @@ def _rule_slots(obj: str | None, column: str | None, rule: dict[str, Any]) -> It
         return
     implementation = tr._parse_implementation(raw)
     if implementation is None:
+        # A GX or DataQ implementation that does not parse to a mapping is as opaque as another
+        # engine's: withheld whole.
+        if _present(rule, "implementation"):
+            yield _Slot(obj, column, rule, "implementation", rule, "implementation")
         return
 
     def commit() -> None:
         rule["implementation"] = implementation
 
+    later = None if isinstance(raw, dict) else commit
+    named: list[str] = []
+    for inner in ("kwargs", "config"):
+        holder = implementation.get(inner)
+        if isinstance(holder, dict):
+            named += [
+                holder[k]
+                for k in ("column", "column_A", "column_B")
+                if isinstance(holder.get(k), str) and holder[k] not in named
+            ]
+    who = named[0] if named else column
+    for key in list(implementation):
+        if key not in _IMPLEMENTATION_SHAPE_KEYS and _present(implementation, key):
+            yield _Slot(
+                obj,
+                who,
+                rule,
+                f"implementation.{key}",
+                implementation,
+                key,
+                later,
+                tuple(named[1:]),
+            )
     for inner in ("kwargs", "config"):
         holder = implementation.get(inner)
         if not isinstance(holder, dict):
             continue
-        named = [
-            holder[k] for k in ("column", "column_A", "column_B") if isinstance(holder.get(k), str)
-        ]
-        for key in _IMPLEMENTATION_VALUE_KEYS:
-            if _present(holder, key):
+        for key in list(holder):
+            if key not in _IMPLEMENTATION_OPTION_KEYS and _present(holder, key):
                 yield _Slot(
                     obj,
-                    named[0] if named else column,
+                    who,
                     rule,
                     f"implementation.{inner}.{key}",
                     holder,
                     key,
-                    None if isinstance(raw, dict) else commit,
+                    later,
                     tuple(named[1:]),
                 )
 
@@ -293,12 +356,16 @@ def reject_masked_document(document: dict[str, Any]) -> None:
                 )
     # A removed bound leaves no marker behind; the export's own notes still mark the document,
     # wherever they sit.
-    if _has_custom(document, REDACTED_COLUMNS_PROPERTY) or _carries_note(document):
-        raise ValueSetRedactedError(
-            "this contract document lists withheld columns — it is an export, not the contract; "
-            "import the producer's document, with the real values",
-            detail={"field": f"{_PREFIX}{REDACTED_COLUMNS_PROPERTY}"},
-        )
+    for note, found in (
+        (WITHHELD_PROPERTY, _carries_note(document)),
+        (REDACTED_COLUMNS_PROPERTY, _has_custom(document, REDACTED_COLUMNS_PROPERTY)),
+    ):
+        if found:
+            raise ValueSetRedactedError(
+                "this contract document carries the export's withheld-values note — it is an "
+                "export, not the contract; import the producer's document, with the real values",
+                detail={"field": f"{_PREFIX}{note}"},
+            )
 
 
 def _is_custom(item: Any, name: str) -> bool:
@@ -309,14 +376,18 @@ def _is_custom(item: Any, name: str) -> bool:
 
 
 def _carries_note(value: Any) -> bool:
-    """Whether any node under ``value`` carries the export's withheld note."""
-    if isinstance(value, list):
-        return any(_carries_note(item) for item in value)
-    if not isinstance(value, dict):
-        return False
-    if _has_custom(value, WITHHELD_PROPERTY):
-        return True
-    return any(_carries_note(v) for k, v in value.items() if k != "customProperties")
+    """Whether any node under ``value`` carries the export's withheld note. Walked with an
+    explicit stack: a JSON body has no depth cap, and recursion would fail on a deep one."""
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            stack.extend(node)
+        elif isinstance(node, dict):
+            if _has_custom(node, WITHHELD_PROPERTY):
+                return True
+            stack.extend(v for k, v in node.items() if k != "customProperties")
+    return False
 
 
 def _has_custom(node: dict[str, Any], name: str) -> bool:

@@ -114,10 +114,10 @@ What is withheld:
 - every argument of a library rule (`validValues`, `missingValues`, `pattern` and anything
   beside them) except the list of columns a duplicate check names, and the older `validValues`
   key;
-- a custom rule's sets, patterns and bounds for the Great Expectations and DataQ engines
-  (`value_set`, `value_pairs_set`, `regex`, `regex_list`, `like_pattern`, `like_pattern_list`,
-  `min_value`, `max_value`, `strftime_format`, `json_schema`), and the whole implementation of
-  a custom rule on any other engine, which DataQ cannot read.
+- a custom rule on the Great Expectations or DataQ engine: every value in its implementation
+  (`value_set`, `regex`, `min_value` and any other key that can hold the column's values),
+  keeping only its options such as the column name, `mostly` and the result format; and the
+  whole implementation of a custom rule on any other engine, or one DataQ cannot parse.
 
 What is **not** withheld, even over a sensitive column:
 
@@ -126,7 +126,8 @@ What is **not** withheld, even over a sensitive column:
   is a count of the metric, not a value of the column. On a SQL rule it is compared with the
   query's result, and the standard requires it;
 - a type's shape options: lengths, `format`, `multipleOf`;
-- custom-property values, descriptions, names and other free text.
+- custom-property values, descriptions, names, the literals of an enum `physicalType`, and
+  other free text.
 
 Review those before sharing an export. An object that a new version both renames and moves to another table
 is a new object: classifications made for the old one do not follow it.

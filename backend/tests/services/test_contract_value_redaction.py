@@ -664,3 +664,73 @@ def test_a_rule_s_comparison_operand_and_a_type_s_shape_options_are_kept(db_sess
     valid = next(r for r in shown["quality"] if r.get("id") == "tier-valid")
     assert valid["mustBe"] == 0
     assert any("comparison operand" in item for item in redaction.NOT_WITHHELD)
+
+
+@pytest.mark.parametrize(
+    ("rule", "secret"),
+    [
+        # A readable engine whose implementation does not parse is as opaque as another engine.
+        (
+            {
+                "type": "custom",
+                "engine": "greatExpectations",
+                "implementation": (
+                    "expect_column_values_to_match_regex(column='tier', regex='LK-A')"
+                ),
+            },
+            "LK-A",
+        ),
+        (_gx({"partition_object": {"values": ["LK-B"], "weights": [1.0]}}), "LK-B"),
+        (
+            _gx({"quantile_ranges": {"quantiles": [0.5], "value_ranges": [["LK-C", "LK-Z"]]}}),
+            "LK-C",
+        ),
+        (_gx({"values": ["LK-D"]}), "LK-D"),
+        (
+            {
+                "type": "custom",
+                "engine": "dataq",
+                "implementation": {
+                    "expectation_type": "expect_column_values_to_be_in_set",
+                    "config": {"column": "tier", "value_set": ["x"]},
+                    "row_filter": "tier = 'LK-E'",
+                },
+            },
+            "LK-E",
+        ),
+    ],
+)
+def test_every_value_of_a_readable_implementation_is_withheld_not_only_listed_keys(
+    db_session: Any, rule: dict[str, Any], secret: str
+) -> None:
+    """The implementation keys that are options (column, mostly, result_format, …) are shown;
+    every other key may hold the column's values under any name, so it is withheld."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    doc = _doc_with_tier()
+    doc["schema"][0]["properties"][-1]["quality"].append({"id": "probe", **rule})
+    outcome = _import(db_session, actor, conn, doc)
+    _classify(db_session, _suite(db_session, outcome, "orders"), "tier")
+
+    exported = _export(db_session, outcome, actor)
+    assert secret not in json.dumps(exported)
+    shown = next(r for r in _tier(exported)["quality"] if r.get("id") == "probe")
+    implementation = shown["implementation"]
+    if isinstance(implementation, dict):  # options are kept
+        inner = implementation.get("kwargs") or implementation.get("config") or {}
+        assert inner.get("column", "tier") == "tier"
+
+
+def test_a_deeply_nested_document_is_checked_for_the_note_without_recursing() -> None:
+    doc = _doc()
+    deep: Any = "leaf"
+    for _ in range(5000):
+        deep = {"n": deep}
+    doc["schema"][0]["properties"].append(
+        {
+            "name": "tier",
+            "logicalType": "string",
+            "quality": [{"type": "custom", "engine": "soda", "implementation": deep}],
+        }
+    )
+    redaction.reject_masked_document(doc)  # no RecursionError, and nothing to refuse
