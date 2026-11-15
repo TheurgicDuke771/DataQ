@@ -2884,16 +2884,28 @@ you imported, and it applies to every reader, whichever suites they can see.</p>
 <li>a property's <code>enum</code> and <code>examples</code>, on the property and on anything nested in it (object
   fields, array <code>items</code>, <code>map</code> keys and values). An <code>enum</code> is reduced to a single <code>&lt;redacted&gt;</code>
   entry, because its entries must be unique;</li>
-<li>every list argument of a library rule (<code>validValues</code>, <code>missingValues</code> and any list beside
-  them), and the older <code>validValues</code> key;</li>
-<li>a custom rule's <code>value_set</code>, <code>value_pairs_set</code> and <code>regex_list</code>, for the Great Expectations
-  and DataQ engines.</li>
+<li>a property's pattern and bounds: <code>logicalTypeOptions.pattern</code>, <code>minimum</code>, <code>maximum</code>,
+  <code>exclusiveMinimum</code> and <code>exclusiveMaximum</code>. A pattern becomes <code>&lt;redacted&gt;</code>; a numeric bound is
+  removed, because the standard types it as a number, and the property says it was;</li>
+<li>every argument of a library rule (<code>validValues</code>, <code>missingValues</code>, <code>pattern</code> and anything
+  beside them) except the list of columns a duplicate check names, and the older <code>validValues</code>
+  key;</li>
+<li>a custom rule on the Great Expectations or DataQ engine: every value in its implementation
+  (<code>value_set</code>, <code>regex</code>, <code>min_value</code> and any other key that can hold the column's values),
+  keeping only its options such as the column name, <code>mostly</code> and the result format; and the
+  whole implementation of a custom rule on any other engine, or one DataQ cannot parse.</li>
 </ul>
-<p>What is <strong>not</strong> withheld, even over a sensitive column: patterns (<code>arguments.pattern</code>,
-<code>logicalTypeOptions.pattern</code>), bounds (<code>logicalTypeOptions.minimum</code> / <code>maximum</code>, a rule's
-comparison operands), SQL text, the implementation of a custom rule on another engine, and
-custom-property values and descriptions, and a rule argument that is not a list. Review those
-before sharing an export. An object that a new version both renames and moves to another table
+<p>What is <strong>not</strong> withheld, even over a sensitive column:</p>
+<ul>
+<li>SQL text: a SQL rule's query, and custom SQL inside a custom rule;</li>
+<li>a rule's comparison operand (<code>mustBe</code>, <code>mustBeBetween</code> and the like). On a library rule it
+  is a count of the metric, not a value of the column. On a SQL rule it is compared with the
+  query's result, and the standard requires it;</li>
+<li>a type's shape options: lengths, <code>format</code>, <code>multipleOf</code>;</li>
+<li>custom-property values, descriptions, names, the literals of an enum <code>physicalType</code>, and
+  other free text.</li>
+</ul>
+<p>Review those before sharing an export. An object that a new version both renames and moves to another table
 is a new object: classifications made for the old one do not follow it.</p>
 <p><strong>Who decides.</strong> A column's sensitivity is judged for the schema object, not for one imported
 version: every suite linked to any version of the contract for that object is asked, and so are

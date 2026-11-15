@@ -108,16 +108,28 @@ What is withheld:
 - a property's `enum` and `examples`, on the property and on anything nested in it (object
   fields, array `items`, `map` keys and values). An `enum` is reduced to a single `<redacted>`
   entry, because its entries must be unique;
-- every list argument of a library rule (`validValues`, `missingValues` and any list beside
-  them), and the older `validValues` key;
-- a custom rule's `value_set`, `value_pairs_set` and `regex_list`, for the Great Expectations
-  and DataQ engines.
+- a property's pattern and bounds: `logicalTypeOptions.pattern`, `minimum`, `maximum`,
+  `exclusiveMinimum` and `exclusiveMaximum`. A pattern becomes `<redacted>`; a numeric bound is
+  removed, because the standard types it as a number, and the property says it was;
+- every argument of a library rule (`validValues`, `missingValues`, `pattern` and anything
+  beside them) except the list of columns a duplicate check names, and the older `validValues`
+  key;
+- a custom rule on the Great Expectations or DataQ engine: every value in its implementation
+  (`value_set`, `regex`, `min_value` and any other key that can hold the column's values),
+  keeping only its options such as the column name, `mostly` and the result format; and the
+  whole implementation of a custom rule on any other engine, or one DataQ cannot parse.
 
-What is **not** withheld, even over a sensitive column: patterns (`arguments.pattern`,
-`logicalTypeOptions.pattern`), bounds (`logicalTypeOptions.minimum` / `maximum`, a rule's
-comparison operands), SQL text, the implementation of a custom rule on another engine, and
-custom-property values and descriptions, and a rule argument that is not a list. Review those
-before sharing an export. An object that a new version both renames and moves to another table
+What is **not** withheld, even over a sensitive column:
+
+- SQL text: a SQL rule's query, and custom SQL inside a custom rule;
+- a rule's comparison operand (`mustBe`, `mustBeBetween` and the like). On a library rule it
+  is a count of the metric, not a value of the column. On a SQL rule it is compared with the
+  query's result, and the standard requires it;
+- a type's shape options: lengths, `format`, `multipleOf`;
+- custom-property values, descriptions, names, the literals of an enum `physicalType`, and
+  other free text.
+
+Review those before sharing an export. An object that a new version both renames and moves to another table
 is a new object: classifications made for the old one do not follow it.
 
 **Who decides.** A column's sensitivity is judged for the schema object, not for one imported

@@ -2834,7 +2834,18 @@ what the contract says about every other column, the second keeps the leak.</p>
 <p>Not withheld, by decision of scope and stated to every reader: patterns, bounds
 (<code>logicalTypeOptions.minimum</code> / <code>maximum</code>, comparison operands), SQL text, the implementation
 of a custom rule on an engine other than Great Expectations or DataQ, and custom-property
-values and descriptions. The check-read masker has the same boundary.</p>
+values and descriptions.</p>
+<p><strong>Amended 2026-11-15.</strong> Patterns and bounds are values of the column, so they are now
+withheld like the value lists: <code>logicalTypeOptions.pattern</code> and its bounds, every library-rule
+argument but the column list, every key of a GX or DataQ implementation except its options
+(column names, <code>mostly</code>, the result format and the like), and the whole implementation of a
+custom rule on any other engine or one that does not parse. The list names what is safe to show
+rather than what to hide, because an expectation can hold the column's values under any name. Where the standard types a field as a number, the field is removed instead of
+replaced, and the node's <code>dataq.valuesWithheld</code> note names it; an import carrying that note is
+refused, so a removed bound cannot be re-imported as no bound. Still not withheld: SQL text; a
+rule's comparison operand (on a library rule a count of the metric, not a value; on a SQL rule
+required by the standard, so it cannot be removed without dropping the rule); a type's shape
+options (lengths, format); custom properties and free text.</p>
 <h3 id="5-versions-of-the-standard">5. Versions of the standard<a class="headerlink" href="#5-versions-of-the-standard" title="Permanent link">¶</a></h3>
 <p>The importer accepts <code>apiVersion</code> <strong>v3.0.0 through the newest v3 minor it knows</strong> (v3.2.0 today),
 validated against the vendored ODCS JSON Schema for that version (Apache-2.0, pinned under

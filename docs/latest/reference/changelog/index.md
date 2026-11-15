@@ -12,6 +12,7 @@ section below.
 
 ### Security
 
+- **A contract export withholds the patterns and bounds of a sensitive column too.** Besides its listed values, the export now withholds a sensitive column's pattern and bounds, every argument of its rules, the patterns and bounds in a Great Expectations or DataQ rule, and the whole rule of any other engine. A numeric bound is removed rather than replaced, and the property says so. SQL text, a rule's comparison count and free text are still shown; the guide lists them.
 - **A contract export no longer shows the listed values of a column marked sensitive.** A data
   contract can list a column's values: a property's `enum` and `examples` (nested fields, array
   items and map keys and values included), the list arguments of a rule such as `validValues` or
