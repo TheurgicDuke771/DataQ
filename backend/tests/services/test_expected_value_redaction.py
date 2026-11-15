@@ -387,3 +387,48 @@ def test_the_reason_reaches_the_webhook_the_text_alerts_and_the_rca_prompt(
     )
     prompt = llm_rca._render_evidence(card, [], [])
     assert "withheld, not the configured values" in prompt
+
+
+def test_an_option_beside_the_patterns_does_not_dilute_the_pii_signal() -> None:
+    """#2699: pooled, `match_on="any"` turned 1/2 emails into 1/3 and the patterns leaked."""
+    from backend.app.services.value_set_redaction import redact_expected_value_with_state
+
+    masked = redact_expected_value_with_state(
+        {"column": "field_7", "regex_list": ["a@b.com", "^x$"], "match_on": "any"},
+        tested_column="field_7",
+        policy=None,
+        tags=None,
+    )
+    assert masked is not None
+    assert masked.config["regex_list"] == [_M, _M]
+    assert masked.config["match_on"] == _M
+    assert "a@b.com" not in json.dumps(masked.config)
+
+
+def test_a_column_judged_sensitive_withholds_every_value_key_on_a_check_read() -> None:
+    """A pattern tested before the field that decided the column was left in clear (#2699)."""
+    from backend.app.services.value_set_redaction import mask_check_values
+
+    def test(column: str, values: list[Any]) -> str | None:
+        return "policy" if "a@b.com" in values else None
+
+    masked = mask_check_values(
+        {"column": "c", "regex": "^ACME-[0-9]+$", "regex_list": ["a@b.com"]},
+        test,  # type: ignore[arg-type]
+        expectation_type="expect_column_values_to_match_regex_list",
+    )
+    assert masked.config["regex"] == _M and masked.config["regex_list"] == [_M]
+
+
+def test_a_detection_only_the_pooled_values_make_still_masks() -> None:
+    from backend.app.services.value_set_redaction import mask_expected_value
+
+    def test(column: str, values: list[Any]) -> str | None:
+        return "classifier" if len(values) >= 3 else None  # fires on the pool only
+
+    masked = mask_expected_value(
+        {"column_A": "a", "column_B": "b", "value_pairs_set": [["x", "y"]], "regex": "z"},
+        test,  # type: ignore[arg-type]
+    )
+    assert masked is not None and masked.config["regex"] == _M
+    assert masked.redacted_columns == ["a", "b"]
