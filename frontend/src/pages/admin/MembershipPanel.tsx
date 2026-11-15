@@ -182,7 +182,12 @@ const columns = (
     render: (_, m) => (
       <Space>
         {m.source === 'auto_import' && (
-          <Button size="small" loading={busyId === m.id} onClick={() => confirm(m)}>
+          <Button
+            size="small"
+            loading={busyId === m.id}
+            aria-label={`Confirm ${m.email}`}
+            onClick={() => confirm(m)}
+          >
             Confirm
           </Button>
         )}
@@ -198,13 +203,13 @@ const columns = (
             okButtonProps={{ danger: true }}
             onConfirm={() => remove(m)}
           >
-            <Button size="small" danger loading={busyId === m.id}>
+            <Button size="small" danger loading={busyId === m.id} aria-label={`Remove ${m.email}`}>
               Remove
             </Button>
           </Popconfirm>
         ) : (
           <Tooltip title="Listed in the environment — remove it there">
-            <Button size="small" danger disabled>
+            <Button size="small" danger disabled aria-label={`Remove ${m.email}`}>
               Remove
             </Button>
           </Tooltip>

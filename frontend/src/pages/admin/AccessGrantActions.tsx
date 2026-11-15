@@ -22,7 +22,13 @@ export function AccessGrantActions({
   if (grantId === null) {
     return (
       <Tooltip title="Ownership isn’t a grant — transfer the suite on the Suites tab to move it.">
-        <Button size="small" type="text" disabled>
+        <Button
+          size="small"
+          type="text"
+          disabled
+          // The reason in the name: the tooltip cannot be reached on a disabled button.
+          aria-label={`Revoke: not available, ${grant.user_email} owns ${grant.suite_name}; transfer the suite instead`}
+        >
           Revoke
         </Button>
       </Tooltip>
@@ -44,7 +50,13 @@ export function AccessGrantActions({
       okButtonProps={{ danger: true }}
       onConfirm={onRevoke}
     >
-      <Button size="small" type="text" danger loading={loading}>
+      <Button
+        size="small"
+        type="text"
+        danger
+        loading={loading}
+        aria-label={`Revoke ${grant.user_email}'s access to ${grant.suite_name}`}
+      >
         Revoke
       </Button>
     </Popconfirm>

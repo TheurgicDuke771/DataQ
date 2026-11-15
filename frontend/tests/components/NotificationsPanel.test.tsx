@@ -136,7 +136,7 @@ describe('NotificationsPanel', () => {
     expect(screen.queryByText('Slack webhook')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Clear' })[0]);
+    await userEvent.click(screen.getAllByRole('button', { name: /^Clear\b/ })[0]);
     await waitFor(() =>
       expect(mockPut).toHaveBeenCalledWith('s1', { enabled: true, alert_on: 'fail', webhook: '' }),
     );
@@ -149,7 +149,7 @@ describe('NotificationsPanel', () => {
     await screen.findByText('Legacy inline destinations');
     await userEvent.click(screen.getByRole('switch', { name: 'Enable notifications' }));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear\b/ }));
 
     await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1));
     // The loaded `enabled: true`, not the un-saved toggle.
@@ -164,7 +164,7 @@ describe('NotificationsPanel', () => {
     mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
     renderPanel();
     await screen.findByText('Legacy inline destinations');
-    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Clear\b/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Promote to channel/ })).not.toBeInTheDocument();
   });
 
@@ -285,7 +285,7 @@ describe('NotificationsPanel', () => {
     expect(screen.getByRole('switch', { name: 'Enable notifications' })).toBeDisabled();
     // The legacy card still says what is set, but offers no Clear.
     expect(screen.getByText('Legacy inline destinations')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Clear\b/ })).not.toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {
