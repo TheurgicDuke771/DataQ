@@ -26,30 +26,6 @@ ROOT = Path(__file__).resolve().parents[2]
 OPENAPI_OUT = ROOT / "docs/site/reference/openapi.json"
 MCP_OUT = ROOT / "docs/site/reference/mcp-tools.md"
 
-#: Gated like writes, but persist nothing: each opens a live datasource with a stored credential.
-LIVE_PROBE_TOOLS = frozenset(
-    {
-        "browse_connection",
-        "dryrun_check",
-        "list_columns",
-        "profile_column",
-        "suggest_column_policy",
-        "test_connection",
-    }
-)
-#: gate -> (who can call it, read-only?). A gate missing here fails the build, so a new gate
-#: value gets classified deliberately rather than by string shape.
-GATES_DOC: dict[str, tuple[str, bool]] = {
-    "read": ("any signed-in user", True),
-    "read:suite-optional": ("any signed-in user; suite-scoped when a suite is named", True),
-    "suite:view": ("`view` on the suite", True),
-    "suite:edit": ("`edit` on the suite", False),
-    "incident:view": ("`view` on the incident's suite", True),
-    "incident:edit": ("`edit` on the incident's suite", False),
-    "contract:view": ("`view` on one of the contract's suites (or a workspace admin)", True),
-    "role:member": ("workspace Member or Admin", False),
-}
-
 
 def _first_paragraph(text: str) -> str:
     """The opening paragraph, one line, safe inside a Markdown table cell."""
@@ -65,37 +41,34 @@ def build_openapi() -> str:
 
 def build_mcp_tools() -> str:
     from backend.app.mcp.server import mcp
-    from backend.tests.support.mcp_gates import GATES
+    from backend.app.mcp.tool_gates import GATE_AUDIENCE, GATES, classification, unclassified
 
-    tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
-    missing = set(tools) ^ set(GATES)
-    if missing:
-        raise SystemExit(f"GATES and the registered tools disagree: {sorted(missing)}")
-    if unknown_probe := LIVE_PROBE_TOOLS - set(tools):
-        raise SystemExit(f"LIVE_PROBE_TOOLS names tools that do not exist: {sorted(unknown_probe)}")
-    unknown_gates = {g for g in GATES.values() if g not in GATES_DOC}
-    if unknown_gates:
-        raise SystemExit(f"classify gate(s) {sorted(unknown_gates)} in GATES_DOC")
-
-    def is_read(name: str) -> bool:
-        return GATES_DOC[GATES[name]][1]
+    registered = asyncio.run(mcp.list_tools())
+    # The gate and the classification are declared once, where each tool is registered
+    # (`tool_gates.classified_tool`, #1838); this page only reads them.
+    if stray := unclassified(registered):
+        raise SystemExit(f"tools registered without classified_tool: {stray}")
+    tools = {t.name: t for t in registered}
+    if unknown_gates := {g for g in GATES.values() if g not in GATE_AUDIENCE}:
+        raise SystemExit(f"say who can call gate(s) {sorted(unknown_gates)} in GATE_AUDIENCE")
+    kind = {name: classification(t.annotations) for name, t in tools.items()}
 
     # (count-table label, section heading, tools)
     groups = [
         (
             "Read-only",
             "Read-only",
-            sorted(n for n in tools if is_read(n) and n not in LIVE_PROBE_TOOLS),
+            sorted(n for n in tools if kind[n] == "read_only"),
         ),
         (
             "Changes state",
             "Changes state",
-            sorted(n for n in tools if not is_read(n) and n not in LIVE_PROBE_TOOLS),
+            sorted(n for n in tools if kind[n] == "changes_state"),
         ),
         (
             "Live probe",
-            "Live probe (persists nothing, opens a datasource — gated like a write)",
-            sorted(LIVE_PROBE_TOOLS),
+            "Live probe (opens a datasource with a stored credential — gated like a write)",
+            sorted(n for n in tools if kind[n] == "live_probe"),
         ),
     ]
     lines = [
@@ -118,7 +91,7 @@ def build_mcp_tools() -> str:
         lines += [f"## {heading}", "", "| Tool | Who can call it | What it does |", "|---|---|---|"]
         for n in names:
             lines.append(
-                f"| `{n}` | {GATES_DOC[GATES[n]][0]} | "
+                f"| `{n}` | {GATE_AUDIENCE[GATES[n]]} | "
                 f"{_first_paragraph(tools[n].description or '')} |"
             )
         lines.append("")
