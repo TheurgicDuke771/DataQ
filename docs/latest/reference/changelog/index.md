@@ -326,6 +326,7 @@ section below.
 - **A detail page's browser tab names what it shows.** Once a suite, asset, check, connection or contract has loaded, the tab title and the screen-reader announcement name it (`orders · Suite · DataQ`) instead of only the kind of page, so open tabs and history entries can be told apart.
 - A page opened from inside the app now starts at the top, instead of at the scroll position of the page before it. Back and Forward return to where you left each page, including a list that is still loading its rows.
 - **Dialogs work better from the keyboard.** A dialog now opens with focus in its first field instead of on its Close button, and returns focus to the button that opened it when it closes. A confirmation that deletes something now starts on Cancel, so pressing Enter as it opens no longer deletes. The "Snoozed until" badge's explanation can now be reached by keyboard.
+- **The SQL editor can be used by keyboard and screen reader.** It is announced by its field's name and reports the field's help, errors and required state. A note under it explains how to leave it with Tab, and that shortcut now works: press Ctrl+M first (Ctrl+Shift+M on a Mac), since Tab otherwise indents.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
   you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each
@@ -337,6 +338,7 @@ section below.
 
 ### Fixed
 
+- **A comparison check's SQL queries are saved again.** What you typed into the source query or the target's SQL projection never reached the form, so a comparison in SQL mode could not be saved and the projection was dropped.
 - **Suites created by importing a data contract are linked to their table.** They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run `python -m backend.scripts.backfill_suite_assets` once to link suites imported earlier.
 - **Filtering the audit log by entity type now works for every type DataQ records.** Run, result,
   contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
