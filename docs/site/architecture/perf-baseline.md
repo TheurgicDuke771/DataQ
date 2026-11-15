@@ -1597,7 +1597,9 @@ schedule they would take 5–12 minutes each, and the per-schedule cost is flat.
 After batching, the database side is a few statements per 500 schedules; what
 is left per schedule is **one broker round-trip** for the publish. Publishing
 concurrently from a thread pool was tried and removed: Celery's `send_task` is not
-safe to call concurrently here, and the attempt deadlocked intermittently.
+safe to call concurrently here, and the attempt deadlocked intermittently. (Since
+v1.3 it is safe, and the publish is concurrent where that helps: see "v1.3 —
+concurrent schedule publish" below.)
 
 | Round-trip to PostgreSQL and Redis | Before: schedules per 60 s tick | After: schedules per 45 s budget |
 |---|---|---|
@@ -1631,3 +1633,81 @@ broker connection) rather than a per-schedule cost, but with at most one
 schedule due per tick the logs cannot tell the two apart. A live
 ceiling measurement would need thousands of due schedules in the production
 database, which this work deliberately did not create.
+
+## v1.3 — concurrent schedule publish
+
+> Measured **2026-11-15**, on the development machine.
+
+The v1.2 batching left one broker round-trip per scheduled run. Those publishes now
+overlap where the round-trip dominates.
+
+**Why it is safe now.** The v1.2 attempt at a thread pool deadlocked because every
+`send_task` subscribed to the run's result on the result backend's single shared
+`PubSub`, and a garbage collection inside that call could re-enter its lock. Since v1.3
+the Celery app has no result backend, so a publish touches nothing shared except kombu's
+producer pool. That pool hands each thread its own producer and broker connection, and
+the eight threads fit inside its limit of ten.
+
+**How it chooses.** Each tick starts serially and splits every publish's time into
+the dispatcher thread's CPU time and the rest, which is the wait on the broker. The
+first success is not timed, because it pays for the connection. After eight more,
+the tick goes threaded, on **8 threads**, if the median wait is at least **0.5 ms**
+and at least the median CPU time. Otherwise it stays serial. The decision and the
+thread pool last for the whole tick, so later batches start threaded at once.
+
+The rule looks at the wait, not the total, because threads only overlap the wait.
+Building a Celery message is CPU work under Python's global interpreter lock, and
+threads make it dearer through contention: on loopback, forced threads cost 0.87 ms
+per publish against 0.54 ms serial. A slow publish on a slow CPU is therefore not a
+reason for threads.
+
+Down-broker handling is unchanged. Three failures in a row end the batch and the tick;
+with threads, "in a row" is the order in which publishes finish. Each threaded publish
+runs in a copy of the dispatcher's context, so the request id and the trace context
+still reach the message headers.
+
+### Method
+
+`schedule_dispatch._publish` was timed over 4,000 or 10,000 queued runs, publishing to
+a real local Redis and checking `LLEN` against the count after each run. The harness
+set Celery's worker-child flag, as the dispatch task runs in the worker. Round-trips
+came from a Python `asyncio` relay that delays each direction, calibrated by the
+median of 300 `PING`s through it. Its own overhead means its lowest setting is about
+2.8 ms, so the 0.5 ms point of the v1.2 table could not be reproduced. "Serial" is the
+same code held serial.
+
+| Round-trip (measured `PING`) | Runs | Serial, per publish | New code, per publish | Median wait / CPU it measured | Speed-up |
+|---|---|---|---|---|---|
+| 0.06 ms (loopback) | 10,000 | 0.41 ms | 0.37 ms (stayed serial) | 0.06 / 0.29 ms | — |
+| 2.8 ms | 4,000 | 3.45 ms | 0.98 ms (threaded) | 3.04 / 0.68 ms | 3.5× |
+| 7.0 ms | 4,000 | 7.60 ms | 1.18 ms (threaded) | 6.85 / 0.75 ms | 6.4× |
+
+Threaded, the cost per publish settles at about 0.9–1.15 ms whatever the round-trip:
+the CPU cost of building messages is now the limit, not the network.
+
+### The ceiling now
+
+Publishes per 45 s budget, from the measured per-publish costs. The database side,
+a few statements per 500 schedules, is unchanged and small beside these.
+
+| Round-trip | Before (serial) | After |
+|---|---|---|
+| ~0.1 ms (same host) | ~110,000 | ~110,000 (serial) |
+| ~2.8 ms | ~13,000 | ~46,000 |
+| ~7 ms | ~5,900 | ~38,000 |
+
+This is still a development-machine measurement. The live check against a cloud
+broker waits on a cloud test instance.
+
+### What proves it safe
+
+`backend/tests/worker/test_schedule_dispatch_publish.py`:
+
+- Publishes 10 bursts of 200 concurrent publishes to a real Redis with the garbage
+  collector's threshold at 10, so a collection lands inside nearly every publish, as in
+  the v1.2 deadlock. The OpenTelemetry Celery instrumentation that worker children run
+  is on. Every burst must finish within 60 s, and every message must arrive.
+- Covers the threading itself: order, the request id, a broker lost mid-batch, failures
+  logged as they happen, the decision lasting the tick, and staying serial on a fast
+  broker or a CPU-bound publish.
+
