@@ -112,7 +112,8 @@ function LiveRunProgressBody({
       stoppedRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
       setProgress((p) => (p ? { ...p, status: run.status, finished_at: run.finished_at } : p));
-      message.success('Run cancelled');
+      // No success toast: antd's toasts are role="alert", so it would be announced on top of the
+      // live region's "Run cancelled", and the status tag already shows it on screen.
     } catch (err) {
       message.error(`Cancel failed: ${errorMessage(err)}`);
     } finally {
@@ -120,17 +121,60 @@ function LiveRunProgressBody({
     }
   };
 
-  if (!progress) {
-    if (error) {
-      return (
+  // The live region is on the page from the first render, empty: a region added together with
+  // its text is not reliably announced, so it must exist before its first message (#1673).
+  // Non-zero per-status counts, computed once: the tags show them, the region speaks them.
+  const tallies = progress
+    ? (Object.entries(progress.counts).filter(([, n]) => n > 0) as [ResultStatus, number][])
+    : [];
+  const announcement = progress
+    ? progressAnnouncement(
+        progress.status,
+        progress.completed_checks,
+        progress.total_checks,
+        tallies,
+      )
+    : '';
+  return (
+    <>
+      <span role="status" aria-live="polite" className="dq-sr-only" data-testid="run-announce">
+        {announcement}
+      </span>
+      {progress ? (
+        <ProgressView
+          progress={progress}
+          tallies={tallies}
+          error={error}
+          canManage={canManage}
+          cancelling={cancelling}
+          onCancel={onCancel}
+        />
+      ) : error ? (
         <Alert type="error" showIcon title="Failed to load run progress" description={error} />
-      );
-    }
-    return <Spin description="Starting run…" size="large" />;
-  }
+      ) : (
+        <Spin description="Starting run…" size="large" />
+      )}
+    </>
+  );
+}
 
-  const { status, total_checks, completed_checks, counts, checks, elapsed_ms, batched_pending } =
-    progress;
+function ProgressView({
+  progress,
+  tallies,
+  error,
+  canManage,
+  cancelling,
+  onCancel,
+}: {
+  progress: RunProgress;
+  tallies: [ResultStatus, number][];
+  /** A transient poll error while earlier progress is still shown. */
+  error: string | null;
+  canManage: boolean;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
+  const { status, total_checks, completed_checks, checks, elapsed_ms, batched_pending } = progress;
   const terminal = isTerminal(status);
   const percent = total_checks > 0 ? Math.round((completed_checks / total_checks) * 100) : 0;
   // A RUNNING run that has resolved nothing has no honest percentage to draw — see the component
@@ -142,7 +186,6 @@ function LiveRunProgressBody({
     elapsed_ms === null || elapsed_ms === undefined ? null : formatDurationMs(elapsed_ms);
   // Per-status histogram of resolved checks (#316) — show only non-zero buckets;
   // an all-pending run has none yet, so the row stays empty until results land.
-  const tallies = Object.entries(counts).filter(([, n]) => n > 0) as [ResultStatus, number][];
 
   return (
     <Flex vertical gap={16}>
@@ -248,4 +291,25 @@ function CheckStatus({ status, terminal }: { status: ResultStatus | null; termin
     );
   }
   return <ResultStatusTag status={status} />;
+}
+
+/** The live region's text (#1673): the run's status, how far it has got in quarters while
+ *  running, and the outcome when it ends. Coarse on purpose, so a screen reader is not interrupted by every
+ *  poll. */
+function progressAnnouncement(
+  status: RunStatus,
+  completed: number,
+  total: number,
+  tallies: [string, number][],
+): string {
+  if (status === 'queued') return 'Run queued.';
+  if (isTerminal(status)) {
+    const outcome = tallies.map(([s, n]) => `${n} ${s}`).join(', ');
+    return `Run ${status}: ${completed} of ${total} checks done${outcome ? ` (${outcome})` : ''}.`;
+  }
+  if (total === 0) return 'Run running.';
+  // Every check resolved, the run still finishing (incidents, alerts): not "100% done".
+  if (completed >= total) return 'Run running: all checks done, finishing.';
+  const quarter = Math.floor((completed / total) * 4) * 25;
+  return quarter === 0 ? 'Run running.' : `Run running: about ${quarter}% of checks done.`;
 }
