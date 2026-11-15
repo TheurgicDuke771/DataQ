@@ -1,4 +1,4 @@
-import { Alert, Empty, Flex, Segmented, Spin, Table, Typography } from 'antd';
+import { Alert, Empty, Flex, Spin, Table, Typography } from 'antd';
 import { useState } from 'react';
 import {
   CartesianGrid,
@@ -36,6 +36,7 @@ import type { ResultStatus } from '../../api/runs';
 import { MetricValue } from '../results/MetricValue';
 import { formatTimestamp } from '../results/resultsFormat';
 import { formatTick } from '../../utils/formatNumber';
+import { ChartTableSwitch } from '../charts/ChartTableSwitch';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
 import { ResultStatusTag } from '../shared/StatusTag';
@@ -287,16 +288,7 @@ export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTren
 
   return (
     <div>
-      <Segmented
-        size="small"
-        value={view}
-        onChange={(v) => setView(v as 'chart' | 'table')}
-        options={[
-          { label: 'Chart', value: 'chart' },
-          { label: 'Table', value: 'table' },
-        ]}
-        style={{ marginBottom: 8 }}
-      />
+      <ChartTableSwitch value={view} onChange={setView} label="Trend view" />
       {/* Plain-text mirror of the chart's threshold lines (a11y, #594): the
           dash-pattern + colour encoding on the chart itself is non-color-only
           already, but a screen reader gets nothing from an SVG reference line —
@@ -402,7 +394,13 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
 
   return (
     <ResponsiveChart height={180} isEmpty={data.length === 0} emptyText="No metric history yet">
-      <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+        // Named, so a screen reader hears what the chart is rather than its tick labels (#1673).
+        title="Metric per run, with the threshold lines it is scored against"
+        desc="The Table view lists every run's value and status."
+      >
         <CartesianGrid {...GRID_PROPS} vertical={false} />
         <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
         <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
@@ -556,7 +554,12 @@ function AnomalyBaselinePanel({
           isEmpty={data.length === 0}
           emptyText="No baseline observations recorded yet"
         >
-          <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          <LineChart
+            data={data}
+            margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            title="Baseline observations, with the expected band"
+            desc="The caption describes the band; the Table view lists every value."
+          >
             <CartesianGrid {...GRID_PROPS} vertical={false} />
             <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
             <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />

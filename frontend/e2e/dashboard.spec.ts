@@ -31,6 +31,17 @@ test.describe('Dashboard', () => {
     await expect(suiteCard.getByText('Orders quality').first()).toBeVisible();
     await expect(page.getByText('Orders quality').first()).toBeVisible();
   });
+
+  test('names the trend chart and offers its numbers as a table (#1673)', async ({ page }) => {
+    const trendCard = page.locator('.ant-card').filter({ hasText: /Quality Trends/ });
+    // The svg carries its own name, so a screen reader hears what the chart is.
+    // Matched by its text: icons and the empty-state image carry <title>s of their own.
+    await expect(
+      trendCard.locator('svg title', { hasText: 'Succeeded and failed runs per day' }),
+    ).toHaveCount(1);
+    await trendCard.getByText('Table', { exact: true }).click();
+    await expect(trendCard.getByRole('table', { name: 'Runs per day' })).toBeVisible();
+  });
 });
 
 // First-run path (#1668). The seeded workspace has done every step, so the status is answered by
