@@ -122,6 +122,9 @@ class CheckReport:
     # Why `metric_value` was withheld (None = as recorded): an aggregate min/max cell of a
     # sensitive column (#2240), the `run_service.RedactionReason` vocabulary.
     metric_value_redaction: str | None = None
+    # Why values in `expected_value` read `<redacted>` (None = as recorded): they are values
+    # of a sensitive column (#2691), the same vocabulary.
+    expected_value_redaction: str | None = None
 
 
 @dataclass(frozen=True)

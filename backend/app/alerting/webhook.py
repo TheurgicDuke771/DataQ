@@ -48,6 +48,8 @@ def _check_payload(check: CheckReport) -> dict[str, Any]:
         # redaction of its own, it just carries what RunReport already carries.
         "observed_value": check.observed_value,
         "expected_value": check.expected_value,
+        # Non-null when values in `expected_value` read `<redacted>` (#2691).
+        "expected_value_redaction": check.expected_value_redaction,
         "sample_summary": check.sample_summary,
         # Which columns of `sample_summary` were masked, and why (#2255) — same vocabulary as
         # the REST `redaction_reasons` field.

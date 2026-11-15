@@ -109,7 +109,10 @@ from backend.app.services import (
 )
 from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
-from backend.app.services.value_set_redaction import ValueSetMasker, redact_expected_value
+from backend.app.services.value_set_redaction import (
+    ValueSetMasker,
+    redact_expected_value_with_state,
+)
 
 log = get_logger(__name__)
 
@@ -584,14 +587,9 @@ def _run_results_payload(
                 # counts and a strategy name, never cell values, so it needs
                 # none of the redaction its neighbours do.
                 "sampling": r.sampling,
-                # A GX result echoes the check's kwargs here (#2686).
-                "expected_value": redact_expected_value(
-                    r.expected_value,
-                    tested_column=as_of[r.id].context[0],
-                    expectation_type=as_of[r.id].context[1],
-                    policy=policy,
-                    tags=tags,
-                ),
+                # A GX result echoes the check's kwargs here (#2686); what was withheld, and
+                # why, is named beside it (#2691).
+                **_redacted_expected(r, as_of[r.id], policy, tags),
                 # Redaction reused from `rendered` above, not recomputed. Beyond
                 # the wasted second pass, computing it twice would let the payload
                 # and the access event disagree about what was masked — and the
@@ -661,6 +659,26 @@ def _redacted_sample(
         "redacted_columns": redacted.redacted_columns,
         # Why each one was (#2255): the same keys as `redacted_columns`, a closed vocabulary.
         "redaction_reasons": redacted.redaction_reasons,
+    }
+
+
+def _redacted_expected(
+    result: Any,
+    as_of: run_service.CheckAsOf,
+    policy: dict[str, Any] | None,
+    tags: dict[str, str] | None,
+) -> dict[str, Any]:
+    """`expected_value` plus `expected_value_redaction` (#2691): on a sensitive column every key
+    that does not describe the check is withheld, and the reason names the rung, so a
+    `<redacted>` value never reads as what the check expected."""
+    masked = redact_expected_value_with_state(
+        result.expected_value, tested_column=as_of.context[0], policy=policy, tags=tags
+    )
+    if masked is None:
+        return {"expected_value": result.expected_value, "expected_value_redaction": None}
+    return {
+        "expected_value": masked.config,
+        "expected_value_redaction": masked.redaction,
     }
 
 
@@ -1375,7 +1393,9 @@ def list_check_versions(
     numbers stored when the check was created, and a change to the workspace or
     table setting creates **no version**. So identical thresholds across versions do
     not show that the alerting level never changed. What each past run was scored
-    against is on its result (``expected_value.thresholds`` in ``get_run_results``).
+    against is on its result (``expected_value.thresholds`` in ``get_run_results``),
+    unless the tested column is sensitive, where it reads ``<redacted>`` and
+    ``expected_value_redaction`` says why.
 
     **A version with ``redacted: true`` has no config to show beyond its tested
     column.** A suite owner or admin emptied the rest of its stored config
@@ -1734,10 +1754,11 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     was masked — ``default_mask`` means never classified, not known personal data,
     and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
     ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
-    ``expected_value`` is the check's configuration as the run evaluated it; on a sensitive
-    column its values (the accepted set, pairs, patterns, a bound that is a value of the
-    column) read ``<redacted>``, as they do on ``get_check``. Do not quote them as what the
-    check expected.
+    ``expected_value`` is the check's configuration as the run evaluated it. On a sensitive
+    column every key that does not describe the check reads ``<redacted>`` (the accepted
+    set, pairs, patterns, bounds, DQX limits, a monitor's thresholds), and
+    ``expected_value_redaction`` names the rung that withheld them; null means the values are
+    as recorded. Do not quote a ``<redacted>`` value as what the check expected.
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history

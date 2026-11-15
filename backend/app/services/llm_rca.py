@@ -321,6 +321,12 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
         lines.append(f"observed_value: {_json(failing['observed_value'])}")
     if failing.get("expected_value") is not None:
         lines.append(f"expected_value: {_json(failing['expected_value'])}")
+    if failing.get("expected_value_redaction"):
+        lines.append(
+            "values in expected_value that read <redacted> are withheld, not the configured "
+            "values: they belong to a sensitive column "
+            f"(masked: {failing['expected_value_redaction']}), so don't quote or guess them"
+        )
 
     kind_detail = evidence.get("kind_detail")
     if kind_detail is not None:

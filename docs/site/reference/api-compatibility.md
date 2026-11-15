@@ -76,6 +76,7 @@ Changes that took effect without the deprecation window above, and why:
 | v1.3.0 | A run that evaluated no check (every check disabled or skipped) answers `error` from the pipeline gate rather than a pass. | A gate that passes on a run that verified nothing lets bad data through. |
 | v1.3.0 | A value set over a column classified as sensitive reads `<redacted>` on every check read; saving a config that still holds `<redacted>` returns `422 value_set_redacted`, and an export holding withheld values cannot be imported. Accepting such a suggested rule returns `409 suggestion_values_sensitive`. | Security: the raw values would otherwise stay readable after the column was classified. |
 | v1.3.0 | A min/max `aggregate` result on a sensitive column returns `metric_value: null`, with `metric_value_redaction` naming the rule. | Security: that metric is one cell of the column. |
+| v1.3.0 | On a sensitive column, a result's `expected_value` reads `<redacted>` for every key that does not describe the check (a value set, a pattern, a bound, a DQX limit, a monitor's thresholds), in run results, MCP results, incident evidence and alert payloads, with `expected_value_redaction` naming the rule. | Security: those values are the column's own. |
 | v1.3.0 | A flat-file batch target's asset name includes its prefix (`orders/…`), so existing assets are renamed or split on upgrade. | The old name merged different folders into one asset, mixing their health, lineage and incidents. |
 
 ## The export document's `version`

@@ -12,7 +12,7 @@ from backend.app.core.errors import DataQError
 
 VALUE_SET_KEY = "value_set"
 #: The config keys that hold values of the tested column on every check type: sets, pairs and
-#: patterns, in a list or alone (#2682).
+#: patterns, in a list or alone (#2682), and a DQX rule's allowed list and limits (#2691).
 VALUE_KEYS: tuple[str, ...] = (
     VALUE_SET_KEY,
     "value_pairs_set",
@@ -20,9 +20,21 @@ VALUE_KEYS: tuple[str, ...] = (
     "regex_list",
     "like_pattern",
     "like_pattern_list",
+    "allowed",
+    "min_limit",
+    "max_limit",
+    "limit",
 )
-#: Bounds, which are values of the column only on some check types (`bound_keys_hold_values`).
-BOUND_KEYS: tuple[str, ...] = ("min_value", "max_value")
+#: Bounds, which are values of the column only on some check types (`bound_keys_hold_values`):
+#: an aggregate monitor's tiered bounds beside its `min_value` / `max_value` (#2691).
+BOUND_KEYS: tuple[str, ...] = (
+    "min_value",
+    "max_value",
+    "critical_min",
+    "warn_min",
+    "critical_max",
+    "warn_max",
+)
 # Also the failing-sample sentinel (`run_service`); `core.logging` keeps its own copy.
 REDACTED_MARKER = "<redacted>"
 

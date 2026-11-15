@@ -9855,6 +9855,27 @@
             ],
             "title": "Expected Value"
           },
+          "expected_value_redaction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own_tag",
+                  "inherited_tag",
+                  "policy",
+                  "unclassified",
+                  "detected",
+                  "classifier",
+                  "default_mask"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Non-null when values in `expected_value` were withheld (each reads `<redacted>`): they are values of the tested column, which is sensitive. Every key that does not describe the check (a value set, a pattern, a bound, a DQX limit) is withheld. The value names the rung that masked them, in the `redaction_reasons` vocabulary. Null means `expected_value` is as recorded.",
+            "title": "Expected Value Redaction"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",

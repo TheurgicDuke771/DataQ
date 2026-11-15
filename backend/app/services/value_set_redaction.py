@@ -11,7 +11,11 @@ The same holds for the other config keys that carry values of the column (#2682)
 (`regex`, `regex_list`, `like_pattern`, `like_pattern_list`), a set that is not a list, and the
 bounds of a check whose bounds ARE values of the column — "values in range", the column's min or
 max, and an aggregate monitor on `min` or `max`. Where bounds are counts or lengths (row count,
-value lengths, an aggregate mean) they are not values of the column and are shown."""
+value lengths, an aggregate mean) they are not values of the column and are shown.
+
+A result's ``expected_value`` echoes the same kwargs and is held to a stricter rule (#2691): on a
+sensitive column every key that does not describe the check is withheld, so a type or engine
+that keeps the column's values under a new name fails closed (`mask_expected_value`)."""
 
 from __future__ import annotations
 
@@ -47,9 +51,12 @@ def bound_keys_hold_values(expectation_type: str | None, config: Mapping[str, An
 
 
 def _masked(value: Any) -> Any:
-    """The marker in ``value``'s shape: a list keeps its length, a pair its two places."""
+    """The marker in ``value``'s shape: a list keeps its length, a pair its two places, a
+    mapping its keys."""
     if isinstance(value, list):
         return [_masked(item) for item in value]
+    if isinstance(value, dict):
+        return {k: _masked(v) for k, v in value.items()}
     return REDACTED_MARKER
 
 
@@ -70,6 +77,13 @@ class MaskedConfig:
     config: dict[str, Any]
     redacted_columns: list[str] = field(default_factory=list)
     redaction_reasons: dict[str, RedactionReason] = field(default_factory=dict)
+
+    @property
+    def redaction(self) -> RedactionReason | None:
+        """One reason for a read's single redaction field: the first masked column's, in the
+        order the config names its columns (`column`, `column_A`, `column_B`), so a pair check
+        reports deterministically. ``redaction_reasons`` holds every column's."""
+        return next(iter(self.redaction_reasons.values()), None)
 
 
 def policy_sensitivity(
@@ -136,9 +150,9 @@ def mask_check_values(
     expectation_type: str | None,
     column: str | None = None,
 ) -> MaskedConfig:
-    """The masker's own rule over one config-shaped mapping and one sensitivity ``test``: a check's
-    config on a read, or a result's ``expected_value``, which echoes the same kwargs (#2686).
-    ``column`` stands in when the mapping names none."""
+    """The masker's own rule over a check's config and one sensitivity ``test``, for a check
+    read. ``column`` stands in when the config names none. A result's ``expected_value`` has
+    its own, stricter rule: `mask_expected_value`."""
     config = dict(config or {})
     keys = [*VALUE_KEYS]
     if bound_keys_hold_values(expectation_type, config):
@@ -149,7 +163,11 @@ def mask_check_values(
     named = [
         config[k] for k in ("column", "column_A", "column_B") if isinstance(config.get(k), str)
     ]
-    columns = named or [column if column is not None else str(config.get("column"))]
+    columns = named or ([column] if column is not None else [])
+    if not columns:
+        # A table-level check or result (a row count, a schema drift, a comparison): its
+        # numbers are not values of any column, and there is no column to classify.
+        return MaskedConfig(config)
     reasons: dict[str, RedactionReason] = {}
     for key in present:
         values = _leaves(config[key])
@@ -166,24 +184,86 @@ def mask_check_values(
     return MaskedConfig(config, list(reasons), reasons)
 
 
-def redact_expected_value(
+#: The keys of a result's ``expected_value`` that describe the check rather than hold a value of
+#: its column: which column, how strict, which engine and rule. Every other key is withheld on
+#: a sensitive column (#2691). An allowlist, like the contract export's, because a check type
+#: or engine can hold the column's values under any name, and a result is read-only, so
+#: withholding an unknown key costs no round trip.
+_EXPECTED_SHAPE_KEYS = frozenset(
+    {
+        "column",
+        "column_A",
+        "column_B",
+        "column_list",
+        "mostly",
+        "result_format",
+        "ignore_row_if",
+        "type_",
+        "type_list",
+        "or_equal",
+        "strict_min",
+        "strict_max",
+        "strictly",
+        "parse_strings_as_datetimes",
+        "catch_exceptions",
+        "include_config",
+        "meta",
+        "engine",
+        "function",
+        "monitor",
+        "aggregate",
+    }
+)
+
+
+def mask_expected_value(
+    expected: Any,
+    test: Callable[[str, list[Any]], RedactionReason | None] | None,
+    *,
+    column: str | None = None,
+) -> MaskedConfig | None:
+    """A result's ``expected_value`` with every non-shape key withheld when its column is
+    sensitive now (#2686, #2691). ``None`` when ``expected`` is not a mapping (shown as is).
+
+    Unlike a check read this needs no expectation type: whatever the type, a key that does not
+    describe the check is taken for a value of the column, so an unknown type fails closed."""
+    if not isinstance(expected, dict):
+        return None
+    config = dict(expected)
+    present = [
+        k for k in config if k not in _EXPECTED_SHAPE_KEYS and config[k] not in (None, "", [], {})
+    ]
+    if not present or test is None:
+        return MaskedConfig(config)
+    named = [
+        config[k] for k in ("column", "column_A", "column_B") if isinstance(config.get(k), str)
+    ]
+    columns = named or ([column] if column is not None else [])
+    if not columns:
+        # A table-level check or result (a row count, a schema drift, a comparison): its
+        # numbers are not values of any column, and there is no column to classify.
+        return MaskedConfig(config)
+    values = [leaf for k in present for leaf in _leaves(config[k])]
+    reasons: dict[str, RedactionReason] = {}
+    for c in columns:
+        if (reason := test(c, values)) is not None:
+            reasons[c] = reason
+    if not reasons:
+        return MaskedConfig(config)
+    for k in present:
+        config[k] = _masked(config[k])
+    return MaskedConfig(config, list(reasons), reasons)
+
+
+def redact_expected_value_with_state(
     expected: Any,
     *,
     tested_column: str | None,
-    expectation_type: str | None,
     policy: Mapping[str, Any] | None,
     tags: Mapping[str, str] | None,
-) -> Any:
-    """A result's ``expected_value`` with the values of a sensitive column withheld (#2686).
-
-    A GX result stores the check's kwargs here, so it carries the same value set, patterns and
-    bounds a check read withholds; it is held to the same rule, against the same ladder its
-    ``observed_value`` is (the policy and tags of the read, the check as of the result)."""
-    if not isinstance(expected, dict):
-        return expected
-    return mask_check_values(
-        expected,
-        policy_sensitivity(policy, tags),
-        expectation_type=expectation_type,
-        column=tested_column,
-    ).config
+) -> MaskedConfig | None:
+    """`mask_expected_value` against the ladder a result's ``observed_value`` is held to (the
+    policy and tags of the read, the check as of the result), with the columns and reasons
+    that decided, for the read's redaction fields. ``None`` when ``expected`` is not a
+    mapping."""
+    return mask_expected_value(expected, policy_sensitivity(policy, tags), column=tested_column)

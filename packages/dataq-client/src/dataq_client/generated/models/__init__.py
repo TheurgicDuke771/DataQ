@@ -287,6 +287,7 @@ from .rca_narrative_request import RcaNarrativeRequest
 from .read_all_result import ReadAllResult
 from .readyz_response_readyz import ReadyzResponseReadyz
 from .result_read import ResultRead
+from .result_read_expected_value_redaction_type_0 import ResultReadExpectedValueRedactionType0
 from .result_read_expected_value_type_0 import ResultReadExpectedValueType0
 from .result_read_metric_value_redaction_type_0 import ResultReadMetricValueRedactionType0
 from .result_read_observed_value_type_0 import ResultReadObservedValueType0
@@ -677,6 +678,7 @@ __all__ = (
     "ReadAllResult",
     "ReadyzResponseReadyz",
     "ResultRead",
+    "ResultReadExpectedValueRedactionType0",
     "ResultReadExpectedValueType0",
     "ResultReadMetricValueRedactionType0",
     "ResultReadObservedValueType0",

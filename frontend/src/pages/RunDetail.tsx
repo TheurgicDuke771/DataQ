@@ -403,6 +403,9 @@ function DownloadMenu({
         metric_value_redaction: r.metric_value_redaction ?? null,
         observed_value: r.observed_value,
         expected_value: r.expected_value,
+        // Why values above read `<redacted>`, so downstream reporting never takes them as the
+        // configured values.
+        expected_value_redaction: r.expected_value_redaction ?? null,
         // The whole record here, not just a flag: JSON is the machine-readable artifact most likely
         // to feed downstream reporting, and the strategy.
         sampling: r.sampling ?? null,
