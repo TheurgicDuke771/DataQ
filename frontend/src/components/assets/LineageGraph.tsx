@@ -1,6 +1,6 @@
 import { ApartmentOutlined } from '@ant-design/icons';
 import { Alert, Card, Flex, Tag, Typography } from 'antd';
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 
 import type {
   LineageEdge,
@@ -54,6 +54,17 @@ export function LineageGraph({
     [center, upstream, downstream, edges],
   );
   const isolated = upstream.length === 0 && downstream.length === 0;
+  // Counted from what is drawn: the layout drops a node listed on both sides (a cycle).
+  const drawn = useMemo(() => {
+    const up = layout.nodes.filter((n) => n.side === 'upstream').length;
+    const down = layout.nodes.filter((n) => n.side === 'downstream').length;
+    const names = new Map(layout.nodes.map((n) => [n.id, n.name]));
+    // What the curves show, in words: which asset feeds which (#1672).
+    const links = edges
+      .map((e) => [names.get(e.source), names.get(e.target)])
+      .filter((pair): pair is [string, string] => pair.every((n) => n !== undefined));
+    return { up, down, links };
+  }, [layout, edges]);
   // #915: one Alert covering both states let "last refresh FAILED" render at the same INFO weight
   // as "answers at a coarser tier".
   const warehouseFailing = useMemo(
@@ -252,11 +263,15 @@ export function LineageGraph({
           This div is also the ONLY scroll container: a wide graph scrolls inside the card,
           so the page itself never overflows horizontally on a phone (#805). */}
       <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        {/* A named group, not role="img": an image's children are presentational, so its
+            node buttons were invisible to a screen reader and only the summary was read
+            (#1672). Each node says which side it is on and how far, and the list after the
+            graph says which asset feeds which. */}
         <svg
           width={layout.width}
           height={layout.height}
-          role="img"
-          aria-label={`Lineage graph: ${upstream.length} upstream and ${downstream.length} downstream assets around ${center.name}`}
+          role="group"
+          aria-label={`Lineage graph: ${drawn.up} upstream and ${drawn.down} downstream assets around ${center.name}`}
           style={{ display: 'block' }}
         >
           <defs>
@@ -293,6 +308,15 @@ export function LineageGraph({
           ))}
         </svg>
       </div>
+      {drawn.links.length > 0 && (
+        <ul className="dq-sr-only" aria-label="Lineage links">
+          {drawn.links.map(([from, to]) => (
+            <li key={`${from}→${to}`}>
+              {from} feeds {to}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Isolated: the asset's own box is on screen above; say in words why nothing is
           attached to it. The failing-source variant matters — an empty graph and a broken
@@ -336,6 +360,11 @@ function GraphNode({
   onOpen?: () => void;
 }) {
   const interactive = onOpen !== undefined;
+  const descId = useId();
+  const where = node.isCenter
+    ? null
+    : `${node.side}, ${node.hops} ${node.hops === 1 ? 'hop' : 'hops'}`;
+  const facts = [where, !node.isCenter && node.isMonitored ? 'monitored' : null].filter(Boolean);
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
@@ -350,18 +379,23 @@ function GraphNode({
             }
           : undefined
       }
-      role={interactive ? 'button' : undefined}
+      // The centre is an image with a name, so its label is exposed too: a bare <g> with
+      // aria-label is not reliably announced.
+      role={interactive ? 'button' : 'img'}
       tabIndex={interactive ? 0 : undefined}
       // The centre is labelled too (it just isn't actionable), so a screen reader
       // announces which asset the graph is centred on.
       aria-label={
         interactive
-          ? `Open asset ${node.name}${node.isMonitored ? ' (monitored)' : ''}`
+          ? `Open asset ${node.name}${facts.length ? ` (${facts.join(', ')})` : ''}`
           : `${node.name} (this asset)`
       }
+      // Described by its namespace, not by the <title>, which repeats the name.
+      aria-describedby={descId}
       style={{ cursor: interactive ? 'pointer' : 'default' }}
     >
       <title>{`${node.name}\n${node.namespace}`}</title>
+      <desc id={descId}>{node.env ? `${node.env} · ${node.namespace}` : node.namespace}</desc>
       <rect
         width={NODE_W}
         height={NODE_H}

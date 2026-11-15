@@ -234,12 +234,12 @@ describe('AssetDetail page', () => {
   it('renders lineage as a graph: upstream, the centre asset, and downstream', async () => {
     mockGet.mockResolvedValue(DETAIL);
     renderPage();
-    const graph = await screen.findByRole('img', { name: /Lineage graph/ });
+    const graph = await screen.findByRole('group', { name: /Lineage graph/ });
     expect(graph).toBeInTheDocument();
     // Each node carries its full identity in an SVG <title>; the visible label is
     // the leaf segment (both ORDERS assets share a leaf, so assert on identity).
     expect(screen.getByLabelText('ANALYTICS.PUBLIC.ORDERS (this asset)')).toBeInTheDocument();
-    expect(screen.getByLabelText('Open asset RAW.ORDERS')).toBeInTheDocument(); // upstream
+    expect(screen.getByLabelText(/^Open asset RAW\.ORDERS \(upstream/)).toBeInTheDocument(); // upstream
     expect(screen.getByLabelText(/Open asset ANALYTICS\.MART\.REVENUE/)).toBeInTheDocument();
     // One drawn edge per real backend edge (u1→a1, a1→d1).
     expect(graph.querySelectorAll('path[marker-end]')).toHaveLength(2);
@@ -261,7 +261,7 @@ describe('AssetDetail page', () => {
         </AntApp>
       </MeContext.Provider>,
     );
-    await screen.findByRole('img', { name: /Lineage graph/ });
+    await screen.findByRole('group', { name: /Lineage graph/ });
     expect(mockGet).toHaveBeenCalledWith('a1');
 
     // Click the downstream lineage node → the route param becomes d1, and the page
@@ -274,7 +274,7 @@ describe('AssetDetail page', () => {
   it('does not make the centre asset clickable — you are already on it', async () => {
     mockGet.mockResolvedValue(DETAIL);
     renderPage();
-    await screen.findByRole('img', { name: /Lineage graph/ });
+    await screen.findByRole('group', { name: /Lineage graph/ });
     expect(screen.queryByLabelText('Open asset ANALYTICS.PUBLIC.ORDERS')).not.toBeInTheDocument();
   });
 
@@ -300,7 +300,7 @@ describe('AssetDetail page', () => {
     expect(await screen.findByText('No lineage recorded for this asset.')).toBeInTheDocument();
     // The asset's own box is still drawn: an <Empty> icon in its place read as "there is
     // nothing here", when the truth is "here is the asset, nothing attached to it yet".
-    expect(screen.getByRole('img', { name: /Lineage graph/ })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Lineage graph/ })).toBeInTheDocument();
   });
 
   it('surfaces a load error', async () => {

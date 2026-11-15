@@ -19,6 +19,10 @@ export interface LaidOutNode {
   isMonitored: boolean;
   /** The asset under view — rendered as the anchor and not clickable. */
   isCenter: boolean;
+  /** Which side of the asset under view the node is drawn on, and how many hops away: the
+   *  column it is placed in, so what is said about it always matches where it is drawn. */
+  side: 'center' | 'upstream' | 'downstream';
+  hops: number;
   x: number;
   y: number;
 }
@@ -54,7 +58,15 @@ export function buildLineageLayout(
   // Signed-depth column per node: upstream left (negative), downstream right.
   const placed: { node: LaidOutNode; col: number }[] = [
     {
-      node: { ...center, isMonitored: true, isCenter: true, x: 0, y: 0 },
+      node: {
+        ...center,
+        isMonitored: true,
+        isCenter: true,
+        side: 'center',
+        hops: 0,
+        x: 0,
+        y: 0,
+      },
       col: 0,
     },
   ];
@@ -72,6 +84,8 @@ export function buildLineageLayout(
         env: n.env,
         isMonitored: n.is_monitored,
         isCenter: false,
+        side: col < 0 ? 'upstream' : 'downstream',
+        hops: Math.abs(col),
         x: 0,
         y: 0,
       },
