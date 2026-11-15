@@ -38,6 +38,7 @@ from backend.app.services.suite_authz import (
     effective_permission,
     effective_permissions,
 )
+from backend.app.services.value_set_redaction import redact_expected_value
 
 log = get_logger(__name__)
 
@@ -562,7 +563,9 @@ def _redacted_as_of_now(
         tags=tags,
     )
     failing = evidence.get("failing_result")
-    if not isinstance(failing, dict) or "observed_value" not in failing:
+    if not isinstance(failing, dict) or not (
+        "observed_value" in failing or "expected_value" in failing
+    ):
         return evidence
     check = session.get(Check, incident.check_id)
     context = run_service.historical_check_context_at(
@@ -571,17 +574,28 @@ def _redacted_as_of_now(
         {check.id: check} if check is not None else {},
     )
     tested_column, expectation_type = context.get(incident.id, (None, None))
-    observed = failing["observed_value"]
-    redacted = run_service.redact_observed_value(
-        observed,
-        tested_column=tested_column,
-        expectation_type=expectation_type,
-        policy=policy,
-        tags=tags,
-    )
-    if redacted == observed:
+    masked = dict(failing)
+    if "observed_value" in failing:
+        masked["observed_value"] = run_service.redact_observed_value(
+            failing["observed_value"],
+            tested_column=tested_column,
+            expectation_type=expectation_type,
+            policy=policy,
+            tags=tags,
+        )
+    if "expected_value" in failing:
+        # The check's kwargs, echoed by a GX result: the check-read rule (#2686). Applied at
+        # read time too, so a card stored before the rule existed is masked as well.
+        masked["expected_value"] = redact_expected_value(
+            failing["expected_value"],
+            tested_column=tested_column,
+            expectation_type=expectation_type,
+            policy=policy,
+            tags=tags,
+        )
+    if masked == failing:
         return evidence
-    return {**evidence, "failing_result": {**failing, "observed_value": redacted}}
+    return {**evidence, "failing_result": masked}
 
 
 def evidence_for_caller(

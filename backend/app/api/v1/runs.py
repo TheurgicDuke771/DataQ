@@ -47,6 +47,7 @@ from backend.app.services.comparison_report import (
     build_report,
 )
 from backend.app.services.suite_authz import require_permission
+from backend.app.services.value_set_redaction import redact_expected_value
 
 router = APIRouter(tags=["runs"])
 
@@ -443,7 +444,14 @@ def _result_read(
             policy=policy,
             tags=tags,
         ),
-        expected_value=result.expected_value,
+        # A GX result echoes the check's kwargs here: held to the check-read rule (#2686).
+        expected_value=redact_expected_value(
+            result.expected_value,
+            tested_column=tested_column,
+            expectation_type=expectation_type,
+            policy=policy,
+            tags=tags,
+        ),
         sample_failures=sample,
         redaction=redaction,
         redacted_columns=redacted_columns,

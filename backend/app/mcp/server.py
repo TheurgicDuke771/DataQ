@@ -109,7 +109,7 @@ from backend.app.services import (
 )
 from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
-from backend.app.services.value_set_redaction import ValueSetMasker
+from backend.app.services.value_set_redaction import ValueSetMasker, redact_expected_value
 
 log = get_logger(__name__)
 
@@ -584,7 +584,14 @@ def _run_results_payload(
                 # counts and a strategy name, never cell values, so it needs
                 # none of the redaction its neighbours do.
                 "sampling": r.sampling,
-                "expected_value": r.expected_value,
+                # A GX result echoes the check's kwargs here (#2686).
+                "expected_value": redact_expected_value(
+                    r.expected_value,
+                    tested_column=as_of[r.id].context[0],
+                    expectation_type=as_of[r.id].context[1],
+                    policy=policy,
+                    tags=tags,
+                ),
                 # Redaction reused from `rendered` above, not recomputed. Beyond
                 # the wasted second pass, computing it twice would let the payload
                 # and the access event disagree about what was masked — and the
@@ -1726,7 +1733,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
     was masked — ``default_mask`` means never classified, not known personal data,
     and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
-    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
+    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric). ``expected_value`` is the check's configuration as the run evaluated it; on a sensitive
+    column its values (the accepted set, pairs, patterns, a bound that is a value of the
+    column) read ``<redacted>``, as they do on ``get_check``. Do not quote them as what the
+    check expected.
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
