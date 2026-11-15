@@ -1,119 +1,37 @@
-"""The declared authorization gate of every MCP tool — one table, four sweeps."""
+"""The declared authorization gate of every MCP tool, for the RBAC sweeps.
+
+The table is not kept here any more (#1838): each tool declares its gate where it is
+registered (`backend.app.mcp.tool_gates.classified_tool`), and this module only reads the
+registry. Importing the server is what fills it.
+"""
 
 from __future__ import annotations
 
-#: Tool name → its declared authorization gate. Keep alphabetical within a group.
-GATES: dict[str, str] = {
-    # ── no per-resource gate ───────────────────────────────────────────────── `list_assets` and
-    # `get_asset` are here by ADR 0037's explicit decision.
-    "get_adf_pipeline_status": "read",  # deprecated alias for get_pipeline_status (#1443)
-    "get_asset": "read",
-    "get_coverage": "read",  # workspace-wide counts, nothing named (ADR 0047 §8)
-    "get_doc": "read",  # curated docs/site pages, workspace-agnostic (#1626)
-    "get_health_score": "read",
-    "get_pipeline_status": "read",
-    "get_suite_performance": "read",
-    "list_assets": "read",
-    "list_connections": "read",
-    "list_contracts": "read",  # visibility follows the linked suites (ADR 0052 §8)
-    "list_notification_channels": "read",
-    "list_seasonal_periods": "read",  # the workspace calendar, read by anyone (ADR 0048)
-    "list_suites": "read",
-    "trace_column_lineage": "read",  # lineage topology is workspace-visible (ADR 0037)
-    # ── accessible-suite scoped, and view-gated when a suite is named ────────
-    "get_near_misses": "read:suite-optional",
-    "list_incidents": "read:suite-optional",
-    "list_runs": "read:suite-optional",
-    "list_schedules": "read:suite-optional",
-    "list_trigger_bindings": "read:suite-optional",
-    # ── reads gated on the suite ─────────────────────────────────────────────
-    "export_suite": "suite:view",
-    "get_check": "suite:view",
-    "get_check_history": "suite:view",
-    "get_column_policy": "suite:view",
-    "get_detected_seasonal_periods": "suite:view",
-    "get_notification_config": "suite:view",
-    "get_run_results": "suite:view",
-    "get_run_status": "suite:view",
-    "get_suite_results": "suite:view",
-    "list_check_versions": "suite:view",
-    "list_checks": "suite:view",
-    "list_suggested_rules": "suite:view",
-    "list_suite_channels": "suite:view",
-    # ── writes (and live probes) gated on the suite ────────────────────────── `profile_column` is
-    # here, not with the reads: it persists nothing.
-    "cancel_run": "suite:edit",
-    "create_check": "suite:edit",
-    "create_schedule": "suite:edit",
-    "create_trigger_binding": "suite:edit",
-    "delete_check": "suite:edit",
-    "dryrun_check": "suite:edit",
-    "list_columns": "suite:edit",
-    "delete_schedule": "suite:edit",
-    "delete_trigger_binding": "suite:edit",
-    "profile_column": "suite:edit",
-    "restore_check_version": "suite:edit",
-    "set_column_policy": "suite:edit",
-    "suggest_column_policy": "suite:edit",
-    "snooze_check": "suite:edit",
-    "trigger_suite_run": "suite:edit",
-    "update_check": "suite:edit",
-    "update_schedule": "suite:edit",
-    "update_suite": "suite:edit",
-    "update_trigger_binding": "suite:edit",
-    # ── contract-scoped, via the linked suites (ADR 0052) ────────────────────
-    "export_contract": "contract:view",
-    "get_contract": "contract:view",
-    # ── incident-scoped, via the incident's suite ────────────────────────────
-    "ack_incident": "incident:edit",
-    "get_incident": "incident:view",
-    "resolve_incident": "incident:edit",
-    # ── workspace-role gated: no suite to hang a resource gate on ─────────── `test_connection`
-    # and `browse_connection` spend a stored credential against a remote system; `import_suite`
-    # CREATES a suite.
-    "browse_connection": "role:member",
-    "import_suite": "role:member",
-    "test_connection": "role:member",
-}
-
-#: Gates whose tools must refuse a **Viewer**.
-VIEWER_DENIED_GATES = frozenset({"suite:edit", "incident:edit", "role:member", "role:admin"})
-
-#: Gates whose tools must refuse a **Member** — admin-only capabilities.
-MEMBER_DENIED_GATES = frozenset({"role:admin"})
-
-#: Gates whose tools must refuse a user with **no share on the named suite**.
-OUTSIDER_DENIED_GATES = frozenset(
-    {
-        "suite:view",
-        "suite:edit",
-        "incident:view",
-        "incident:edit",
-        "read:suite-optional",
-        "contract:view",
-    }
+import backend.app.mcp.server  # noqa: F401 — registering the tools fills `GATES`
+from backend.app.mcp.tool_gates import (
+    GATES,
+    KNOWN_GATES,
+    MEMBER_DENIED_GATES,
+    OUTSIDER_DENIED_GATES,
+    READ_GATES,
+    VIEWER_DENIED_GATES,
+    WRITE_GATES,
+    tools_with_gate,
 )
 
-#: Every value that may appear in `GATES`. A typo'd gate would otherwise silently
-#: match no sweep and be enforced by nothing.
-KNOWN_GATES = frozenset(
-    {
-        "read",
-        "read:suite-optional",
-        "suite:view",
-        "suite:edit",
-        "incident:view",
-        "incident:edit",
-        "contract:view",
-        "role:member",
-        "role:admin",
-    }
-)
-
-
-def tools_with_gate(*gates: str) -> list[str]:
-    """Tool names carrying any of `gates`, sorted for stable parametrize ids."""
-    return sorted(name for name, gate in GATES.items() if gate in gates)
+__all__ = [
+    "GATES",
+    "KNOWN_GATES",
+    "MEMBER_DENIED_GATES",
+    "OUTSIDER_DENIED_GATES",
+    "READ_GATES",
+    "VIEWER_DENIED_GATES",
+    "WRITE_GATES",
+    "member_denied_tools",
+    "outsider_denied_tools",
+    "tools_with_gate",
+    "viewer_denied_tools",
+]
 
 
 def viewer_denied_tools() -> list[str]:

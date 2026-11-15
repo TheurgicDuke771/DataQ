@@ -102,6 +102,14 @@ The tools split three ways, not two:
   on the suite whose connection they probe, and `test_connection` and `browse_connection`
   (which have no suite) require the **member** workspace role.
 
+Each tool also carries this split as MCP tool annotations, so a client that honours them can
+decide without reading the description: a read-only tool has `readOnlyHint: true`; a tool that
+changes state has `readOnlyHint: false` and says with `destructiveHint` whether it removes or
+overwrites anything or only adds; a live probe has `readOnlyHint: false` and
+`openWorldHint: true`, so a client that runs read-only tools without asking still asks before
+one of these. The annotations and the authorization a tool enforces are declared in one place,
+so they cannot disagree.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

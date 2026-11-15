@@ -102,12 +102,12 @@ def classification(annotations: ToolAnnotations | None) -> Classification | None
     """
     if annotations is None:
         return None
-    read_only, open_world = annotations.readOnlyHint, annotations.openWorldHint
+    read_only, open_world = annotations.read_only_hint, annotations.open_world_hint
     if read_only is True and open_world is False:
         return "read_only"
-    if read_only is False and open_world is False and annotations.destructiveHint is not None:
+    if read_only is False and open_world is False and annotations.destructive_hint is not None:
         return "changes_state"
-    if read_only is False and open_world is True and annotations.destructiveHint is False:
+    if read_only is False and open_world is True and annotations.destructive_hint is False:
         return "live_probe"
     return None
 
