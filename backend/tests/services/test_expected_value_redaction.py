@@ -270,6 +270,7 @@ def test_the_at_rest_scrub_rewrites_only_values_not_thresholds(
     db_session.commit()
     incident_service.redact_stale_evidence(db_session)
     db_session.refresh(incident)
+    assert incident.evidence is not None
     stored = incident.evidence["failing_result"]["expected_value"]
     assert stored["value_set"] == [_M, _M] and stored["thresholds"] == {"z": 3}
     read = incident_service.evidence_for_caller(db_session, incident, user_id=leaked["owner"].id)
