@@ -188,6 +188,88 @@ describe('CheckEdit', () => {
     },
   );
 
+  describe('a withheld bound', () => {
+    const withheld: Check = {
+      ...existing,
+      name: 'salary in range',
+      expectation_type: 'expect_column_values_to_be_between',
+      dimension: 'validity',
+      config: { column: 'salary', min_value: '<redacted>', max_value: '<redacted>' },
+      redacted_columns: ['salary'],
+    };
+
+    beforeEach(() => {
+      mockGetSuite.mockResolvedValue(suite);
+      mockGetCheck.mockResolvedValue(withheld);
+      mockGetConnection.mockResolvedValue(connection);
+      mockUpdate.mockResolvedValue(withheld);
+    });
+
+    it('says which values are withheld, and a save that leaves them alone sends no config', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      expect(await screen.findByText('Values withheld')).toBeInTheDocument();
+      expect(screen.getByText(/min_value, max_value are not shown/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('salary'));
+      await user.clear(screen.getByLabelText('Name'));
+      await user.type(screen.getByLabelText('Name'), 'salary in range v2');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      expect(mockUpdate.mock.calls[0][2]).not.toHaveProperty('config');
+    });
+
+    it('asks for the real values before another config change is saved', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('salary'));
+      await user.clear(screen.getByLabelText('Column'));
+      await user.type(screen.getByLabelText('Column'), 'pay');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(
+        await screen.findAllByText(
+          'This value is withheld. Enter the real value to change this check.',
+        ),
+      ).toHaveLength(2);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a withheld pattern', () => {
+    const withheld: Check = {
+      ...existing,
+      name: 'code matches',
+      expectation_type: 'expect_column_values_to_match_regex',
+      dimension: 'validity',
+      config: { column: 'code', regex: '<redacted>' },
+      redacted_columns: ['code'],
+    };
+
+    beforeEach(() => {
+      mockGetSuite.mockResolvedValue(suite);
+      mockGetCheck.mockResolvedValue(withheld);
+      mockGetConnection.mockResolvedValue(connection);
+      mockUpdate.mockResolvedValue(withheld);
+    });
+
+    it('saves a replaced pattern', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const field = await screen.findByLabelText('Regex');
+      await user.clear(field);
+      await user.type(field, '^C-.+$');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      expect(
+        (mockUpdate.mock.calls[0][2] as { config: Record<string, unknown> }).config,
+      ).toMatchObject({ column: 'code', regex: '^C-.+$' });
+    });
+  });
+
   describe('a withheld value set', () => {
     const withheld: Check = {
       ...existing,

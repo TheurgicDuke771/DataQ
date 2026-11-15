@@ -53,3 +53,29 @@ describe.each([
     }
   });
 });
+
+describe('printing from the dark theme', () => {
+  // Paper is white: browsers drop page backgrounds, so dark-theme ink would print faint on it.
+  it('declares the dark tokens for the screen only, in one place', () => {
+    const dark = ":root[data-theme='dark'] {";
+    const at = css.indexOf(dark);
+    expect(css.indexOf(dark, at + 1), 'a second dark token block').toBe(-1);
+    // The nearest enclosing at-rule before it is `@media screen`, still open where it starts.
+    const before = css.slice(0, at);
+    const media = before.lastIndexOf('@media');
+    expect(before.slice(media)).toMatch(/^@media screen \{/);
+    expect(before.slice(media).match(/^\}/m), 'the screen block closed before it').toBeNull();
+  });
+
+  it('paints the antd Tag in the report with the token ink too', () => {
+    const print = css.slice(css.indexOf('@media print {'));
+    expect(print).toMatch(/\.rd-report \.ant-tag \{\s*color: var\(--dq-ink\) !important;/);
+  });
+
+  it('paints the report with the token ink and paper, not what antd would give it', () => {
+    const print = css.slice(css.indexOf('@media print {'));
+    expect(print).toMatch(
+      /\.rd-report \{\s*color: var\(--dq-ink\);\s*background: var\(--dq-surface\);/,
+    );
+  });
+});

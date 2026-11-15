@@ -82,6 +82,28 @@ test.describe('Keyboard navigation', () => {
     await expect(page).toHaveURL(/\/results$/);
   });
 
+  test('a run opens at the top, and Back returns to where the list was left', async ({ page }) => {
+    // Short enough that the Results list scrolls inside <main>, the app's one scroll container.
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await page.goto('/results');
+    const main = page.locator('#dq-main');
+    const rows = page.locator('tr.ant-table-row a.dq-row-link');
+    await expect(rows.first()).toBeVisible();
+    await main.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    // Read after any scroll the click itself would make to bring the row into view.
+    await rows.last().scrollIntoViewIfNeeded();
+    const left = await main.evaluate((el) => el.scrollTop);
+    expect(left).toBeGreaterThan(0);
+    await rows.last().click();
+    await expect(page.getByTestId('rd-screen')).toBeVisible();
+    await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBe(0);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/results$/);
+    await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBe(left);
+  });
+
   test('a suite opens from the master list by keyboard, and focus stays in the list', async ({
     page,
   }) => {

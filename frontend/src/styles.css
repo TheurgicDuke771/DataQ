@@ -43,34 +43,39 @@
   --dq-motion-base: 160ms;
 }
 
-:root[data-theme='dark'] {
-  --dq-primary: #818cf8;
-  --dq-primary-soft: #3730a3;
-  --dq-selected-bg: rgba(129, 140, 248, 0.16);
-  --dq-row-hover: rgba(129, 140, 248, 0.08);
-  --dq-canvas: #0d1117;
-  --dq-border: #30363d;
-  --dq-ink: #e6edf3;
-  --dq-surface: #161b22;
-  --dq-graph-line: #6b7280;
-  --dq-muted: #8b949e;
-  --dq-severity-good: #52c41a;
-  --dq-severity-warning: #faad14;
-  --dq-severity-bad: #ff4d4f;
-  --dq-severity-neutral: #bfbfbf;
-  --dq-error: #fa541c;
-  --dq-severity-good-text: #73d13d;
-  --dq-severity-warning-text: #ffc53d;
-  --dq-severity-bad-text: #ff7875;
-  --dq-severity-neutral-text: #bfbfbf;
-  --dq-monitored: #69b1ff;
-  --dq-delta-good: #73d13d;
-  --dq-delta-bad: #ff7875;
-  /* --dq-critical isn't redeclared here —
-     they're unchanged across themes, so the :root value already inherits. */
+/* Screen only: on paper the light tokens apply whatever the theme, since browsers drop page
+   backgrounds when printing and the dark ink would print faint on white. (ThemeModeProvider also
+   renders the app light for a print; this holds even where that does not run.) */
+@media screen {
+  :root[data-theme='dark'] {
+    --dq-primary: #818cf8;
+    --dq-primary-soft: #3730a3;
+    --dq-selected-bg: rgba(129, 140, 248, 0.16);
+    --dq-row-hover: rgba(129, 140, 248, 0.08);
+    --dq-canvas: #0d1117;
+    --dq-border: #30363d;
+    --dq-ink: #e6edf3;
+    --dq-surface: #161b22;
+    --dq-graph-line: #6b7280;
+    --dq-muted: #8b949e;
+    --dq-severity-good: #52c41a;
+    --dq-severity-warning: #faad14;
+    --dq-severity-bad: #ff4d4f;
+    --dq-severity-neutral: #bfbfbf;
+    --dq-error: #fa541c;
+    --dq-severity-good-text: #73d13d;
+    --dq-severity-warning-text: #ffc53d;
+    --dq-severity-bad-text: #ff7875;
+    --dq-severity-neutral-text: #bfbfbf;
+    --dq-monitored: #69b1ff;
+    --dq-delta-good: #73d13d;
+    --dq-delta-bad: #ff7875;
+    /* --dq-critical isn't redeclared here —
+       they're unchanged across themes, so the :root value already inherits. */
 
-  --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --dq-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.6);
+    --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --dq-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.6);
+  }
 }
 
 html,
@@ -181,6 +186,7 @@ a:focus-visible,
      would otherwise just be blank margin around a hidden `.no-print` tree. */
   .ant-layout,
   .ant-layout-content {
+    background: var(--dq-surface) !important;
     height: auto !important;
     overflow: visible !important;
     padding: 0 !important;
@@ -189,6 +195,18 @@ a:focus-visible,
 
   .print-only {
     display: block !important;
+  }
+  /* The report's own ink and paper, not what it would inherit from antd's layout, which is
+     painted by the theme algorithm. A backstop for ThemeModeProvider's print swap. */
+  .rd-report {
+    color: var(--dq-ink);
+    background: var(--dq-surface);
+  }
+  /* The one antd component in the report: a redacted metric's "Masked" Tag. */
+  .rd-report .ant-tag {
+    color: var(--dq-ink) !important;
+    background: transparent !important;
+    border-color: #999 !important;
   }
 
   .rd-report table {

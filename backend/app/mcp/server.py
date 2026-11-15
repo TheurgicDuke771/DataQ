@@ -109,7 +109,7 @@ from backend.app.services import (
 )
 from backend.app.services.coverage_settings_service import CheckSettings
 from backend.app.services.suite_authz import require_permission
-from backend.app.services.value_set_redaction import ValueSetMasker
+from backend.app.services.value_set_redaction import ValueSetMasker, redact_expected_value
 
 log = get_logger(__name__)
 
@@ -584,7 +584,14 @@ def _run_results_payload(
                 # counts and a strategy name, never cell values, so it needs
                 # none of the redaction its neighbours do.
                 "sampling": r.sampling,
-                "expected_value": r.expected_value,
+                # A GX result echoes the check's kwargs here (#2686).
+                "expected_value": redact_expected_value(
+                    r.expected_value,
+                    tested_column=as_of[r.id].context[0],
+                    expectation_type=as_of[r.id].context[1],
+                    policy=policy,
+                    tags=tags,
+                ),
                 # Redaction reused from `rendered` above, not recomputed. Beyond
                 # the wasted second pass, computing it twice would let the payload
                 # and the access event disagree about what was masked — and the
@@ -1065,6 +1072,7 @@ def _check_summary(
             if inherited
             else coverage_settings_service.strip_flag(check.config)
         ),
+        expectation_type=check.expectation_type,
     )
     return {
         "id": str(check.id),
@@ -1103,7 +1111,7 @@ def _check_summary(
         # An automatic baseline that inherits (ADR 0047) runs on the coverage settings, not on
         # its stored columns: show what it runs on, and say so, or "what does this check alert
         # at?" would be answered from numbers no run uses.
-        # A value set over a column that is sensitive now has each value withheld (#2592):
+        # Values of a column that is sensitive now are withheld (#2592, #2682):
         # `redacted_columns` names the column, `redaction_reasons` the rung that decided.
         "config": masked.config,
         "redacted_columns": masked.redacted_columns,
@@ -1153,12 +1161,16 @@ def list_checks(
     alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
     for how those checks last performed, use ``get_suite_results``.
 
-    **A value set can be withheld.** When a check's ``config.value_set`` is over a
-    column classified as sensitive now (a warehouse tag, the suite's column policy,
-    fail-closed mode or the PII classifier), every value reads ``<redacted>``, the
-    column is in ``redacted_columns`` and ``redaction_reasons`` says which rule
-    decided. The check still runs with its real values; they are only not shown.
-    Do not describe ``<redacted>`` as the values the check accepts.
+    **Values of a sensitive column can be withheld.** When a check's column is
+    classified as sensitive now (a warehouse tag, the suite's column policy,
+    fail-closed mode or the PII classifier), its values in ``config`` read
+    ``<redacted>``: ``value_set``, ``value_pairs_set``, ``regex``, ``regex_list``,
+    ``like_pattern``, ``like_pattern_list``, and ``min_value`` / ``max_value`` where
+    they are values of the column (a values-in-range check, an aggregate on ``min``
+    or ``max``; a count or length bound is shown). The column is in
+    ``redacted_columns`` and ``redaction_reasons`` says which rule decided. The check
+    still runs with its real values; they are only not shown. Do not describe
+    ``<redacted>`` as what the check accepts or as its threshold.
 
     **A non-null ``inherited_from`` means the thresholds are not the check's own.** It
     appears on the automatic baselines of a system-created suite (row count, freshness
@@ -1386,7 +1398,10 @@ def list_check_versions(
         require_permission(session, sid, user.id, minimum="view")
         versions = check_service.list_check_versions(session, sid, cid)
         masker = ValueSetMasker(session)
-        masked = {v.version_no: masker.mask(sid, v.config) for v in versions[:limit]}
+        masked = {
+            v.version_no: masker.mask(sid, v.config, expectation_type=v.expectation_type)
+            for v in versions[:limit]
+        }
         return {
             "suite_id": suite_id,
             "check_id": check_id,
@@ -1719,6 +1734,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     was masked — ``default_mask`` means never classified, not known personal data,
     and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
     ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
+    ``expected_value`` is the check's configuration as the run evaluated it; on a sensitive
+    column its values (the accepted set, pairs, patterns, a bound that is a value of the
+    column) read ``<redacted>``, as they do on ``get_check``. Do not quote them as what the
+    check expected.
 
     ``engine`` and ``dimension`` (ADR 0038; null = unclassified, a coverage gap)
     are the check's values **as of this result**, resolved from its version history
