@@ -10,9 +10,13 @@ the commit means a rolled-back batch never reaches the broker.
 
 from __future__ import annotations
 
+import contextvars
+import statistics
+import threading
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -36,6 +40,16 @@ BUDGET_S = 45.0
 #: Consecutive publish failures that mean the broker is down: each failure costs a full
 #: publish-retry cycle, so the rest of the batch is failed without trying and the tick ends.
 BROKER_DOWN_AFTER = 3
+#: Threads publishing a batch's runs at once (#2117). At most the broker pool's size
+#: (Celery's ``broker_pool_limit``, 10), so no thread waits for a producer.
+PUBLISH_THREADS = 8
+#: Serial publishes timed before choosing whether to publish the rest from threads.
+PROBE_PUBLISHES = 8
+#: The median serial publish from which the rest go from threads. Measured (perf-baseline.md,
+#: "v1.3 — concurrent schedule publish"): a serial publish costs about 0.5 ms plus the
+#: round-trip; threaded, about 0.9 to 1.1 ms whatever the round-trip. Set above that floor,
+#: so a batch only goes threaded where it is clearly faster.
+CONCURRENT_ABOVE_S = 0.0015
 
 _ADVANCE_SQL = text("""
     UPDATE schedules AS s
@@ -77,33 +91,111 @@ def _next_fire(
     return cache[key]
 
 
+def _publish_one(run_id: uuid.UUID) -> tuple[str | None, BaseException | None]:
+    """One publish, as a pool thread runs it: never raises, never touches the session."""
+    try:
+        return run_dispatch.dispatch_run(run_id), None
+    except Exception as exc:
+        return None, exc
+
+
 def _publish(
     queued: list[_Queued],
 ) -> tuple[list[tuple[_Queued, str]], list[_Queued], bool]:
-    """Publish serially: `send_task` is not safe to call concurrently — the Redis result
-    backend shares one non-reentrant PubSub lock across calls. Returns (sent, failed,
-    broker_down).
+    """Publish a batch's runs. Returns (sent, failed, broker_down).
+
+    Serially at first, timing each publish. Once ``PROBE_PUBLISHES`` have succeeded after
+    the first, which pays for the connection, a median at or above ``CONCURRENT_ABOVE_S``
+    means the broker round-trip dominates, and the rest go from ``PUBLISH_THREADS``
+    threads, which overlap the waits (#2117). A faster broker stays serial: building a
+    message is CPU work under the GIL, so threads only add contention there.
+
+    Concurrent ``send_task`` is safe because the app has no result backend (#2206), so a
+    publish shares nothing but kombu's producer pool, which hands each thread its own
+    producer and connection. The serial start primes that pool and the app's lazy state
+    on this thread. Each threaded publish runs in a copy of this thread's context, so the
+    request id and the trace context still reach the message headers. Once
+    ``BROKER_DOWN_AFTER`` publishes fail in a row, in the order they finish, no further one
+    is started and the rest of the batch fails without an attempt.
     """
+    outcomes: list[tuple[_Queued, str | None, BaseException | None]] = []
+    timings: list[float] = []
+    succeeded = 0
+    streak = 0
+    index = 0
+    concurrent = False
+    while index < len(queued) and streak < BROKER_DOWN_AFTER:
+        item = queued[index]
+        index += 1
+        started = time.perf_counter()
+        task_id, exc = _publish_one(item.run_id)
+        outcomes.append((item, task_id, exc))
+        if exc is not None:
+            streak += 1
+            continue
+        streak = 0
+        succeeded += 1
+        if succeeded > 1 and len(timings) < PROBE_PUBLISHES:
+            timings.append(time.perf_counter() - started)
+            if len(timings) == PROBE_PUBLISHES:
+                median_s = statistics.median(timings)
+                concurrent = median_s >= CONCURRENT_ABOVE_S
+                log.info(
+                    "schedule_publish_mode",
+                    concurrent=concurrent,
+                    median_publish_ms=round(median_s * 1000, 3),
+                )
+                if concurrent:
+                    break
+
+    rest = queued[index:]
+    broker_down = streak >= BROKER_DOWN_AFTER
+    if concurrent and rest:
+        lock = threading.Lock()
+        stop = threading.Event()
+        run_streak = 0
+
+        def attempt(item: _Queued) -> tuple[_Queued, str | None, BaseException | None]:
+            nonlocal run_streak
+            if stop.is_set():
+                return item, None, None
+            task_id, exc = _publish_one(item.run_id)
+            with lock:
+                run_streak = 0 if exc is None else run_streak + 1
+                if run_streak >= BROKER_DOWN_AFTER:
+                    stop.set()
+            return item, task_id, exc
+
+        with ThreadPoolExecutor(
+            max_workers=min(PUBLISH_THREADS, len(rest)), thread_name_prefix="schedule-publish"
+        ) as pool:
+            futures = [pool.submit(contextvars.copy_context().run, attempt, item) for item in rest]
+            outcomes.extend(future.result() for future in futures)
+        broker_down = stop.is_set()
+    else:
+        outcomes.extend((item, None, None) for item in rest)
+
     sent: list[tuple[_Queued, str]] = []
     failed: list[_Queued] = []
-    streak = 0
-    for index, item in enumerate(queued):
-        try:
-            sent.append((item, run_dispatch.dispatch_run(item.run_id)))
-            streak = 0
+    skipped = 0
+    for item, task_id, exc in outcomes:
+        if task_id is not None:
+            sent.append((item, task_id))
             usage_telemetry.emit(usage_telemetry.UsageEvent.SUITE_RUN_TRIGGERED, trigger="schedule")
-        except Exception:
-            log.exception(
-                "run_dispatch_failed", run_id=str(item.run_id), schedule_id=str(item.schedule_id)
+            continue
+        failed.append(item)
+        if exc is None:
+            skipped += 1
+        else:
+            log.error(
+                "run_dispatch_failed",
+                run_id=str(item.run_id),
+                schedule_id=str(item.schedule_id),
+                exc_info=exc,
             )
-            failed.append(item)
-            streak += 1
-            if streak >= BROKER_DOWN_AFTER:
-                rest = queued[index + 1 :]
-                failed.extend(rest)
-                log.error("schedule_dispatch_broker_down", failed_without_attempt=len(rest))
-                return sent, failed, True
-    return sent, failed, False
+    if broker_down:
+        log.error("schedule_dispatch_broker_down", failed_without_attempt=skipped)
+    return sent, failed, broker_down
 
 
 def _dispatch_batch(
