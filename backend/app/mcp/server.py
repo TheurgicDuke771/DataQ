@@ -3672,8 +3672,12 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
     ``{identifier_column, pii_columns}`` policy — which controls whether failing
     sample rows show real values or masks.
 
-    **This only suggests. Nothing is saved**, and the suggestion is a heuristic
-    over column names and observed values, not a governance source of truth.
+    **This only suggests: the column policy is not changed**, and the suggestion
+    is a heuristic over column names and observed values, not a governance
+    source of truth. The profile it runs is not free of side effects, though: a
+    column that newly looks like personal data is recorded as a profiler
+    detection on the asset, and detections are masked on every read from then
+    on, and the connection's credential-health record is updated.
     Present it as a proposal for the user to confirm, then apply it with
     ``set_column_policy`` — reading the current one with ``get_column_policy``
     first, since setting a policy replaces it wholesale; do not
@@ -3747,8 +3751,10 @@ def test_connection(connection_id: str) -> dict[str, Any]:
     last real run/poll, not a live probe) — prefer that tool when you want a
     reason rather than a pass/fail.
 
-    Nothing is changed and no credential is ever returned — this reports only
-    whether the probe worked. Requires the **member** workspace role: it spends a
+    No credential is ever returned, and nothing you configured changes — this
+    reports only whether the probe worked. It does record the outcome: the
+    connection's credential-health fields and the engine capabilities the probe
+    found are updated. Requires the **member** workspace role: it spends a
     stored credential against a remote system, which is not something a read-only
     Viewer does. Fixing a failing connection (re-auth, edit, delete) is
     Admin-only and is deliberately not available here at all — a credential must
@@ -3826,7 +3832,8 @@ def browse_connection(
     - A failure is classified (for example "access denied" or "not found") but
       the driver's own message is withheld.
 
-    Nothing is changed and no data values are read, only names. Requires the
+    No data values are read, only names, and nothing you configured changes; the
+    connection's credential-health record is updated with the outcome. Requires the
     **member** workspace role, like ``test_connection``: it spends a stored
     credential (when the connection has one) against a remote system.
     """
@@ -5581,9 +5588,11 @@ def profile_column(
     """Profile one or more columns of a table or file on a suite's connection.
 
     Use this for 'profile the revenue column in FACT_ORDERS'. Runs the column
-    profiler (no persistence) and returns, per column: null count + fraction,
-    distinct count, min/max, and the top ``top_n`` values. ``table`` (+
-    optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to
+    profiler (it records an audit entry, the connection's credential health and,
+    on a suite's own target, any column that newly looks like personal data as a
+    profiler detection, which is masked on every read from then on) and returns,
+    per column: null count + fraction, distinct count, min/max, and the top
+    ``top_n`` values. ``table`` (+ optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to
     the suite's own run target, so they only need passing to profile something
     *other* than what the suite runs against. ``namespace`` is only meaningful
     for an Iceberg table when passing an explicit ``table`` (Iceberg addresses

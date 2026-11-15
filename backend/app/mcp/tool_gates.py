@@ -21,6 +21,11 @@ query. It is deliberately not marked read-only, even where it stores nothing in 
 client that runs read-only tools without asking must still ask before one of these, and
 some of them do record what they saw. That is the same reason they are gated like writes.
 
+`openWorldHint` is true only for a tool whose own call reaches outside DataQ. A tool that
+queues work which later reaches a datasource or a notification channel — `trigger_suite_run`
+— is not open-world by this reading: the call itself only adds a run, and the worker does the
+rest under the suite's own configuration.
+
 `destructiveHint` is true for a tool that removes or overwrites stored state, and false
 for one that only adds (the MCP definition). `idempotentHint` is not set on any tool, so
 a client assumes the protocol default, which is that repeating a call may have a further

@@ -96,8 +96,11 @@ The tools split three ways, not two:
   binding and incident tools via the suite they target); `import_suite` additionally requires
   the **member** workspace role, since it has no existing suite to gate on.
 - **Live probes** (6) — `profile_column`, `list_columns`, `dryrun_check`,
-  `suggest_column_policy`, `test_connection`, `browse_connection` persist nothing but open a
-  live datasource connection with stored credentials. They are gated like writes, not reads,
+  `suggest_column_policy`, `test_connection`, `browse_connection` change none of your suites,
+  checks or connection settings, but open a live datasource connection with stored credentials
+  and record what happened: the connection's credential health, an audit entry for the
+  profiling ones, and any column that newly looks like personal data as a profiler detection
+  (`profile_column`, `suggest_column_policy`), which is masked from then on. They are gated like writes, not reads,
   because they spend a real credential against a remote system: the first four require `edit`
   on the suite whose connection they probe, and `test_connection` and `browse_connection`
   (which have no suite) require the **member** workspace role.
@@ -107,8 +110,9 @@ decide without reading the description: a read-only tool has `readOnlyHint: true
 changes state has `readOnlyHint: false` and says with `destructiveHint` whether it removes or
 overwrites anything or only adds; a live probe has `readOnlyHint: false` and
 `openWorldHint: true`, so a client that runs read-only tools without asking still asks before
-one of these. The annotations and the authorization a tool enforces are declared in one place,
-so they cannot disagree.
+one of these. A tool's annotations and its declared gate are set in one place and checked
+against each other when the server starts, so a tool that changes state cannot be published as
+read-only; the authorization itself is enforced inside each tool and covered by the role tests.
 
 ## Troubleshooting
 

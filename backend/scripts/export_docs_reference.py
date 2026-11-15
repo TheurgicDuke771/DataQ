@@ -27,7 +27,6 @@ OPENAPI_OUT = ROOT / "docs/site/reference/openapi.json"
 MCP_OUT = ROOT / "docs/site/reference/mcp-tools.md"
 
 
-#: Gated like writes, but persist nothing: each opens a live datasource with a stored credential.
 def _first_paragraph(text: str) -> str:
     """The opening paragraph, one line, safe inside a Markdown table cell."""
     para = re.split(r"\n\s*\n", text.strip(), maxsplit=1)[0]
@@ -68,7 +67,7 @@ def build_mcp_tools() -> str:
         ),
         (
             "Live probe",
-            "Live probe (persists nothing, opens a datasource — gated like a write)",
+            "Live probe (opens a datasource with a stored credential — gated like a write)",
             sorted(n for n in tools if kind[n] == "live_probe"),
         ),
     ]
