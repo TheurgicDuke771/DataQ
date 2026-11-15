@@ -54,6 +54,19 @@ import { apiFieldError } from '../utils/fieldErrors';
 import { useAsyncData } from '../hooks/useAsyncData';
 
 /** Dedicated full-page edit-check flow (ADR 0022 — replaces the edit drawer). */
+
+/** Whether a config value (or the comma-separated text a list field shows) holds the marker
+ *  a withheld value reads as. */
+function holdsWithheld(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(holdsWithheld);
+  if (typeof value === 'string') {
+    return (
+      value === WITHHELD_VALUE || value.split(',').some((part) => part.trim() === WITHHELD_VALUE)
+    );
+  }
+  return false;
+}
+
 export function CheckEdit() {
   const { suiteId, checkId } = useParams<{ suiteId: string; checkId: string }>();
   return <CheckEditView key={checkId} suiteId={suiteId} checkId={checkId} />;
@@ -200,6 +213,11 @@ function CheckEditForm({
   }, [selectedType, initialType, form]);
 
   const withheldColumns = check.redacted_columns ?? [];
+  // Every config field the read withheld: a value set, a pattern, a bound of a sensitive column.
+  const withheldFields = Object.keys(check.config ?? {}).filter((name) =>
+    holdsWithheld(check.config?.[name]),
+  );
+  const onlyValueSet = withheldFields.length === 1 && withheldFields[0] === 'value_set';
 
   const onSubmit = async () => {
     let values: Record<string, unknown>;
@@ -228,9 +246,12 @@ function CheckEditForm({
               values.expectation_type === check.expectation_type ? check.config : undefined,
             );
             delete u.kind;
-            // A withheld value set left as loaded: the config is not sent, so the stored values
-            // stay. Changing anything else in the config needs the full list re-entered.
-            if (withheldColumns.length > 0 && !form.isFieldTouched(['config', 'value_set'])) {
+            // Withheld values left as loaded: the config is not sent, so the stored values stay.
+            // Changing anything else in the config needs the withheld values re-entered.
+            if (
+              withheldFields.length > 0 &&
+              withheldFields.every((name) => !form.isFieldTouched(['config', name]))
+            ) {
               const configTouched =
                 values.expectation_type !== check.expectation_type ||
                 (spec?.fields ?? []).some((f) => form.isFieldTouched(['config', f.name]));
@@ -238,16 +259,18 @@ function CheckEditForm({
             }
             return u;
           })();
-      const valueSet = update.config?.value_set;
-      if (Array.isArray(valueSet) && valueSet.includes(WITHHELD_VALUE)) {
-        form.setFields([
-          {
-            name: ['config', 'value_set'],
+      const stillWithheld = withheldFields.filter((name) => holdsWithheld(update.config?.[name]));
+      if (stillWithheld.length > 0) {
+        form.setFields(
+          stillWithheld.map((name) => ({
+            name: ['config', name],
             errors: [
-              'These values are withheld. Enter the full list of accepted values to change this check.',
+              name === 'value_set'
+                ? 'These values are withheld. Enter the full list of accepted values to change this check.'
+                : 'This value is withheld. Enter the real value to change this check.',
             ],
-          },
-        ]);
+          })),
+        );
         return;
       }
       // Same rule for tags: sent only when this page changed them.
@@ -304,13 +327,17 @@ function CheckEditForm({
   return (
     <>
       <InheritanceNotice check={check} resuming={resuming} onResume={onResume} />
-      {withheldColumns.length > 0 && (
+      {withheldFields.length > 0 && (
         <Alert
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          title="Accepted values withheld"
-          description={`${withheldColumns.join(', ')} is classified as sensitive, so its values are not shown. The check still runs with them, and saving keeps them unless you replace the whole list.`}
+          title={onlyValueSet ? 'Accepted values withheld' : 'Values withheld'}
+          description={
+            onlyValueSet
+              ? `${withheldColumns.join(', ')} is classified as sensitive, so its values are not shown. The check still runs with them, and saving keeps them unless you replace the whole list.`
+              : `${withheldColumns.join(', ') || 'This column'} is classified as sensitive, so ${withheldFields.join(', ')} ${withheldFields.length === 1 ? 'is' : 'are'} not shown. The check still runs with the real values, and saving keeps them unless you enter new ones.`
+          }
         />
       )}
       <Form form={form} layout="vertical" onFinish={onSubmit}>

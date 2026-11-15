@@ -185,7 +185,9 @@ def _read_all(db: Session, checks: Sequence[Check]) -> list[CheckRead]:
                 "critical_threshold": settings.sensitivity.critical,
                 "inherited": InheritedFrom(**settings.levels()),
             }
-        masked = masker.mask(check.suite_id, update["config"])
+        masked = masker.mask(
+            check.suite_id, update["config"], expectation_type=check.expectation_type
+        )
         update |= {
             "config": masked.config,
             "redacted_columns": masked.redacted_columns,
@@ -617,7 +619,7 @@ def _version_reads(
     out = []
     for version in versions:
         read = CheckVersionRead.model_validate(version)
-        masked = masker.mask(suite_id, read.config)
+        masked = masker.mask(suite_id, read.config, expectation_type=read.expectation_type)
         out.append(
             read.model_copy(
                 update={

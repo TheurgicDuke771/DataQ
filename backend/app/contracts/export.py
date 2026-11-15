@@ -150,7 +150,8 @@ def export_contract(session: Session, contract: Contract, suites: list[Suite]) -
                     continue
             obj.setdefault("quality", []).append(_native_rule(check, document))
             # `export_suite` already withheld this check's value set; keep the reason for the note.
-            for column, reason in masker.mask(suite.id, check.config).redaction_reasons.items():
+            masked = masker.mask(suite.id, check.config, expectation_type=check.expectation_type)
+            for column, reason in masked.redaction_reasons.items():
                 withheld[(suite.contract_object, column)] = reason
     # Last, so the rules above were found by the ids the importer recorded (a content key).
     # The caller's visible suites play no part: the stored document names every object.
