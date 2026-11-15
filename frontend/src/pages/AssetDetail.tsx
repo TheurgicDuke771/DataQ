@@ -1,3 +1,5 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { ArrowLeftOutlined, EditOutlined, UserOutlined } from '@ant-design/icons';
 import { App, Button, Card, Flex, Input, Select, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -47,6 +49,7 @@ function AssetDetailPage({ assetId }: { assetId: string | undefined }) {
     if (!assetId) throw new Error('no asset');
     return getAsset(assetId);
   });
+  usePageTitle(state.status === 'ok' ? namedPageTitle(state.data.summary.name, 'Asset') : null);
 
   return (
     <Page gap={16}>

@@ -1,3 +1,5 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import {
   App,
@@ -277,6 +279,10 @@ function SuitesBody({
   // per line — #617 bug 1), so it stacks vertically.
   const screens = Grid.useBreakpoint();
   const stacked = screens.md === false;
+  // Before the early returns: a hook runs on every render. The selected suite names the tab.
+  const selectedName =
+    state.status === 'ok' ? (state.data.find((s) => s.id === selectedId)?.name ?? null) : null;
+  usePageTitle(selectedName ? namedPageTitle(selectedName, 'Suite') : null);
   if (state.status === 'loading') {
     return <Spin description="Loading suites…" size="large" style={{ marginTop: 80 }} />;
   }

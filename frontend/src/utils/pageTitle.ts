@@ -34,6 +34,12 @@ const ROUTES: [RegExp, string][] = [
   [/^\/settings$/, 'Settings'],
 ];
 
+/** The document title of a page about one named thing, once it has loaded: the thing first, so a
+ *  tab or a history entry can be told apart from its siblings (`orders · Suite · DataQ`). */
+export function namedPageTitle(name: string, page: string): string {
+  return `${name} · ${page} · ${APP}`;
+}
+
 /** The document title for a path: `Results · DataQ`. Every route gets a distinct one, so a
  *  screen reader announces where a navigation landed and history entries can be told apart. A
  *  page that knows something more specific (a run's suite name) may still set its own after. */

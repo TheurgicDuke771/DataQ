@@ -1,3 +1,4 @@
+import { usePageTitle } from '../hooks/usePageTitle';
 import { ArrowLeftOutlined, DownloadOutlined, SwapOutlined } from '@ant-design/icons';
 import {
   Alert,
@@ -13,7 +14,7 @@ import {
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { type Incident, listIncidents } from '../api/incidents';
@@ -137,14 +138,7 @@ function RunDetailView({ runId }: { runId: string | undefined }) {
 
   // The tab title (and the filename a browser's Save-as-PDF dialog suggests) identifies the run
   // while it's loaded (#345 a11y ask).
-  useEffect(() => {
-    if (state.status !== 'ok') return;
-    const previous = document.title;
-    document.title = runReportTitle(state.data.suiteName, state.data.run);
-    return () => {
-      document.title = previous;
-    };
-  }, [state]);
+  usePageTitle(state.status === 'ok' ? runReportTitle(state.data.suiteName, state.data.run) : null);
 
   return (
     <>
