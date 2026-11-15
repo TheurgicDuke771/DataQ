@@ -16,16 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
+from mcp.types import ToolAnnotations
 from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -71,6 +72,7 @@ from backend.app.mcp.auth import (
     mcp_enabled,
     resolve_current_user,
 )
+from backend.app.mcp.tool_gates import LIVE_PROBE, READ_ONLY, changes_state, classified_tool
 from backend.app.orchestration import markers
 from backend.app.services import (
     asset_view_service,
@@ -119,6 +121,8 @@ _INSTRUCTIONS = (
 )
 
 mcp: FastMCP = FastMCP(name="DataQ", instructions=_INSTRUCTIONS, auth=build_auth_provider())
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def _tool(gate: str, annotations: ToolAnnotations) -> Callable[[_F], _F]:
