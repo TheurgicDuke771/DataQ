@@ -35,7 +35,7 @@ from backend.app.services import (
     run_service,
 )
 from backend.app.services.column_tags import effective_column_tags
-from backend.app.services.value_set_redaction import redact_expected_value
+from backend.app.services.value_set_redaction import redact_expected_value_with_state
 
 
 def _run_url(run_id: uuid.UUID) -> str | None:
@@ -142,6 +142,12 @@ def build_run_report(session: Session, run: Run) -> RunReport:
             policy=suite.column_policy if suite is not None else None,
             tags=tags,
         )
+        expected = redact_expected_value_with_state(
+            result.expected_value,
+            tested_column=snap.column,
+            policy=suite.column_policy if suite is not None else None,
+            tags=tags,
+        )
         check_reports.append(
             CheckReport(
                 check_id=result.check_id,
@@ -159,12 +165,8 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                 ),
                 # The check's kwargs, echoed by the result: the same rule every read applies
                 # (#2686), before it reaches a webhook, Slack, email or Teams (#2691).
-                expected_value=redact_expected_value(
-                    result.expected_value,
-                    tested_column=snap.column,
-                    policy=suite.column_policy if suite is not None else None,
-                    tags=tags,
-                ),
+                expected_value=(expected.config if expected is not None else result.expected_value),
+                expected_value_redaction=expected.redaction if expected is not None else None,
                 sample_summary=redacted.sample,
                 redacted_columns=tuple(redacted.redacted_columns),
                 redaction_reasons=redacted.redaction_reasons,

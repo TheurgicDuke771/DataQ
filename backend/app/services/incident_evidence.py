@@ -30,7 +30,7 @@ from backend.app.orchestration import markers
 from backend.app.services import asset_view_service, run_service
 from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
-from backend.app.services.value_set_redaction import redact_expected_value
+from backend.app.services.value_set_redaction import redact_expected_value_with_state
 
 log = get_logger(__name__)
 
@@ -363,36 +363,40 @@ def _failing_result_layer(
     (#1772 — found via `rca_narrative`, but the same unmasked value was
     already reaching every `get_incident` caller with suite view access).
     """
-    observed = _strip_sample_lists(result.observed_value)
-    if check is not None:
-        if context is None:
-            context = resolve_redaction_contexts(
-                session, run=run, results=[result], checks={check.id: check}, asset=asset
-            )[result.id]
-        observed = run_service.redact_observed_value(
-            observed,
-            tested_column=context.tested_column,
-            expectation_type=context.expectation_type,
-            policy=context.policy,
-            tags=context.tags,
-        )
-    # The check's kwargs, echoed by the result (#2686). With the check gone there is no as-of
-    # context, but the kwargs still name their column and the suite's policy and tags still
-    # apply, so the card is masked all the same (#2691).
+    if check is not None and context is None:
+        context = resolve_redaction_contexts(
+            session, run=run, results=[result], checks={check.id: check}, asset=asset
+        )[result.id]
+    # Both values are masked whatever the check's state. With the check gone there is no as-of
+    # context, but the result's kwargs still name its column and the suite's policy and tags
+    # still apply (#2691); its type is unknown, so the observed value is held to the column.
     if context is not None:
-        policy, tags, tested_column = context.policy, context.tags, context.tested_column
+        policy, tags = context.policy, context.tags
+        tested_column, expectation_type = context.tested_column, context.expectation_type
     else:
         suite = session.get(Suite, run.suite_id)
         policy = suite.column_policy if suite is not None else None
         tags = effective_column_tags(session, asset)
-        tested_column = None
+        kwargs_column = (result.expected_value or {}).get("column")
+        tested_column = kwargs_column if isinstance(kwargs_column, str) else None
+        expectation_type = None
+    observed = run_service.redact_observed_value(
+        _strip_sample_lists(result.observed_value),
+        tested_column=tested_column,
+        expectation_type=expectation_type,
+        policy=policy,
+        tags=tags,
+    )
+    expected = redact_expected_value_with_state(
+        result.expected_value, tested_column=tested_column, policy=policy, tags=tags
+    )
     return {
         "status": result.status,
         "metric_value": _num(result.metric_value),
         "observed_value": observed,
-        "expected_value": redact_expected_value(
-            result.expected_value, tested_column=tested_column, policy=policy, tags=tags
-        ),
+        # The check's kwargs, echoed by the result (#2686), and why any were withheld (#2691).
+        "expected_value": expected.config if expected is not None else result.expected_value,
+        "expected_value_redaction": expected.redaction if expected is not None else None,
     }
 
 

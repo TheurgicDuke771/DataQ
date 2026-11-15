@@ -63,6 +63,9 @@ export interface Result {
   duration_ms: number | null;
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
+  /** Set when values in `expected_value` read `<redacted>`: they are values of a sensitive
+   *  column, not what the check was configured with. Absent on a response from an older API. */
+  expected_value_redaction?: RedactionReason | null;
   sample_failures: Record<string, unknown> | null;
   /** `zero_sample` (#1873) means the deployment's zero-sample privacy mode never
    *  persisted a sample for this result at all — distinct from a `null` sample

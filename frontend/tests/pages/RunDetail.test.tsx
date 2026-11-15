@@ -882,6 +882,30 @@ describe('RunDetail page', () => {
     expect(body.checks[0].sampling).toEqual(sampling);
   });
 
+  it('names why expected values were withheld in the JSON export', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [
+        {
+          ...runDetail.results[0],
+          expected_value: { column: 'TIER', value_set: ['<redacted>'] },
+          expected_value_redaction: 'policy' as const,
+        },
+      ],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: /download/i }));
+    await user.click(await screen.findByText('Download JSON'));
+
+    const [, payload] = vi.mocked(downloadJson).mock.calls[0];
+    const body = payload as { checks: { expected_value_redaction: unknown }[] };
+    expect(body.checks[0].expected_value_redaction).toBe('policy');
+  });
+
   it('marks a sampled row in the CSV export (#1333 F2)', async () => {
     mockGetRun.mockResolvedValue({
       ...runDetail,

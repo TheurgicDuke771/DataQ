@@ -436,7 +436,7 @@ def _result_read(
     expected = redact_expected_value_with_state(
         result.expected_value, tested_column=tested_column, policy=policy, tags=tags
     )
-    expected_redaction = next(iter(expected.redaction_reasons.values()), None) if expected else None
+    expected_redaction = expected.redaction if expected is not None else None
     sample, redaction, redacted_columns, redaction_reasons = svc.redact_sample_failures_with_state(
         result.sample_failures,
         tested_column=tested_column,

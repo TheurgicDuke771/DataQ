@@ -159,7 +159,11 @@ def check_detail(check: CheckReport) -> str:
     parts: list[str] = []
     expected = _compact(check.expected_value)
     if expected:
-        parts.append(f"expected {expected}")
+        reason = check.expected_value_redaction
+        withheld = (
+            f" (values withheld: {_REDACTION_REASON_LABELS.get(reason, reason)})" if reason else ""
+        )
+        parts.append(f"expected {expected}{withheld}")
     observed = _compact(check.observed_value)
     if observed:
         parts.append(f"observed {observed}")

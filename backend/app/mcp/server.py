@@ -678,7 +678,7 @@ def _redacted_expected(
         return {"expected_value": result.expected_value, "expected_value_redaction": None}
     return {
         "expected_value": masked.config,
-        "expected_value_redaction": next(iter(masked.redaction_reasons.values()), None),
+        "expected_value_redaction": masked.redaction,
     }
 
 

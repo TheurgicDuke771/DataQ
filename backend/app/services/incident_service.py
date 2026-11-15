@@ -38,7 +38,7 @@ from backend.app.services.suite_authz import (
     effective_permission,
     effective_permissions,
 )
-from backend.app.services.value_set_redaction import redact_expected_value
+from backend.app.services.value_set_redaction import redact_expected_value_with_state
 
 log = get_logger(__name__)
 
@@ -246,13 +246,17 @@ def redact_stale_evidence(session: Session) -> int:
         if isinstance(failing, dict) and "expected_value" in failing:
             tested_column, _ = context.get(incident.id, (None, None))
             expected = failing["expected_value"]
-            masked_expected = redact_expected_value(
+            masked_expected = redact_expected_value_with_state(
                 expected, tested_column=tested_column, policy=policy, tags=tags
             )
-            if masked_expected != expected:
+            if masked_expected is not None and masked_expected.config != expected:
                 evidence = {
                     **evidence,
-                    "failing_result": {**failing, "expected_value": masked_expected},
+                    "failing_result": {
+                        **failing,
+                        "expected_value": masked_expected.config,
+                        "expected_value_redaction": masked_expected.redaction,
+                    },
                 }
         if evidence == stored:
             continue
@@ -600,13 +604,13 @@ def _redacted_as_of_now(
     if "expected_value" in failing:
         # The check's kwargs, echoed by a GX result: the check-read rule (#2686). Applied at
         # read time too, so a card stored before the rule existed is masked as well.
-        masked["expected_value"] = redact_expected_value(
-            failing["expected_value"],
-            tested_column=tested_column,
-            expectation_type=expectation_type,
-            policy=policy,
-            tags=tags,
+        expected = redact_expected_value_with_state(
+            failing["expected_value"], tested_column=tested_column, policy=policy, tags=tags
         )
+        if expected is not None:
+            masked["expected_value"] = expected.config
+            if expected.redaction is not None:
+                masked["expected_value_redaction"] = expected.redaction
     if masked == failing:
         return evidence
     return {**evidence, "failing_result": masked}

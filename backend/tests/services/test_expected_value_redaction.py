@@ -304,3 +304,59 @@ def test_saving_a_withheld_dqx_list_or_tiered_bound_is_refused() -> None:
     for config in ({"allowed": [_M]}, {"limit": _M}, {"critical_min": _M}):
         with pytest.raises(ValueSetRedactedError):
             reject_masked_value_set(config)
+
+
+# ── #2692 review: table-level results, the deleted-check card, the reason on every door ──
+
+
+def test_a_table_level_result_keeps_its_bounds_in_fail_closed_mode(
+    client: TestClient, db_session: Any, leaked: dict[str, Any]
+) -> None:
+    # Fail-closed: every column is sensitive until classified. A row-count bound is no value of
+    # any column, and there is no column to classify, so it stays.
+    leaked["suite"].column_policy = {"require_classification": True}
+    leaked["check"].expectation_type = "monitor:volume"
+    leaked["check"].config = {"monitor": "volume", "min_rows": 100, "max_rows": 5000}
+    _result_with(db_session, leaked, {"monitor": "volume", "min_rows": 100, "max_rows": 5000})
+    app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
+    row = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]
+    assert row["expected_value"] == {"monitor": "volume", "min_rows": 100, "max_rows": 5000}
+    assert row["expected_value_redaction"] is None
+
+
+def test_a_card_written_after_the_check_is_gone_masks_its_observed_value(
+    db_session: Any, leaked: dict[str, Any]
+) -> None:
+    result = leaked["result"]
+    result.observed_value = {"observed_value": "tier-gold-77"}
+    db_session.commit()
+    card = build_evidence(
+        db_session,
+        run=leaked["run"],
+        result=result,
+        check=None,
+        asset=db_session.get(Asset, leaked["run"].asset_id),
+    )
+    assert _clean(card)
+    assert card["failing_result"]["expected_value_redaction"] == "policy"
+
+
+def test_the_reason_reaches_the_webhook_the_text_alerts_and_the_rca_prompt(
+    db_session: Any, leaked: dict[str, Any]
+) -> None:
+    from backend.app.alerting import render, webhook
+
+    report = _report(db_session, leaked)
+    (check,) = webhook.render_webhook_payload(report)["checks"]
+    assert check["expected_value_redaction"] == "policy"
+    assert "values withheld" in render.check_detail(report.checks[0])
+
+    card = build_evidence(
+        db_session,
+        run=leaked["run"],
+        result=leaked["result"],
+        check=leaked["check"],
+        asset=db_session.get(Asset, leaked["run"].asset_id),
+    )
+    prompt = llm_rca._render_evidence(card, [], [])
+    assert "withheld, not the configured values" in prompt
