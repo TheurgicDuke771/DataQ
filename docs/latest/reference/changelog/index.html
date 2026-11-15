@@ -3175,6 +3175,7 @@ section below.</p>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>Suites created by importing a data contract are linked to their table.</strong> They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run <code>python -m backend.scripts.backfill_suite_assets</code> once to link suites imported earlier.</li>
 <li><strong>Filtering the audit log by entity type now works for every type DataQ records.</strong> Run, result,
   contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
   events were refused with "unknown entity_type", although the log holds them. They can now be
