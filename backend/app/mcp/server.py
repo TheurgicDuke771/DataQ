@@ -5587,27 +5587,25 @@ def profile_column(
 ) -> dict[str, Any]:
     """Profile one or more columns of a table or file on a suite's connection.
 
-    Use this for 'profile the revenue column in FACT_ORDERS'. Runs the column
-    profiler (it records an audit entry, the connection's credential health and,
-    on a suite's own target, any column that newly looks like personal data as a
-    profiler detection, which is masked on every read from then on) and returns,
-    per column: null count + fraction, distinct count, min/max, and the top
-    ``top_n`` values. ``table`` (+ optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to
-    the suite's own run target, so they only need passing to profile something
-    *other* than what the suite runs against. ``namespace`` is only meaningful
-    for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
-    ``namespace.table``); it defaults to the suite target's namespace when no
-    explicit ``table``/``path`` is given, so it only needs passing alongside
-    your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
-    Server, Athena, Redshift and BigQuery are profiled in full; ADLS, S3, GCS and Iceberg
-    targets are
-    profiled over a sample of at most 100,000 rows** (for an ADLS, S3 or GCS file, its first 100,000
-    rows — not a random draw). On Athena and BigQuery every statistic is a billed
-    query (on BigQuery, refused uncharged when it would bill more than the connection's
-    ``maximum_bytes_billed``). When
-    ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
-    the size of the file or table — and every statistic describes only that
-    sample. Say so rather than reporting a sample fraction as a fact about the
+    Use this for 'profile the revenue column in FACT_ORDERS'. Runs the column profiler
+    (it records an audit entry, the connection's credential health and, on a suite's own
+    target, any column that newly looks like personal data as a profiler detection,
+    which is masked on every read from then on) and returns, per column: null count +
+    fraction, distinct count, min/max, and the top ``top_n`` values. ``table`` (+
+    optional ``schema``/``catalog``) / ``path`` (+ ``file_format``) default to the
+    suite's own run target, so they only need passing to profile something *other* than
+    what the suite runs against. ``namespace`` is only meaningful for an Iceberg table
+    when passing an explicit ``table`` (Iceberg addresses ``namespace.table``); it
+    defaults to the suite target's namespace when no explicit ``table``/``path`` is
+    given, so it only needs passing alongside your own ``table``. **Snowflake, Unity
+    Catalog, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift and BigQuery are
+    profiled in full; ADLS, S3, GCS and Iceberg targets are profiled over a sample of at
+    most 100,000 rows** (for an ADLS, S3 or GCS file, its first 100,000 rows — not a
+    random draw). On Athena and BigQuery every statistic is a billed query (on BigQuery,
+    refused uncharged when it would bill more than the connection's
+    ``maximum_bytes_billed``). When ``sampled`` is true, ``row_count`` is the number of
+    rows **sampled** — not the size of the file or table — and every statistic describes
+    only that sample. Say so rather than reporting a sample fraction as a fact about the
     dataset.
 
     A null ``min_value`` / ``max_value`` / ``distinct_count`` means the statistic
