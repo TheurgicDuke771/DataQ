@@ -327,6 +327,7 @@ section below.
 - A page opened from inside the app now starts at the top, instead of at the scroll position of the page before it. Back and Forward return to where you left each page, including a list that is still loading its rows.
 - **Dialogs work better from the keyboard.** A dialog now opens with focus in its first field instead of on its Close button, and returns focus to the button that opened it when it closes. A confirmation that deletes something now starts on Cancel, so pressing Enter as it opens no longer deletes. The "Snoozed until" badge's explanation can now be reached by keyboard.
 - **The SQL editor can be used by keyboard and screen reader.** It is announced by its field's name and reports the field's help, errors and required state. A note under it explains how to leave it with Tab, and that shortcut now works: press Ctrl+M first (Ctrl+Shift+M on a Mac), since Tab otherwise indents.
+- **The lineage graph can be explored with a screen reader.** Each linked asset is announced as a button with its side and distance (for example "upstream, 1 hop"), where before only a one-line summary of the graph was read.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
   you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each
