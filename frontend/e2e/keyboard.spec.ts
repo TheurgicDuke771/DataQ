@@ -140,6 +140,7 @@ test.describe('Keyboard navigation', () => {
     await expect(page).toHaveTitle('Members · Admin · DataQ');
     // A detail page names its record once it has loaded, not just the kind of page.
     await page.goto('/assets');
+    await page.getByText('All assets', { exact: true }).click();
     await page.locator('tr.ant-table-row a.dq-row-link').first().click();
     await expect(page).toHaveTitle(/^.+ · Asset · DataQ$/);
     await expect(page).not.toHaveTitle('Asset · DataQ');
