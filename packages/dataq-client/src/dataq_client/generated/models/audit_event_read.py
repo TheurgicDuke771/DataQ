@@ -61,9 +61,7 @@ class AuditEventRead:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.audit_event_read_after_type_0 import AuditEventReadAfterType0
-        from ..models.audit_event_read_before_type_0 import (
-            AuditEventReadBeforeType0,
-        )
+        from ..models.audit_event_read_before_type_0 import AuditEventReadBeforeType0
 
         action = self.action
 
@@ -143,9 +141,7 @@ class AuditEventRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.audit_event_read_after_type_0 import AuditEventReadAfterType0
-        from ..models.audit_event_read_before_type_0 import (
-            AuditEventReadBeforeType0,
-        )
+        from ..models.audit_event_read_before_type_0 import AuditEventReadBeforeType0
 
         d = dict(src_dict)
         action = d.pop("action")

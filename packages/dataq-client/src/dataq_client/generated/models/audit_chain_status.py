@@ -47,9 +47,7 @@ class AuditChainStatus:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.anchor_verification_read import AnchorVerificationRead
-        from ..models.audit_chain_status_first_break_type_0 import (
-            AuditChainStatusFirstBreakType0,
-        )
+        from ..models.audit_chain_status_first_break_type_0 import AuditChainStatusFirstBreakType0
 
         anchor_mode = self.anchor_mode.value
 
@@ -100,9 +98,7 @@ class AuditChainStatus:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.anchor_verification_read import AnchorVerificationRead
-        from ..models.audit_chain_status_first_break_type_0 import (
-            AuditChainStatusFirstBreakType0,
-        )
+        from ..models.audit_chain_status_first_break_type_0 import AuditChainStatusFirstBreakType0
 
         d = dict(src_dict)
         anchor_mode = AuditChainStatusAnchorMode(d.pop("anchor_mode"))

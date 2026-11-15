@@ -114,6 +114,34 @@ on the contract `dataq.exportedAt`. A check with no ODCS-native shape (an `anoma
 On import those properties are honoured when present and ignored when absent; a document that
 never saw DataQ imports cleanly.
 
+**Amendment (2026-11-11) — value literals of a sensitive column are withheld.** The stored
+document lists column values: a property's `enum` / `examples` (nested fields, array `items`
+and `map` keys and values included), the list arguments of a library rule, and a custom rule's
+`value_set` / `value_pairs_set` / `regex_list`. On export those are held to the same redaction
+ladder as a check's value set: each reads `<redacted>` once the column is classified as
+sensitive, with `dataq.valuesWithheld` on the node and `dataq.redactedColumns` on the document
+naming what was withheld and why.
+
+Sensitivity is resolved per `(odcs_id, schema object)`, never per contract row: every suite
+linked to any version of the contract for that object, the object's asset resolved from its
+physical name on the contract's connections, every suite on the same table, and the document's
+own `classification`. A row-scoped lookup lost the answer whenever a suite moved to a newer
+version, a newer version got fresh suites, or a suite was unlinked. The caller's visible suites
+play no part. An object nothing stands behind (no suite, no asset) cannot be judged: it fails
+closed, its lists withheld under the distinct reason `sensitivity_unknown` and the object named
+in `dataq.sensitivityUnknownObjects`.
+
+This is the one exception to "the stored spec is the base" and to the round-trip: a document
+holding the marker in one of those places is refused on import, because storing it would replace
+the real values and retire the checks they back. Withholding the whole document, and leaving the
+document unredacted as consumer-authored source material, were both rejected: the first hides
+what the contract says about every other column, the second keeps the leak.
+
+Not withheld, by decision of scope and stated to every reader: patterns, bounds
+(`logicalTypeOptions.minimum` / `maximum`, comparison operands), SQL text, the implementation
+of a custom rule on an engine other than Great Expectations or DataQ, and custom-property
+values and descriptions. The check-read masker has the same boundary.
+
 ### 5. Versions of the standard
 
 The importer accepts `apiVersion` **v3.0.0 through the newest v3 minor it knows** (v3.2.0 today),
