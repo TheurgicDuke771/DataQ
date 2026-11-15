@@ -67,6 +67,11 @@ describe('printing from the dark theme', () => {
     expect(before.slice(media).match(/^\}/m), 'the screen block closed before it').toBeNull();
   });
 
+  it('paints the report's antd Tag with the token ink too', () => {
+    const print = css.slice(css.indexOf('@media print {'));
+    expect(print).toMatch(/\.rd-report \.ant-tag \{\s*color: var\(--dq-ink\) !important;/);
+  });
+
   it('paints the report with the token ink and paper, not what antd would give it', () => {
     const print = css.slice(css.indexOf('@media print {'));
     expect(print).toMatch(

@@ -202,6 +202,12 @@ a:focus-visible,
     color: var(--dq-ink);
     background: var(--dq-surface);
   }
+  /* The one antd component in the report: a redacted metric's "Masked" Tag. */
+  .rd-report .ant-tag {
+    color: var(--dq-ink) !important;
+    background: transparent !important;
+    border-color: #999 !important;
+  }
 
   .rd-report table {
     width: 100%;
