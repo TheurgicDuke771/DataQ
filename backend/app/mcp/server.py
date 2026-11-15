@@ -1733,7 +1733,8 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     ``redaction_reasons`` vocabulary that says WHY each ``redacted_columns`` entry
     was masked — ``default_mask`` means never classified, not known personal data,
     and for ``metric_value_redaction``: a null ``metric_value`` beside it is an
-    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric). ``expected_value`` is the check's configuration as the run evaluated it; on a sensitive
+    ``aggregate`` min/max cell withheld on a sensitive column, not a missing metric).
+    ``expected_value`` is the check's configuration as the run evaluated it; on a sensitive
     column its values (the accepted set, pairs, patterns, a bound that is a value of the
     column) read ``<redacted>``, as they do on ``get_check``. Do not quote them as what the
     check expected.
