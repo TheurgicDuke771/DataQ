@@ -376,20 +376,22 @@ def _failing_result_layer(
             policy=context.policy,
             tags=context.tags,
         )
+    # The check's kwargs, echoed by the result (#2686). With the check gone there is no as-of
+    # context, but the kwargs still name their column and the suite's policy and tags still
+    # apply, so the card is masked all the same (#2691).
+    if context is not None:
+        policy, tags, tested_column = context.policy, context.tags, context.tested_column
+    else:
+        suite = session.get(Suite, run.suite_id)
+        policy = suite.column_policy if suite is not None else None
+        tags = effective_column_tags(session, asset)
+        tested_column = None
     return {
         "status": result.status,
         "metric_value": _num(result.metric_value),
         "observed_value": observed,
-        "expected_value": (
-            redact_expected_value(
-                result.expected_value,
-                tested_column=context.tested_column,
-                expectation_type=context.expectation_type,
-                policy=context.policy,
-                tags=context.tags,
-            )
-            if context is not None
-            else result.expected_value
+        "expected_value": redact_expected_value(
+            result.expected_value, tested_column=tested_column, policy=policy, tags=tags
         ),
     }
 

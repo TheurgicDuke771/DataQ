@@ -154,3 +154,149 @@ def test_an_unclassified_column_keeps_its_set(client: TestClient, leaked: dict[s
     app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
     row = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]
     assert row["expected_value"]["value_set"] == list(SECRETS)
+
+
+# ── #2691: the alert channels, more shapes, and the stored card ───────────────
+
+
+def _report(db_session: Any, leaked: dict[str, Any]) -> Any:
+    from backend.app.alerting.builder import build_run_report
+
+    return build_run_report(db_session, leaked["run"])
+
+
+def test_every_alert_channel_withholds_the_set(db_session: Any, leaked: dict[str, Any]) -> None:
+    from backend.app.alerting import card, email, slack, webhook
+    from backend.app.alerting.routing import route_for
+
+    report = _report(db_session, leaked)
+    (check,) = report.checks
+    assert check.expected_value["value_set"] == [_M, _M]
+    assert _clean(webhook.render_webhook_payload(report))
+    assert _clean(slack.render_slack_message(report, route_for(report)))
+    assert _clean(email.render_text_body(report))
+    assert _clean(email.render_html_body(report))
+    assert _clean(card.render_teams_message(report, route_for(report)))
+
+
+def _result_with(db_session: Any, leaked: dict[str, Any], expected: dict[str, Any]) -> None:
+    leaked["result"].expected_value = expected
+    db_session.commit()
+
+
+def test_a_dqx_result_withholds_its_allowed_list(
+    client: TestClient, db_session: Any, leaked: dict[str, Any]
+) -> None:
+    _result_with(
+        db_session,
+        leaked,
+        {"engine": "dqx", "function": "is_in_list", "column": "TIER", "allowed": list(SECRETS)},
+    )
+    app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
+    row = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]
+    assert row["expected_value"]["allowed"] == [_M, _M]
+    assert row["expected_value"]["function"] == "is_in_list"  # the rule's shape stays
+
+
+def test_an_aggregate_monitor_withholds_its_tiered_bounds(
+    client: TestClient, db_session: Any, leaked: dict[str, Any]
+) -> None:
+    _result_with(
+        db_session,
+        leaked,
+        {
+            "monitor": "aggregate",
+            "aggregate": "min",
+            "column": "TIER",
+            "min_value": 41250,
+            "critical_min": 41250,
+            "warn_max": 250000,
+        },
+    )
+    app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
+    expected = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]["expected_value"]
+    assert expected["critical_min"] == _M and expected["warn_max"] == _M
+    assert "41250" not in json.dumps(expected) and "250000" not in json.dumps(expected)
+
+
+def test_bounds_are_withheld_when_the_check_type_is_unknown(
+    client: TestClient, db_session: Any, leaked: dict[str, Any]
+) -> None:
+    leaked["check"].expectation_type = "expect_column_values_to_be_custom"
+    _result_with(db_session, leaked, {"column": "TIER", "min_value": "tier-gold-77"})
+    app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
+    row = client.get(f"/api/v1/runs/{leaked['run'].id}").json()["results"][0]
+    assert row["expected_value"]["min_value"] == _M
+
+
+def test_the_stored_card_is_scrubbed_at_rest(db_session: Any, leaked: dict[str, Any]) -> None:
+    result = leaked["result"]
+    incident = Incident(
+        asset_id=leaked["suite"].asset_id,
+        check_id=leaked["check"].id,
+        suite_id=leaked["suite"].id,
+        status="open",
+        occurrence_count=1,
+        last_seen_at=result.created_at,
+        evidence={"failing_result": {"status": "fail", "expected_value": result.expected_value}},
+    )
+    db_session.add(incident)
+    db_session.commit()
+    assert incident_service.redact_stale_evidence(db_session) == 1
+    db_session.refresh(incident)
+    assert _clean(incident.evidence)
+
+
+def test_a_card_written_after_the_check_is_gone_is_withheld(
+    db_session: Any, leaked: dict[str, Any]
+) -> None:
+    run = leaked["run"]
+    card = build_evidence(
+        db_session,
+        run=run,
+        result=leaked["result"],
+        check=None,
+        asset=db_session.get(Asset, run.asset_id),
+    )
+    assert _clean(card)
+
+
+def test_a_check_read_withholds_dqx_and_tiered_bounds(
+    client: TestClient, db_session: Any, leaked: dict[str, Any]
+) -> None:
+    suite = leaked["suite"]
+    db_session.add_all(
+        [
+            Check(
+                suite_id=suite.id,
+                name="dqx tier",
+                kind="expectation",
+                engine="dqx",
+                expectation_type="dqx:is_in_list",
+                config={"column": "TIER", "allowed": list(SECRETS)},
+            ),
+            Check(
+                suite_id=suite.id,
+                name="tier floor",
+                kind="aggregate",
+                expectation_type="monitor:aggregate",
+                config={"column": "TIER", "aggregate": "min", "critical_min": 41250},
+            ),
+        ]
+    )
+    db_session.commit()
+    app.dependency_overrides[get_current_user] = lambda: leaked["owner"]
+    body = client.get(f"/api/v1/suites/{suite.id}/checks").json()
+    text = json.dumps(body)
+    assert _clean(body) and "41250" not in text
+
+
+def test_saving_a_withheld_dqx_list_or_tiered_bound_is_refused() -> None:
+    from backend.app.services.value_set_guard import (
+        ValueSetRedactedError,
+        reject_masked_value_set,
+    )
+
+    for config in ({"allowed": [_M]}, {"limit": _M}, {"critical_min": _M}):
+        with pytest.raises(ValueSetRedactedError):
+            reject_masked_value_set(config)

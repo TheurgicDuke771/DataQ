@@ -240,6 +240,20 @@ def redact_stale_evidence(session: Session) -> int:
             )
             if redacted != observed:
                 evidence = {**evidence, "failing_result": {**failing, "observed_value": redacted}}
+        # The check's kwargs the card echoes (#2686) are scrubbed at rest too (#2691), not only
+        # masked on the way out: a DB export or a reader that skips the read path holds them.
+        failing = evidence.get("failing_result")
+        if isinstance(failing, dict) and "expected_value" in failing:
+            tested_column, _ = context.get(incident.id, (None, None))
+            expected = failing["expected_value"]
+            masked_expected = redact_expected_value(
+                expected, tested_column=tested_column, policy=policy, tags=tags
+            )
+            if masked_expected != expected:
+                evidence = {
+                    **evidence,
+                    "failing_result": {**failing, "expected_value": masked_expected},
+                }
         if evidence == stored:
             continue
         incident.evidence = evidence
