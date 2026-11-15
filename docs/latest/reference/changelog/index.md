@@ -322,6 +322,7 @@ section below.
   an entry without conflicting with each other.
 - **SQL generation no longer sends every column of a very wide table.** The prompt lists at most 500 column names per table, keeping any column your description names, and profiles at most 100 of them, the named ones first; it tells the model how many columns were left out, so the model does not treat the list as the whole table.
 - **Suggesting a redaction policy for a file reads the credential once.** On an S3, ADLS Gen2 or Google Cloud Storage target, listing the columns and profiling the sample now share one secret read and one store client, where each step used to read the secret and connect again. The PII-drift monitor on a file gains the same saving.
+- **A detail page's browser tab names what it shows.** Once a suite, asset, check, connection or contract has loaded, the tab title and the screen-reader announcement name it (`orders · Suite · DataQ`) instead of only the kind of page, so open tabs and history entries can be told apart.
 - A page opened from inside the app now starts at the top, instead of at the scroll position of the page before it. Back and Forward return to where you left each page, including a list that is still loading its rows.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
