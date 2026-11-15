@@ -1,23 +1,33 @@
 import { expect, type Page } from '@playwright/test';
 
-/** How long the page must stay free of loading affordances to count as loaded: one spinner
- *  ending and a second one starting (two sequential fetches) leave a gap shorter than this. */
-const QUIET_MS = 300;
+import { type PageSample, stillChangingMessage, waitUntilStill } from './coverage';
+
+const LOADING = '.ant-spin-spinning, .ant-skeleton-active';
+const SAMPLE_MS = 250;
 
 /** Wait until the page has stopped loading. A route's landmark can be visible while a table
  * inside it is still behind its `loading` Spin, so the rows a scan should judge are not in the
  * DOM yet and the scan passes vacuously. Also lets mount transitions finish, which otherwise
  * get sampled mid-colour.
  *
- * Loading is not always a Spin (#2051): a lazy chunk behind a `Suspense` fallback, or a second
- * fetch that starts as the first one ends. So the network must go quiet too, and the spinners
- * must STAY gone for a moment, not merely reach zero once. */
+ * Loading is not always a Spin, and one spinner can follow another (#2051), so the page must
+ * also hold still: no Spin or Skeleton and the same element count, within a ripple or two,
+ * across three samples 250 ms apart. Failing that, this fails: the ratchet only catches NEW
+ * violations, so a scan of a half-loaded page would otherwise pass. */
 export async function settle(page: Page): Promise<void> {
-  const loading = page.locator('.ant-spin-spinning, .ant-skeleton-active');
-  await expect(loading).toHaveCount(0);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(QUIET_MS);
-  await expect(loading).toHaveCount(0);
+  await expect(page.locator(LOADING)).toHaveCount(0);
+  const stability = await waitUntilStill(
+    () =>
+      page.evaluate(
+        (loading): PageSample => ({
+          elements: document.querySelectorAll('*').length,
+          loading: document.querySelectorAll(loading).length,
+        }),
+        LOADING,
+      ),
+    () => page.waitForTimeout(SAMPLE_MS),
+  );
+  expect(stability.settled, stillChangingMessage(stability.trend)).toBe(true);
   await page.evaluate(() =>
     Promise.all(
       document

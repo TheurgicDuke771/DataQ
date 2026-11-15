@@ -1,68 +1,69 @@
 // Under-reporting guard for the a11y scans (#2051). The ratchet fails only on violations that
 // are NEW, so a scan that saw less page than it should have — a table still behind its loading
-// state — always passes, and with an empty baseline there is nothing a missing row could be
-// compared to. What a half-loaded scan does leave behind is a smaller page: axe evaluates fewer
-// nodes. So a scan is repeated until the number of nodes it evaluates stops growing, and a page
-// that is still growing when the attempts run out fails rather than passing on what it saw.
+// state — always passes, and with an empty baseline there is no row whose absence could reveal
+// it. So a scan waits until the page has stopped changing: the number of elements holds still,
+// in both directions, with no loading affordance, over consecutive samples. A page that never
+// holds still fails rather than being judged on whatever was in the DOM at that moment.
 // Kept framework-free so the Vitest unit test can exercise it without a browser.
 
-/** The part of an axe result this guard reads: every rule outcome lists the nodes it judged. */
-export interface AxeCoverageLike {
-  passes: Array<{ nodes: unknown[] }>;
-  violations: Array<{ nodes: unknown[] }>;
-  incomplete: Array<{ nodes: unknown[] }>;
+/** One cheap look at the page: how many elements it has, and how many are loading. */
+export interface PageSample {
+  elements: number;
+  loading: number;
 }
 
-/** How many node evaluations a scan made, across passes, violations and incomplete results. */
-export function evaluatedNodes(result: AxeCoverageLike): number {
-  return [...result.passes, ...result.violations, ...result.incomplete].reduce(
-    (sum, rule) => sum + rule.nodes.length,
-    0,
+/** Elements that may come and go on a loaded page without it changing: a ripple, a tooltip. */
+export const ELEMENT_TOLERANCE = 2;
+
+/** Whether the page held still between two samples: nothing loading in either, and about the
+ *  same number of elements. Shrinking counts as change too — a refetch that swaps a table for
+ *  a placeholder is as half-loaded as one that has not rendered yet. */
+export function heldStill(earlier: PageSample, later: PageSample): boolean {
+  return (
+    earlier.loading === 0 &&
+    later.loading === 0 &&
+    Math.abs(later.elements - earlier.elements) <= ELEMENT_TOLERANCE
   );
 }
 
-/** Growth beyond this share of the earlier scan means the page was still loading. Below it is
- *  noise: a tooltip or a relative timestamp re-rendering between two scans. */
-export const GROWTH_TOLERANCE = 0.05;
-
-/** Whether ``later`` saw materially more page than ``earlier``. */
-export function stillLoading(earlier: number, later: number): boolean {
-  return later > earlier * (1 + GROWTH_TOLERANCE);
+export interface StabilityOptions {
+  /** Consecutive still pairs needed: 3 samples 250 ms apart is 750 ms with no change. */
+  stillPairs?: number;
+  /** Samples before giving up. */
+  maxSamples?: number;
 }
 
-export interface SettledScan<T> {
-  result: T;
-  /** Node evaluations of each scan made, in order — the failure message shows the trend. */
-  counts: number[];
-  /** False when the page was still growing on the last attempt. */
+export interface Stability {
   settled: boolean;
+  /** Each sample's element count, for the failure message. */
+  trend: number[];
 }
 
-/** Run ``scan`` (after ``settle``) until two consecutive scans evaluate about the same number of
- *  nodes, up to ``attempts`` scans. Returns the last result, which saw the most page. */
-export async function scanUntilStable<T extends AxeCoverageLike>(
-  scan: () => Promise<T>,
-  settle: () => Promise<void>,
-  attempts = 4,
-): Promise<SettledScan<T>> {
-  await settle();
-  let result = await scan();
-  const counts = [evaluatedNodes(result)];
-  for (let i = 1; i < attempts; i++) {
-    await settle();
-    result = await scan();
-    counts.push(evaluatedNodes(result));
-    if (!stillLoading(counts[counts.length - 2], counts[counts.length - 1])) {
-      return { result, counts, settled: true };
-    }
+/** Sample until the page has held still for ``stillPairs`` consecutive pairs. */
+export async function waitUntilStill(
+  sample: () => Promise<PageSample>,
+  pause: () => Promise<void>,
+  { stillPairs = 2, maxSamples = 40 }: StabilityOptions = {},
+): Promise<Stability> {
+  let previous = await sample();
+  const trend = [previous.elements];
+  let still = 0;
+  for (let i = 1; i < maxSamples; i++) {
+    await pause();
+    const current = await sample();
+    trend.push(current.elements);
+    still = heldStill(previous, current) ? still + 1 : 0;
+    if (still >= stillPairs) return { settled: true, trend };
+    previous = current;
   }
-  return { result, counts, settled: false };
+  return { settled: false, trend };
 }
 
-export function stillLoadingMessage(surface: string, counts: number[]): string {
+export function stillChangingMessage(trend: number[]): string {
+  const shown = trend.length > 12 ? ['…', ...trend.slice(-12)] : trend;
   return (
-    `${surface}: the page was still loading when it was scanned — axe evaluated ` +
-    `${counts.join(' → ')} nodes over ${counts.length} scans, so a scan would judge only part of ` +
-    'it. Wait for the content the route shows before checkRoute(), or find what keeps loading.'
+    'the page never stopped changing, so an accessibility scan would judge only part of it ' +
+    `(element count per sample: ${shown.join(' → ')}). Wait for the content the page shows ` +
+    'before scanning, or find what keeps re-rendering.'
   );
 }

@@ -10,7 +10,6 @@ import {
   ratchet,
   toRecords,
 } from '../scripts/a11y/ratchet';
-import { scanUntilStable, stillLoadingMessage } from '../scripts/a11y/coverage';
 import { settle } from '../scripts/a11y/settle';
 
 // The sign-in screen (#1670 item 1) only exists under this lane — dev-bypass (e2e/) has
@@ -27,13 +26,8 @@ test('sign-in screen', async ({ page }) => {
   await expect(page.getByLabel('Email address')).toBeVisible();
 
   const surface = 'route:/sign-in';
-  // Scanned until it stops growing (#2051), as the dev-bypass routes are.
-  const scan = await scanUntilStable(
-    () => new AxeBuilder({ page }).options({ ancestry: true }).analyze(),
-    () => settle(page),
-  );
-  expect(scan.settled, stillLoadingMessage(surface, scan.counts)).toBe(true);
-  const results = scan.result;
+  await settle(page);
+  const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
   const { newViolations } = ratchet(surface, records, { path: BASELINE_PATH, capture: CAPTURE });

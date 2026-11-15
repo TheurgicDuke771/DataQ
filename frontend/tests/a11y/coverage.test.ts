@@ -1,66 +1,54 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  type AxeCoverageLike,
-  evaluatedNodes,
-  scanUntilStable,
-  stillLoading,
-} from '../../scripts/a11y/coverage';
+import { type PageSample, heldStill, waitUntilStill } from '../../scripts/a11y/coverage';
 
-// The under-reporting guard (#2051): a scan of a half-loaded page evaluates fewer nodes than a
-// scan of the loaded one, and the ratchet alone cannot see that.
+// The under-reporting guard (#2051): a scan must not judge a page that is still changing, since
+// the ratchet alone cannot see that it saw too little.
 
-function result(nodes: number): AxeCoverageLike {
-  return { passes: [{ nodes: Array(nodes).fill(null) }], violations: [], incomplete: [] };
+const at = (elements: number, loading = 0): PageSample => ({ elements, loading });
+
+async function run(samples: PageSample[], maxSamples = samples.length) {
+  let i = 0;
+  return waitUntilStill(
+    async () => samples[Math.min(i++, samples.length - 1)],
+    async () => {},
+    { maxSamples },
+  );
 }
 
-describe('evaluatedNodes', () => {
-  it('counts the nodes judged by every outcome', () => {
-    expect(
-      evaluatedNodes({
-        passes: [{ nodes: [1, 2] }, { nodes: [3] }],
-        violations: [{ nodes: [4] }],
-        incomplete: [{ nodes: [5, 6] }],
-      }),
-    ).toBe(6);
+describe('heldStill', () => {
+  it('allows a ripple, catches growth and shrinkage, and never a loading page', () => {
+    expect(heldStill(at(3000), at(3002))).toBe(true);
+    expect(heldStill(at(3000), at(3040))).toBe(false); // a late ten-row table
+    expect(heldStill(at(1200), at(400))).toBe(false); // a refetch swapped the table out
+    expect(heldStill(at(40), at(40, 1))).toBe(false);
   });
 });
 
-describe('stillLoading', () => {
-  it('ignores re-render noise and catches real growth', () => {
-    expect(stillLoading(1000, 1040)).toBe(false);
-    expect(stillLoading(1000, 900)).toBe(false);
-    expect(stillLoading(1000, 1300)).toBe(true);
-  });
-});
-
-describe('scanUntilStable', () => {
-  const settle = async () => {};
-
-  it('returns the first scan pair that agrees, keeping the later result', async () => {
-    const counts = [400, 1200, 1210];
-    let i = 0;
-    const scan = await scanUntilStable(async () => result(counts[i++]), settle);
-    expect(scan.settled).toBe(true);
-    expect(scan.counts).toEqual([400, 1200, 1210]);
-    expect(evaluatedNodes(scan.result)).toBe(1210);
+describe('waitUntilStill', () => {
+  it('settles once the page holds still for two pairs', async () => {
+    const result = await run([at(400), at(1200), at(1200), at(1201)]);
+    expect(result).toEqual({ settled: true, trend: [400, 1200, 1200, 1201] });
   });
 
-  it('fails a page that is still growing when the attempts run out', async () => {
+  it('starts over when the page changes again: a second spinner after the first', async () => {
+    const result = await run([at(500), at(500), at(500, 1), at(900), at(900), at(900)]);
+    expect(result.settled).toBe(true);
+    expect(result.trend).toHaveLength(6);
+  });
+
+  it('does not settle on one quiet pair', async () => {
+    const result = await run([at(500), at(500), at(900)], 3);
+    expect(result.settled).toBe(false);
+  });
+
+  it('fails a page that keeps changing', async () => {
     let n = 100;
-    const scan = await scanUntilStable(async () => result((n *= 2)), settle, 3);
-    expect(scan.settled).toBe(false);
-    expect(scan.counts).toEqual([200, 400, 800]);
-  });
-
-  it('settles before every scan', async () => {
-    let settles = 0;
-    await scanUntilStable(
-      async () => result(10),
-      async () => {
-        settles++;
-      },
+    const result = await waitUntilStill(
+      async () => at((n += 50)),
+      async () => {},
+      { maxSamples: 5 },
     );
-    expect(settles).toBe(2);
+    expect(result).toEqual({ settled: false, trend: [150, 200, 250, 300, 350] });
   });
 });

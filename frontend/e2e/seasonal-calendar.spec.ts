@@ -1,7 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
 
-import { scanUntilStable, stillLoadingMessage } from '../scripts/a11y/coverage';
 import { settle } from '../scripts/a11y/settle';
 
 // The seasonal calendar (Admin → Calendar) against the real API, and a per-period anomaly
@@ -56,12 +55,8 @@ async function addPerPeriodCheck(
 /** No serious or critical axe violation inside `selector` (the route scans see neither the
  *  filled calendar table nor the trend drawer). */
 async function expectAccessible(page: Page, selector: string) {
-  const scan = await scanUntilStable(
-    () => new AxeBuilder({ page }).include(selector).analyze(),
-    () => settle(page),
-  );
-  expect(scan.settled, stillLoadingMessage(selector, scan.counts)).toBe(true);
-  const results = scan.result;
+  await settle(page);
+  const results = await new AxeBuilder({ page }).include(selector).analyze();
   const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(bad.map((v) => `${v.id}: ${v.nodes.map((n) => n.target).join(', ')}`)).toEqual([]);
 }
