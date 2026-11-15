@@ -5,7 +5,13 @@ stores one) is the check's definition, but its literals are values of the tested
 column is classified as sensitive (the suite's policy, a warehouse tag, fail-closed mode, or an
 affirmative PII signal) they are held to the bar a failing sample of it is: each value is replaced
 by the redaction marker, the list keeps its length, and the read names the column and the rung
-that decided."""
+that decided.
+
+The same holds for the other config keys that carry values of the column (#2682): pairs, patterns
+(`regex`, `regex_list`, `like_pattern`, `like_pattern_list`), a set that is not a list, and the
+bounds of a check whose bounds ARE values of the column — "values in range", the column's min or
+max, and an aggregate monitor on `min` or `max`. Where bounds are counts or lengths (row count,
+value lengths, an aggregate mean) they are not values of the column and are shown."""
 
 from __future__ import annotations
 
@@ -16,9 +22,44 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
+from backend.app.datasources.monitors import AGGREGATE_CELL_VALUES
 from backend.app.db.models import Asset, Suite
 from backend.app.services import column_tags
-from backend.app.services.value_set_guard import REDACTED_MARKER, VALUE_SET_KEY
+from backend.app.services.value_set_guard import BOUND_KEYS, REDACTED_MARKER, VALUE_KEYS
+
+#: Check types whose `min_value` / `max_value` are values of the column, not counts.
+_VALUE_BOUND_TYPES = frozenset(
+    {
+        "expect_column_values_to_be_between",
+        # The column's own smallest / largest value, the same line the aggregate monitor's
+        # `min` / `max` draws (#2240).
+        "expect_column_min_to_be_between",
+        "expect_column_max_to_be_between",
+    }
+)
+
+
+def bound_keys_hold_values(expectation_type: str | None, config: Mapping[str, Any]) -> bool:
+    """Whether this check's `min_value` / `max_value` are values of its column."""
+    return expectation_type in _VALUE_BOUND_TYPES or config.get("aggregate") in (
+        AGGREGATE_CELL_VALUES
+    )
+
+
+def _masked(value: Any) -> Any:
+    """The marker in ``value``'s shape: a list keeps its length, a pair its two places."""
+    if isinstance(value, list):
+        return [_masked(item) for item in value]
+    return REDACTED_MARKER
+
+
+def _leaves(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _leaves(item)]
+    if isinstance(value, dict):
+        return [leaf for item in value.values() for leaf in _leaves(item)]
+    return [value]
+
 
 if TYPE_CHECKING:
     from backend.app.services.run_service import RedactionReason
@@ -75,15 +116,41 @@ class ValueSetMasker:
             )
         return self._tests[suite_id]
 
-    def mask(self, suite_id: uuid.UUID, config: dict[str, Any] | None) -> MaskedConfig:
+    def mask(
+        self,
+        suite_id: uuid.UUID,
+        config: dict[str, Any] | None,
+        *,
+        expectation_type: str | None = None,
+    ) -> MaskedConfig:
+        """``config`` with every value of a column that is sensitive now withheld.
+        ``expectation_type`` decides whether the bounds are values (`bound_keys_hold_values`);
+        without it they are shown."""
         config = dict(config or {})
-        values = config.get(VALUE_SET_KEY)
-        if not isinstance(values, list):
+        keys = [*VALUE_KEYS]
+        if bound_keys_hold_values(expectation_type, config):
+            keys += BOUND_KEYS
+        present = [k for k in keys if config.get(k) not in (None, "", [], {})]
+        if not present:
             return MaskedConfig(config)
         test = self._test(suite_id)
-        column = str(config.get("column"))
-        reason = test(column, values) if test is not None else None
-        if reason is None:
+        if test is None:
             return MaskedConfig(config)
-        config[VALUE_SET_KEY] = [REDACTED_MARKER for _ in values]
-        return MaskedConfig(config, [column], {column: reason})
+        named = [
+            config[k] for k in ("column", "column_A", "column_B") if isinstance(config.get(k), str)
+        ]
+        columns = named or [str(config.get("column"))]
+        reasons: dict[str, RedactionReason] = {}
+        for key in present:
+            values = _leaves(config[key])
+            found = next(
+                ((c, r) for c in columns if (r := reasons.get(c) or test(c, values)) is not None),
+                None,
+            )
+            if found is None:
+                continue
+            reasons.setdefault(found[0], found[1])
+            config[key] = _masked(config[key])
+        if not reasons:
+            return MaskedConfig(config)
+        return MaskedConfig(config, list(reasons), reasons)

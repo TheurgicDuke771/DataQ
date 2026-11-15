@@ -91,7 +91,9 @@ def export_suite(
         }
         # A value set over a column that is sensitive now is exported withheld (#2592), and
         # such a document is refused on import.
-        doc["config"] = masker.mask(suite.id, doc.get("config")).config
+        doc["config"] = masker.mask(
+            suite.id, doc.get("config"), expectation_type=c.expectation_type
+        ).config
         # Emitted only when non-default (ADR 0036), like `source_connection` below: pre-engine
         # documents and consumers stay byte-identical.
         if c.engine != GX_ENGINE:

@@ -823,10 +823,14 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   check. If a column is marked sensitive after its value set was proposed, the suggestion is
   shown with its values hidden and marked **Values withheld**, and it can only be rejected:
   accepting it is refused. The same holds for any check, however it was written: once its
-  column is marked sensitive, its accepted values read as `<redacted>` in the check editor,
-  version history, export, API and MCP tools, while the check keeps running with the real
-  values. Saving the check without touching the values keeps them; to change the configuration,
-  enter the full list again. An export holding withheld values cannot be imported.
+  column is marked sensitive, the values of that column in its configuration read as
+  `<redacted>` in the check editor, version history, export, API and MCP tools, while the check
+  keeps running with the real values. That covers accepted values and value pairs, regular
+  expressions and LIKE patterns, and the minimum and maximum of a *values in range* check or an
+  aggregate on `min` or `max`. Bounds that are counts or lengths (row counts, value lengths,
+  other aggregates) are not values of the column and stay visible. Saving the check without
+  touching the withheld values keeps them; to change the configuration, enter them again. An
+  export holding withheld values cannot be imported.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
   is not added back.

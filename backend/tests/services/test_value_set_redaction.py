@@ -189,3 +189,107 @@ def test_the_mcp_check_tools_withhold_it(
         assert config["value_set"] == _MASKED
     assert exported["tier in set"]["config"]["value_set"] == _MASKED
     assert (one["redacted_columns"], one["redaction_reasons"]) == (["tier"], {"tier": "policy"})
+
+
+def _check(
+    db: Any, suite: Suite, expectation_type: str, config: dict[str, Any], **kw: Any
+) -> Check:
+    return check_service.create_check(
+        db,
+        suite_id=suite.id,
+        name=f"{expectation_type} {uuid.uuid4().hex[:6]}",
+        kind=kw.get("kind", "expectation"),
+        expectation_type=expectation_type,
+        config=config,
+        warn_threshold=None,
+        fail_threshold=None,
+        critical_threshold=None,
+    )
+
+
+#: (expectation type, kind, config, the keys that must read withheld) — #2682.
+_WITHHELD = [
+    ("expect_column_values_to_match_regex", "expectation", {"regex": "^GOLD-[0-9]+$"}, ["regex"]),
+    (
+        "expect_column_values_to_not_match_regex_list",
+        "expectation",
+        {"regex_list": ["^A$", "^B$"]},
+        ["regex_list"],
+    ),
+    (
+        "expect_column_values_to_be_between",
+        "expectation",
+        {"min_value": 50000, "max_value": 250000},
+        ["min_value", "max_value"],
+    ),
+    ("monitor:aggregate", "aggregate", {"aggregate": "max", "max_value": 250000}, ["max_value"]),
+]
+#: Bounds that are counts or lengths, not values of the column: shown.
+_SHOWN = [
+    ("expect_column_value_lengths_to_be_between", "expectation", {"min_value": 2, "max_value": 9}),
+    ("monitor:aggregate", "aggregate", {"aggregate": "mean", "max_value": 100}),
+]
+
+
+@pytest.mark.parametrize(("etype", "kind", "config", "keys"), _WITHHELD)
+def test_patterns_and_value_bounds_of_a_sensitive_column_are_withheld_on_read(
+    client: TestClient,
+    db_session: Any,
+    suite: Suite,
+    etype: str,
+    kind: str,
+    config: dict[str, Any],
+    keys: list[str],
+) -> None:
+    check = _check(db_session, suite, etype, {"column": "tier", **config}, kind=kind)
+    suite.column_policy = {"pii_columns": ["tier"]}
+    db_session.commit()
+    path = f"/api/v1/suites/{suite.id}/checks/{check.id}"
+
+    read = client.get(path).json()
+    for key in keys:
+        assert "<redacted>" in str(read["config"][key])
+        assert str(config[key]) not in str(read["config"][key])
+    assert read["redacted_columns"] == ["tier"]
+    (version,) = client.get(f"{path}/versions").json()
+    assert all("<redacted>" in str(version["config"][key]) for key in keys)
+    exported = client.get(f"/api/v1/suites/{suite.id}/export").json()
+    assert not [c for c in exported["checks"] if str(config[keys[0]]) in str(c["config"])]
+
+    # Saving the withheld read back is refused; the stored values stay.
+    refused = client.patch(path, json={"config": read["config"]})
+    assert refused.status_code == 422
+    assert refused.json()["error"]["code"] == "value_set_redacted"
+    db_session.expire_all()
+    assert db_session.get(Check, check.id).config[keys[0]] == config[keys[0]]
+
+
+@pytest.mark.parametrize(("etype", "kind", "config"), _SHOWN)
+def test_bounds_that_are_counts_or_lengths_are_shown(
+    client: TestClient,
+    db_session: Any,
+    suite: Suite,
+    etype: str,
+    kind: str,
+    config: dict[str, Any],
+) -> None:
+    check = _check(db_session, suite, etype, {"column": "tier", **config}, kind=kind)
+    suite.column_policy = {"pii_columns": ["tier"]}
+    db_session.commit()
+
+    read = client.get(f"/api/v1/suites/{suite.id}/checks/{check.id}").json()
+    assert {k: read["config"][k] for k in config} == config
+    assert read["redacted_columns"] == []
+
+
+def test_a_value_set_that_is_not_a_list_is_withheld_too(
+    client: TestClient, db_session: Any, suite: Suite, monkeypatch: Any
+) -> None:
+    """A producer or an old document can hold a bare value where a list belongs."""
+    check = _in_set(db_session, suite, "tier", ["gold"])
+    db_session.get(Check, check.id).config = {"column": "tier", "value_set": "gold"}
+    suite.column_policy = {"pii_columns": ["tier"]}
+    db_session.commit()
+
+    read = client.get(f"/api/v1/suites/{suite.id}/checks/{check.id}").json()
+    assert read["config"]["value_set"] == "<redacted>"
