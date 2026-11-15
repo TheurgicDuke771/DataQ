@@ -2953,6 +2953,12 @@ section below.</p>
   applying a file that does not mention <code>enabled</code> leaves each check's switch alone; over
   MCP, <code>update_check</code> takes <code>enabled</code>, <code>list_suites</code> adds <code>enabled_check_count</code>,
   <code>trigger_suite_run</code> returns <code>enabled_checks</code>, and each result carries <code>check_enabled</code>.</li>
+<li><strong>MCP <code>list_assets</code> and <code>get_asset</code> return the asset health score.</strong> Each asset summary
+  carries <code>health_score</code>, the same workspace-wide figure the asset pages show: null when
+  nothing evaluated, which is not 0. <code>list_assets</code> accepts <code>sort="health_score"</code> to order the
+  whole workspace lowest score first before paging, with unscored assets last, and echoes the
+  <code>sort</code> it applied. The tool descriptions say what the score leaves out: suites whose latest
+  run did not complete, skipped and errored checks, and anything no check tests.</li>
 <li><strong>MCP run tools say who or what started a run.</strong> <code>list_runs</code> returns <code>triggered_by_label</code>
   beside the stored <code>triggered_by</code> marker (<code>Manual — &lt;name&gt;</code>, <code>Schedule</code>,
   <code>Airflow — &lt;pipeline and run&gt;</code>), the same label the app shows, and <code>get_run_results</code>,

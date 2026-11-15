@@ -109,6 +109,12 @@ section below.
   applying a file that does not mention `enabled` leaves each check's switch alone; over
   MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
   `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
+- **MCP `list_assets` and `get_asset` return the asset health score.** Each asset summary
+  carries `health_score`, the same workspace-wide figure the asset pages show: null when
+  nothing evaluated, which is not 0. `list_assets` accepts `sort="health_score"` to order the
+  whole workspace lowest score first before paging, with unscored assets last, and echoes the
+  `sort` it applied. The tool descriptions say what the score leaves out: suites whose latest
+  run did not complete, skipped and errored checks, and anything no check tests.
 - **MCP run tools say who or what started a run.** `list_runs` returns `triggered_by_label`
   beside the stored `triggered_by` marker (`Manual — <name>`, `Schedule`,
   `Airflow — <pipeline and run>`), the same label the app shows, and `get_run_results`,
