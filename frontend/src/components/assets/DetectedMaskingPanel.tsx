@@ -1,4 +1,6 @@
-import { Alert, App, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Table, Tag, Tooltip, Typography } from 'antd';
+
+import { Popconfirm } from '../shared/Popconfirm';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useRef } from 'react';
 
@@ -148,6 +150,8 @@ export function DetectedMaskingPanel({
                   title="Dismiss this detection?"
                   description="Failing samples will show this column's values again. The dismissal is recorded in the audit log."
                   okText="Dismiss"
+                  // Un-masking a column's values: a danger action, so the popup opens on Cancel.
+                  okButtonProps={{ danger: true }}
                   onConfirm={() => setDismissed(row.column, true)}
                 >
                   <Button
