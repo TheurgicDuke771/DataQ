@@ -369,7 +369,12 @@ function LegacyDestinations({
                 </Button>
               )}
               {canManage && (
-                <Button size="small" loading={loading} onClick={clear(r.extra)}>
+                <Button
+                  size="small"
+                  loading={loading}
+                  aria-label={`Clear ${r.label}`}
+                  onClick={clear(r.extra)}
+                >
                   Clear
                 </Button>
               )}

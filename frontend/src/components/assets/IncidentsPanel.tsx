@@ -27,9 +27,12 @@ import { ResultStatusTag } from '../shared/StatusTag';
  */
 function ResolveButton({
   busy,
+  name,
   onResolve,
 }: {
   busy: boolean;
+  /** The incident's check, so the button says which incident it resolves. */
+  name: string;
   onResolve: (resolution: IncidentResolution | null) => void;
 }) {
   const [resolution, setResolution] = useState<IncidentResolution | null>(null);
@@ -64,7 +67,7 @@ function ResolveButton({
         if (!open) setResolution(null);
       }}
     >
-      <Button size="small" type="primary" loading={busy}>
+      <Button size="small" type="primary" loading={busy} aria-label={`Resolve ${name}`}>
         Resolve
       </Button>
     </Popconfirm>
@@ -220,7 +223,11 @@ function IncidentsTable({
       key: 'evidence',
       width: 100,
       render: (_: unknown, incident) => (
-        <Button size="small" onClick={() => onViewEvidence(incident.id)}>
+        <Button
+          size="small"
+          aria-label={`View evidence: ${incidentName(incident)}`}
+          onClick={() => onViewEvidence(incident.id)}
+        >
           View
         </Button>
       ),
@@ -241,6 +248,7 @@ function IncidentsTable({
               <Button
                 size="small"
                 loading={busy}
+                aria-label={`Acknowledge ${incidentName(incident)}`}
                 onClick={() => void act(incident, 'ack', acknowledgeIncident)}
               >
                 Acknowledge
@@ -248,6 +256,7 @@ function IncidentsTable({
             )}
             <ResolveButton
               busy={busy}
+              name={incidentName(incident)}
               onResolve={(resolution) =>
                 void act(incident, 'resolve', (id) => resolveIncident(id, undefined, resolution))
               }
@@ -271,4 +280,10 @@ function IncidentsTable({
       pagination={false}
     />
   );
+}
+
+/** What an incident's row actions name it by (#1673): its check, or its id when the check is
+ *  gone, so identical "Acknowledge" / "Resolve" buttons say which incident they act on. */
+function incidentName(incident: Incident): string {
+  return incident.check_name ?? `incident ${incident.id.slice(0, 8)}`;
 }

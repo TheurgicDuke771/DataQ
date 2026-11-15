@@ -45,12 +45,12 @@ describe('AccessGrantActions', () => {
     const onRevoked = vi.fn();
     renderSubPage(<AccessGrantActions grant={SHARE_ROW} onRevoked={onRevoked} />);
 
-    await user.click(screen.getByRole('button', { name: 'Revoke' }));
+    await user.click(screen.getByRole('button', { name: /^Revoke\b/ }));
     // The click only opens the confirm — nothing is sent yet.
     expect(mockRevoke).not.toHaveBeenCalled();
     expect(await screen.findByText(/loses edit access to Finance DQ/)).toBeInTheDocument();
     // The popconfirm's own OK button carries the same label; it is the later one.
-    const buttons = screen.getAllByRole('button', { name: 'Revoke' });
+    const buttons = screen.getAllByRole('button', { name: /^Revoke\b/ });
     await user.click(buttons[buttons.length - 1]);
 
     await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('s1', 'g1'));
@@ -59,7 +59,7 @@ describe('AccessGrantActions', () => {
 
   it('offers nothing to revoke on an owner row', async () => {
     renderSubPage(<AccessGrantActions grant={OWNER_ROW} onRevoked={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'Revoke' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Revoke\b/ })).toBeDisabled();
   });
 });
 
@@ -138,7 +138,7 @@ describe('SuiteAdminDeleteModal', () => {
     expect(await screen.findByText(/Deletes 7 checks, 12 runs and 84 results/)).toBeInTheDocument();
     expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument();
 
-    const confirm = screen.getByRole('button', { name: 'Delete' });
+    const confirm = screen.getByRole('button', { name: /^Delete\b/ });
     expect(confirm).toBeDisabled();
 
     await user.type(screen.getByLabelText('Suite name confirmation'), 'Finance');
@@ -182,7 +182,7 @@ describe('AdminSuites actions', () => {
   it('opens the delete modal for the row it was clicked on', async () => {
     const user = userEvent.setup();
     renderSubPage(<AdminSuites />);
-    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
     expect(await screen.findByText('Delete “Finance DQ”?')).toBeInTheDocument();
   });
 });

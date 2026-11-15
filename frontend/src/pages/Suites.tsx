@@ -981,6 +981,7 @@ function ChecksList({
                             key="snooze"
                             type="link"
                             size="small"
+                            aria-label={`Unsnooze ${check.name}`}
                             onClick={() => onUnsnooze(check)}
                           >
                             Unsnooze
@@ -998,7 +999,7 @@ function ChecksList({
                             }}
                             trigger={['click']}
                           >
-                            <Button type="link" size="small">
+                            <Button type="link" size="small" aria-label={`Snooze ${check.name}`}>
                               Snooze
                             </Button>
                           </Dropdown>,
@@ -1011,6 +1012,7 @@ function ChecksList({
                           key="rebaseline"
                           type="link"
                           size="small"
+                          aria-label={`Re-baseline ${check.name}`}
                           onClick={() => onRebaseline(check)}
                         >
                           Re-baseline
@@ -1030,7 +1032,15 @@ function ChecksList({
                         </Button>,
                       ]
                     : []),
-                  <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
+                  // Each row's actions carry the check's name (#1673): a list of identical
+                  // "Edit" / "Delete" buttons does not say which check each one acts on.
+                  <Button
+                    key="edit"
+                    type="link"
+                    size="small"
+                    aria-label={`Edit ${check.name}`}
+                    onClick={() => onEdit(check)}
+                  >
                     Edit
                   </Button>,
                   <Button
@@ -1038,6 +1048,7 @@ function ChecksList({
                     type="link"
                     size="small"
                     danger
+                    aria-label={`Delete ${check.name}`}
                     onClick={() => onDelete(check)}
                   >
                     Delete

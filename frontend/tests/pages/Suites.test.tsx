@@ -371,7 +371,9 @@ describe('Suites', () => {
     const checkRow = screen
       .getByText('order_id not null')
       .closest('[role="listitem"]') as HTMLElement;
-    await user.click(within(checkRow).getByRole('button', { name: 'Delete' }));
+    // Each row's actions carry the check's name (#1673).
+    expect(within(checkRow).getByRole('button', { name: 'Edit order_id not null' })).toBeVisible();
+    await user.click(within(checkRow).getByRole('button', { name: 'Delete order_id not null' }));
 
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -392,7 +394,7 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
     await screen.findByText('order_id not null');
 
-    await user.click(screen.getByRole('button', { name: 'Snooze' }));
+    await user.click(screen.getByRole('button', { name: /^Snooze\b/ }));
     await user.click(await screen.findByText('24 hours'));
 
     await waitFor(() => expect(mockSnoozeCheck).toHaveBeenCalledWith('s1', 'chk1', 24));
@@ -640,7 +642,7 @@ describe('Suites', () => {
     await screen.findByText('schema drift');
 
     // Exactly ONE Re-baseline action — the expectation check offers none.
-    const buttons = screen.getAllByRole('button', { name: 'Re-baseline' });
+    const buttons = screen.getAllByRole('button', { name: /^Re-baseline\b/ });
     expect(buttons).toHaveLength(1);
     await user.click(buttons[0]);
     // Nothing fires until the modal confirms (dropping the reference is
@@ -649,7 +651,7 @@ describe('Suites', () => {
     await screen.findByText(/Drops the stored schema baseline/);
     // The confirm modal's OK also reads "Re-baseline" — it's the primary button.
     const ok = screen
-      .getAllByRole('button', { name: 'Re-baseline' })
+      .getAllByRole('button', { name: /^Re-baseline\b/ })
       .find((b) => b.className.includes('ant-btn-primary'));
     if (!ok) throw new Error('confirm modal OK button not found');
     await user.click(ok);
@@ -673,12 +675,12 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
     await screen.findByText('pii drift');
 
-    const buttons = screen.getAllByRole('button', { name: 'Re-baseline' });
+    const buttons = screen.getAllByRole('button', { name: /^Re-baseline\b/ });
     expect(buttons).toHaveLength(1);
     await user.click(buttons[0]);
     await screen.findByText(/PII-looking unclassified columns/);
     const ok = screen
-      .getAllByRole('button', { name: 'Re-baseline' })
+      .getAllByRole('button', { name: /^Re-baseline\b/ })
       .find((b) => b.className.includes('ant-btn-primary'));
     if (!ok) throw new Error('confirm modal OK button not found');
     await user.click(ok);
@@ -697,7 +699,7 @@ describe('Suites', () => {
     await user.click(await screen.findByText('orders-suite'));
     await screen.findByText(/Snoozed until/);
 
-    await user.click(screen.getByRole('button', { name: 'Unsnooze' }));
+    await user.click(screen.getByRole('button', { name: /^Unsnooze\b/ }));
 
     await waitFor(() => expect(mockClearSnooze).toHaveBeenCalledWith('s1', 'chk1'));
     await waitFor(() => expect(screen.queryByText(/Snoozed until/)).not.toBeInTheDocument());
@@ -714,7 +716,7 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
 
     expect(screen.queryByText(/Snoozed until/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Snooze' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Snooze\b/ })).toBeInTheDocument();
   });
 
   it('hides snooze AND re-baseline controls (but keeps the badge) for a view-only user', async () => {
@@ -738,10 +740,10 @@ describe('Suites', () => {
     await screen.findByText('order_id not null');
 
     expect(screen.getByText(/Snoozed until/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Snooze' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Unsnooze' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Snooze\b/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Unsnooze\b/ })).not.toBeInTheDocument();
     // Re-baseline is edit-gated the same way (#592) — a viewer must never see it.
-    expect(screen.queryByRole('button', { name: 'Re-baseline' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Re-baseline\b/ })).not.toBeInTheDocument();
   });
 
   it('deletes a suite via the detail panel after confirming', async () => {
@@ -760,7 +762,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
 
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -783,7 +785,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
 
     const dialog = await screen.findByRole('dialog');
     expect(mockGetSuiteDeletionImpact).toHaveBeenCalledWith('s1');
@@ -803,7 +805,7 @@ describe('Suites', () => {
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: /^Delete\b/ }));
 
     // Never blocks the delete itself — the confirm dialog still opens, degraded.
     const dialog = await screen.findByRole('dialog');

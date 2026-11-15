@@ -109,15 +109,22 @@ describe('IncidentsPanel', () => {
     mockList.mockResolvedValue([incident()]);
     renderPanel({ s1: 'view' });
     expect(await screen.findByText('View only')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Acknowledge\b/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Resolve\b/ })).not.toBeInTheDocument();
   });
 
   it('lets an editor acknowledge an open incident and reloads', async () => {
     mockList.mockResolvedValue([incident()]);
     mockAck.mockResolvedValue(detail({ status: 'acknowledged' }));
     renderPanel({ s1: 'edit' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    // Each row's actions say which incident they act on (#1673).
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Acknowledge orders not null' }),
+    );
+    expect(screen.getByRole('button', { name: 'Resolve orders not null' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View evidence: orders not null' }),
+    ).toBeInTheDocument();
     await waitFor(() => expect(mockAck).toHaveBeenCalledWith('inc-1'));
     // Reloads the list after the mutation.
     expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -127,21 +134,21 @@ describe('IncidentsPanel', () => {
     mockList.mockResolvedValue([incident({ status: 'acknowledged' })]);
     renderPanel({ s1: 'owner' });
     await screen.findByText('acknowledged');
-    expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Resolve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Acknowledge\b/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Resolve\b/ })).toBeInTheDocument();
   });
 
   it('resolves an incident through the confirm popover', async () => {
     mockList.mockResolvedValue([incident()]);
     mockResolve.mockResolvedValue(detail({ status: 'resolved' }));
     renderPanel({ s1: 'owner' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Resolve\b/ }));
     // Popconfirm — WAIT for the confirming "Resolve" to render before clicking: findAll resolves on
     // the first match (the trigger), and clicking the trigger again toggles the popover closed.
     await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(1),
+      expect(screen.getAllByRole('button', { name: /^Resolve\b/ }).length).toBeGreaterThan(1),
     );
-    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
+    const confirms = screen.getAllByRole('button', { name: /^Resolve\b/ });
     await userEvent.click(confirms[confirms.length - 1]);
     await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('inc-1', undefined, null));
   }, 15000);
@@ -150,7 +157,7 @@ describe('IncidentsPanel', () => {
     mockList.mockResolvedValue([incident()]);
     mockAck.mockRejectedValue(new Error('forbidden'));
     renderPanel({ s1: 'edit' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Acknowledge\b/ }));
     await waitFor(() => expect(mockAck).toHaveBeenCalled());
     // The error surfaces to the user…
     expect(await screen.findByText(/Action failed: forbidden/)).toBeInTheDocument();
@@ -168,10 +175,10 @@ describe('IncidentsPanel', () => {
     renderPanel({ s1: 'owner' });
     const user = userEvent.setup();
 
-    await user.click(await screen.findByRole('button', { name: 'Resolve' }));
+    await user.click(await screen.findByRole('button', { name: /^Resolve\b/ }));
     await user.click(await screen.findByRole('combobox', { name: 'What was it? (optional)' }));
     await user.click(await screen.findByText('False positive — nothing was wrong'));
-    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
+    const confirms = screen.getAllByRole('button', { name: /^Resolve\b/ });
     await user.click(confirms[confirms.length - 1]);
 
     await waitFor(() =>
@@ -183,11 +190,11 @@ describe('IncidentsPanel', () => {
     mockList.mockResolvedValue([incident()]);
     mockResolve.mockRejectedValue(new Error('nope'));
     renderPanel({ s1: 'owner' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Resolve' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Resolve\b/ }));
     await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(1),
+      expect(screen.getAllByRole('button', { name: /^Resolve\b/ }).length).toBeGreaterThan(1),
     );
-    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
+    const confirms = screen.getAllByRole('button', { name: /^Resolve\b/ });
     await userEvent.click(confirms[confirms.length - 1]);
     expect(await screen.findByText(/Action failed: nope/)).toBeInTheDocument();
     expect(mockList).toHaveBeenCalledTimes(1);
@@ -241,7 +248,7 @@ describe('IncidentsPanel', () => {
     // View-only share (no edit) — reading evidence must not need the acting permission.
     renderPanel({ s1: 'view' });
 
-    await userEvent.click(await screen.findByRole('button', { name: 'View' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^View\b/ }));
     expect(await screen.findByText('Incident evidence')).toBeInTheDocument();
     expect(mockGetIncident).toHaveBeenCalledWith('inc-1');
     // The Check & asset section resolves — proves the drawer is wired to the real id.

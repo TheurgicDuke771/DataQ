@@ -84,7 +84,7 @@ describe('MembershipPanel', () => {
     renderSubPage(<MembershipPanel />);
 
     expect(await screen.findByText('Review 1 imported member')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Confirm\b/ })).toBeInTheDocument();
   });
 
   it('confirms an imported member and reloads', async () => {
@@ -92,7 +92,7 @@ describe('MembershipPanel', () => {
     mockConfirm.mockResolvedValue(member());
     renderSubPage(<MembershipPanel />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Confirm\b/ }));
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledWith('m1'));
     // Reloaded, rather than patching the row in place from the response.
     await waitFor(() => expect(mockList.mock.calls.length).toBeGreaterThan(1));
@@ -102,7 +102,8 @@ describe('MembershipPanel', () => {
     mockRemove.mockResolvedValue(undefined);
     renderSubPage(<MembershipPanel />);
 
-    await userEvent.click((await screen.findAllByRole('button', { name: 'Remove' }))[0]);
+    // The row's action names the member it removes (#1673).
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove ada@x.io' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Remove member' }));
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith('m1'));
   });
@@ -112,7 +113,7 @@ describe('MembershipPanel', () => {
     mockList.mockResolvedValue(view({ members: [member({ source: 'auto_import' })] }));
     renderSubPage(<MembershipPanel />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Confirm\b/ }));
     expect(await screen.findByText(/nope/)).toBeInTheDocument();
   });
 
