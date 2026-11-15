@@ -143,6 +143,26 @@ class ValueSetMasker:
         return mask_check_values(config, self._test(suite_id), expectation_type=expectation_type)
 
 
+def _column_reasons(
+    columns: list[str],
+    fields: list[list[Any]],
+    test: Callable[[str, list[Any]], RedactionReason | None],
+) -> dict[str, RedactionReason]:
+    """Which of ``columns`` are sensitive, judged on each field's values on its own AND on all of
+    them together (#2699). Neither alone is enough: pooled, an unrelated option dilutes a ratio
+    such as "half of these look like emails" below its bar; split, a field that is
+    identifier-shaped on its own reads as "not encoded" where the pool would not. A positive from
+    any of them decides the column."""
+    candidates = [*fields, [v for f in fields for v in f]] if len(fields) > 1 else fields
+    reasons: dict[str, RedactionReason] = {}
+    for column in columns:
+        for values in candidates:
+            if (reason := test(column, values)) is not None:
+                reasons[column] = reason
+                break
+    return reasons
+
+
 def mask_check_values(
     config: Mapping[str, Any] | None,
     test: Callable[[str, list[Any]], RedactionReason | None] | None,
@@ -168,19 +188,13 @@ def mask_check_values(
         # A table-level check or result (a row count, a schema drift, a comparison): its
         # numbers are not values of any column, and there is no column to classify.
         return MaskedConfig(config)
-    reasons: dict[str, RedactionReason] = {}
-    for key in present:
-        values = _leaves(config[key])
-        found = next(
-            ((c, r) for c in columns if (r := reasons.get(c) or test(c, values)) is not None),
-            None,
-        )
-        if found is None:
-            continue
-        reasons.setdefault(found[0], found[1])
-        config[key] = _masked(config[key])
+    # Once a column is sensitive, every value key goes, not only the ones that tested positive
+    # alone: a pattern beside a value set of that column is a value of it too.
+    reasons = _column_reasons(columns, [_leaves(config[k]) for k in present], test)
     if not reasons:
         return MaskedConfig(config)
+    for key in present:
+        config[key] = _masked(config[key])
     return MaskedConfig(config, list(reasons), reasons)
 
 
@@ -226,7 +240,9 @@ def mask_expected_value(
     sensitive now (#2686, #2691). ``None`` when ``expected`` is not a mapping (shown as is).
 
     Unlike a check read this needs no expectation type: whatever the type, a key that does not
-    describe the check is taken for a value of the column, so an unknown type fails closed."""
+    describe the check is taken for a value of the column, so an unknown type fails closed. The
+    column is judged on each field alone and on all of them together (`_column_reasons`), and a
+    positive from any withholds every non-shape key."""
     if not isinstance(expected, dict):
         return None
     config = dict(expected)
@@ -243,15 +259,7 @@ def mask_expected_value(
         # A table-level check or result (a row count, a schema drift, a comparison): its
         # numbers are not values of any column, and there is no column to classify.
         return MaskedConfig(config)
-    # Each field is judged on its own values (#2699): pooled, an unrelated option (`match_on`)
-    # dilutes a value-based signal such as "half of these look like emails" below its bar. A
-    # positive answer for any field makes the column sensitive, and every non-shape key goes.
-    reasons: dict[str, RedactionReason] = {}
-    for c in columns:
-        for k in present:
-            if (reason := test(c, _leaves(config[k]))) is not None:
-                reasons[c] = reason
-                break
+    reasons = _column_reasons(columns, [_leaves(config[k]) for k in present], test)
     if not reasons:
         return MaskedConfig(config)
     for k in present:
