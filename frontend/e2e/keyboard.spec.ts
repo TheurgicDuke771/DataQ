@@ -120,6 +120,22 @@ test.describe('Keyboard navigation', () => {
     await expect(other).toHaveAttribute('aria-current', 'page');
   });
 
+  test('a dialog opens in its first field and returns focus to its opener', async ({ page }) => {
+    // The channel dialog is rendered only while open, so closing it unmounts it: the case where
+    // focus used to be left on <body>.
+    await page.goto('/admin/settings');
+    const opener = page.getByRole('button', { name: 'New channel' });
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'New channel' });
+    await expect(dialog).toBeVisible();
+    // Not the × Close button antd focuses by default: a keyboard user can start typing.
+    await expect(dialog.getByLabel('Channel name')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+
   test('switching admin tabs keeps focus on the tab bar', async ({ page }) => {
     await page.goto('/admin/overview');
     const members = page.getByRole('tab', { name: 'Members' });
