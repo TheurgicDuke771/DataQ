@@ -1648,12 +1648,18 @@ the Celery app has no result backend, so a publish touches nothing shared except
 producer pool. That pool hands each thread its own producer and broker connection, and
 the eight threads fit inside its limit of ten.
 
-**How it chooses.** A batch starts serially and times its publishes. The first success
-is not timed, because it pays for the connection. After eight more, a median of
-**1.5 ms** or more sends the rest of the batch from **8 threads**. A faster broker
-stays serial. Building a Celery message is CPU work under Python's global interpreter
-lock, so on loopback the threads only added contention: 0.87 ms per publish threaded
-against 0.54 ms serial, in a first run that forced threads.
+**How it chooses.** Each tick starts serially and splits every publish's time into
+the dispatcher thread's CPU time and the rest, which is the wait on the broker. The
+first success is not timed, because it pays for the connection. After eight more,
+the tick goes threaded, on **8 threads**, if the median wait is at least **0.5 ms**
+and at least the median CPU time. Otherwise it stays serial. The decision and the
+thread pool last for the whole tick, so later batches start threaded at once.
+
+The rule looks at the wait, not the total, because threads only overlap the wait.
+Building a Celery message is CPU work under Python's global interpreter lock, and
+threads make it dearer through contention: on loopback, forced threads cost 0.87 ms
+per publish against 0.54 ms serial. A slow publish on a slow CPU is therefore not a
+reason for threads.
 
 Down-broker handling is unchanged. Three failures in a row end the batch and the tick;
 with threads, "in a row" is the order in which publishes finish. Each threaded publish
@@ -1668,14 +1674,13 @@ set Celery's worker-child flag, as the dispatch task runs in the worker. Round-t
 came from a Python `asyncio` relay that delays each direction, calibrated by the
 median of 300 `PING`s through it. Its own overhead means its lowest setting is about
 2.8 ms, so the 0.5 ms point of the v1.2 table could not be reproduced. "Serial" is the
-same code with the threshold set to infinity.
+same code held serial.
 
-| Round-trip (measured `PING`) | Runs | Serial, per publish | New code, per publish | Speed-up |
-|---|---|---|---|---|
-| 0.06 ms (loopback) | 10,000 | 0.41 ms | 0.41 ms (stayed serial) | — |
-| 2.8 ms | 4,000 | 3.43 ms | 0.96 ms | 3.6× |
-| 2.8 ms | 4,000 | 3.48 ms | 0.91 ms | 3.8× |
-| 7.0 ms | 4,000 | 7.60 ms | 1.15 ms | 6.6× |
+| Round-trip (measured `PING`) | Runs | Serial, per publish | New code, per publish | Median wait / CPU it measured | Speed-up |
+|---|---|---|---|---|---|
+| 0.06 ms (loopback) | 10,000 | 0.41 ms | 0.37 ms (stayed serial) | 0.06 / 0.29 ms | — |
+| 2.8 ms | 4,000 | 3.45 ms | 0.98 ms (threaded) | 3.04 / 0.68 ms | 3.5× |
+| 7.0 ms | 4,000 | 7.60 ms | 1.18 ms (threaded) | 6.85 / 0.75 ms | 6.4× |
 
 Threaded, the cost per publish settles at about 0.9–1.15 ms whatever the round-trip:
 the CPU cost of building messages is now the limit, not the network.
@@ -1688,8 +1693,8 @@ a few statements per 500 schedules, is unchanged and small beside these.
 | Round-trip | Before (serial) | After |
 |---|---|---|
 | ~0.1 ms (same host) | ~110,000 | ~110,000 (serial) |
-| ~2.8 ms | ~13,000 | ~47,000 |
-| ~7 ms | ~5,900 | ~39,000 |
+| ~2.8 ms | ~13,000 | ~46,000 |
+| ~7 ms | ~5,900 | ~38,000 |
 
 This is still a development-machine measurement. The live check against a cloud
 broker waits on a cloud test instance.
@@ -1700,8 +1705,9 @@ broker waits on a cloud test instance.
 
 - Publishes 10 bursts of 200 concurrent publishes to a real Redis with the garbage
   collector's threshold at 10, so a collection lands inside nearly every publish, as in
-  the v1.2 deadlock. Every burst must finish within 60 s, and every message must
-  arrive.
-- Covers the threading itself: order, the request id, a broker lost mid-batch, and
-  staying serial on a fast broker.
+  the v1.2 deadlock. The OpenTelemetry Celery instrumentation that worker children run
+  is on. Every burst must finish within 60 s, and every message must arrive.
+- Covers the threading itself: order, the request id, a broker lost mid-batch, failures
+  logged as they happen, the decision lasting the tick, and staying serial on a fast
+  broker or a CPU-bound publish.
 
