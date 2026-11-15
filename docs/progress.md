@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **74** open repo-wide (2026-11-08, live re-count): Week 7 29, Week 8 34, `v1.3 Backlog` 11; every open issue has a milestone. **Week 6 closed 2026-11-08, a week early, 0 open.** |
-| **Open PRs** | **0 open** (2026-11-08), apart from the one carrying this update. |
+| **Open issues** | **72** open repo-wide (2026-11-15, live re-count, once #2680 merges): Week 7 23, Week 8 29, `v1.3 Backlog` 20; every open issue has a milestone. Week 7 rows left: performance (#1999, #2117, #2012, #2010, #1987, #1979, #1597) and accessibility (#2067, #2064, #2061, #2051, #1672, #1673). |
+| **Open PRs** | **0 open** (2026-11-15) once #2680 merges, apart from the one carrying this update. |
 
 ---
 
@@ -158,12 +158,12 @@ Every row shipped; nothing rolled. Filed from this week's reviews, in later week
 
 | Status | Task |
 |---|---|
-| ⬜ | [#2353](https://github.com/TheurgicDuke771/DataQ/issues/2353) mcp: list_runs returns only the raw triggered_by marker (manual:<user-uuid>), no readable label |
-| ⬜ | [#2360](https://github.com/TheurgicDuke771/DataQ/issues/2360) mcp: list_assets / get_asset do not return the asset health score |
-| ⬜ | [#2367](https://github.com/TheurgicDuke771/DataQ/issues/2367) mcp: get_suite_performance says 'latest completed run' but scores the latest run only if it completed |
-| ⬜ | [#1838](https://github.com/TheurgicDuke771/DataQ/issues/1838) MCP: carry the read-only / state-changing / live-probe classification as ToolAnnotations on each tool; derive GATES and the docs from it |
-| ⬜ | [#2356](https://github.com/TheurgicDuke771/DataQ/issues/2356) llm: SQL generation lists every column of the target in its prompt with no cap |
-| ⬜ | [#2354](https://github.com/TheurgicDuke771/DataQ/issues/2354) alerting: alerts name the provider 'ADF' while the UI and run labels say 'Azure Data Factory' |
+| ✅ | [#2353](https://github.com/TheurgicDuke771/DataQ/issues/2353) mcp: list_runs returns only the raw triggered_by marker (manual:<user-uuid>), no readable label — [PR #2677](https://github.com/TheurgicDuke771/DataQ/pull/2677): `triggered_by_label` beside the raw marker on `list_runs`, `get_run_results`, `get_suite_results` and `get_run_status`, from the shared label helper |
+| ✅ | [#2360](https://github.com/TheurgicDuke771/DataQ/issues/2360) mcp: list_assets / get_asset do not return the asset health score — [PR #2678](https://github.com/TheurgicDuke771/DataQ/pull/2678): `health_score` on `list_assets` / `get_asset` (null never 0), `sort="health_score"` ranks the whole workspace before paging |
+| ✅ | [#2367](https://github.com/TheurgicDuke771/DataQ/issues/2367) mcp: get_suite_performance says 'latest completed run' but scores the latest run only if it completed — [PR #2675](https://github.com/TheurgicDuke771/DataQ/pull/2675): the docstring says the latest run is scored only if it completed, no fallback; rows carry `run_id` / `run_finished_at` |
+| ✅ | [#1838](https://github.com/TheurgicDuke771/DataQ/issues/1838) MCP: carry the read-only / state-changing / live-probe classification as ToolAnnotations on each tool; derive GATES and the docs from it — [PR #2680](https://github.com/TheurgicDuke771/DataQ/pull/2680): every tool registered through `tool_gates.classified_tool`, which records the gate and attaches `ToolAnnotations`; the RBAC sweeps and the published page read that registry; a frozen copy of the old table proves no gate moved (59 = 35 / 18 / 6). The review also found the live probes do record state (credential health, audit, profiler detections) — the docs said they persist nothing; corrected |
+| ✅ | [#2356](https://github.com/TheurgicDuke771/DataQ/issues/2356) llm: SQL generation lists every column of the target in its prompt with no cap — [PR #2668](https://github.com/TheurgicDuke771/DataQ/pull/2668): at most 500 column names per table (named columns kept), 100 profiled (named first), and the prompt says what was cut |
+| ✅ | [#2354](https://github.com/TheurgicDuke771/DataQ/issues/2354) alerting: alerts name the provider 'ADF' while the UI and run labels say 'Azure Data Factory' — [PR #2667](https://github.com/TheurgicDuke771/DataQ/pull/2667): the display name lives on each `OrchestrationProvider` and both run labels and alerts read it; identifiers unchanged. Remaining naming gaps filed as [#2673](https://github.com/TheurgicDuke771/DataQ/issues/2673) |
 | ⬜ | [#1999](https://github.com/TheurgicDuke771/DataQ/issues/1999) perf(scheduler): dispatch is serial at ~2.4 ms/schedule — 10k due schedules takes 23.6 s of a 60 s beat tick |
 | ⬜ | [#2117](https://github.com/TheurgicDuke771/DataQ/issues/2117) perf(scheduler): the remaining per-schedule dispatch cost is one serial broker publish |
 | ⬜ | [#2012](https://github.com/TheurgicDuke771/DataQ/issues/2012) perf(dashboard): _suite_performance is a DISTINCT ON over the whole runs table — 82 ms at 1M |
@@ -171,14 +171,28 @@ Every row shipped; nothing rolled. Filed from this week's reviews, in later week
 | ⬜ | [#1987](https://github.com/TheurgicDuke771/DataQ/issues/1987) Deep-offset paging on /runs, /pipeline_runs and /incidents is still linear — keyset/seek paging is now viable |
 | ⬜ | [#1979](https://github.com/TheurgicDuke771/DataQ/issues/1979) Partial/expression indexes silently stop applying under server-side parameter binding (psycopg3) |
 | ⬜ | [#1597](https://github.com/TheurgicDuke771/DataQ/issues/1597) audit_chain.verify_chain loads the full hashed audit_events set into memory per call |
-| ⬜ | [#2235](https://github.com/TheurgicDuke771/DataQ/issues/2235) perf(profiler): suggest_policy_for_target on S3/ADLS builds the store client and reads the secret twice |
+| ✅ | [#2235](https://github.com/TheurgicDuke771/DataQ/issues/2235) perf(profiler): suggest_policy_for_target on S3/ADLS builds the store client and reads the secret twice — [PR #2669](https://github.com/TheurgicDuke771/DataQ/pull/2669): one secret read and one store client per `shared_connection()` scope; review fixed a stale object size carried from the listing into the profile |
 | ⬜ | [#1672](https://github.com/TheurgicDuke771/DataQ/issues/1672) a11y(3/4): keyboard traversal + focus management audit |
 | ⬜ | [#1673](https://github.com/TheurgicDuke771/DataQ/issues/1673) a11y(4/4): screen-reader semantics — landmarks, table headers, aria-live run progress, chart text alternatives |
 | ⬜ | [#2067](https://github.com/TheurgicDuke771/DataQ/issues/2067) a11y: detail pages are titled generically — name the suite / asset / check in the document title |
 | ⬜ | [#2064](https://github.com/TheurgicDuke771/DataQ/issues/2064) ux: in-app navigation never resets scroll — a new page opens at the previous page's scroll offset |
 | ⬜ | [#2061](https://github.com/TheurgicDuke771/DataQ/issues/2061) a11y: printing / PDF export from the dark theme inherits dark tokens |
 | ⬜ | [#2051](https://github.com/TheurgicDuke771/DataQ/issues/2051) a11y: the ratchet cannot detect under-reporting — a scan of a half-loaded page passes |
-| ⬜ | [#2417](https://github.com/TheurgicDuke771/DataQ/issues/2417) mcp: incident, history and snooze tools do not say when the check they describe is switched off |
+| ✅ | [#2417](https://github.com/TheurgicDuke771/DataQ/issues/2417) mcp: incident, history and snooze tools do not say when the check they describe is switched off — [PR #2679](https://github.com/TheurgicDuke771/DataQ/pull/2679): `check_enabled` on the incident tools, `get_check_history` and `snooze_check`, each docstring saying what a disabled check means there |
+
+
+Week 7 also carried, from Week 6's review and the issue sweep of 2026-11-11:
+
+| Status | Task |
+|---|---|
+| ✅ | [#2615](https://github.com/TheurgicDuke771/DataQ/issues/2615) Contracts: an exported ODCS document still shows accepted values of a column classified as sensitive afterwards (security) — [PR #2670](https://github.com/TheurgicDuke771/DataQ/pull/2670) masks them on REST and MCP export and refuses a masked document on import; sensitivity is judged per contract object across versions, an object nobody can judge is withheld as `sensitivity_unknown`, `map` properties and non-list value sets are covered. Two independent reviews: the first found two bypasses (a re-pointed or fresh version exported unmasked; `map` not walked), fixed before merge; the second found an untagged asset row counting as "known", fixed in [PR #2676](https://github.com/TheurgicDuke771/DataQ/pull/2676). Keys the export never masks (patterns, bounds, SQL text, other engines, free text) are listed in the guide; how to track them is open with the maintainer |
+| ✅ | [#2533](https://github.com/TheurgicDuke771/DataQ/issues/2533) dataq-client pinned its own ruff/mypy — [PR #2663](https://github.com/TheurgicDuke771/DataQ/pull/2663): the client takes them from `requirements-tooling.txt`; also closed #2473, #2485, #2526 (same defect, filed four times) |
+| ✅ | [#2400](https://github.com/TheurgicDuke771/DataQ/issues/2400) admin guide had two Members sections — [PR #2664](https://github.com/TheurgicDuke771/DataQ/pull/2664) |
+| ✅ | [#2399](https://github.com/TheurgicDuke771/DataQ/issues/2399) Stryker config pointed at the wrong file for its pin — [PR #2665](https://github.com/TheurgicDuke771/DataQ/pull/2665) |
+| ✅ | [#2401](https://github.com/TheurgicDuke771/DataQ/issues/2401) third-party notices decision (settled by #2387) and README link — [PR #2666](https://github.com/TheurgicDuke771/DataQ/pull/2666) |
+| ✅ | [#2529](https://github.com/TheurgicDuke771/DataQ/issues/2529) closed as a duplicate of #2531 (fixed by PR #2532), with the pinned versions as evidence |
+
+Filed from this week's reviews: [#2671](https://github.com/TheurgicDuke771/DataQ/issues/2671) (two S3 tests read the developer's `~/.aws/config`), [#2672](https://github.com/TheurgicDuke771/DataQ/issues/2672) (legacy `validValues` contract export fails validation), [#2673](https://github.com/TheurgicDuke771/DataQ/issues/2673) (trigger names in alerts; Airflow naming), [#2674](https://github.com/TheurgicDuke771/DataQ/issues/2674) (coverage refresh opens two logins).
 
 ### v1.3 Week 8 — test & dependency debt, decisions & cycle close (due 2026-11-29)
 
