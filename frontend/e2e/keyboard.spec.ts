@@ -120,6 +120,20 @@ test.describe('Keyboard navigation', () => {
     await expect(other).toHaveAttribute('aria-current', 'page');
   });
 
+  test('a dialog opens in its first field and returns focus to its opener', async ({ page }) => {
+    await page.goto('/admin/calendar');
+    const opener = page.getByRole('button', { name: 'New entry' });
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'New calendar entry' });
+    await expect(dialog).toBeVisible();
+    // Not the × Close button antd focuses by default: a keyboard user can start typing.
+    await expect(dialog.getByLabel('Name')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+
   test('switching admin tabs keeps focus on the tab bar', async ({ page }) => {
     await page.goto('/admin/overview');
     const members = page.getByRole('tab', { name: 'Members' });
