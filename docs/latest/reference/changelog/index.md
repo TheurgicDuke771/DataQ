@@ -432,6 +432,7 @@ section below.
   `exports/orders.dat` set to CSV profiled fine and failed every run.
 - **Opening another run from a run's page shows that run.** Picking a run in the command palette
   while a run detail page was open changed the address but kept showing the first run.
+- Printing a run, or saving it as a PDF, from the dark theme now prints like the light theme: dark text on white paper, badges included. Before, the report's text came out faint or near-invisible, because the browser drops the dark background when printing.
 - **Settings → Notifications no longer describes workspace-wide alert defaults as a future
   feature.** The card says they are set by the deployment's configuration, names the variables,
   links the notifications guide, and states that a suite alerts through them in addition to
