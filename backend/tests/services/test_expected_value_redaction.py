@@ -251,6 +251,32 @@ def test_the_stored_card_is_scrubbed_at_rest(db_session: Any, leaked: dict[str, 
     assert _clean(incident.evidence)
 
 
+def test_the_at_rest_scrub_rewrites_only_values_not_thresholds(
+    db_session: Any, leaked: dict[str, Any]
+) -> None:
+    # A rewrite at rest cannot be undone, so a threshold that is no value of the column (here an
+    # anomaly monitor's band) is kept there; the read path still withholds it.
+    expected = {"column": "TIER", "value_set": list(SECRETS), "thresholds": {"z": 3}}
+    incident = Incident(
+        asset_id=leaked["suite"].asset_id,
+        check_id=leaked["check"].id,
+        suite_id=leaked["suite"].id,
+        status="open",
+        occurrence_count=1,
+        last_seen_at=leaked["result"].created_at,
+        evidence={"failing_result": {"status": "fail", "expected_value": expected}},
+    )
+    db_session.add(incident)
+    db_session.commit()
+    incident_service.redact_stale_evidence(db_session)
+    db_session.refresh(incident)
+    stored = incident.evidence["failing_result"]["expected_value"]
+    assert stored["value_set"] == [_M, _M] and stored["thresholds"] == {"z": 3}
+    read = incident_service.evidence_for_caller(db_session, incident, user_id=leaked["owner"].id)
+    assert read is not None
+    assert read["failing_result"]["expected_value"]["thresholds"] == {"z": _M}
+
+
 def test_a_card_written_after_the_check_is_gone_is_withheld(
     db_session: Any, leaked: dict[str, Any]
 ) -> None:
