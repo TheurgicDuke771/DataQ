@@ -86,7 +86,7 @@ export function ComparisonCheckForm({
                 rules={[{ required: true, message: 'A SELECT/WITH query' }]}
               >
                 <Suspense fallback={<Input.TextArea rows={4} disabled />}>
-                  <SqlEditorField />
+                  <SqlEditorField ariaLabel="Source query (read-only)" />
                 </Suspense>
               </Form.Item>
             ) : (
@@ -114,7 +114,7 @@ export function ComparisonCheckForm({
                 label="Optional SQL projection (runs on the suite connection)"
               >
                 <Suspense fallback={<Input.TextArea rows={4} disabled />}>
-                  <SqlEditorField />
+                  <SqlEditorField ariaLabel="Optional SQL projection (runs on the suite connection)" />
                 </Suspense>
               </Form.Item>
             )}

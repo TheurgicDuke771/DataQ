@@ -46,13 +46,15 @@ const LazySqlEditor = lazy(() => import('./SqlEditorField'));
 function SqlEditorControl({
   value,
   onChange,
+  ariaLabel,
 }: {
   value?: string;
   onChange?: (value: string) => void;
+  ariaLabel?: string;
 }) {
   return (
     <Suspense fallback={<Skeleton.Input active block style={{ height: 180 }} />}>
-      <LazySqlEditor value={value} onChange={onChange} />
+      <LazySqlEditor value={value} onChange={onChange} ariaLabel={ariaLabel} />
     </Suspense>
   );
 }
@@ -160,7 +162,7 @@ export function ConfigFieldItem({
           },
         ]}
       >
-        <SqlEditorControl />
+        <SqlEditorControl ariaLabel={field.label} />
       </Form.Item>
     );
   }

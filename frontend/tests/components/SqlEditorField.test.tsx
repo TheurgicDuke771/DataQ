@@ -5,17 +5,38 @@ import type { ComponentProps } from 'react';
 // Monaco itself can't run under jsdom (canvas, workers); the mock stands in for the editor so
 // what's under test is OUR glue: the antd-Form controlled-field contract (value in, onChange out,
 // null coercions) and the worker/loader setup running without a CDN fetch.
-vi.mock('@monaco-editor/react', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string | undefined) => void }) => (
-    <textarea
-      data-testid="editor"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={() => onChange(undefined)}
-    />
-  ),
-  loader: { config: vi.fn() },
-}));
+const editorOptions = vi.fn<(options: Record<string, unknown>) => void>();
+vi.mock('@monaco-editor/react', async () => {
+  const { useEffect, useRef } = await import('react');
+  return {
+    default: function FakeEditor({
+      value,
+      onChange,
+      options,
+      onMount,
+    }: {
+      value: string;
+      onChange: (v: string | undefined) => void;
+      options: Record<string, unknown>;
+      onMount?: (editor: { getDomNode: () => HTMLElement | null }) => void;
+    }) {
+      const root = useRef<HTMLDivElement>(null);
+      editorOptions(options);
+      useEffect(() => onMount?.({ getDomNode: () => root.current }), [onMount]);
+      return (
+        <div ref={root}>
+          <textarea
+            data-testid="editor"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={() => onChange(undefined)}
+          />
+        </div>
+      );
+    },
+    loader: { config: vi.fn() },
+  };
+});
 // These specifiers must match the module's imports EXACTLY or the mock is dead and the real Monaco
 // loads underneath.
 vi.mock('monaco-editor/editor/editor.api.js', () => ({}));
@@ -57,5 +78,22 @@ describe('SqlEditorField', () => {
     renderField({ value: 'x', onChange });
     fireEvent.blur(screen.getByTestId('editor'));
     expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('names the editor and tells a keyboard user how to leave it (#1672)', () => {
+    renderField({ ariaLabel: 'Source query (read-only)' });
+    expect(editorOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ariaLabel: 'Source query (read-only)' }),
+    );
+    const hint = screen.getByText(/To move on with Tab, press Ctrl\+M first/);
+    // Tied to Monaco's input, so a screen reader reads it on focus.
+    expect(screen.getByTestId('editor')).toHaveAttribute('aria-describedby', hint.id);
+  });
+
+  it('has a generic name when its caller gives none', () => {
+    renderField();
+    expect(editorOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ariaLabel: 'SQL query' }),
+    );
   });
 });
