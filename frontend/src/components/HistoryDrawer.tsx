@@ -1,4 +1,6 @@
-import { Alert, Button, Drawer, Empty, Flex, Popconfirm, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Empty, Flex, Spin, Tag, Typography } from 'antd';
+
+import { Popconfirm } from './shared/Popconfirm';
 import type { ReactNode } from 'react';
 import SimpleList from './SimpleList';
 

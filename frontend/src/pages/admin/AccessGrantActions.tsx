@@ -1,4 +1,6 @@
-import { App, Button, Popconfirm, Tooltip } from 'antd';
+import { App, Button, Tooltip } from 'antd';
+
+import { Popconfirm } from '../../components/shared/Popconfirm';
 
 import { type AdminAccess, revokeAdminGrant } from '../../api/admin';
 import { useAsyncAction } from '../../hooks/useAsyncAction';

@@ -1,4 +1,6 @@
-import { Alert, App, Button, Flex, Popconfirm, Space, Tag, Tooltip } from 'antd';
+import { Alert, App, Button, Flex, Space, Tag, Tooltip } from 'antd';
+
+import { Popconfirm } from '../../components/shared/Popconfirm';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 

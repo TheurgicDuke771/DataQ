@@ -1,4 +1,6 @@
-import { App, Button, Card, Empty, Flex, Popconfirm, Select, Table, Tag, Typography } from 'antd';
+import { App, Button, Card, Empty, Flex, Select, Table, Tag, Typography } from 'antd';
+
+import { Popconfirm } from '../shared/Popconfirm';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 

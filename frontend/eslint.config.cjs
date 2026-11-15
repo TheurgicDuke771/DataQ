@@ -93,7 +93,11 @@ module.exports = tseslint.config(
     // modal sizes its dropdown from the half-scaled trigger and opens as a sliver. These
     // two files are where the fade is applied; everything else goes through them.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/components/shared/Modal.tsx', 'src/hooks/useAppModal.ts'],
+    ignores: [
+      'src/components/shared/Modal.tsx',
+      'src/components/shared/Popconfirm.tsx',
+      'src/hooks/useAppModal.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -104,6 +108,12 @@ module.exports = tseslint.config(
               importNames: ['Modal'],
               message:
                 "Use Modal from 'components/shared/Modal' (fades instead of zooming, #2466).",
+            },
+            {
+              name: 'antd',
+              importNames: ['Popconfirm'],
+              message:
+                "Use Popconfirm from 'components/shared/Popconfirm' (keyboard focus, #1672).",
             },
           ],
           patterns: [

@@ -1,4 +1,6 @@
-import { Alert, Button, Flex, InputNumber, Popconfirm, Space, Switch, Tag, Typography } from 'antd';
+import { Alert, Button, Flex, InputNumber, Space, Switch, Tag, Typography } from 'antd';
+
+import { Popconfirm } from '../shared/Popconfirm';
 import { useState } from 'react';
 
 import type { CoverageDocument, EffectiveCoverage } from '../../api/coverage';

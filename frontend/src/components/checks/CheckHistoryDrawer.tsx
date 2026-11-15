@@ -1,4 +1,6 @@
-import { App, Button, Descriptions, Flex, Popconfirm } from 'antd';
+import { App, Button, Descriptions, Flex } from 'antd';
+
+import { Popconfirm } from '../shared/Popconfirm';
 import { useState } from 'react';
 
 import {
