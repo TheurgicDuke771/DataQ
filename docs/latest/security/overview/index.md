@@ -787,8 +787,9 @@ considered:
     - **Root-cause narratives** — the stored evidence card (check/asset
       identifiers, statuses, metric values) plus the triggering check's own
       observed value — routed through the same column-policy/warehouse-tag
-      floor every other results surface applies — and its expected value (a
-      check-authored threshold, not warehouse data, so never masked). No
+      floor every other results surface applies — and its expected value (the
+      check's configuration, held to the same floor: on a sensitive column the
+      values it holds, such as an accepted set or a bound, are withheld). No
       column profile on this path.
 
   **Never raw sample rows**, on any path. Every call — feature invocation or

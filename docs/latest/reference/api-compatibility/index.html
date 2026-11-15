@@ -2809,6 +2809,11 @@ vulnerability open, the change can take effect immediately. It is still announce
 </tr>
 <tr>
 <td>v1.3.0</td>
+<td>On a sensitive column, a result's <code>expected_value</code> reads <code>&lt;redacted&gt;</code> for every key that does not describe the check (a value set, a pattern, a bound, a DQX limit, a monitor's thresholds), in run results, MCP results, incident evidence and alert payloads, with <code>expected_value_redaction</code> naming the rule.</td>
+<td>Security: those values are the column's own.</td>
+</tr>
+<tr>
+<td>v1.3.0</td>
 <td>A flat-file batch target's asset name includes its prefix (<code>orders/…</code>), so existing assets are renamed or split on upgrade.</td>
 <td>The old name merged different folders into one asset, mixing their health, lineage and incidents.</td>
 </tr>

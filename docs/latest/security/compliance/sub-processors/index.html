@@ -2701,7 +2701,7 @@ a third-party endpoint.</p>
 <tr>
 <td>9</td>
 <td><strong>Outbound LLM intelligence</strong> — DataQ calling a model on its own behalf</td>
-<td>Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows</td>
+<td>Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (the check's configuration, with a sensitive column's values withheld by the same floor). Never raw sample rows</td>
 <td>Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen</td>
 <td><strong>Live, off by default</strong> — an admin must configure a provider + credential before any call leaves</td>
 </tr>
