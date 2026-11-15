@@ -35,9 +35,10 @@ test.describe('Dashboard', () => {
   test('names the trend chart and offers its numbers as a table (#1673)', async ({ page }) => {
     const trendCard = page.locator('.ant-card').filter({ hasText: /Quality Trends/ });
     // The svg carries its own name, so a screen reader hears what the chart is.
-    await expect(trendCard.locator('svg title').first()).toHaveText(
-      'Succeeded and failed runs per day',
-    );
+    // Matched by its text: icons and the empty-state image carry <title>s of their own.
+    await expect(
+      trendCard.locator('svg title', { hasText: 'Succeeded and failed runs per day' }),
+    ).toHaveCount(1);
     await trendCard.getByText('Table', { exact: true }).click();
     await expect(trendCard.getByRole('table', { name: 'Runs per day' })).toBeVisible();
   });
