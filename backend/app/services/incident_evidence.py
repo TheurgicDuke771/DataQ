@@ -30,6 +30,7 @@ from backend.app.orchestration import markers
 from backend.app.services import asset_view_service, run_service
 from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
+from backend.app.services.value_set_redaction import redact_expected_value
 
 log = get_logger(__name__)
 
@@ -379,7 +380,17 @@ def _failing_result_layer(
         "status": result.status,
         "metric_value": _num(result.metric_value),
         "observed_value": observed,
-        "expected_value": result.expected_value,
+        "expected_value": (
+            redact_expected_value(
+                result.expected_value,
+                tested_column=context.tested_column,
+                expectation_type=context.expectation_type,
+                policy=context.policy,
+                tags=context.tags,
+            )
+            if context is not None
+            else result.expected_value
+        ),
     }
 
 
