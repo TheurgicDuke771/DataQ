@@ -263,6 +263,11 @@ test.describe('Seasonal calendar', () => {
       await expect(drawer.locator('.recharts-line path[stroke-dasharray="6 3"]')).toHaveCount(1);
       await expect(drawer.locator('.recharts-reference-area')).not.toHaveCount(0);
       await expectYTicksVisible(drawer);
+      // The charts carry their own names, not just tick labels (#1673).
+      await expect(
+        drawer.locator('svg title', { hasText: 'Metric per run, with the threshold lines' }),
+      ).toHaveCount(1);
+      await expect(drawer.getByRole('radiogroup', { name: 'Trend view' })).toBeVisible();
       await expect(drawer.getByTestId('detected-periods')).toContainText('Seen once');
       await expect(drawer.getByRole('button', { name: /^Promote to calendar/ })).toBeVisible();
       await expectAccessible(page, '.ant-drawer [role="dialog"]');
