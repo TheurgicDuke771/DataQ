@@ -40,10 +40,16 @@ describe('QualityTrends', () => {
 
   it('offers the same numbers as a table (#1673)', async () => {
     render(<QualityTrends trend={days} />);
+    // The switch is tied to its chart by name, not antd's generic "segmented control".
+    expect(screen.getByRole('radiogroup', { name: 'Quality Trends view' })).toBeInTheDocument();
     await userEvent.click(screen.getByText('Table'));
     const table = screen.getByRole('table', { name: 'Runs per day' });
     const rows = within(table).getAllByRole('row').slice(1);
-    expect(rows.map((r) => r.textContent)).toEqual(['Jun 1031', 'Jun 1100', 'Jun 1220']);
+    expect(rows.map((r) => r.textContent)).toEqual([
+      '2026-06-1031',
+      '2026-06-1100',
+      '2026-06-1220',
+    ]);
   });
 
   it('offers no table when there is nothing to show', () => {

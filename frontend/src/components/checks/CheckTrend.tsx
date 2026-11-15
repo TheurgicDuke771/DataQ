@@ -1,4 +1,4 @@
-import { Alert, Empty, Flex, Segmented, Spin, Table, Typography } from 'antd';
+import { Alert, Empty, Flex, Spin, Table, Typography } from 'antd';
 import { useState } from 'react';
 import {
   CartesianGrid,
@@ -36,6 +36,7 @@ import type { ResultStatus } from '../../api/runs';
 import { MetricValue } from '../results/MetricValue';
 import { formatTimestamp } from '../results/resultsFormat';
 import { formatTick } from '../../utils/formatNumber';
+import { ChartTableSwitch } from '../charts/ChartTableSwitch';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
 import { ResultStatusTag } from '../shared/StatusTag';
@@ -287,16 +288,7 @@ export function CheckTrend({ suiteId, check, limit = 90, onAttached }: CheckTren
 
   return (
     <div>
-      <Segmented
-        size="small"
-        value={view}
-        onChange={(v) => setView(v as 'chart' | 'table')}
-        options={[
-          { label: 'Chart', value: 'chart' },
-          { label: 'Table', value: 'table' },
-        ]}
-        style={{ marginBottom: 8 }}
-      />
+      <ChartTableSwitch value={view} onChange={setView} label="Trend view" />
       {/* Plain-text mirror of the chart's threshold lines (a11y, #594): the
           dash-pattern + colour encoding on the chart itself is non-color-only
           already, but a screen reader gets nothing from an SVG reference line —

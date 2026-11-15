@@ -1,4 +1,4 @@
-import { Card, Flex, Segmented, Table, Typography } from 'antd';
+import { Card, Flex, Table, Typography } from 'antd';
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -9,6 +9,7 @@ import {
   RUN_STATUS_CHART_COLORS,
   TOOLTIP_STYLE,
 } from '../charts/chartTheme';
+import { type ChartView, ChartTableSwitch } from '../charts/ChartTableSwitch';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
 
 /**
@@ -16,6 +17,13 @@ import { ResponsiveChart } from '../charts/ResponsiveChart';
  * window, as a stacked bar.
  */
 const FAILED_HATCH_ID = 'dq-hatch-failed';
+
+/** Names the table for assistive technology. At module scope: a component defined in render is a
+ *  new type each time, and React would remount the table on every re-render. */
+function NamedTable(props: object) {
+  return <table {...props} aria-label="Runs per day" />;
+}
+const TABLE_COMPONENTS = { table: NamedTable };
 
 interface QualityTrendsProps {
   trend: TrendPoint[];
@@ -31,7 +39,7 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
   const isEmpty = trend.every((p) => p.succeeded === 0 && p.failed === 0);
   const data = trend.map((p) => ({ ...p, label: shortDay(p.day) }));
   // A table of the same numbers (#1673): a chart is pictures to a screen reader.
-  const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [view, setView] = useState<ChartView>('chart');
 
   return (
     <Card size="small" style={{ height: '100%' }}>
@@ -43,25 +51,14 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
           Succeeded vs failed runs per day
         </Typography.Text>
       </Flex>
-      {!isEmpty && (
-        <Segmented
-          size="small"
-          value={view}
-          onChange={(v) => setView(v as 'chart' | 'table')}
-          options={[
-            { label: 'Chart', value: 'chart' },
-            { label: 'Table', value: 'table' },
-          ]}
-          style={{ marginBottom: 8 }}
-        />
-      )}
+      {!isEmpty && <ChartTableSwitch value={view} onChange={setView} label="Quality Trends view" />}
       {view === 'table' && !isEmpty ? (
         // One table, header and rows together: antd's `scroll.y` splits the header into a second
         // table, which leaves the numbers without their column headers for a screen reader.
         // Focusable, so a keyboard user can scroll it (axe: scrollable-region-focusable).
         <div
           role="region"
-          aria-label="Runs per day, as a table"
+          aria-label="Quality Trends table"
           tabIndex={0}
           style={{ maxHeight: 260, overflowY: 'auto' }}
         >
@@ -70,11 +67,10 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
             rowKey="day"
             pagination={false}
             dataSource={data}
-            components={{
-              table: (props: object) => <table {...props} aria-label="Runs per day" />,
-            }}
+            components={TABLE_COMPONENTS}
             columns={[
-              { title: 'Day', dataIndex: 'label', key: 'day' },
+              // The full date: read row by row, "Jan 01" alone does not say which year.
+              { title: 'Day', dataIndex: 'day', key: 'day' },
               { title: 'Succeeded', dataIndex: 'succeeded', key: 'succeeded', align: 'right' },
               { title: 'Failed', dataIndex: 'failed', key: 'failed', align: 'right' },
             ]}
