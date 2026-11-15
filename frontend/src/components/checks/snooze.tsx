@@ -16,8 +16,12 @@ export function isSnoozed(check: Check, now: number = Date.now()): boolean {
 export function SnoozedTag({ check, now }: { check: Check; now?: number }) {
   if (!isSnoozed(check, now)) return null;
   return (
-    <Tooltip title="This check won't trigger alerts by itself; a run alert still fires (and may list it) if other checks fail. Results keep recording.">
-      <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+    // Focusable, so the explanation is reachable by keyboard too (#1672).
+    <Tooltip
+      title="This check won't trigger alerts by itself; a run alert still fires (and may list it) if other checks fail. Results keep recording."
+      trigger={['hover', 'focus']}
+    >
+      <Tag tabIndex={0} color="orange" style={{ marginInlineEnd: 0 }}>
         Snoozed until {formatTimestamp(check.alert_snoozed_until)}
       </Tag>
     </Tooltip>

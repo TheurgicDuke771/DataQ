@@ -63,6 +63,8 @@ describe('useAppModal (#2466)', () => {
         transitionName: 'ant-fade',
         title: 'Delete “orders”?',
         okType: 'danger',
+        // A danger dialog opens on Cancel (#1672).
+        focusable: { autoFocusButton: 'cancel' },
       });
       for (const other of Object.keys(modalApi) as (keyof typeof modalApi)[]) {
         if (other !== kind) expect(modalApi[other]).not.toHaveBeenCalled();
@@ -73,6 +75,44 @@ describe('useAppModal (#2466)', () => {
   it('keeps the fade when a caller forwards an undefined transitionName', () => {
     const { result } = renderHook(() => useAppModal());
     result.current.confirm({ title: 'Sure?', transitionName: undefined });
-    expect(modalApi.confirm).toHaveBeenCalledWith({ title: 'Sure?', transitionName: 'ant-fade' });
+    expect(modalApi.confirm).toHaveBeenCalledWith({
+      title: 'Sure?',
+      transitionName: 'ant-fade',
+      focusable: { autoFocusButton: undefined },
+    });
+  });
+
+  it('opens a danger confirm on Cancel, and leaves a choice the caller made (#1672)', () => {
+    const { result } = renderHook(() => useAppModal());
+    result.current.confirm({ title: 'Delete?', okButtonProps: { danger: true } });
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'cancel' } }),
+    );
+    result.current.confirm({
+      title: 'Delete?',
+      okType: 'danger',
+      focusable: { autoFocusButton: 'ok' },
+    });
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'ok' } }),
+    );
+    result.current.confirm({
+      title: 'Delete?',
+      okType: 'danger',
+      focusable: { autoFocusButton: null },
+    });
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'cancel' } }),
+    );
+    // The legacy top-level prop, as an older caller still passes it.
+    const legacy = { title: 'Delete?', okType: 'danger', autoFocusButton: 'ok' } as const;
+    result.current.confirm(legacy as Parameters<typeof result.current.confirm>[0]);
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'ok' } }),
+    );
+    result.current.confirm({ title: 'Save?' });
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: undefined } }),
+    );
   });
 });
