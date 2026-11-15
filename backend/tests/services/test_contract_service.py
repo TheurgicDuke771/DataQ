@@ -956,6 +956,7 @@ def test_an_imported_suite_is_linked_to_the_asset_of_its_table(db_session: Any) 
 
     assert orders.asset_id is not None
     asset = db_session.get(Asset, orders.asset_id)
+    assert orders.target is not None
     identity = resolve_asset_identity(conn.type, conn.config, orders.target)
     assert (asset.namespace, asset.name) == (identity.namespace, identity.name)
 
