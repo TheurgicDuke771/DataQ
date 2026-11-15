@@ -123,20 +123,13 @@ function NotificationsCard() {
           <span>
             Destinations are defined once below as channels; each suite then picks which of them it
             alerts through and at what threshold (fail / warn / always) — open a suite from{' '}
-            <Link to="/suites" className="dq-text-link">
-              Suites
-            </Link>{' '}
-            to do that. Workspace-wide default destinations are set by the deployment&apos;s
-            configuration (<Typography.Text code>TEAMS_WEBHOOK_SECRET_NAME</Typography.Text>,{' '}
+            <Link to="/suites">Suites</Link> to do that. Workspace-wide default destinations are set
+            by the deployment&apos;s configuration (
+            <Typography.Text code>TEAMS_WEBHOOK_SECRET_NAME</Typography.Text>,{' '}
             <Typography.Text code>SLACK_WEBHOOK_SECRET_NAME</Typography.Text>,{' '}
             <Typography.Text code>EMAIL_*</Typography.Text>), not here; every suite alerts through
             them in addition to its linked channels. See the{' '}
-            <a
-              href={docsUrl('guides/notifications/#channels')}
-              target="_blank"
-              rel="noreferrer"
-              className="dq-text-link"
-            >
+            <a href={docsUrl('guides/notifications/#channels')} target="_blank" rel="noreferrer">
               notifications guide
             </a>{' '}
             for the variables.
@@ -169,6 +162,7 @@ function DestructiveActionsCard() {
           There is no workspace-level delete: the workspace is the deployment itself. Each
           destructive action lives next to what it removes, and every one is audited.
         </Typography.Text>
+        {/* List items are outside the global rule (antd menus are lists too): keep the class. */}
         <ul style={{ margin: 0, paddingInlineStart: 20 }}>
           <li>
             <Link to="/admin/suites" className="dq-text-link">
