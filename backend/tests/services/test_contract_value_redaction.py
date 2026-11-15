@@ -110,6 +110,13 @@ def _tier(exported: dict[str, Any]) -> dict[str, Any]:
     return tier
 
 
+def _asset(db: Any, identity: Any) -> Asset:
+    asset: Asset = db.scalars(
+        select(Asset).where(Asset.namespace == identity.namespace, Asset.name == identity.name)
+    ).one()
+    return asset
+
+
 def _custom(node: dict[str, Any], name: str) -> Any:
     return next(
         (c["value"] for c in node.get("customProperties", []) if c["property"] == f"dataq.{name}"),
@@ -388,14 +395,9 @@ def test_an_object_with_no_suite_is_judged_by_its_tables_warehouse_tags(db_sessi
     identity = resolve_asset_identity(
         conn.type, conn.config, {"schema": "FINANCE", "table": "ORDERS"}
     )
-    db_session.add(
-        Asset(
-            namespace=identity.namespace,
-            name=identity.name,
-            connection_id=conn.id,
-            column_tags={"tier": "sensitive"},
-        )
-    )
+    # The import resolved the table's asset; the warehouse sync tags its column.
+    asset = _asset(db_session, identity)
+    asset.column_tags = {"tier": "sensitive"}
     db_session.commit()
     db_session.refresh(outcome.contract)
 
@@ -417,7 +419,8 @@ def test_an_asset_row_with_no_classification_evidence_does_not_make_the_object_k
     identity = resolve_asset_identity(
         conn.type, conn.config, {"schema": "FINANCE", "table": "ORDERS"}
     )
-    db_session.add(Asset(namespace=identity.namespace, name=identity.name, connection_id=conn.id))
+    # The import resolved the table's asset row; its tags were never read.
+    assert _asset(db_session, identity).column_tags_refreshed_at is None
     db_session.commit()
     db_session.refresh(outcome.contract)
 
