@@ -53,3 +53,39 @@ describe.each([
     }
   });
 });
+
+// Every declaration in a block, not just the hex ones: the shadows and tints matter on paper too.
+function declarations(body: string): Record<string, string> {
+  return Object.fromEntries(
+    [...body.matchAll(/(--dq-[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]),
+  );
+}
+
+function blockBody(from: number, selector: string): string {
+  const start = css.indexOf(`${selector} {`, from);
+  if (start < 0) throw new Error(`no ${selector} block in styles.css`);
+  return css.slice(start, css.indexOf('}', start));
+}
+
+describe('printing from the dark theme', () => {
+  // Paper is white: browsers drop page backgrounds, so dark-theme ink would print faint on it.
+  const printAt = css.indexOf('@media print {');
+  const lightAll = declarations(blockBody(0, ':root'));
+  const darkAll = declarations(blockBody(0, ":root[data-theme='dark']"));
+  const printDark = declarations(blockBody(printAt, ":root[data-theme='dark']"));
+
+  it('puts back every token the dark theme overrides', () => {
+    expect(printAt).toBeGreaterThan(0);
+    expect(Object.keys(printDark).sort()).toEqual(Object.keys(darkAll).sort());
+  });
+
+  it('paints the report with the token ink, not the antd text colour it would inherit', () => {
+    expect(css.slice(printAt)).toMatch(/\.rd-report \{\s*color: var\(--dq-ink\);/);
+  });
+
+  it('to its light value', () => {
+    for (const [token, value] of Object.entries(printDark)) {
+      expect(value, token).toBe(lightAll[token]);
+    }
+  });
+});

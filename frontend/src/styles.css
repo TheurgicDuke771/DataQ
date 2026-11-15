@@ -167,6 +167,38 @@ a:focus-visible,
 }
 
 @media print {
+  /* Paper is white whatever the screen theme: browsers drop page backgrounds when printing, so
+     the dark theme's light ink would print faint grey on white. Every token the dark block
+     overrides is put back to its light value (tokens.test.ts holds the two lists equal).
+     RunReport, the only tree that prints, is plain HTML painted by these tokens. */
+  :root[data-theme='dark'] {
+    --dq-primary: #4f46e5;
+    --dq-primary-soft: #c7d2fe;
+    --dq-selected-bg: #eef0fe;
+    --dq-row-hover: rgba(79, 70, 229, 0.04);
+    --dq-canvas: #f4f5f7;
+    --dq-border: #e6e8eb;
+    --dq-ink: #1f2430;
+    --dq-surface: #ffffff;
+    --dq-graph-line: #c4c8cf;
+    --dq-muted: #616875;
+    --dq-severity-good: #389e0d;
+    --dq-severity-warning: #c77d05;
+    --dq-severity-bad: #f5222d;
+    --dq-severity-neutral: #8c8c8c;
+    --dq-error: #d4380d;
+    --dq-severity-good-text: #237804;
+    --dq-severity-warning-text: #874d00;
+    --dq-severity-bad-text: #cf1322;
+    --dq-severity-neutral-text: #595959;
+    --dq-monitored: #91caff;
+    --dq-delta-good: #3f8600;
+    --dq-delta-bad: #cf1322;
+    --dq-shadow-rest: 0 1px 3px rgba(16, 24, 40, 0.06);
+    --dq-shadow-hover: 0 8px 20px rgba(16, 24, 40, 0.1);
+    color-scheme: light;
+  }
+
   /* Hide the app shell (header/sider/nav-drawer) and every `.no-print` block
      so the artifact is the report alone, not the app around it. */
   .no-print,
@@ -189,6 +221,11 @@ a:focus-visible,
 
   .print-only {
     display: block !important;
+  }
+  /* The report's own ink, not the one it would inherit: antd paints <Content> with the theme
+     algorithm's text colour, which the dark algorithm makes near-white. */
+  .rd-report {
+    color: var(--dq-ink);
   }
 
   .rd-report table {

@@ -154,3 +154,18 @@ test.describe('Results page', () => {
     expect(box.full).toBeGreaterThan(box.clientWidth);
   });
 });
+
+// Paper is white whatever the screen theme: browsers drop page backgrounds when printing, so the
+// dark theme's light ink would print faint grey (styles.css, @media print).
+test('a run printed from the dark theme uses the light ink on paper', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('dq-theme-mode', 'dark'));
+  await page.goto('/results');
+  await page.locator('tr.ant-table-row a.dq-row-link').first().click();
+  await expect(page.getByTestId('rd-screen')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ media: 'print' });
+  const report = page.locator('.rd-report');
+  await expect(report).toBeVisible();
+  // --dq-ink's light value, #1f2430.
+  await expect(report).toHaveCSS('color', 'rgb(31, 36, 48)');
+});
