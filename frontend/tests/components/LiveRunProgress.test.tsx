@@ -315,4 +315,44 @@ describe('LiveRunProgress', () => {
     await screen.findByText('not-null id');
     expect(screen.getByTestId('run-elapsed')).toHaveTextContent('running for 0ms');
   });
+
+  describe('announces what changes, not every poll (#1673)', () => {
+    const announced = async () => (await screen.findByTestId('run-announce')).textContent;
+
+    it('has its live region on the page, empty, before the first poll answers', () => {
+      mockProgress.mockReturnValue(new Promise(() => {}));
+      renderDrawer();
+      // A region added together with its first text is not reliably announced.
+      expect(screen.getByTestId('run-announce')).toBeEmptyDOMElement();
+    });
+
+    it('says a queued run is queued', async () => {
+      mockProgress.mockResolvedValue(progress('queued', { completed_checks: 0 }));
+      renderDrawer();
+      expect(await announced()).toBe('Run queued.');
+      expect(screen.getByTestId('run-announce')).toHaveAttribute('aria-live', 'polite');
+    });
+
+    it('reports a running run in quarters, so small steps say nothing new', async () => {
+      mockProgress.mockResolvedValue(
+        progress('running', { total_checks: 10, completed_checks: 3 }),
+      );
+      renderDrawer();
+      expect(await announced()).toBe('Run running: about 25% of checks done.');
+    });
+
+    it('says nothing about a percentage before the first quarter', async () => {
+      mockProgress.mockResolvedValue(
+        progress('running', { total_checks: 10, completed_checks: 1 }),
+      );
+      renderDrawer();
+      expect(await announced()).toBe('Run running.');
+    });
+
+    it('sums up the outcome when the run ends', async () => {
+      mockProgress.mockResolvedValue(progress('succeeded', { counts: { pass: 1, fail: 1 } }));
+      renderDrawer();
+      expect(await announced()).toBe('Run succeeded: 2 of 2 checks done (1 pass, 1 fail).');
+    });
+  });
 });

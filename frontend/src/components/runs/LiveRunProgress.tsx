@@ -120,15 +120,52 @@ function LiveRunProgressBody({
     }
   };
 
-  if (!progress) {
-    if (error) {
-      return (
+  // The live region is on the page from the first render, empty: a region added together with
+  // its text is not reliably announced, so it must exist before its first message (#1673).
+  const announcement = progress
+    ? progressAnnouncement(
+        progress.status,
+        progress.completed_checks,
+        progress.total_checks,
+        Object.entries(progress.counts).filter(([, n]) => n > 0) as [string, number][],
+      )
+    : '';
+  return (
+    <>
+      <span role="status" aria-live="polite" className="dq-sr-only" data-testid="run-announce">
+        {announcement}
+      </span>
+      {progress ? (
+        <ProgressView
+          progress={progress}
+          error={error}
+          canManage={canManage}
+          cancelling={cancelling}
+          onCancel={onCancel}
+        />
+      ) : error ? (
         <Alert type="error" showIcon title="Failed to load run progress" description={error} />
-      );
-    }
-    return <Spin description="Starting run…" size="large" />;
-  }
+      ) : (
+        <Spin description="Starting run…" size="large" />
+      )}
+    </>
+  );
+}
 
+function ProgressView({
+  progress,
+  error,
+  canManage,
+  cancelling,
+  onCancel,
+}: {
+  progress: RunProgress;
+  /** A transient poll error while earlier progress is still shown. */
+  error: string | null;
+  canManage: boolean;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
   const { status, total_checks, completed_checks, counts, checks, elapsed_ms, batched_pending } =
     progress;
   const terminal = isTerminal(status);
@@ -248,4 +285,23 @@ function CheckStatus({ status, terminal }: { status: ResultStatus | null; termin
     );
   }
   return <ResultStatusTag status={status} />;
+}
+
+/** The live region's text (#1673): the run's status, how far it has got in quarters while
+ *  running, and the outcome when it ends. Coarse on purpose, so a screen reader is not interrupted by every
+ *  poll. */
+function progressAnnouncement(
+  status: RunStatus,
+  completed: number,
+  total: number,
+  tallies: [string, number][],
+): string {
+  if (status === 'queued') return 'Run queued.';
+  if (isTerminal(status)) {
+    const outcome = tallies.map(([s, n]) => `${n} ${s}`).join(', ');
+    return `Run ${status}: ${completed} of ${total} checks done${outcome ? ` (${outcome})` : ''}.`;
+  }
+  if (total === 0) return 'Run running.';
+  const quarter = Math.floor((completed / total) * 4) * 25;
+  return quarter === 0 ? 'Run running.' : `Run running: about ${quarter}% of checks done.`;
 }
