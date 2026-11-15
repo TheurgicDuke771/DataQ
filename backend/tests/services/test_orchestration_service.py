@@ -130,6 +130,7 @@ class _FakeProvider:
     """
 
     provider = "adf"
+    display_name = "Fake ADF"
     resource_config_key = "factory_name"
     webhook_auth = AdfProvider.webhook_auth
 
@@ -804,6 +805,7 @@ class _FakeDbtProvider:
     """dbt-shaped provider exposing the OPTIONAL `read_manifest` capability."""
 
     provider = "dbt"
+    display_name = "Fake dbt"
     resource_config_key = "project_name"
     webhook_auth = DbtProvider.webhook_auth
 

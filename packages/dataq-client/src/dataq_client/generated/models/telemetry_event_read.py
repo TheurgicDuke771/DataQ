@@ -44,9 +44,7 @@ class TelemetryEventRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.telemetry_event_read_attributes import (
-            TelemetryEventReadAttributes,
-        )
+        from ..models.telemetry_event_read_attributes import TelemetryEventReadAttributes
 
         d = dict(src_dict)
         attributes = TelemetryEventReadAttributes.from_dict(d.pop("attributes"))

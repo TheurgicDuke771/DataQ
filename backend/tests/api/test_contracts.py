@@ -10,7 +10,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from backend.app.db.models import Connection, Share, User
+from backend.app.db.models import Connection, Contract, Share, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
@@ -290,3 +290,83 @@ def test_linking_to_a_contract_the_caller_cannot_see_is_a_404(
         headers=stranger_headers,
     )
     assert resp.status_code == 404
+
+
+# ───────────── value lists of a sensitive column (#2615) ─────────────
+
+_TIER_DOC_YAML = _DOC_YAML.replace(
+    "      - name: email\n",
+    """      - name: tier
+        logicalType: string
+        enum:
+          - value: tier-gold
+          - value: tier-silver
+        quality:
+          - id: tier-valid
+            metric: invalidValues
+            arguments:
+              validValues: [tier-gold, tier-silver]
+            mustBe: 0
+      - name: email
+""",
+)
+
+
+def _classify_tier(db: Any, suite_id: str) -> None:
+    suite = db.get(Suite, uuid.UUID(suite_id))
+    suite.column_policy = {**(suite.column_policy or {}), "pii_columns": ["email", "tier"]}
+    db.commit()
+
+
+def test_export_withholds_the_values_of_a_column_classified_after_the_import(
+    client: TestClient, db_session: Any, as_role: AsRole
+) -> None:
+    member, headers = as_role("member")
+    conn = _connection(db_session, member)
+    body = _import(client, headers, conn, document_yaml=_TIER_DOC_YAML).json()
+    url = f"/api/v1/contracts/{body['contract']['id']}/export"
+    assert "tier-gold" in client.get(url, headers=headers).text  # shown until classified
+
+    _classify_tier(db_session, body["created_suite_ids"][0])
+    for response in (
+        client.get(url, headers=headers),
+        client.get(f"{url}?format=yaml", headers=headers),
+    ):
+        assert response.status_code == 200
+        assert "tier-gold" not in response.text and "tier-silver" not in response.text
+        document = yaml.safe_load(response.text)
+        tier = next(p for p in document["schema"][0]["properties"] if p["name"] == "tier")
+        assert tier["enum"] == [{"value": "<redacted>"}]
+        assert tier["quality"][0]["arguments"]["validValues"] == ["<redacted>", "<redacted>"]
+        # The document itself says a list was withheld, for which column and why.
+        assert {
+            "property": "dataq.redactedColumns",
+            "value": [{"object": "orders", "column": "tier", "reason": "policy"}],
+        } in document["customProperties"]
+        assert {
+            "property": "dataq.valuesWithheld",
+            "value": {"column": "tier", "reason": "policy", "fields": {"enum": 2}},
+        } in tier["customProperties"]
+
+
+def test_importing_an_export_with_withheld_values_is_refused(
+    client: TestClient, db_session: Any, as_role: AsRole
+) -> None:
+    member, headers = as_role("member")
+    conn = _connection(db_session, member)
+    body = _import(client, headers, conn, document_yaml=_TIER_DOC_YAML).json()
+    contract_id = body["contract"]["id"]
+    _classify_tier(db_session, body["created_suite_ids"][0])
+    exported = client.get(f"/api/v1/contracts/{contract_id}/export", headers=headers).json()
+
+    for payload in (
+        {"document": exported, "document_yaml": None, "replace": True},
+        {"document_yaml": yaml.safe_dump(exported), "replace": True},
+    ):
+        refused = _import(client, headers, conn, **payload)
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["error"]["code"] == "value_set_redacted"
+    # The stored contract still exports as before: nothing was overwritten.
+    db_session.expire_all()
+    spec = db_session.get(Contract, uuid.UUID(contract_id)).spec
+    assert "tier-gold" in str(spec) and "<redacted>" not in str(spec)

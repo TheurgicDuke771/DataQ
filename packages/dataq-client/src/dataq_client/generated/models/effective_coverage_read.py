@@ -47,9 +47,7 @@ class EffectiveCoverageRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.effective_coverage_read_sensitivity import (
-            EffectiveCoverageReadSensitivity,
-        )
+        from ..models.effective_coverage_read_sensitivity import EffectiveCoverageReadSensitivity
         from ..models.effective_shape import EffectiveShape
 
         d = dict(src_dict)

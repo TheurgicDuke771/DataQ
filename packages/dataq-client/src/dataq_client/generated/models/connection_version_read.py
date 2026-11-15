@@ -117,9 +117,7 @@ class ConnectionVersionRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.connection_version_read_config import (
-            ConnectionVersionReadConfig,
-        )
+        from ..models.connection_version_read_config import ConnectionVersionReadConfig
 
         d = dict(src_dict)
 
