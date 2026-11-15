@@ -6,14 +6,13 @@ import {
   Input,
   InputNumber,
   Select,
-  Skeleton,
   Switch,
   Typography,
 } from 'antd';
 import type { Rule } from 'antd/es/form';
-import { lazy, Suspense } from 'react';
 
 import type { ConnectionType, DmfCapability } from '../../api/connections';
+import { SqlEditorControl } from './SqlEditorControl';
 import { ENGINE_LABEL } from './checkBadges';
 import { customDmfListingNote } from './customDmf';
 import { parseList } from './checkForm';
@@ -39,25 +38,6 @@ import {
  * Shared check-form field components, used by both the edit page (`CheckEdit`) and the create page
  * (`CheckNew`): the dynamic config-field renderer and the severity-threshold block.
  */
-
-// Monaco lives in its own lazy chunk, pulled in only when a custom-SQL ('sql') field renders.
-const LazySqlEditor = lazy(() => import('./SqlEditorField'));
-
-function SqlEditorControl({
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  value?: string;
-  onChange?: (value: string) => void;
-  ariaLabel?: string;
-}) {
-  return (
-    <Suspense fallback={<Skeleton.Input active block style={{ height: 180 }} />}>
-      <LazySqlEditor value={value} onChange={onChange} ariaLabel={ariaLabel} />
-    </Suspense>
-  );
-}
 
 export function ConfigFieldItem({
   field,
@@ -162,7 +142,7 @@ export function ConfigFieldItem({
           },
         ]}
       >
-        <SqlEditorControl ariaLabel={field.label} />
+        <SqlEditorControl ariaLabel={label} />
       </Form.Item>
     );
   }

@@ -9,6 +9,8 @@ const editorOptions = vi.fn<(options: Record<string, unknown>) => void>();
 vi.mock('@monaco-editor/react', async () => {
   const { useEffect, useRef } = await import('react');
   return {
+    // Chromium's DOM in Monaco 0.57: focus goes to a `.native-edit-context` div, and the only
+    // textarea is an aria-hidden IME helper. onMount runs once, as Monaco's does.
     default: function FakeEditor({
       value,
       onChange,
@@ -22,10 +24,13 @@ vi.mock('@monaco-editor/react', async () => {
     }) {
       const root = useRef<HTMLDivElement>(null);
       editorOptions(options);
-      useEffect(() => onMount?.({ getDomNode: () => root.current }), [onMount]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- once, like Monaco
+      useEffect(() => onMount?.({ getDomNode: () => root.current }), []);
       return (
         <div ref={root}>
+          <div className="native-edit-context" data-testid="input" tabIndex={0} />
           <textarea
+            aria-hidden="true"
             data-testid="editor"
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -41,6 +46,10 @@ vi.mock('@monaco-editor/react', async () => {
 // loads underneath.
 vi.mock('monaco-editor/editor/editor.api.js', () => ({}));
 vi.mock('monaco-editor/languages/definitions/sql/register.js', () => ({}));
+vi.mock(
+  'monaco-editor/editor/contrib/toggleTabFocusMode/browser/toggleTabFocusMode.js',
+  () => ({}),
+);
 vi.mock('monaco-editor/editor/editor.worker.js?worker', () => ({
   // Worker constructor stand-in — instantiated by the module under test, never used.
   default: function FakeWorker() {},
@@ -86,8 +95,29 @@ describe('SqlEditorField', () => {
       expect.objectContaining({ ariaLabel: 'Source query (read-only)' }),
     );
     const hint = screen.getByText(/To move on with Tab, press Ctrl\+M first/);
-    // Tied to Monaco's input, so a screen reader reads it on focus.
-    expect(screen.getByTestId('editor')).toHaveAttribute('aria-describedby', hint.id);
+    // On the element that takes focus, not the hidden IME textarea.
+    expect(screen.getByTestId('input')).toHaveAttribute('aria-describedby', hint.id);
+    expect(screen.getByTestId('editor')).not.toHaveAttribute('aria-describedby');
+  });
+
+  it("carries the Form.Item's help, error and required state to the input", () => {
+    const { rerender } = renderField({
+      'aria-describedby': 'q_help',
+      'aria-required': true,
+    });
+    const input = screen.getByTestId('input');
+    const hint = screen.getByText(/To move on with Tab/);
+    expect(input).toHaveAttribute('aria-describedby', `${hint.id} q_help`);
+    expect(input).toHaveAttribute('aria-required', 'true');
+    expect(input).not.toHaveAttribute('aria-invalid');
+    rerender(
+      <ThemeModeProvider>
+        <SqlEditorField aria-describedby="q_help q_error" aria-invalid="true" />
+      </ThemeModeProvider>,
+    );
+    expect(input).toHaveAttribute('aria-describedby', `${hint.id} q_help q_error`);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).not.toHaveAttribute('aria-required');
   });
 
   it('has a generic name when its caller gives none', () => {
