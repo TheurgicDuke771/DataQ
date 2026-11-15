@@ -181,7 +181,7 @@ def test_export_contract_withholds_values_of_a_sensitive_column_and_says_so(
     assert shown["redacted_columns"] == [] and shown["redaction_reasons"] == {}
     # "Nothing withheld" is not "nothing sensitive": the blind spots are data, not prose.
     assert shown["sensitivity_unknown_objects"] == []
-    assert any("patterns" in item for item in shown["not_withheld"])
+    assert any("SQL text" in item for item in shown["not_withheld"])
 
     orders = db_session.query(Suite).filter_by(contract_object="orders").one()
     orders.column_policy = {"pii_columns": ["tier"]}
