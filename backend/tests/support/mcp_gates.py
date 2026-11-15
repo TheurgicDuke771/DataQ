@@ -7,7 +7,7 @@ registry. Importing the server is what fills it.
 
 from __future__ import annotations
 
-import backend.app.mcp.server  # noqa: F401 — registering the tools fills `GATES`
+from backend.app.mcp import server as _server
 from backend.app.mcp.tool_gates import (
     GATES,
     KNOWN_GATES,
@@ -19,9 +19,13 @@ from backend.app.mcp.tool_gates import (
     tools_with_gate,
 )
 
+#: The server whose registration filled `GATES`: importing it is what fills the registry.
+MCP_SERVER = _server.mcp
+
 __all__ = [
     "GATES",
     "KNOWN_GATES",
+    "MCP_SERVER",
     "MEMBER_DENIED_GATES",
     "OUTSIDER_DENIED_GATES",
     "READ_GATES",
