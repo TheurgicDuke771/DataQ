@@ -79,3 +79,30 @@ describe('printing from the dark theme', () => {
     );
   });
 });
+
+describe('links in running text', () => {
+  // A link told apart from its sentence by colour alone fails WCAG 1.4.1 (#1673).
+  const rule = css.slice(
+    css.indexOf('.dq-text-link,'),
+    css.indexOf('}', css.indexOf('.dq-text-link,')),
+  );
+
+  it('underlines a link inside prose containers by default', () => {
+    for (const container of [
+      '.ant-typography',
+      '.ant-form-item-extra',
+      '.ant-alert-description',
+      'p',
+    ]) {
+      expect(rule, container).toContain(container);
+    }
+    // antd's Typography.Link sets text-decoration: none at a higher specificity.
+    expect(rule).toContain('text-decoration: underline !important');
+  });
+
+  it('leaves standalone links and list items alone', () => {
+    expect(rule).toMatch(/a:not\(\.dq-row-link, \.ant-btn, \[role='button'\]/);
+    // antd's menus and pagination are list items with links.
+    expect(rule).not.toMatch(/\bli\b/);
+  });
+});
