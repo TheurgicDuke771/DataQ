@@ -77,7 +77,7 @@ connection mutation, and a credential must never transit an LLM.
 | `update_suite` | `edit` on the suite | Change a suite's name, description, tags, or **what it runs against**. |
 | `update_trigger_binding` | `edit` on the suite | Enable or disable an orchestration trigger without deleting it. |
 
-## Live probe (persists nothing, opens a datasource — gated like a write)
+## Live probe (opens a datasource with a stored credential — gated like a write)
 
 | Tool | Who can call it | What it does |
 |---|---|---|

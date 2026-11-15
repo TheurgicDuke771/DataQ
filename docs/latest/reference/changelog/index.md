@@ -158,6 +158,7 @@ section below.
   or are not enforced, which checks were edited since the import, and warns when a run has not
   finished or some suites are hidden from you; it downloads the contract as ODCS. Suites enforcing a
   contract show a link to it.
+- **MCP tools carry safety annotations.** Every tool on the MCP server now declares the MCP `readOnlyHint`, `destructiveHint` and `openWorldHint` annotations, matching the read-only, changes-state and live-probe split in the tool reference, so a client can tell which calls to confirm without reading the description. The live probes are marked as reaching outside DataQ and never as read-only.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a

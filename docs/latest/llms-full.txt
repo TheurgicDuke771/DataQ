@@ -4403,11 +4403,23 @@ The tools split three ways, not two:
   binding and incident tools via the suite they target); `import_suite` additionally requires
   the **member** workspace role, since it has no existing suite to gate on.
 - **Live probes** (6) — `profile_column`, `list_columns`, `dryrun_check`,
-  `suggest_column_policy`, `test_connection`, `browse_connection` persist nothing but open a
-  live datasource connection with stored credentials. They are gated like writes, not reads,
+  `suggest_column_policy`, `test_connection`, `browse_connection` change none of your suites,
+  checks or connection settings, but open a live datasource connection with stored credentials
+  and record what happened: the connection's credential health, an audit entry for the
+  profiling ones, and any column that newly looks like personal data as a profiler detection
+  (`profile_column`, `suggest_column_policy`), which is masked from then on. They are gated like writes, not reads,
   because they spend a real credential against a remote system: the first four require `edit`
   on the suite whose connection they probe, and `test_connection` and `browse_connection`
   (which have no suite) require the **member** workspace role.
+
+Each tool also carries this split as MCP tool annotations, so a client that honours them can
+decide without reading the description: a read-only tool has `readOnlyHint: true`; a tool that
+changes state has `readOnlyHint: false` and says with `destructiveHint` whether it removes or
+overwrites anything or only adds; a live probe has `readOnlyHint: false` and
+`openWorldHint: true`, so a client that runs read-only tools without asking still asks before
+one of these. A tool's annotations and its declared gate are set in one place and checked
+against each other when the server starts, so a tool that changes state cannot be published as
+read-only; the authorization itself is enforced inside each tool and covered by the role tests.
 
 ## Troubleshooting
 
@@ -5723,6 +5735,7 @@ section below.
   or are not enforced, which checks were edited since the import, and warns when a run has not
   finished or some suites are hidden from you; it downloads the contract as ODCS. Suites enforcing a
   contract show a link to it.
+- **MCP tools carry safety annotations.** Every tool on the MCP server now declares the MCP `readOnlyHint`, `destructiveHint` and `openWorldHint` annotations, matching the read-only, changes-state and live-probe split in the tool reference, so a client can tell which calls to confirm without reading the description. The live probes are marked as reaching outside DataQ and never as read-only.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a
@@ -8003,7 +8016,7 @@ connection mutation, and a credential must never transit an LLM.
 | `update_suite` | `edit` on the suite | Change a suite's name, description, tags, or **what it runs against**. |
 | `update_trigger_binding` | `edit` on the suite | Enable or disable an orchestration trigger without deleting it. |
 
-## Live probe (persists nothing, opens a datasource — gated like a write)
+## Live probe (opens a datasource with a stored credential — gated like a write)
 
 | Tool | Who can call it | What it does |
 |---|---|---|

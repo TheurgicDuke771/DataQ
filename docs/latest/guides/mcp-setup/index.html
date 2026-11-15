@@ -2740,12 +2740,23 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
   binding and incident tools via the suite they target); <code>import_suite</code> additionally requires
   the <strong>member</strong> workspace role, since it has no existing suite to gate on.</li>
 <li><strong>Live probes</strong> (6) — <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>,
-  <code>suggest_column_policy</code>, <code>test_connection</code>, <code>browse_connection</code> persist nothing but open a
-  live datasource connection with stored credentials. They are gated like writes, not reads,
+  <code>suggest_column_policy</code>, <code>test_connection</code>, <code>browse_connection</code> change none of your suites,
+  checks or connection settings, but open a live datasource connection with stored credentials
+  and record what happened: the connection's credential health, an audit entry for the
+  profiling ones, and any column that newly looks like personal data as a profiler detection
+  (<code>profile_column</code>, <code>suggest_column_policy</code>), which is masked from then on. They are gated like writes, not reads,
   because they spend a real credential against a remote system: the first four require <code>edit</code>
   on the suite whose connection they probe, and <code>test_connection</code> and <code>browse_connection</code>
   (which have no suite) require the <strong>member</strong> workspace role.</li>
 </ul>
+<p>Each tool also carries this split as MCP tool annotations, so a client that honours them can
+decide without reading the description: a read-only tool has <code>readOnlyHint: true</code>; a tool that
+changes state has <code>readOnlyHint: false</code> and says with <code>destructiveHint</code> whether it removes or
+overwrites anything or only adds; a live probe has <code>readOnlyHint: false</code> and
+<code>openWorldHint: true</code>, so a client that runs read-only tools without asking still asks before
+one of these. A tool's annotations and its declared gate are set in one place and checked
+against each other when the server starts, so a tool that changes state cannot be published as
+read-only; the authorization itself is enforced inside each tool and covered by the role tests.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <table>
 <thead>
