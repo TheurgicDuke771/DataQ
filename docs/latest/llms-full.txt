@@ -5606,6 +5606,7 @@ section below.
 
 ### Security
 
+- **A failed check's expected values no longer leak a sensitive column's patterns when an extra option sits beside them.** Each value is now judged on its own, so an option such as how patterns combine can no longer dilute the check for personal data.
 - Alerts (webhook, Slack, email and Teams) no longer include the values of a sensitive column in a failed check's expected values. Run results and check reads now also withhold a DQX rule's allowed values and limits, and an aggregate monitor's warning and critical bounds, on such a column. Incident evidence stored earlier is cleaned up as well.
 - **Run results no longer show the accepted values of a sensitive column.** A result's expected value repeats the check's configuration. On a column classified as sensitive, its accepted values, patterns and value bounds now read as withheld in run results, the MCP run tools, incident evidence and the incident summary prompt, as they already did on the check itself.
 - **A contract export withholds the patterns and bounds of a sensitive column too.** Besides its listed values, the export now withholds a sensitive column's pattern and bounds, every argument of its rules, the patterns and bounds in a Great Expectations or DataQ rule, and the whole rule of any other engine. A numeric bound is removed rather than replaced, and the property says so. SQL text, a rule's comparison count and free text are still shown; the guide lists them.
