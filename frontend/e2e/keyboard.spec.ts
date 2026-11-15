@@ -98,7 +98,7 @@ test.describe('Keyboard navigation', () => {
     expect(left).toBeGreaterThan(0);
     await rows.last().click();
     await expect(page.getByTestId('rd-screen')).toBeVisible();
-    expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
+    await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBe(0);
     await page.goBack();
     await expect(page).toHaveURL(/\/results$/);
     await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBe(left);
