@@ -243,11 +243,15 @@ def mask_expected_value(
         # A table-level check or result (a row count, a schema drift, a comparison): its
         # numbers are not values of any column, and there is no column to classify.
         return MaskedConfig(config)
-    values = [leaf for k in present for leaf in _leaves(config[k])]
+    # Each field is judged on its own values (#2699): pooled, an unrelated option (`match_on`)
+    # dilutes a value-based signal such as "half of these look like emails" below its bar. A
+    # positive answer for any field makes the column sensitive, and every non-shape key goes.
     reasons: dict[str, RedactionReason] = {}
     for c in columns:
-        if (reason := test(c, values)) is not None:
-            reasons[c] = reason
+        for k in present:
+            if (reason := test(c, _leaves(config[k]))) is not None:
+                reasons[c] = reason
+                break
     if not reasons:
         return MaskedConfig(config)
     for k in present:
