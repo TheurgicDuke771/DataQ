@@ -489,3 +489,13 @@ test.describe('Admin offboarding', () => {
     }
   });
 });
+
+// A link inside running text is underlined by the global rule, not only where a class was added,
+// so it is not told apart by colour alone (#1673, WCAG 1.4.1).
+test('a link in an alert is underlined without a class of its own', async ({ page }) => {
+  await page.goto('/admin/settings');
+  const link = page.locator('.ant-alert-description a', { hasText: 'Suites' }).first();
+  await expect(link).toBeVisible();
+  await expect(link).not.toHaveClass(/dq-text-link/);
+  await expect(link).toHaveCSS('text-decoration-line', 'underline');
+});

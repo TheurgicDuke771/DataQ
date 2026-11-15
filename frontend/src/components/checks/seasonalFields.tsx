@@ -172,11 +172,7 @@ export function CalendarEntriesInput({
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {isAdmin ? (
           <>
-            Entries are managed in{' '}
-            <Link className="dq-text-link" to="/admin/calendar">
-              Admin → Calendar
-            </Link>
-            .
+            Entries are managed in <Link to="/admin/calendar">Admin → Calendar</Link>.
           </>
         ) : (
           'Entries are managed by workspace admins.'

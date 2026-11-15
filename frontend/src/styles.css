@@ -277,21 +277,30 @@ a:focus-visible,
 
 /* A link inside running text: underlined, so it is not told apart by colour alone (WCAG 1.4.1,
    axe link-in-text-block). Applied by default wherever the app writes prose (#1673): typography,
-   form help, alert text, empty states and paragraphs (not `li`: antd's menus and pagination are
-   list items with links). Links that stand on their own
-   are left alone: a row's link, a button, a link styled as a button, antd's copy action. The
-   class is for a link in running text outside those containers. */
+   form help, alert titles and text, empty states, result subtitles, list and description
+   values, dialog and popover text, and paragraphs. Not a rule for every `a`: menus, tabs,
+   breadcrumbs, pagination and table headers are all links, and are told apart by their place,
+   not their colour. Not `li` for the same reason. Links that stand on their own are left alone:
+   a row's link, a button, a link styled as a button. `!important` and `:is()` (whose
+   specificity is its most specific class) beat antd's `text-decoration: none` on
+   Typography.Link, which otherwise wins. The class is for a link in running text elsewhere. */
 .dq-text-link,
-:where(
+:is(
     .ant-typography,
     .ant-form-item-extra,
+    .ant-alert-title,
     .ant-alert-description,
-    .ant-alert-message,
     .ant-empty-description,
+    .ant-result-subtitle,
+    .ant-list-item-meta-description,
+    .ant-descriptions-item-content,
+    .ant-modal-confirm-content,
+    .ant-popover-inner-content,
+    .ant-popconfirm-description,
     p
   )
-  a:not(.dq-row-link, .ant-btn, [role='button'], .ant-typography-copy, .ant-typography-expand) {
-  text-decoration: underline;
+  a:not(.dq-row-link, .ant-btn, [role='button']) {
+  text-decoration: underline !important;
 }
 
 /* Text for assistive tech only. */

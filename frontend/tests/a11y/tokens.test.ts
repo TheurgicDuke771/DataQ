@@ -96,7 +96,8 @@ describe('links in running text', () => {
     ]) {
       expect(rule, container).toContain(container);
     }
-    expect(rule).toContain('text-decoration: underline');
+    // antd's Typography.Link sets text-decoration: none at a higher specificity.
+    expect(rule).toContain('text-decoration: underline !important');
   });
 
   it('leaves standalone links and list items alone', () => {
