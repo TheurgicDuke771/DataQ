@@ -1,3 +1,5 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { HistoryOutlined } from '@ant-design/icons';
 import { Button, Card, Flex, Spin, Typography } from 'antd';
 import { useState } from 'react';
@@ -25,6 +27,7 @@ function ConnectionEditView({ connectionId }: { connectionId?: string }) {
     if (!connectionId) throw new Error('no connection');
     return getConnection(connectionId);
   });
+  usePageTitle(state.status === 'ok' ? namedPageTitle(state.data.name, 'Edit connection') : null);
 
   return (
     <Page width={'form'}>

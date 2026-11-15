@@ -1,3 +1,5 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { HistoryOutlined, LineChartOutlined } from '@ant-design/icons';
 import {
   Alert,
@@ -90,6 +92,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
     ]);
     return { suite, check, connection };
   });
+  usePageTitle(state.status === 'ok' ? namedPageTitle(state.data.check.name, 'Edit check') : null);
 
   return (
     <Page width={'form'}>

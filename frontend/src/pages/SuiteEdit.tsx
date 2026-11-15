@@ -1,3 +1,5 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { Button, Card, Flex, Spin, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -24,6 +26,7 @@ function SuiteEditView({ suiteId }: { suiteId?: string }) {
     const [suite, connections] = await Promise.all([getSuite(suiteId), listConnections()]);
     return { suite, connections };
   });
+  usePageTitle(state.status === 'ok' ? namedPageTitle(state.data.suite.name, 'Edit suite') : null);
 
   return (
     <Page width={'form'}>

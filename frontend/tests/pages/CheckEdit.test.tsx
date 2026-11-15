@@ -138,6 +138,7 @@ describe('CheckEdit', () => {
     await waitFor(() => expect(screen.getByLabelText('Column')).toHaveValue('amount'), {
       timeout: 5000,
     });
+    expect(document.title).toBe('amount range · Edit check · DataQ');
     expect(screen.getByLabelText('Warn ≥')).toHaveValue('5');
 
     await user.clear(screen.getByLabelText('Name'));

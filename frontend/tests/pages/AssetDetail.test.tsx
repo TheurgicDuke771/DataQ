@@ -182,6 +182,7 @@ describe('AssetDetail page', () => {
       await screen.findByRole('heading', { name: 'ANALYTICS.PUBLIC.ORDERS' }),
     ).toBeInTheDocument();
     expect(screen.getByText('The canonical orders table')).toBeInTheDocument();
+    expect(document.title).toBe('ANALYTICS.PUBLIC.ORDERS · Asset · DataQ');
     // Both composing suites render — the acceptance criterion.
     expect(screen.getByText('Orders quality')).toBeInTheDocument();
     expect(screen.getByText('Orders volume')).toBeInTheDocument();

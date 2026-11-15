@@ -1,7 +1,9 @@
+import { usePageTitle } from '../hooks/usePageTitle';
+import { namedPageTitle } from '../utils/pageTitle';
 import { DownloadOutlined } from '@ant-design/icons';
 import { Alert, App, Button, Card, Flex, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useEffect } from 'react';
+
 import { useParams } from 'react-router-dom';
 
 import {
@@ -64,10 +66,11 @@ export function ContractDetail() {
 function ContractDetailFor({ contractId }: { contractId: string }) {
   const { state, reload } = useAsyncData((signal) => getContract(contractId, signal));
 
-  useEffect(() => {
-    if (state.status === 'ok')
-      document.title = `${state.data.name} ${state.data.version} · Contract · DataQ`;
-  }, [state]);
+  usePageTitle(
+    state.status === 'ok'
+      ? namedPageTitle(`${state.data.name} ${state.data.version}`, 'Contract')
+      : null,
+  );
 
   return (
     <Page>
