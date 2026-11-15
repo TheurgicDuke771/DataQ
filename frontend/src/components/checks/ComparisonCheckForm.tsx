@@ -1,5 +1,5 @@
 import { Card, Col, Form, Input, InputNumber, Radio, Row, Select, Tag, Typography } from 'antd';
-import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import {
   DATASOURCE_TYPES,
@@ -9,7 +9,10 @@ import {
   type ConnectionType,
 } from '../../api/connections';
 
-const SqlEditorField = lazy(() => import('./SqlEditorField'));
+import { SqlEditorControl } from './SqlEditorControl';
+
+const SOURCE_QUERY_LABEL = 'Source query (read-only)';
+const TARGET_QUERY_LABEL = 'Optional SQL projection (runs on the suite connection)';
 
 /**
  * The ADR 0015 §5 side-by-side comparison editor: **left = source** (the baseline — connection
@@ -82,12 +85,10 @@ export function ComparisonCheckForm({
             {sourceMode === 'query' && sourceSql ? (
               <Form.Item
                 name="source_query"
-                label="Source query (read-only)"
+                label={SOURCE_QUERY_LABEL}
                 rules={[{ required: true, message: 'A SELECT/WITH query' }]}
               >
-                <Suspense fallback={<Input.TextArea rows={4} disabled />}>
-                  <SqlEditorField />
-                </Suspense>
+                <SqlEditorControl ariaLabel={SOURCE_QUERY_LABEL} />
               </Form.Item>
             ) : (
               <SourceDatasetFields sourceType={sourceType} />
@@ -109,13 +110,8 @@ export function ComparisonCheckForm({
               <Input value={targetSummary} disabled />
             </Form.Item>
             {targetSql && (
-              <Form.Item
-                name="target_query"
-                label="Optional SQL projection (runs on the suite connection)"
-              >
-                <Suspense fallback={<Input.TextArea rows={4} disabled />}>
-                  <SqlEditorField />
-                </Suspense>
+              <Form.Item name="target_query" label={TARGET_QUERY_LABEL}>
+                <SqlEditorControl ariaLabel={TARGET_QUERY_LABEL} />
               </Form.Item>
             )}
           </Card>

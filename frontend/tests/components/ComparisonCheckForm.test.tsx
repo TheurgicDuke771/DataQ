@@ -1,6 +1,27 @@
 import { render, screen } from '@testing-library/react';
-import { App, Form } from 'antd';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { App, Form, type FormInstance } from 'antd';
+import { describe, expect, it, vi } from 'vitest';
+
+// Monaco cannot run under jsdom: the editor stands in as a textarea that keeps its props, so what
+// is under test is whether the form's value and onChange reach it.
+vi.mock('../../src/components/checks/SqlEditorField', () => ({
+  default: ({
+    value,
+    onChange,
+    ariaLabel,
+  }: {
+    value?: string;
+    onChange?: (v: string) => void;
+    ariaLabel?: string;
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      value={value ?? ''}
+      onChange={(e) => onChange?.(e.target.value)}
+    />
+  ),
+}));
 
 import type { Connection } from '../../src/api/connections';
 import { buildComparisonPayload } from '../../src/components/checks/checkForm';
@@ -114,5 +135,32 @@ describe('buildComparisonPayload', () => {
       keys: ['id'],
       target_query: 'SELECT id FROM COPY',
     });
+  });
+
+  it('captures what is typed into a SQL field (the form value reaches the lazy editor)', async () => {
+    let form: FormInstance | undefined;
+    function Host() {
+      const [instance] = Form.useForm();
+      form = instance;
+      return (
+        <App>
+          <Form form={instance}>
+            <ComparisonCheckForm
+              connections={connections}
+              suiteConnectionName="snowflake-dev"
+              suiteConnectionType="snowflake"
+              targetSummary="RETAIL.ORDERS_COPY"
+            />
+          </Form>
+        </App>
+      );
+    }
+    render(<Host />);
+    const user = userEvent.setup();
+    const projection = await screen.findByRole('textbox', {
+      name: 'Optional SQL projection (runs on the suite connection)',
+    });
+    await user.type(projection, 'SELECT id FROM COPY');
+    expect(form?.getFieldValue('target_query')).toBe('SELECT id FROM COPY');
   });
 });
