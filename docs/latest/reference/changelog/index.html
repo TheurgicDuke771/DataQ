@@ -3216,6 +3216,12 @@ section below.</p>
   settings tables carry a database check that refuses a second row, as the coverage and telemetry
   settings already did. The upgrade stops with the table named, instead of deleting anything, if a
   deployment somehow holds a row with another id.</li>
+<li><strong>MCP incident, history and snooze tools say when the check is switched off.</strong>
+  <code>list_incidents</code>, <code>get_incident</code>, <code>ack_incident</code> and <code>resolve_incident</code> return
+  <code>check_enabled</code> for the incident's check: an incident left open on a disabled check can no
+  longer breach or auto-resolve, so it is stale rather than an active failure. <code>get_check_history</code>
+  returns it too, since a disabled check's history simply stops, and <code>snooze_check</code> returns it
+  because a snooze on a disabled check is recorded but mutes nothing while the check is off.</li>
 <li><strong>A run that evaluated no check no longer reads as a pass.</strong> A suite whose checks are all
   disabled, or whose every check skipped, still runs and ends succeeded, but it verified nothing.
   The pipeline gate now answers <code>error</code> for such a run, so the shipped gate snippets stop the
