@@ -58,6 +58,94 @@ describe('shared Modal focus (#1672)', () => {
   });
 });
 
+function Late() {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Edit</button>
+      <button onClick={() => setLoaded(true)}>Load</button>
+      {open && (
+        <Modal open title="Edit" footer={null}>
+          {loaded ? <input aria-label="Name" /> : <p>Loading…</p>}
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function OptOut() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Search</button>
+      {open && (
+        <Modal
+          open
+          title="Search"
+          footer={null}
+          onCancel={() => setOpen(false)}
+          focusable={{ focusTriggerAfterClose: false }}
+        >
+          <input aria-label="Query" />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function Wizard() {
+  const [step, setStep] = useState(0);
+  return (
+    <>
+      <button onClick={() => setStep(1)}>Start</button>
+      {step === 1 && (
+        <Modal open title="Step one" footer={null} onCancel={() => setStep(0)}>
+          <button onClick={() => setStep(2)}>Next</button>
+        </Modal>
+      )}
+      {step === 2 && (
+        <Modal open title="Step two" footer={null} onCancel={() => setStep(0)}>
+          <input aria-label="Answer" />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+describe('shared Modal focus, edge cases (#1672)', () => {
+  it('returns to the first opener when one dialog replaced another', async () => {
+    const user = userEvent.setup();
+    render(still(<Wizard />));
+    const start = screen.getByRole('button', { name: 'Start' });
+    await user.click(start);
+    await user.click(await screen.findByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Answer' })).toHaveFocus());
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(start).toHaveFocus());
+  });
+
+  it('focuses a field that renders after the dialog opened', async () => {
+    const user = userEvent.setup();
+    render(still(<Late />));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+    act(() => screen.getByRole('button', { name: 'Load', hidden: true }).click());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveFocus());
+  });
+
+  it('does not return focus when the caller turned that off', async () => {
+    const user = userEvent.setup();
+    render(still(<OptOut />));
+    const opener = screen.getByRole('button', { name: 'Search' });
+    await user.click(opener);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Query' })).toHaveFocus());
+    await user.keyboard('{Escape}');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(opener).not.toHaveFocus();
+  });
+});
+
 describe('SnoozedTag (#1672)', () => {
   it('can be reached by keyboard, so its explanation is not hover-only', async () => {
     const future = new Date(Date.now() + 86_400_000).toISOString();
@@ -65,6 +153,9 @@ describe('SnoozedTag (#1672)', () => {
     const tag = screen.getByText(/Snoozed until/);
     expect(tag).toHaveAttribute('tabindex', '0');
     await act(async () => tag.focus());
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(/won't trigger alerts/);
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent(/won't trigger alerts/);
+    // Tied to the badge, so a screen reader reads it when the badge takes focus.
+    expect(tag.closest('[aria-describedby]')?.getAttribute('aria-describedby')).toBe(tooltip.id);
   });
 });

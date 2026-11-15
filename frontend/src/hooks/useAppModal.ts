@@ -11,15 +11,19 @@ export function useAppModal() {
   return useMemo(() => {
     const withFade = (config: ModalFuncProps): ModalFuncProps => {
       // A destructive confirm opens on Cancel, not on its danger button (#1672): antd focuses
-      // OK by default, so Enter pressed as it opens would delete.
+      // OK by default, so Enter pressed as it opens would delete. antd reads
+      // `focusable.autoFocusButton || autoFocusButton` and falls back to OK, so `null` ("focus
+      // neither") would still land on OK: a danger confirm without an explicit button choice
+      // gets Cancel.
       const danger = config.okType === 'danger' || config.okButtonProps?.danger === true;
-      const chosen = config.focusable?.autoFocusButton;
+      const legacy = (config as { autoFocusButton?: null | 'ok' | 'cancel' }).autoFocusButton;
+      const chosen = config.focusable?.autoFocusButton ?? legacy;
       return {
         ...config,
         transitionName: config.transitionName ?? MODAL_TRANSITION,
         focusable: {
           ...config.focusable,
-          autoFocusButton: chosen !== undefined ? chosen : danger ? 'cancel' : undefined,
+          autoFocusButton: chosen ?? (danger ? 'cancel' : undefined),
         },
       };
     };

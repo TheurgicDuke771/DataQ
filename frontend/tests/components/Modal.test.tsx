@@ -96,6 +96,20 @@ describe('useAppModal (#2466)', () => {
     expect(modalApi.confirm).toHaveBeenLastCalledWith(
       expect.objectContaining({ focusable: { autoFocusButton: 'ok' } }),
     );
+    result.current.confirm({
+      title: 'Delete?',
+      okType: 'danger',
+      focusable: { autoFocusButton: null },
+    });
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'cancel' } }),
+    );
+    // The legacy top-level prop, as an older caller still passes it.
+    const legacy = { title: 'Delete?', okType: 'danger', autoFocusButton: 'ok' } as const;
+    result.current.confirm(legacy as Parameters<typeof result.current.confirm>[0]);
+    expect(modalApi.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusable: { autoFocusButton: 'ok' } }),
+    );
     result.current.confirm({ title: 'Save?' });
     expect(modalApi.confirm).toHaveBeenLastCalledWith(
       expect.objectContaining({ focusable: { autoFocusButton: undefined } }),
