@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 
 import {
   ThemeModeContext,
@@ -43,10 +44,32 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
     return () => mql.removeEventListener('change', onChange);
   }, []);
 
-  const resolvedMode: ResolvedThemeMode =
-    mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
-
+  // Paper is white whatever the screen theme: browsers drop page backgrounds when printing, so
+  // the dark theme's light ink (and antd's algorithm-painted surfaces, which no stylesheet can
+  // reach) would print faint or invisible. The whole app renders light for the print, and
+  // synchronously: window.print() and Ctrl+P snapshot the page right after `beforeprint`.
+  const [printing, setPrinting] = useState(false);
   useEffect(() => {
+    const before = () => flushSync(() => setPrinting(true));
+    const after = () => setPrinting(false);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
+
+  const resolvedMode: ResolvedThemeMode = printing
+    ? 'light'
+    : mode === 'system'
+      ? systemDark
+        ? 'dark'
+        : 'light'
+      : mode;
+
+  // A layout effect, so the attribute changes in the same synchronous commit as the print render.
+  useLayoutEffect(() => {
     document.documentElement.setAttribute('data-theme', resolvedMode);
   }, [resolvedMode]);
 

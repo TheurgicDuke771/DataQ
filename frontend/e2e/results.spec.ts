@@ -156,16 +156,29 @@ test.describe('Results page', () => {
 });
 
 // Paper is white whatever the screen theme: browsers drop page backgrounds when printing, so the
-// dark theme's light ink would print faint grey (styles.css, @media print).
-test('a run printed from the dark theme uses the light ink on paper', async ({ page }) => {
+// dark theme's light ink would print faint grey. window.print() fires `beforeprint`, which renders
+// the app light (ThemeModeProvider); emulateMedia alone does not fire it, so the test does.
+test('a run printed from the dark theme prints light: ink, paper and antd surfaces', async ({
+  page,
+}) => {
   await page.addInitScript(() => localStorage.setItem('dq-theme-mode', 'dark'));
   await page.goto('/results');
   await page.locator('tr.ant-table-row a.dq-row-link').first().click();
   await expect(page.getByTestId('rd-screen')).toBeVisible();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const html = page.locator('html');
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
   await page.emulateMedia({ media: 'print' });
-  const report = page.locator('.rd-report');
+  await expect(html).toHaveAttribute('data-theme', 'light');
+  const report = page.getByTestId('run-report');
   await expect(report).toBeVisible();
-  // --dq-ink's light value, #1f2430.
+  // --dq-ink and --dq-surface at their light values, #1f2430 on white.
   await expect(report).toHaveCSS('color', 'rgb(31, 36, 48)');
+  await expect(page.locator('.ant-layout-content')).toHaveCSS(
+    'background-color',
+    'rgb(255, 255, 255)',
+  );
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  await expect(html).toHaveAttribute('data-theme', 'dark');
 });

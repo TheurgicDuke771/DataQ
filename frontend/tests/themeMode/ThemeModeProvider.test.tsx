@@ -142,4 +142,25 @@ describe('ThemeModeProvider', () => {
     ).not.toThrow();
     expect(screen.getByTestId('resolved')).toHaveTextContent('light');
   });
+
+  it('renders light for a print, synchronously, and returns to the theme after', () => {
+    mockMatchMedia(false);
+    localStorage.setItem(STORAGE_KEY, 'dark');
+    render(
+      <ThemeModeProvider>
+        <Probe />
+      </ThemeModeProvider>,
+    );
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    // No act(): window.print() snapshots the page right after the event, so the light render
+    // has to have landed by the time dispatchEvent returns.
+    window.dispatchEvent(new Event('beforeprint'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(screen.getByTestId('resolved')).toHaveTextContent('light');
+    expect(screen.getByTestId('mode')).toHaveTextContent('dark');
+    act(() => {
+      window.dispatchEvent(new Event('afterprint'));
+    });
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
 });
