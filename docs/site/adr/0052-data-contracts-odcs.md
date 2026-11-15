@@ -142,6 +142,17 @@ Not withheld, by decision of scope and stated to every reader: patterns, bounds
 of a custom rule on an engine other than Great Expectations or DataQ, and custom-property
 values and descriptions. The check-read masker has the same boundary.
 
+**Amended 2026-11-15.** Patterns and bounds are values of the column, so they are now
+withheld like the value lists: `logicalTypeOptions.pattern` and its bounds, every library-rule
+argument but the column list, the scalar value keys of a GX or DataQ implementation (`regex`,
+`like_pattern`, `min_value`, `max_value`, …), and the whole implementation of a custom rule on
+any other engine. Where the standard types a field as a number, the field is removed instead of
+replaced, and the node's `dataq.valuesWithheld` note names it; an import carrying that note is
+refused, so a removed bound cannot be re-imported as no bound. Still not withheld: SQL text; a
+rule's comparison operand (on a library rule a count of the metric, not a value; on a SQL rule
+required by the standard, so it cannot be removed without dropping the rule); a type's shape
+options (lengths, format); custom properties and free text.
+
 ### 5. Versions of the standard
 
 The importer accepts `apiVersion` **v3.0.0 through the newest v3 minor it knows** (v3.2.0 today),

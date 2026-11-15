@@ -296,6 +296,20 @@ def test_an_export_with_withheld_values_cannot_be_imported(db_session: Any) -> N
         {"quality": [_gx({"value_set": {"a": _M}})]},
         {"quality": [_gx({"value_pairs_set": [["a", _M]], "column_A": "tier", "column_B": "x"})]},
         {"quality": [_gx({"regex_list": ["^a$", _M]})]},
+        # #2682: patterns, bounds, scalar implementation values, other engines.
+        {"quality": [{"metric": "invalidValues", "arguments": {"pattern": _M}}]},
+        {"logicalTypeOptions": {"pattern": _M}},
+        {"logicalType": "date", "logicalTypeOptions": {"minimum": _M}},
+        {"quality": [_gx({"regex": _M})]},
+        {"quality": [_gx({"like_pattern_list": ["a%", _M]})]},
+        {"quality": [_gx({"min_value": _M, "max_value": 10})]},
+        {"quality": [{"type": "custom", "engine": "soda", "implementation": _M}]},
+        # A removed numeric bound leaves no marker; the withheld note still marks the export.
+        {
+            "logicalType": "number",
+            "logicalTypeOptions": {},
+            "customProperties": [{"property": "dataq.valuesWithheld", "value": {}}],
+        },
     ],
 )
 def test_the_marker_is_refused_in_every_place_a_value_list_lives(place: dict[str, Any]) -> None:
@@ -552,3 +566,101 @@ def test_nested_properties_and_every_value_shape_are_withheld(db_session: Any) -
     # The column list of a duplicateValues rule names columns, not values: left alone.
     rule = {"metric": "duplicateValues", "arguments": {"properties": ["a", "b"]}}
     assert list(redaction._rule_slots("orders", None, rule)) == []
+
+
+def test_patterns_bounds_scalar_values_and_other_engines_are_withheld(db_session: Any) -> None:
+    """#2682: a sensitive column's pattern, bounds, scalar implementation values and another
+    engine's implementation leave the export no more than its value lists do."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    doc = _doc_with_tier()
+    tier = doc["schema"][0]["properties"][-1]
+    tier["logicalTypeOptions"] = {"pattern": "^(tier-gold|tier-silver)$", "maxLength": 11}
+    tier["quality"] += [
+        {
+            "id": "tier-pattern",
+            "metric": "invalidValues",
+            "arguments": {"pattern": "^tier-lead$"},
+            "mustBe": 0,
+        },
+        {
+            "id": "tier-gx-regex",
+            "type": "custom",
+            "engine": "greatExpectations",
+            "implementation": {
+                "expectation_type": "expect_column_values_to_match_regex",
+                "kwargs": {"regex": "^gx-opal$"},
+            },
+        },
+        {
+            "id": "tier-soda",
+            "type": "custom",
+            "engine": "soda",
+            "implementation": "checks: [invalid_count(tier) = 0: valid values [ex-platinum]]",
+        },
+    ]
+    doc["schema"][0]["properties"].append(
+        {
+            "name": "salary",
+            "logicalType": "number",
+            "logicalTypeOptions": {"minimum": 123456, "maximum": 987654, "multipleOf": 1},
+            "quality": [
+                {
+                    "id": "salary-range",
+                    "type": "custom",
+                    "engine": "greatExpectations",
+                    "implementation": {
+                        "expectation_type": "expect_column_values_to_be_between",
+                        "kwargs": {"min_value": 111111, "max_value": 999999},
+                    },
+                }
+            ],
+        }
+    )
+    outcome = _import(db_session, actor, conn, doc)
+    orders = _suite(db_session, outcome, "orders")
+    _classify(db_session, orders, "tier")
+    _classify(db_session, orders, "salary")
+
+    exported = _export(db_session, outcome, actor)
+    text = json.dumps(exported)
+    assert not [secret for secret in _SECRETS if secret in text]
+    assert not [n for n in ("123456", "987654", "111111", "999999") if n in text]
+    shown = _tier(exported)
+    assert shown["logicalTypeOptions"] == {"pattern": _M, "maxLength": 11}  # shape kept
+    fields = _custom(shown, "valuesWithheld")["fields"]
+    assert "logicalTypeOptions.pattern" in fields
+    salary = next(p for p in exported["schema"][0]["properties"] if p["name"] == "salary")
+    # The standard types the bounds as numbers: removed, and said so, not replaced.
+    assert salary["logicalTypeOptions"] == {"multipleOf": 1}
+    assert set(_custom(salary, "valuesWithheld")["fields"]) == {
+        "logicalTypeOptions.minimum",
+        "logicalTypeOptions.maximum",
+    }
+    soda = next(r for r in shown["quality"] if r.get("id") == "tier-soda")
+    assert soda["implementation"] == _M
+    assert redaction.redacted_columns(exported) == {
+        "orders.tier": "policy",
+        "orders.salary": "policy",
+    }
+    # Still a valid ODCS document, and not importable as the contract.
+    with pytest.raises(ValueSetRedactedError):
+        _import(db_session, actor, conn, exported, replace=True)
+
+
+def test_a_rule_s_comparison_operand_and_a_type_s_shape_options_are_kept(db_session: Any) -> None:
+    """A library rule's operand is a count of the metric, not a value of the column, and a
+    length or format is the column's shape: neither is withheld (`NOT_WITHHELD` says so)."""
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    doc = _doc_with_tier()
+    tier = doc["schema"][0]["properties"][-1]
+    tier["logicalTypeOptions"] = {"maxLength": 11, "minLength": 2}
+    outcome = _import(db_session, actor, conn, doc)
+    _classify(db_session, _suite(db_session, outcome, "orders"), "tier")
+
+    shown = _tier(_export(db_session, outcome, actor))
+    assert shown["logicalTypeOptions"] == {"maxLength": 11, "minLength": 2}
+    valid = next(r for r in shown["quality"] if r.get("id") == "tier-valid")
+    assert valid["mustBe"] == 0
+    assert any("comparison operand" in item for item in redaction.NOT_WITHHELD)

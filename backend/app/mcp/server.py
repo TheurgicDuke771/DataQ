@@ -5079,9 +5079,11 @@ def export_contract(contract_id: str) -> dict[str, Any]:
       of any version of the contract and no table whose classifications DataQ has read
       stands behind them. Their value lists are withheld as `sensitivity_unknown` — that
       means "not known to be safe", not "classified as sensitive"; say so.
-    - `not_withheld` lists what this export never masks, even over a sensitive column:
-      patterns, bounds (minimum / maximum, comparison operands), SQL text, the implementation
-      of a custom rule on another engine, and custom-property values or descriptions. An
+    - `not_withheld` lists what this export never masks, even over a sensitive column: SQL
+      text, a rule's comparison operand (a count on a library rule; on a SQL rule, compared
+      with the query's result), a type's shape options (lengths, format), and custom-property
+      values, descriptions and other free text. Patterns and bounds ARE withheld: a pattern
+      reads `<redacted>`, a numeric bound is removed and the note names it. An
       empty `redacted_columns` therefore means no LISTED value was withheld — not that the
       document holds nothing sensitive. Sensitivity is judged from the suites of every
       version of the contract, the table's warehouse tags and the PII classifier; a column

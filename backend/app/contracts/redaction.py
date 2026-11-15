@@ -1,23 +1,27 @@
 """Value literals in an ODCS document: withheld on export, refused on import (#2615).
 
 A contract document lists values of its columns in a second place beside a check's
-`config.value_set` (#2592): a property's `enum` and `examples`, the list arguments of a library
-rule (`arguments.validValues`, `arguments.missingValues`, any sibling list; and the v3.0
-`validValues` key), and a `type: custom` rule's `implementation` (`value_set`,
-`value_pairs_set`, `regex_list` under a GX `kwargs` or a DataQ `config`). Once the column is
-classified as sensitive they are held to the bar a check read is: each value becomes the
-redaction marker, and the node says what was withheld, for which column and why.
+`config.value_set` (#2592): a property's `enum` and `examples`, its `logicalTypeOptions` pattern
+and bounds, a library rule's `arguments` (`validValues`, `missingValues`, `pattern`, any sibling
+but the column list), the v3.0 `validValues` key, and a `type: custom` rule's `implementation`
+(the value keys under a GX `kwargs` or a DataQ `config`; the whole implementation for any other
+engine, which DataQ cannot read). Once the column is classified as sensitive they are held to the
+bar a check read is: each value becomes the redaction marker — or, where the schema types the
+field as a number, the field is removed — and the node says what was withheld, for which column
+and why (#2682).
 
 Sensitivity is a fact about the column, not about one contract row: every suite linked to ANY
 version of the contract for that schema object is asked, and so are the object's asset and every
 suite on the same table. An object with none of those cannot be judged, so its lists are
 withheld with their own reason (`SENSITIVITY_UNKNOWN`) — fail closed, and said so.
 
-A document that still holds the marker in one of those places came from such an export, and
-importing it would store the marker as the real values, so it is refused.
+A document that still holds the marker in one of those places, or carries the withheld note,
+came from such an export, and importing it would store the marker as the real values (or drop a
+bound) — so it is refused.
 
-NOT covered (`NOT_WITHHELD`): patterns and bounds, SQL text, other engines' implementations,
-custom property values. They are named to every reader rather than left to be assumed.
+NOT covered (`NOT_WITHHELD`): SQL text, a rule's comparison operand, the shape options of a type
+(lengths, formats), custom property values and free text. They are named to every reader rather
+than left to be assumed.
 """
 
 from __future__ import annotations
@@ -59,17 +63,39 @@ SENSITIVITY_UNKNOWN: Final = "sensitivity_unknown"
 #: What an export does NOT withhold, even over a sensitive column. Returned to MCP callers as a
 #: field, and named in the guide: a blind spot stated only in prose is read as coverage.
 NOT_WITHHELD: Final[tuple[str, ...]] = (
-    "patterns: a rule's arguments.pattern, logicalTypeOptions.pattern, a custom rule's regex",
-    "bounds: logicalTypeOptions.minimum / maximum and the like, and a rule's comparison operands",
     "SQL text: a sql rule's query, and custom SQL inside a custom rule",
-    "the implementation of a custom rule whose engine is neither greatExpectations nor dataq",
-    "customProperties values, descriptions, and any other free text",
-    "a rule argument that is not a list (a scalar or a mapping beside a withheld list), "
-    "and a custom rule's like-pattern lists",
+    "a rule's comparison operand (mustBe, mustBeBetween, …): on a library rule it is a count of "
+    "the metric, not a value of the column; on a sql rule it is compared with the query's result "
+    "and the standard requires it, so it is kept",
+    "a type's shape options: logicalTypeOptions lengths, format, multipleOf and the like",
+    "customProperties values, descriptions, names and any other free text",
 )
 _PREFIX = f"{tr.DATAQ_VENDOR}."
-#: The keys of a custom rule's `kwargs` / `config` that hold values of the column.
-_IMPLEMENTATION_VALUE_KEYS: Final = (VALUE_SET_KEY, "value_pairs_set", "regex_list")
+#: The keys of a custom rule's `kwargs` / `config` that hold values of the column: sets, patterns
+#: and bounds, in a list or alone (#2682).
+_IMPLEMENTATION_VALUE_KEYS: Final = (
+    VALUE_SET_KEY,
+    "value_pairs_set",
+    "regex",
+    "regex_list",
+    "like_pattern",
+    "like_pattern_list",
+    "min_value",
+    "max_value",
+    "strftime_format",
+    "json_schema",
+)
+#: A property's `logicalTypeOptions` that hold a value of the column: a pattern, or a bound.
+#: The standard types the numeric bounds as numbers, so they are removed rather than replaced.
+_TYPE_OPTION_VALUE_KEYS: Final = (
+    "pattern",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+)
+#: Engines whose `implementation` DataQ reads; any other engine's is withheld whole.
+_READABLE_ENGINES: Final = tr.GX_ENGINES | {tr.DATAQ_VENDOR}
 #: The one list argument that names columns, not values (`duplicateValues`).
 _COLUMN_LIST_ARGUMENT: Final = "properties"
 
@@ -109,6 +135,8 @@ class _Slot:
     commit: Callable[[], None] | None = None
     #: Further columns the values belong to (`column_B` of a pair set).
     also: tuple[str, ...] = ()
+    #: Remove the field rather than write the marker in it: the standard types it as a number.
+    drop: bool = False
 
     @property
     def is_enum(self) -> bool:
@@ -125,6 +153,9 @@ class _Slot:
         return len(raw) if isinstance(raw, list) else 1
 
     def mask(self) -> None:
+        if self.drop:
+            del self.holder[self.key]
+            return
         # `enum` entries must be unique, so the list collapses to one; the note counts it.
         self.holder[self.key] = (
             [{"value": REDACTED_MARKER}] if self.is_enum else _masked(self.holder[self.key])
@@ -143,13 +174,20 @@ def _rule_slots(obj: str | None, column: str | None, rule: dict[str, Any]) -> It
         yield _Slot(obj, column, rule, "validValues", rule, "validValues")
     arguments = rule.get("arguments")
     if isinstance(arguments, dict):
-        for key, value in arguments.items():
-            # Every list argument is a list of values (`validValues`, `missingValues`, and
-            # whatever a producer spells beside them), bar the one that names columns.
-            listed = isinstance(value, list) and key != _COLUMN_LIST_ARGUMENT
-            if (listed or key in ("validValues", "missingValues")) and _present(arguments, key):
+        for key in list(arguments):
+            # Every argument holds values of the column (`validValues`, `missingValues`,
+            # `pattern`, and whatever a producer writes beside them, in any shape), bar the one
+            # that names columns.
+            if key != _COLUMN_LIST_ARGUMENT and _present(arguments, key):
                 yield _Slot(obj, column, rule, f"arguments.{key}", arguments, key)
     raw = rule.get("implementation")
+    engine = rule.get("engine")
+    if engine is not None and engine not in _READABLE_ENGINES:
+        # Another engine's implementation is opaque to DataQ: it may hold the column's values
+        # anywhere, so it is withheld whole.
+        if _present(rule, "implementation"):
+            yield _Slot(obj, column, rule, "implementation", rule, "implementation")
+        return
     implementation = tr._parse_implementation(raw)
     if implementation is None:
         return
@@ -199,6 +237,19 @@ def _property_slots(obj: str | None, column: str, prop: dict[str, Any]) -> Itera
     for key in ("enum", "examples"):
         if _present(prop, key):
             yield _Slot(obj, column, prop, key, prop, key)
+    options = prop.get("logicalTypeOptions")
+    if isinstance(options, dict):
+        for key in _TYPE_OPTION_VALUE_KEYS:
+            if _present(options, key):
+                yield _Slot(
+                    obj,
+                    column,
+                    prop,
+                    f"logicalTypeOptions.{key}",
+                    options,
+                    key,
+                    drop=not isinstance(options[key], str),
+                )
     for rule in tr._rules_of(prop):
         yield from _rule_slots(obj, column, rule)
     for child in _nested(prop):
@@ -240,6 +291,37 @@ def reject_masked_document(document: dict[str, Any]) -> None:
                     detail={"object": slot.object, "column": slot.column, "field": slot.field}
                     | ({"where": where} if where else {}),
                 )
+    # A removed bound leaves no marker behind; the export's own notes still mark the document,
+    # wherever they sit.
+    if _has_custom(document, REDACTED_COLUMNS_PROPERTY) or _carries_note(document):
+        raise ValueSetRedactedError(
+            "this contract document lists withheld columns — it is an export, not the contract; "
+            "import the producer's document, with the real values",
+            detail={"field": f"{_PREFIX}{REDACTED_COLUMNS_PROPERTY}"},
+        )
+
+
+def _is_custom(item: Any, name: str) -> bool:
+    return isinstance(item, dict) and (
+        item.get("property") == f"{_PREFIX}{name}"
+        or (item.get("property") == name and item.get("vendor") == tr.DATAQ_VENDOR)
+    )
+
+
+def _carries_note(value: Any) -> bool:
+    """Whether any node under ``value`` carries the export's withheld note."""
+    if isinstance(value, list):
+        return any(_carries_note(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if _has_custom(value, WITHHELD_PROPERTY):
+        return True
+    return any(_carries_note(v) for k, v in value.items() if k != "customProperties")
+
+
+def _has_custom(node: dict[str, Any], name: str) -> bool:
+    props = node.get("customProperties")
+    return isinstance(props, list) and any(_is_custom(item, name) for item in props)
 
 
 def _drop_custom(node: dict[str, Any], name: str) -> None:
