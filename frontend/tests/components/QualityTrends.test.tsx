@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import type { TrendPoint } from '../../src/api/dashboard';
@@ -35,5 +36,18 @@ describe('QualityTrends', () => {
   it('does not show the empty state when some day has runs', () => {
     render(<QualityTrends trend={days} />);
     expect(screen.queryByText('No runs in this range yet')).not.toBeInTheDocument();
+  });
+
+  it('offers the same numbers as a table (#1673)', async () => {
+    render(<QualityTrends trend={days} />);
+    await userEvent.click(screen.getByText('Table'));
+    const table = screen.getByRole('table', { name: 'Runs per day' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((r) => r.textContent)).toEqual(['Jun 1031', 'Jun 1100', 'Jun 1220']);
+  });
+
+  it('offers no table when there is nothing to show', () => {
+    render(<QualityTrends trend={[{ day: '2026-06-10', succeeded: 0, failed: 0 }]} />);
+    expect(screen.queryByText('Table')).not.toBeInTheDocument();
   });
 });

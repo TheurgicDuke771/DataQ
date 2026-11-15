@@ -402,7 +402,13 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
 
   return (
     <ResponsiveChart height={180} isEmpty={data.length === 0} emptyText="No metric history yet">
-      <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+        // Named, so a screen reader hears what the chart is rather than its tick labels (#1673).
+        title="Metric per run, with the threshold lines it is scored against"
+        desc="The Table view lists every run's value and status."
+      >
         <CartesianGrid {...GRID_PROPS} vertical={false} />
         <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
         <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
@@ -556,7 +562,12 @@ function AnomalyBaselinePanel({
           isEmpty={data.length === 0}
           emptyText="No baseline observations recorded yet"
         >
-          <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          <LineChart
+            data={data}
+            margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            title="Baseline observations, with the expected band"
+            desc="The caption describes the band; the Table view lists every value."
+          >
             <CartesianGrid {...GRID_PROPS} vertical={false} />
             <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
             <YAxis tick={AXIS_TICK} tickLine={false} width="auto" tickFormatter={formatTick} />
