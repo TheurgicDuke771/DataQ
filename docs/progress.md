@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **72** open repo-wide (2026-11-15, live re-count, once #2680 merges): Week 7 23, Week 8 29, `v1.3 Backlog` 20; every open issue has a milestone. Week 7 rows left: performance (#1999, #2117, #2012, #2010, #1987, #1979, #1597) and accessibility (#2067, #2064, #2061, #2051, #1672, #1673). |
-| **Open PRs** | **0 open** (2026-11-15) once #2680 merges, apart from the one carrying this update. |
+| **Open issues** | **72** open repo-wide (2026-11-15, live re-count): Week 7 23, Week 8 29, `v1.3 Backlog` 20; every open issue has a milestone. Week 7 rows left: performance (#1999, #2117, #2012, #2010, #1987, #1979, #1597) and accessibility (#2067, #2064, #2061, #2051, #1672, #1673). |
+| **Open PRs** | **0 open** (2026-11-15), apart from the one carrying this update. |
 
 ---
 
