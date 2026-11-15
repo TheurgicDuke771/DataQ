@@ -99,9 +99,48 @@ describe('LineageGraph (#805)', () => {
     ]);
   });
 
+  it('says which asset feeds which, in a list after the graph', () => {
+    renderGraph();
+    const links = screen.getByRole('list', { name: 'Lineage links' });
+    expect([...links.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'RAW.ORDERS feeds ANALYTICS.PUBLIC.ORDERS',
+      'ANALYTICS.PUBLIC.ORDERS feeds ANALYTICS.MART.REVENUE',
+      'ANALYTICS.MART.REVENUE feeds BI.DASH.SALES',
+    ]);
+  });
+
+  it('describes a node by its namespace rather than repeating its name', () => {
+    renderGraph();
+    const node = screen.getByRole('button', { name: /RAW\.ORDERS/ });
+    const desc = document.getElementById(node.getAttribute('aria-describedby') ?? '');
+    expect(desc?.tagName.toLowerCase()).toBe('desc');
+    expect(desc?.textContent).not.toContain('RAW.ORDERS');
+  });
+
+  it('announces a node on the side it is drawn, when lineage has a cycle', () => {
+    // X is both one hop upstream and two hops downstream; the layout draws it upstream.
+    render(
+      <LineageGraph
+        center={CENTER}
+        upstream={[node('x', 'LOOP.X', 1)]}
+        downstream={[node('x', 'LOOP.X', 2)]}
+        edges={[]}
+        onOpenAsset={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Open asset LOOP.X (upstream, 1 hop)' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('group', { name: /Lineage graph: 1 upstream and 0 downstream/ }),
+    ).toBeInTheDocument();
+  });
+
   it('labels but does not make the centre asset actionable', () => {
     renderGraph();
-    expect(screen.getByLabelText('ANALYTICS.PUBLIC.ORDERS (this asset)')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'ANALYTICS.PUBLIC.ORDERS (this asset)' }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText('Open asset ANALYTICS.PUBLIC.ORDERS')).not.toBeInTheDocument();
   });
 

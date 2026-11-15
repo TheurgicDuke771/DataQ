@@ -14,7 +14,7 @@ async function openOrdersAsset(page: Page) {
 test('renders a directional graph with clickable nodes', async ({ page }) => {
   await openOrdersAsset(page);
 
-  const graph = page.getByRole('img', { name: /Lineage graph/ });
+  const graph = page.getByRole('group', { name: /Lineage graph/ });
   await expect(graph).toBeVisible();
 
   // Depth ≥2 both ways: STG is one hop upstream and RAW two; MART is one hop
@@ -35,11 +35,11 @@ test('renders a directional graph with clickable nodes', async ({ page }) => {
 test('mobile: the graph scrolls inside its card, the page does not overflow', async ({ page }) => {
   await openOrdersAsset(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('img', { name: /Lineage graph/ })).toBeVisible();
+  await expect(page.getByRole('group', { name: /Lineage graph/ })).toBeVisible();
 
   // The graph is wider than the phone, and it scrolls in its own container…
   const scrollable = await page.evaluate(() => {
-    // Target the graph specifically: the brand mark is also an svg[role="img"].
+    // Target the graph specifically, by its name.
     const svg = document.querySelector('svg[aria-label^="Lineage graph"]');
     const box = svg?.parentElement as HTMLElement | null;
     return box ? box.scrollWidth > box.clientWidth : false;
