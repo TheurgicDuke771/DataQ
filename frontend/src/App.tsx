@@ -14,11 +14,12 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { RequireUuidParams } from './components/RequireUuidParams';
 
 import { AuthGate } from './auth/AuthGate';
+import { useMainNavigation } from './hooks/useMainNavigation';
 import { authMode } from './auth/config';
 import { RequireRole } from './auth/RequireRole';
 import { useCurrentUser } from './auth/useCurrentUser';
@@ -113,18 +114,9 @@ const SELECTABLE_KEYS = [...NAV_ITEMS, ...ADMIN_FOOTER_ITEMS].map((i) => i.key);
 export function App() {
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
-  const lastPath = useRef(location.pathname);
-  // A client-side navigation moves nothing: focus stays on the link that was clicked, now
-  // possibly unmounted, and a screen reader announces no change. Move it to the page. Compared
-  // against the last path rather than "skip the first run": StrictMode runs effects twice.
-  useEffect(() => {
-    if (lastPath.current === location.pathname) return;
-    lastPath.current = location.pathname;
-    // …unless it is still on a live control inside the page — an admin tab, a suite in the
-    // master list. Those navigate without going anywhere; taking focus would lose the user's place.
-    if (mainRef.current?.contains(document.activeElement)) return;
-    mainRef.current?.focus();
-  }, [location.pathname]);
+  // Focus and scroll on a page change: a new page takes focus and opens at the top; Back/Forward
+  // returns to where the entry was left.
+  const onMainScroll = useMainNavigation(mainRef);
   const isAdmin = useIsWorkspaceAdmin();
   // Narrow-viewport nav (#617, #801): below the `lg` breakpoint the Sider collapses to zero width
   // and the nav moves into an overlay Drawer that floats *above* the content (a scrim behind it)
@@ -266,6 +258,7 @@ export function App() {
             ref={mainRef}
             id="dq-main"
             tabIndex={-1}
+            onScroll={onMainScroll}
             style={{ padding: 24, position: 'relative', overflowY: 'auto', outline: 'none' }}
           >
             <BrandWatermark />
