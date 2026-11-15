@@ -275,8 +275,22 @@ a:focus-visible,
   text-decoration: underline;
 }
 
-/* A link inside running text: underlined, so it is not told apart by colour alone. */
-.dq-text-link {
+/* A link inside running text: underlined, so it is not told apart by colour alone (WCAG 1.4.1,
+   axe link-in-text-block). Applied by default wherever the app writes prose (#1673): typography,
+   form help, alert text, empty states and paragraphs (not `li`: antd's menus and pagination are
+   list items with links). Links that stand on their own
+   are left alone: a row's link, a button, a link styled as a button, antd's copy action. The
+   class is for a link in running text outside those containers. */
+.dq-text-link,
+:where(
+    .ant-typography,
+    .ant-form-item-extra,
+    .ant-alert-description,
+    .ant-alert-message,
+    .ant-empty-description,
+    p
+  )
+  a:not(.dq-row-link, .ant-btn, [role='button'], .ant-typography-copy, .ant-typography-expand) {
   text-decoration: underline;
 }
 
