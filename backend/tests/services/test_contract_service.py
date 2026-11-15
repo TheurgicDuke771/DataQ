@@ -14,6 +14,7 @@ from backend.app.contracts import odcs
 from backend.app.contracts import translate as tr
 from backend.app.contracts.export import export_contract
 from backend.app.db.models import (
+    Asset,
     AuditEvent,
     Check,
     CheckVersion,
@@ -941,3 +942,38 @@ def test_versions_are_ordered_by_import_time_with_a_latest_flag(db_session: Any)
     assert svc.get_contract(db_session, second.contract.id, actor.id).latest_version is True
     page, total = svc.list_contracts(db_session, admin.id, limit=1, offset=1)
     assert [v.contract.version for v in page] == ["1.9.0"] and total == 2
+
+
+def test_an_imported_suite_is_linked_to_the_asset_of_its_table(db_session: Any) -> None:
+    """Like a suite created any other way: its runs carry the asset, so incidents, the asset
+    pages and the table's tags reach it."""
+    from backend.app.services.asset_identity import resolve_asset_identity
+
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+
+    assert orders.asset_id is not None
+    asset = db_session.get(Asset, orders.asset_id)
+    assert orders.target is not None
+    identity = resolve_asset_identity(conn.type, conn.config, orders.target)
+    assert (asset.namespace, asset.name) == (identity.namespace, identity.name)
+
+
+def test_the_backfill_links_suites_imported_before_the_fix(db_session: Any) -> None:
+    from backend.scripts.backfill_suite_assets import backfill
+
+    actor = _user(db_session)
+    conn = _connection(db_session, actor)
+    outcome = _import(db_session, actor, conn, _doc())
+    orders = _suite(db_session, outcome, "orders")
+    linked_to = orders.asset_id
+    orders.asset_id = None  # as the importer left it before the fix
+    db_session.commit()
+
+    linked, unresolved = backfill(db_session)
+    db_session.refresh(orders)
+    assert orders.asset_id == linked_to
+    assert linked >= 1 and unresolved == 0
+    assert backfill(db_session)[0] == 0  # idempotent: nothing left to link
