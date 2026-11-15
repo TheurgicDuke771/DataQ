@@ -452,15 +452,15 @@ test.describe('Admin offboarding', () => {
       const row = page
         .getByRole('main')
         .locator('tr')
-        .filter({ has: page.getByRole('button', { name: 'Offboard' }) })
+        .filter({ has: page.getByRole('button', { name: 'Offboard', exact: true }) })
         .filter({ hasText: TARGET })
         .first();
       await expect(row).toBeVisible();
-      await row.getByRole('button', { name: 'Offboard' }).click();
+      await row.getByRole('button', { name: 'Offboard', exact: true }).click();
 
       const dialog = page.getByRole('dialog');
       await expect(dialog.getByText(suiteName)).toBeVisible();
-      const confirm = dialog.getByRole('button', { name: 'Offboard' });
+      const confirm = dialog.getByRole('button', { name: 'Offboard', exact: true });
       await expect(confirm).toBeDisabled();
 
       // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
