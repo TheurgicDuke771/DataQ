@@ -180,7 +180,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
 | GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
-| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
+| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / drop a monitor baseline (schema drift, PII drift, anomaly); the following runs rebuild it. |
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
 | POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
 | POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |
