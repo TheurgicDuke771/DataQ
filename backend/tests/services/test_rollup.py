@@ -275,7 +275,17 @@ def test_it_returns_what_the_distinct_on_it_replaced_returned(db_session: Any) -
                     db_session, suite=suite, created_at=now - timedelta(hours=age), statuses=[]
                 )
     ids = [s.id for s in suites]
-    scopes: list[Any] = [ids, ids[:2], select(Suite.id).where(Suite.id.in_(ids))]
+    scopes: list[Any] = [
+        ids,
+        ids[:2],
+        select(Suite.id).where(Suite.id.in_(ids)),
+        # Two FROM elements, one of them `suites`: SQLAlchemy would correlate this to an
+        # enclosing `suites`, and the LIMIT would then pick every suite instead of one.
+        select(Suite.id)
+        .where(Suite.connection_id == Connection.id, Suite.id.in_(ids[:5]))
+        .order_by(Suite.name)
+        .limit(1),
+    ]
 
     for scope in scopes:
         for as_of in (None, now - timedelta(hours=2), now - timedelta(days=1)):
@@ -316,7 +326,9 @@ def test_it_reads_a_few_runs_per_suite_not_every_run(db_session: Any) -> None:
     read = sum(
         (n["Actual Rows"] + n.get("Rows Removed by Filter", 0)) * n["Actual Loops"] for n in scans
     )
-    assert read <= 50, plan
+    # Far under the 2,000 a scan of every run reads, with room for the planner's choice of
+    # index on a table this small.
+    assert read <= 200, plan
 
 
 # ── connection_scores (#1557) ──

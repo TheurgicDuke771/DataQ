@@ -104,6 +104,11 @@ def latest_runs_per_suite_stmt(
     ``DISTINCT ON (suite_id)`` this replaces walked every run of every suite in scope,
     because Postgres has no skip scan.
     """
+    if isinstance(suite_scope, Select):
+        # Behind a FROM-clause subquery, so a scope that itself reads `suites` beside another
+        # table is not auto-correlated to the `suites` below, which would change its meaning.
+        scope_ids = suite_scope.subquery()
+        suite_scope = select(next(iter(scope_ids.c)))
     newest = aliased(Run)
     newest_id = select(newest.id).where(newest.suite_id == Suite.id)
     if as_of is not None:

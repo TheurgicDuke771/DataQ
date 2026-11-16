@@ -303,7 +303,7 @@ class AssetDetail:
 
 
 def _latest_run_per_suite(session: Session, suite_ids: list[uuid.UUID]) -> dict[uuid.UUID, Run]:
-    """The most-recent run for each suite (DISTINCT ON, newest `created_at`)."""
+    """The most-recent run for each suite (newest `created_at`, then highest `id`)."""
     if not suite_ids:
         return {}
     rows = session.scalars(latest_runs_per_suite_stmt(suite_ids))
