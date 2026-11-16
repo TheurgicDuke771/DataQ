@@ -5925,6 +5925,10 @@ section below.
   tick. A broker on the same host is still published to serially, where that is faster.
 - **A detail page's browser tab names what it shows.** Once a suite, asset, check, connection or contract has loaded, the tab title and the screen-reader announcement name it (`orders · Suite · DataQ`) instead of only the kind of page, so open tabs and history entries can be told apart.
 - A page opened from inside the app now starts at the top, instead of at the scroll position of the page before it. Back and Forward return to where you left each page, including a list that is still loading its rows.
+- **Per-suite health loads faster on a workspace with a long run history.** Finding each
+  suite's latest run no longer reads every run the workspace has recorded. At one million
+  runs the dashboard's per-suite performance went from about 100 ms to under 4 ms. The asset
+  view, connection scores and contract status use the same lookup and gain too.
 - **Charts can be understood with a screen reader.** The run-trend and metric charts are announced by name instead of by their axis labels, and the dashboard's Quality Trends chart offers its numbers as a table.
 - **Run progress is announced to screen readers.** While a suite runs, a screen reader hears when it is queued, how far it has got in quarters, and how it ended, without being interrupted on every update.
 - **Row buttons say which row they act on.** A screen reader now hears "Edit", "Delete", "Snooze", "Remove", "Revoke", "Acknowledge" and similar row actions together with the check, member, incident or setting they belong to.
@@ -11481,6 +11485,36 @@ broker waits on a cloud test instance.
 - Covers the threading itself: order, the request id, a broker lost mid-batch, failures
   logged as they happen, the decision lasting the tick, and staying serial on a fast
   broker or a CPU-bound publish.
+
+## v1.3 — the latest run of each suite
+
+> Measured **2026-11-16** on the development machine: PostgreSQL 16, a scratch
+> database seeded to 1,000,000 runs across 10 suites.
+
+The dashboard's per-suite performance, the asset view, connection scores, contract
+status and three MCP tools all start from "the newest run of each suite". That was a
+`SELECT DISTINCT ON (suite_id) … ORDER BY suite_id, created_at DESC, id DESC`.
+Postgres has no skip scan, so it walked **every run of every suite in scope** to keep
+one row per suite. The cost followed the workspace's whole history.
+
+It is now one index descent per suite: for each suite in scope, a correlated
+`ORDER BY created_at DESC, id DESC LIMIT 1` finds the newest run's id on the existing
+`(suite_id, created_at DESC, id DESC)` index, and the run is read by primary key. The
+cost follows the number of suites. No index was added.
+
+| At 1,000,000 runs, p50 of 15 | Before | After |
+|---|---|---|
+| Latest run of each suite (statement alone, full rows) | 293 ms | 1.7 ms |
+| Dashboard per-suite performance (`_suite_performance`) | 103 ms | 3.5 ms |
+
+The plan reads 10 suites, 10 index-only descents of one row each, and 10 primary-key
+reads: 73 buffers in all.
+
+**Same answers.** On the 1M database both forms returned the same ten runs and the same
+performance rows. The tests compare the new statement with the old one over suites
+whose runs share timestamps (so the `id` tie-break decides), a suite with no run, a
+scope passed as a list and as a subquery, and a point in the past. A plan test fails
+if the statement goes back to reading every run.
 
 
 

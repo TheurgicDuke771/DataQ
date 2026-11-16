@@ -2462,6 +2462,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v13-the-latest-run-of-each-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — the latest run of each suite
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3895,6 +3906,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v13-the-latest-run-of-each-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — the latest run of each suite
+      
+    </span>
+  </a>
   
 </li>
       
@@ -7338,6 +7360,48 @@ broker waits on a cloud test instance.</p>
   logged as they happen, the decision lasting the tick, and staying serial on a fast
   broker or a CPU-bound publish.</li>
 </ul>
+<h2 id="v13-the-latest-run-of-each-suite">v1.3 — the latest run of each suite<a class="headerlink" href="#v13-the-latest-run-of-each-suite" title="Permanent link">¶</a></h2>
+<blockquote>
+<p>Measured <strong>2026-11-16</strong> on the development machine: PostgreSQL 16, a scratch
+database seeded to 1,000,000 runs across 10 suites.</p>
+</blockquote>
+<p>The dashboard's per-suite performance, the asset view, connection scores, contract
+status and three MCP tools all start from "the newest run of each suite". That was a
+<code>SELECT DISTINCT ON (suite_id) … ORDER BY suite_id, created_at DESC, id DESC</code>.
+Postgres has no skip scan, so it walked <strong>every run of every suite in scope</strong> to keep
+one row per suite. The cost followed the workspace's whole history.</p>
+<p>It is now one index descent per suite: for each suite in scope, a correlated
+<code>ORDER BY created_at DESC, id DESC LIMIT 1</code> finds the newest run's id on the existing
+<code>(suite_id, created_at DESC, id DESC)</code> index, and the run is read by primary key. The
+cost follows the number of suites. No index was added.</p>
+<table>
+<thead>
+<tr>
+<th>At 1,000,000 runs, p50 of 15</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Latest run of each suite (statement alone, full rows)</td>
+<td>293 ms</td>
+<td>1.7 ms</td>
+</tr>
+<tr>
+<td>Dashboard per-suite performance (<code>_suite_performance</code>)</td>
+<td>103 ms</td>
+<td>3.5 ms</td>
+</tr>
+</tbody>
+</table>
+<p>The plan reads 10 suites, 10 index-only descents of one row each, and 10 primary-key
+reads: 73 buffers in all.</p>
+<p><strong>Same answers.</strong> On the 1M database both forms returned the same ten runs and the same
+performance rows. The tests compare the new statement with the old one over suites
+whose runs share timestamps (so the <code>id</code> tie-break decides), a suite with no run, a
+scope passed as a list and as a subquery, and a point in the past. A plan test fails
+if the statement goes back to reading every run.</p>
 
 
 
