@@ -92,7 +92,7 @@ function rebaselineCopy(kind: string): string {
     return 'Drops the stored baseline of PII-looking unclassified columns. The next run learns the CURRENT set as the new reference and reports skip — columns that drifted so far will read as “known”.';
   }
   if (kind === 'anomaly') {
-    return 'Drops the stored history this check compares each value against. The next runs report skip until enough history has built up again, and any seasonality pattern is relearned from scratch.';
+    return 'Drops the stored history this check compares each value against. The next runs report skip until enough history has built up again, and a day-of-week pattern is relearned from scratch. Attached seasonal periods stay attached.';
   }
   return 'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.';
 }
@@ -786,7 +786,11 @@ function ChecksList({
       onOk: async () => {
         try {
           await rebaselineCheck(suiteId, check.id);
-          message.success(`${check.name}: baseline dropped — the next run recaptures it`);
+          message.success(
+            check.kind === 'anomaly'
+              ? `${check.name}: history dropped — it reports skip until enough runs have built it up again`
+              : `${check.name}: baseline dropped — the next run recaptures it`,
+          );
           onChanged();
         } catch (err) {
           message.error(`Re-baseline failed: ${errorMessage(err)}`);

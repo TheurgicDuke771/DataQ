@@ -659,9 +659,14 @@ describe('Suites', () => {
   });
 
   it.each([
-    ['pii_drift', 'chk-pii', /PII-looking unclassified columns/],
-    ['anomaly', 'chk-anomaly', /enough history has built up again/],
-  ])('offers Re-baseline on a %s check with its own wording', async (kind, id, copy) => {
+    ['pii_drift', 'chk-pii', /PII-looking unclassified columns/, /the next run recaptures it/],
+    [
+      'anomaly',
+      'chk-anomaly',
+      /enough history has built up again/,
+      /reports skip until enough runs have built it up again/,
+    ],
+  ])('offers Re-baseline on a %s check with its own wording', async (kind, id, copy, done) => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
     mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
@@ -688,6 +693,8 @@ describe('Suites', () => {
     if (!ok) throw new Error('confirm modal OK button not found');
     await user.click(ok);
     await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', id));
+    // The confirmation says what really happens next for this kind.
+    expect(await screen.findByText(done)).toBeInTheDocument();
   });
 
   it('offers no Re-baseline on a freshness check (not a stateful kind)', async () => {
