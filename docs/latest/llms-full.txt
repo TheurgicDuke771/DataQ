@@ -3593,7 +3593,11 @@ each run's **z-score** through the usual warn / fail / critical thresholds. Opti
 just for being smaller than Monday.
 
 Below its `min_points` of history the check reports **skip**, never a fabricated
-pass — a baseline that hasn't seen enough runs has no opinion. The per-check
+pass — a baseline that hasn't seen enough runs has no opinion. If the history has
+learned something it should not have, such as a bad load or a backfill, an editor can
+**Re-baseline** the check from the suite page: the stored history is dropped, the check
+reports skip until `min_points` runs have built it up again, and a weekday pattern is
+relearned. Attached seasonal periods are kept. The per-check
 **trend view** overlays the learned baseline band on the metric history so you can
 see what "normal" currently means. SQL datasources only: the anomaly executor takes
 its own measurement over a live SQL connection, which the natively-computed Iceberg
@@ -5983,6 +5987,11 @@ section below.
   history and settings; a merged asset is split, and each suite moves to its folder's asset with
   the runs and incidents it recorded. Lineage edges and detected column classifications of a
   split asset stay on the old one until the next lineage pull and profile.
+- **Anomaly checks can be re-baselined from the suite page.** The Re-baseline action was shown
+  only on schema drift and PII drift checks, so an anomaly check whose history had been skewed by a
+  bad load could not be reset without calling the API. It now appears on every check kind that keeps
+  a stored baseline, and the confirmation for an anomaly check says that the next runs report skip
+  until enough history has built up again and that any seasonality pattern is relearned.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
@@ -8262,7 +8271,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
 | GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
-| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
+| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / drop a monitor baseline (schema drift, PII drift, anomaly); the following runs rebuild it. |
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
 | POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
 | POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |

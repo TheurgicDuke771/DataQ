@@ -389,6 +389,11 @@ section below.
   history and settings; a merged asset is split, and each suite moves to its folder's asset with
   the runs and incidents it recorded. Lineage edges and detected column classifications of a
   split asset stay on the old one until the next lineage pull and profile.
+- **Anomaly checks can be re-baselined from the suite page.** The Re-baseline action was shown
+  only on schema drift and PII drift checks, so an anomaly check whose history had been skewed by a
+  bad load could not be reset without calling the API. It now appears on every check kind that keeps
+  a stored baseline, and the confirmation for an anomaly check says that the next runs report skip
+  until enough history has built up again and that any seasonality pattern is relearned.
 - **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
   zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
   channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
