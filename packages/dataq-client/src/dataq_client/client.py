@@ -167,15 +167,24 @@ def _ok(response: Response[Any]) -> Any:
     return response.parsed
 
 
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    """A header by name, whatever its letter case; a plain dict is not case-insensitive."""
+    for key, value in headers.items():
+        if key.lower() == name:
+            return value
+    return None
+
+
 def _download_file_name(headers: Mapping[str, str]) -> str | None:
     """The file name a ``Content-Disposition`` header offers, as a bare name or ``None``.
 
     Handles a quoted name, an unquoted one and the RFC 5987 ``filename*=UTF-8''...`` form (which
-    wins when both are present). The server's value is never trusted as a path: any directory
-    part, of either separator style, is dropped so a caller joining it onto a folder cannot be
+    wins when both are present). The server's value is never trusted as a path: control
+    characters are removed, and everything up to the last ``/``, ``\\`` or ``:`` (a directory,
+    a Windows drive or a stream name) is dropped, so a caller joining it onto a folder cannot be
     steered outside it.
     """
-    value = headers.get("content-disposition")
+    value = _header(headers, "content-disposition")
     if not value:
         return None
     message = Message()
@@ -189,14 +198,15 @@ def _download_file_name(headers: Mapping[str, str]) -> str | None:
     name = collapse_rfc2231_value(values[0]) if values else None
     if not name:
         return None
-    base = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    printable = "".join(c for c in name if c.isprintable())
+    base = printable.replace("\\", "/").replace(":", "/").rsplit("/", 1)[-1].strip()
     return None if base in ("", ".", "..") else base
 
 
 def _download_media_type(headers: Mapping[str, str]) -> str | None:
-    """``Content-Type`` without its parameters (``; charset=utf-8``), or ``None``."""
-    value = headers.get("content-type")
-    media_type = value.split(";", 1)[0].strip() if value else ""
+    """``Content-Type`` in lower case without its parameters (``; charset=utf-8``), or ``None``."""
+    value = _header(headers, "content-type")
+    media_type = value.split(";", 1)[0].strip().lower() if value else ""
     return media_type or None
 
 

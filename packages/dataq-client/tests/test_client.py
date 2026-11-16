@@ -598,3 +598,33 @@ def test_a_download_failure_raises_like_every_other_call() -> None:
     server = _Server(_json(403, {"error": {"code": "forbidden", "message": "no"}}))
     with pytest.raises(AuthError):
         _client(server).download_comparison_report(RUN, REPORT)
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected"),
+    [
+        ('attachment; filename="a\x00b.csv"', "ab.csv"),
+        ('attachment; filename="a\r\nb.csv"', "ab.csv"),
+        ('attachment; filename="C:evil.csv"', "evil.csv"),
+        ('attachment; filename="C:\\\\x\\\\y.csv"', "y.csv"),
+        ('attachment; filename="x.csv:stream"', "stream"),
+        ('attachment; filename="\x00"', None),
+    ],
+)
+def test_a_download_file_name_is_never_a_path_or_a_control_sequence(
+    disposition: str, expected: str | None
+) -> None:
+    """Header values httpx would refuse to build a response from, so the parser is called
+    directly: a name with a control character, a Windows drive or a stream name."""
+    from dataq_client.client import _download_file_name
+
+    assert _download_file_name({"content-disposition": disposition}) == expected
+
+
+def test_download_headers_are_read_whatever_their_case() -> None:
+    """A plain dict of headers is case-sensitive, and a media type is not."""
+    from dataq_client.client import _download_file_name, _download_media_type
+
+    headers = {"Content-Disposition": 'attachment; filename="x.csv"', "Content-Type": "TEXT/CSV"}
+    assert _download_file_name(headers) == "x.csv"
+    assert _download_media_type(headers) == "text/csv"
