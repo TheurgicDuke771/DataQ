@@ -86,10 +86,6 @@ import { TagChips } from '../components/shared/TagChips';
 import { TagFilter } from '../components/shared/TagFilter';
 import { useAppModal } from '../hooks/useAppModal';
 
-/**
- * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
- * card and the master list row so the two never drift.
- */
 /** What the re-baseline confirm says is dropped, and what the next run does about it. */
 function rebaselineCopy(kind: string): string {
   if (kind === 'pii_drift') {
@@ -101,6 +97,10 @@ function rebaselineCopy(kind: string): string {
   return 'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.';
 }
 
+/**
+ * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
+ * card and the master list row so the two never drift.
+ */
 function SuiteIdentity({
   suite,
   conn,
