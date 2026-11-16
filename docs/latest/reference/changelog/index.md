@@ -373,6 +373,7 @@ section below.
   the workspace's sensitivity for automatic checks, focus could fall back to the top of the page
   instead of staying in the settings block, depending on timing.
 - **Ids from the URL can no longer shape an API request path.** Every path segment the web app sends is now percent-encoded, a malformed `?incident=` link is ignored, and a detail page opened with a non-UUID id shows the not-found page without issuing a request.
+- **The Python client's comparison report download now returns the file name and media type.** `DataQClient.download_comparison_report` fills `file_name` from the server's `Content-Disposition` (`comparison-<id>.<fmt>`, with any directory part removed) and `mime_type` from `Content-Type`, so a caller can tell CSV from XLSX without reading the response headers.
 - **Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.**
   Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
   automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
