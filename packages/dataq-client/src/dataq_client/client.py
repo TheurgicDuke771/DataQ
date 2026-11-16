@@ -10,12 +10,20 @@ import json
 import os
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from email.message import Message
+from email.utils import collapse_rfc2231_value
+from io import BytesIO
 from typing import Any
 
 from dataq_client.generated.api.incidents import acknowledge_incident, resolve_incident
-from dataq_client.generated.api.runs import get_run, get_run_progress, pipeline_gate
+from dataq_client.generated.api.runs import (
+    download_comparison_report,
+    get_run,
+    get_run_progress,
+    pipeline_gate,
+)
 from dataq_client.generated.api.suites import (
     apply_suite_document,
     export_suite,
@@ -33,7 +41,7 @@ from dataq_client.generated.models.incident_resolve_request import IncidentResol
 from dataq_client.generated.models.suite_apply_request import SuiteApplyRequest
 from dataq_client.generated.models.suite_import_request import SuiteImportRequest
 from dataq_client.generated.models.suite_validate_request import SuiteValidateRequest
-from dataq_client.generated.types import Response
+from dataq_client.generated.types import File, Response
 
 #: The server's run lifecycle; a run in one of the last three will not change again.
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
@@ -157,6 +165,51 @@ def _ok(response: Response[Any]) -> Any:
             "the server answered with a status this client version does not expect",
         )
     return response.parsed
+
+
+def _download_file_name(headers: Mapping[str, str]) -> str | None:
+    """The file name a ``Content-Disposition`` header offers, as a bare name or ``None``.
+
+    Handles a quoted name, an unquoted one and the RFC 5987 ``filename*=UTF-8''...`` form (which
+    wins when both are present). The server's value is never trusted as a path: any directory
+    part, of either separator style, is dropped so a caller joining it onto a folder cannot be
+    steered outside it.
+    """
+    value = headers.get("content-disposition")
+    if not value:
+        return None
+    message = Message()
+    message["content-disposition"] = value
+    # ``filename*`` (RFC 5987) surfaces as a tuple and is preferred over a plain ``filename``,
+    # which ``Message.get_filename`` would otherwise return first.
+    values = [
+        v for k, v in message.get_params(header="content-disposition") or [] if k == "filename"
+    ]
+    values.sort(key=lambda v: not isinstance(v, tuple))
+    name = collapse_rfc2231_value(values[0]) if values else None
+    if not name:
+        return None
+    base = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return None if base in ("", ".", "..") else base
+
+
+def _download_media_type(headers: Mapping[str, str]) -> str | None:
+    """``Content-Type`` without its parameters (``; charset=utf-8``), or ``None``."""
+    value = headers.get("content-type")
+    media_type = value.split(";", 1)[0].strip() if value else ""
+    return media_type or None
+
+
+def _downloaded_file(response: Response[Any]) -> File:
+    """A download's body as a generated ``File`` that also carries the server's file name and
+    media type, which the generated parser leaves unset. One parser for every download."""
+    if not 200 <= int(response.status_code) < 300:
+        raise _error_from(response)
+    return File(
+        payload=BytesIO(response.content),
+        file_name=_download_file_name(response.headers),
+        mime_type=_download_media_type(response.headers),
+    )
 
 
 def _document_field(document: dict[str, Any] | str) -> dict[str, Any]:
@@ -327,6 +380,21 @@ class DataQClient:
         if not 200 <= response.status_code < 300:
             raise _error_from(response)
         return response.text
+
+    def download_comparison_report(
+        self, run_id: uuid.UUID | str, result_id: uuid.UUID | str, *, fmt: str = "csv"
+    ) -> File:
+        """A comparison result's report (``fmt`` is ``csv`` or ``xlsx``), derived by the server.
+
+        Unlike the generated call, the returned ``File`` has ``file_name`` (the server's
+        ``comparison-<id>.<fmt>``, never a path) and ``mime_type`` set from the response headers;
+        either is ``None`` if the server sent none.
+        """
+        return _downloaded_file(
+            download_comparison_report.sync_detailed(
+                uuid.UUID(str(run_id)), uuid.UUID(str(result_id)), client=self.api, fmt=fmt
+            )
+        )
 
     def import_suite(self, document: dict[str, Any] | str, connection_id: uuid.UUID | str) -> Any:
         """Create a new suite from a document, bound to ``connection_id``. ``document`` is
