@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, and_, exists, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run, Suite
 from backend.app.services.scoring_settings_service import DEFAULT_WEIGHTS, Weights
@@ -95,13 +95,30 @@ def latest_runs_per_suite_stmt(
     *,
     as_of: datetime | None = None,
 ) -> Select[Any]:
-    """`SELECT DISTINCT ON (suite_id) * FROM runs …` — each suite's newest run, or
-    with ``as_of`` the newest one created at or before that moment.
+    """Each suite's newest run, or with ``as_of`` the newest one created at or before
+    that moment. Newest is ``created_at DESC, id DESC``; a suite with no run is absent.
+
+    One index descent per suite (#2012): for each suite in scope, a correlated
+    ``ORDER BY … LIMIT 1`` on ``ix_runs_suite_created`` finds its newest run's id, and the
+    run is then read by primary key. The cost follows the number of suites. The
+    ``DISTINCT ON (suite_id)`` this replaces walked every run of every suite in scope,
+    because Postgres has no skip scan.
     """
-    stmt = select(Run).where(Run.suite_id.in_(suite_scope))
+    newest = aliased(Run)
+    newest_id = select(newest.id).where(newest.suite_id == Suite.id)
     if as_of is not None:
-        stmt = stmt.where(Run.created_at <= as_of)
-    return stmt.order_by(Run.suite_id, Run.created_at.desc(), Run.id.desc()).distinct(Run.suite_id)
+        newest_id = newest_id.where(newest.created_at <= as_of)
+    per_suite = (
+        select(
+            newest_id.order_by(newest.created_at.desc(), newest.id.desc())
+            .limit(1)
+            .scalar_subquery()
+            .label("run_id")
+        )
+        .where(Suite.id.in_(suite_scope))
+        .subquery()
+    )
+    return select(Run).join(per_suite, Run.id == per_suite.c.run_id)
 
 
 def score_as_of(
