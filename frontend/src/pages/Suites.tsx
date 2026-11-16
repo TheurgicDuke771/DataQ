@@ -55,6 +55,7 @@ import { InheritedTag } from '../components/checks/InheritanceNotice';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../components/checks/bulkLimit';
 import { BulkThresholdsModal } from '../components/checks/BulkThresholdsModal';
+import { STATEFUL_MONITOR_KINDS } from '../components/checks/expectationCatalog';
 import { DisabledTag, isDisabled } from '../components/checks/enabled';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
@@ -89,6 +90,17 @@ import { useAppModal } from '../hooks/useAppModal';
  * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
  * card and the master list row so the two never drift.
  */
+/** What the re-baseline confirm says is dropped, and what the next run does about it. */
+function rebaselineCopy(kind: string): string {
+  if (kind === 'pii_drift') {
+    return 'Drops the stored baseline of PII-looking unclassified columns. The next run learns the CURRENT set as the new reference and reports skip — columns that drifted so far will read as “known”.';
+  }
+  if (kind === 'anomaly') {
+    return 'Drops the stored history this check compares each value against. The next runs report skip until enough history has built up again, and any seasonality pattern is relearned from scratch.';
+  }
+  return 'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.';
+}
+
 function SuiteIdentity({
   suite,
   conn,
@@ -769,10 +781,7 @@ function ChecksList({
   const onRebaseline = (check: Check) =>
     modal.confirm({
       title: `Re-baseline “${check.name}”?`,
-      content:
-        check.kind === 'pii_drift'
-          ? 'Drops the stored baseline of PII-looking unclassified columns. The next run learns the CURRENT set as the new reference and reports skip — columns that drifted so far will read as “known”.'
-          : 'Drops the stored schema baseline. The next run captures the CURRENT column shape as the new reference — drift accumulated so far will read as “no drift”.',
+      content: rebaselineCopy(check.kind),
       okText: 'Re-baseline',
       onOk: async () => {
         try {
@@ -1004,9 +1013,9 @@ function ChecksList({
                             </Button>
                           </Dropdown>,
                         ]),
-                  // Re-baseline is for the baseline-diff kinds (schema_drift, pii_drift —
-                  // the backend 422s other kinds) and edit-gated like snooze.
-                  ...(canEditChecks && (check.kind === 'schema_drift' || check.kind === 'pii_drift')
+                  // Re-baseline is for the kinds that keep a stored baseline (the backend 422s
+                  // other kinds) and edit-gated like snooze.
+                  ...(canEditChecks && STATEFUL_MONITOR_KINDS.has(check.kind)
                     ? [
                         <Button
                           key="rebaseline"

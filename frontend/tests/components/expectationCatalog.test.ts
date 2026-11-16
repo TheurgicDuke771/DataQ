@@ -12,6 +12,7 @@ import {
   MOSTLY_FIELD_NAME,
   TYPE_FIELD_NAMES,
   typeFieldHint,
+  STATEFUL_MONITOR_KINDS,
 } from '../../src/components/checks/expectationCatalog';
 import { buildCheckPayload } from '../../src/components/checks/checkForm';
 
@@ -627,5 +628,11 @@ describe('aggregate monitor (#1602)', () => {
       max_value: 50,
     });
     expect(payload.fail_threshold).toBeNull();
+  });
+});
+
+describe('STATEFUL_MONITOR_KINDS', () => {
+  it('is the baseline-keeping kinds the re-baseline route accepts', () => {
+    expect([...STATEFUL_MONITOR_KINDS].sort()).toEqual(['anomaly', 'pii_drift', 'schema_drift']);
   });
 });
