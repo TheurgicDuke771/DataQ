@@ -305,7 +305,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   redshift: 'Amazon Redshift',
   bigquery: 'Google BigQuery',
   adf: 'Azure Data Factory',
-  airflow: 'Airflow',
+  airflow: 'Apache Airflow',
   dbt: 'dbt',
 };
 

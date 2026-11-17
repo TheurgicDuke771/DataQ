@@ -271,7 +271,7 @@ def test_a_recorded_pipeline_run_that_failed_to_load_is_still_a_pipeline_trigger
         "sibling_checks": [],
     }
     assert dict(render.incident_facts(_card(evidence)))["Triggered by"] == (
-        "The Airflow pipeline (its run couldn't be loaded)."
+        "The Apache Airflow pipeline (its run couldn't be loaded)."
     )
 
 

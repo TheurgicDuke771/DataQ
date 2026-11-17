@@ -45,7 +45,7 @@ describe('ConnectionNew', () => {
     expect(labels[labels.length - 1]).toHaveTextContent('Orchestration');
     // The Orchestration note frames it as optional (cron/manual also run suites).
     expect(
-      screen.getByText(/Optional — connect Azure Data Factory, Airflow or dbt/),
+      screen.getByText(/Optional — connect Azure Data Factory, Apache Airflow or dbt/),
     ).toBeInTheDocument();
     // A datasource and all three orchestration sources are offered.
     expect(screen.getByText('Snowflake')).toBeInTheDocument();
@@ -190,8 +190,10 @@ describe('ConnectionNew', () => {
     await user.click(screen.getAllByRole('button', { name: 'Back' })[0]);
 
     // Re-pick a different type — the form must start clean (no leftover name).
-    await user.click(screen.getByText('Airflow'));
-    expect(screen.getByRole('heading', { name: /New Airflow connection/ })).toBeInTheDocument();
+    await user.click(screen.getByText('Apache Airflow'));
+    expect(
+      screen.getByRole('heading', { name: /New Apache Airflow connection/ }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('');
   });
 

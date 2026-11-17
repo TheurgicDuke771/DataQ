@@ -1625,7 +1625,7 @@ def list_runs(
     means the kind is known but the name is not — the user no longer exists, or
     the upstream suite is deleted or one you cannot see — never that nobody
     started it. A schedule reads ``Schedule`` and is not named. An orchestration
-    label (``Airflow — <pipeline>:<run id>``) carries the rest of the marker
+    label (``Apache Airflow — <pipeline>:<run id>``) carries the rest of the marker
     whole: the pipeline id and the provider's run id are **not** split, since
     either may contain a colon, so do not parse one out of it — use
     ``get_pipeline_status`` for the pipeline run. The label is **null** in two

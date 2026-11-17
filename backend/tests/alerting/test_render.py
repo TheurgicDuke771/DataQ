@@ -119,7 +119,7 @@ def test_sample_values_ignores_row_dicts_and_missing() -> None:
 def test_triggered_source_maps_known_providers() -> None:
     assert render.triggered_source("schedule:123") == "Schedule"
     assert render.triggered_source("adf:pl:run1") == "Azure Data Factory"
-    assert render.triggered_source("airflow:dag:run") == "Airflow"
+    assert render.triggered_source("airflow:dag:run") == "Apache Airflow"
     assert render.triggered_source("dbt:job:run") == "dbt"
     assert render.triggered_source(None) == "Manual"
     assert render.triggered_source("weird:x") == "weird"  # unknown prefix → raw
