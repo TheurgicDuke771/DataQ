@@ -352,6 +352,7 @@ section below.
 - **The SQL editor can be used by keyboard and screen reader.** It is announced by its field's name and reports the field's help, errors and required state. A note under it explains how to leave it with Tab, and that shortcut now works: press Ctrl+M first (Ctrl+Shift+M on a Mac), since Tab otherwise indents.
 - **The lineage graph can be explored with a screen reader.** Each linked asset is announced as a button with its side and distance (for example "upstream, 1 hop"), where before only a one-line summary of the graph was read.
 - **Confirmation popovers work from the keyboard.** Opening one now moves focus to its buttons, on Cancel when confirming would delete or remove something, and closing it returns focus to the button that opened it.
+- **Verifying the audit chain uses far less memory.** The admin "verify" check and its daily task no longer load every audit row at once: they keep each row's hash links and read the rows in batches as the chain is walked back from its head. With 100,000 audit events the peak fell from about 460 MiB to about 61 MiB, with the same result and about the same time.
 - **Profile and Workspace Settings carry real content where placeholders stood.** Profile
   shows your effective role in plain words, your suites counted by access level and the suites
   you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each

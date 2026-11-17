@@ -2473,6 +2473,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v13-verifying-the-audit-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — verifying the audit chain
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3914,6 +3925,17 @@
     <span class="md-ellipsis">
       
         v1.3 — the latest run of each suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v13-verifying-the-audit-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — verifying the audit chain
       
     </span>
   </a>
@@ -7402,6 +7424,41 @@ performance rows. The tests compare the new statement with the old one over suit
 whose runs share timestamps (so the <code>id</code> tie-break decides), a suite with no run, a
 scope passed as a list and as a subquery, and a point in the past. A plan test fails
 if the statement goes back to reading every run.</p>
+<h2 id="v13-verifying-the-audit-chain">v1.3 — verifying the audit chain<a class="headerlink" href="#v13-verifying-the-audit-chain" title="Permanent link">¶</a></h2>
+<blockquote>
+<p>Measured <strong>2026-11-17</strong> on the development machine: a real hash chain of 100,000 audit rows
+with payloads of about 1 KB each, in the perf harness's PostgreSQL 16 scratch database.</p>
+</blockquote>
+<p><code>GET /admin/audit-events/verify</code> and the daily <code>verify_audit_chain</code> task walk the hash chain
+back from its head. The walk used to load every hashed row, payload and all, before it started,
+so its memory grew with the whole history. It now keeps, for every row, only its hash, id and
+previous hash (enough to know which row follows which), and loads the full rows 500 at a time in
+the order the walk wants them, letting each go once it is checked.</p>
+<table>
+<thead>
+<tr>
+<th>100,000 rows</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Peak Python memory</td>
+<td>460 MiB</td>
+<td>61 MiB</td>
+</tr>
+<tr>
+<td>Wall time</td>
+<td>32 s</td>
+<td>37 s</td>
+</tr>
+</tbody>
+</table>
+<p>The wall time is the hashing, which is unchanged; the extra 5 s is the 200 batched reads.
+Memory is still linear in the number of rows, at about 0.6 KB each instead of about 4.6 KB, and
+no schema change was needed (a recursive walk would have wanted an index on <code>row_hash</code>, which
+every audit write would then maintain).</p>
 
 
 
