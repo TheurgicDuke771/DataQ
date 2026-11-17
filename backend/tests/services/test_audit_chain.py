@@ -278,3 +278,80 @@ def test_an_event_flushed_before_commit_is_still_chained(db_session: Any) -> Non
     assert first.row_hash is not None
     assert second.row_hash is not None
     assert second.prev_hash == first.row_hash
+
+
+# ── a long chain is walked in batches (#1597) ────────────────────────────────
+
+
+def _full_row_selects(session: Any, call: Any) -> int:
+    """How many statements read whole audit rows (their `before`/`after` payloads)."""
+    from sqlalchemy import event
+
+    seen: list[str] = []
+
+    def before(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if statement.startswith("SELECT") and "audit_events.after" in statement:
+            seen.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", before)
+    try:
+        call()
+    finally:
+        event.remove(session.get_bind(), "before_cursor_execute", before)
+    return len(seen)
+
+
+def test_a_chain_longer_than_a_batch_verifies_in_batches(
+    scratch_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(audit_chain, "_WALK_BATCH", 4)
+    for _ in range(25):
+        _record(scratch_session)
+    scratch_session.commit()
+
+    queries = _full_row_selects(scratch_session, lambda: audit_chain.verify_chain(scratch_session))
+
+    result = audit_chain.verify_chain(scratch_session)
+    assert result.ok and result.verified_count == 25
+    # 25 rows in batches of 4 is 7 reads of rows: not one read of everything, and not one per row.
+    assert queries == 7
+
+
+def test_a_row_edited_in_the_middle_of_a_batch_is_found(
+    scratch_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(audit_chain, "_WALK_BATCH", 4)
+    events = [_record(scratch_session) for _ in range(13)]
+    scratch_session.commit()
+    events[9].after = {"tampered": True}  # neither the first nor the last of its batch
+    scratch_session.commit()
+
+    result = audit_chain.verify_chain(scratch_session)
+
+    assert not result.ok
+    assert result.first_break is not None and result.first_break.event_id == events[9].id
+    # The walk goes newest-first, so everything after the edited row was verified before it.
+    assert result.verified_count == 3
+
+
+def test_the_walk_holds_one_batch_of_rows_not_the_table(
+    scratch_session: Session,
+) -> None:
+    for _ in range(30):
+        _record(scratch_session)
+    scratch_session.commit()
+    rows = audit_chain._ChainRows(scratch_session, batch=5)
+    state = scratch_session.get(AuditChainState, 1)
+    assert state is not None and state.head_hash is not None
+
+    held: list[int] = []
+    current: str | None = state.head_hash
+    while current is not None:
+        row = rows.get(current)
+        assert row is not None
+        held.append(len(rows._loaded))
+        current = row.prev_hash
+
+    assert len(held) == 30
+    assert max(held) <= 4  # a batch of 5, less the one just returned
+    assert rows._loaded == {}  # every row was released as it was used

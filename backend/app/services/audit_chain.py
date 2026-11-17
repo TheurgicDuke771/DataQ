@@ -229,6 +229,61 @@ class ChainVerification:
         return self.first_break is None
 
 
+#: Rows `verify_chain` loads per query while it walks the chain (#1597).
+_WALK_BATCH = 500
+
+
+class _ChainRows:
+    """The hashed audit rows by ``row_hash``, loaded on demand along the chain.
+
+    `verify_chain` used to load every hashed row, content and all, before it walked back from the
+    head: memory grew with the whole history, and the JSON payloads were most of it. This keeps
+    only ``row_hash -> (id, prev_hash)`` for every row (a few hundred bytes each: enough to know
+    which rows follow which), and loads the full rows ``_WALK_BATCH`` at a time, in the order
+    the walk will want them. The walk asks for each row once, so a row is dropped from here the
+    moment it is returned and memory holds one batch of rows, not the table.
+    """
+
+    def __init__(self, session: Session, batch: int | None = None) -> None:
+        self._session = session
+        self._batch = batch or _WALK_BATCH
+        self._links: dict[str, tuple[uuid.UUID, str | None]] = {
+            row_hash: (row_id, prev_hash)
+            for row_hash, row_id, prev_hash in session.execute(
+                select(AuditEvent.row_hash, AuditEvent.id, AuditEvent.prev_hash)
+                .where(AuditEvent.row_hash.isnot(None))
+                .execution_options(stream_results=True, yield_per=10_000)
+            )
+            if row_hash is not None
+        }
+        self._loaded: dict[str, AuditEvent] = {}
+
+    def get(self, row_hash: str) -> AuditEvent | None:
+        """The row with this hash, or ``None`` when no hashed row has it."""
+        if row_hash not in self._links:
+            return None
+        if row_hash not in self._loaded:
+            self._load_from(row_hash)
+        return self._loaded.pop(row_hash)
+
+    def _load_from(self, row_hash: str) -> None:
+        # The hashes the walk will ask for next: this row, the one its `prev_hash` names, and so on.
+        ahead: list[str] = []
+        current: str | None = row_hash
+        while current is not None and current in self._links and len(ahead) < self._batch:
+            if current in self._loaded:
+                break
+            ahead.append(current)
+            current = self._links[current][1]
+        ids = {self._links[h][0]: h for h in ahead}
+        for row in self._session.scalars(select(AuditEvent).where(AuditEvent.id.in_(ids))):
+            self._loaded[ids[row.id]] = row
+        # A row deleted since the links were read is as good as dangling.
+        for missing in ahead:
+            if missing not in self._loaded:
+                self._links.pop(missing, None)
+
+
 def verify_chain(session: Session) -> ChainVerification:
     """Walk the chain by FOLLOWING its `prev_hash` links backward from the
     current head — not by sorting rows on `occurred_at`.
@@ -247,10 +302,10 @@ def verify_chain(session: Session) -> ChainVerification:
     `last_deleted_row_hash`) — matched by exact event id, so a tampered row
     cannot forge continuity by copying an unrelated checkpoint's hash.
 
-    Loads every hashed row into memory rather than walking the chain via
-    targeted per-hop queries — simpler to get correct, and not obviously worse
-    at typical volumes (a hop-by-hop walk trades one query for O(chain length)
-    of them). Tracked as a scaling concern, not a correctness one: #1597.
+    Memory: only each row's ``(row_hash, id, prev_hash)`` is held for the whole chain, plus the
+    ``positions`` the anchor check reads; the rows themselves are loaded in batches in walk order
+    and released (`_ChainRows`, #1597), so a long history costs hundreds of bytes a row, not the
+    row's payload.
     """
     legacy_count = (
         session.scalar(
@@ -258,8 +313,7 @@ def verify_chain(session: Session) -> ChainVerification:
         )
         or 0
     )
-    rows = session.scalars(select(AuditEvent).where(AuditEvent.row_hash.isnot(None))).unique().all()
-    by_hash: dict[str, AuditEvent] = {row.row_hash: row for row in rows if row.row_hash is not None}
+    by_hash = _ChainRows(session)
     boundary: dict[uuid.UUID, str] = {
         cp.first_surviving_event_id: cp.last_deleted_row_hash
         for cp in session.scalars(select(AuditChainCheckpoint))
