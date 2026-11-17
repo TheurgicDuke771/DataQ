@@ -1,0 +1,1 @@
+var e=[{value:`1`,days:1,label:`Last 24h`},{value:`7`,days:7,label:`Last 7 days`},{value:`30`,days:30,label:`Last 30 days`}];export{e as t};
