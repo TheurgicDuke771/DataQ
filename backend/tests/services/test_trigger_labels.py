@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import event
 
 from backend.app.db.models import User
-from backend.app.orchestration.registry import _PROVIDERS
-from backend.app.services.trigger_labels import PROVIDER_LABELS, trigger_labels
+from backend.app.orchestration.registry import _PROVIDERS, provider_display_names
+from backend.app.services.trigger_labels import trigger_labels
 
 
 def _user(db_session: Any, email: str, display_name: str | None = None) -> User:
@@ -90,7 +90,7 @@ def test_suite_marker_names_the_upstream_suite(db_session: Any) -> None:
 
 
 def test_every_registered_provider_has_a_label() -> None:
-    assert set(PROVIDER_LABELS) == set(_PROVIDERS)
+    assert set(provider_display_names()) == set(_PROVIDERS)
 
 
 @pytest.mark.parametrize("marker", ["seed:run:failed", "airflow", "gibberish"])

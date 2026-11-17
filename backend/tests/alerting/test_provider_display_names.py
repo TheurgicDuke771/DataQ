@@ -27,12 +27,12 @@ from backend.app.alerting.card import render_teams_message, render_teams_signal_
 from backend.app.alerting.routing import route_for
 from backend.app.alerting.slack import render_slack_message, render_slack_signal_message
 from backend.app.alerting.webhook import render_webhook_payload
+from backend.app.orchestration import trigger_kind
 from backend.app.orchestration.registry import (
     _PROVIDERS,
     provider_display_name,
     provider_display_names,
 )
-from backend.app.services.trigger_labels import PROVIDER_LABELS
 
 PROVIDERS = sorted(_PROVIDERS)
 
@@ -79,9 +79,17 @@ def test_an_unregistered_value_is_shown_as_given() -> None:
 
 
 def test_run_labels_and_alerts_read_one_map() -> None:
-    assert PROVIDER_LABELS == provider_display_names()
     for provider in PROVIDERS:
-        assert render.triggered_source(f"{provider}:pl:run") == PROVIDER_LABELS[provider]
+        assert render.triggered_source(f"{provider}:pl:run") == provider_display_names()[provider]
+
+
+def test_a_changed_provider_name_reaches_the_trigger_line_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The name is read from the registry on each call, not copied at import, so an alert
+    never shows two spellings of one provider."""
+    monkeypatch.setattr(trigger_kind, "provider_display_names", lambda: {"airflow": "Airflow X"})
+    assert render.triggered_source("airflow:pl:run") == "Airflow X"
 
 
 def test_non_provider_trigger_sources_keep_their_names() -> None:
@@ -105,23 +113,30 @@ def test_alert_names_a_non_provider_trigger_as_the_runs_table_does(marker: str, 
     report = _run_report(marker)
     route = route_for(report, "warn")
     assert f"Triggered by: {name}" in email_mod.render_text_body(report)
-    assert name in email_mod.render_html_body(report)
-    assert name in json.dumps(render_slack_message(report, route))
+    assert _after_label(email_mod.render_html_body(report), name)
+    assert _after_label(json.dumps(render_slack_message(report, route)), name)
     assert {"title": "Triggered by", "value": name} in _facts(render_teams_message(report, route))
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_run_alert_names_the_provider_on_every_channel(provider: str) -> None:
-    name = PROVIDER_LABELS[provider]
+    name = provider_display_names()[provider]
     report = _run_report(f"{provider}:pl_orders:run-1")
     route = route_for(report, "warn")
     expected = f"Triggered by: {name}"
     assert expected in email_mod.render_text_body(report)
-    assert name in email_mod.render_html_body(report)
+    assert _after_label(email_mod.render_html_body(report), name)
     slack = json.dumps(render_slack_message(report, route))
-    assert name in slack
+    assert _after_label(slack, name)
     teams = render_teams_message(report, route)
     assert {"title": "Triggered by", "value": name} in _facts(teams)
+
+
+def _after_label(text: str, name: str) -> bool:
+    """``name`` appears within the few words after "Triggered by" — not merely somewhere in
+    the alert, where a suite called 'Suite: Orders' would satisfy it on its own."""
+    start = text.find("Triggered by")
+    return start >= 0 and name in text[start : start + 160]
 
 
 def _facts(node: Any) -> list[dict[str, Any]]:
@@ -153,7 +168,7 @@ def test_webhook_payload_keeps_the_identifier(provider: str) -> None:
 
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_incident_evidence_names_the_provider(provider: str) -> None:
-    name = PROVIDER_LABELS[provider]
+    name = provider_display_names()[provider]
     linked: dict[str, Any] = {
         "upstream_pipeline_run": {
             "provider": provider,
@@ -185,7 +200,7 @@ def test_incident_evidence_names_the_provider(provider: str) -> None:
 
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_pipeline_baseline_alert_names_the_provider_on_every_channel(provider: str) -> None:
-    name = PROVIDER_LABELS[provider]
+    name = provider_display_names()[provider]
     report = PipelineBaselineReport(
         state=HEALTH_FAILING,
         provider=provider,

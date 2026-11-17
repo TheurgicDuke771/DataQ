@@ -24,7 +24,11 @@ def _entries(filename: str, constant: str) -> dict[str, str]:
     source = (_API / filename).read_text(encoding="utf-8")
     block = re.search(rf"export const {constant}\b[^=]*=\s*\{{(.*?)\n\}};", source, re.S)
     assert block is not None, f"{constant} not found in {filename}"
-    return dict(re.findall(r"^\s*(\w+):\s*'([^']*)',?$", block.group(1), re.M))
+    entries = dict(re.findall(r"^\s*(\w+):\s*'([^']*)',?$", block.group(1), re.M))
+    # A reformatted block (double quotes for a label with an apostrophe) would parse as empty
+    # and fail below as a wrong label; say it is the parser.
+    assert entries, f"{constant} in {filename} did not parse: one `key: 'label',` per line"
+    return entries
 
 
 @pytest.mark.parametrize(("filename", "constant"), _MAPS)

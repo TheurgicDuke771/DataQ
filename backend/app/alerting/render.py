@@ -15,8 +15,8 @@ from backend.app.alerting.base import (
     WorkspaceSignalReport,
 )
 from backend.app.orchestration.registry import provider_display_name
+from backend.app.orchestration.trigger_kind import trigger_kind_label
 from backend.app.services.incident_evidence import blast_radius_assets_and_qualifiers
-from backend.app.services.trigger_labels import trigger_kind_label
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
 # can't blow up a card; the full detail lives on the linked run-detail page.
@@ -592,7 +592,7 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
 def triggered_source(triggered_by: str | None) -> str:
     """Friendly trigger source for the alert's "Triggered by" line, from the marker's
     prefix: the same label the runs table gives that kind of run (``Schedule``, ``Manual``,
-    ``MCP``, ``Probe``, ``Suite``, a provider's name — `services.trigger_labels`), a
+    ``MCP``, ``Probe``, ``Suite``, a provider's name — `orchestration.trigger_kind`), a
     run with no marker is ``Manual``, and a prefix nothing recognises is shown as stored.
     The kind only: an alert goes to a channel with no viewer, so it never names the person
     or the upstream suite the way the runs table does for someone allowed to see them.
