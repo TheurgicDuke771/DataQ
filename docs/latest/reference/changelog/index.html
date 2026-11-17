@@ -3229,6 +3229,12 @@ section below.</p>
   instead of staying in the settings block, depending on timing.</li>
 <li><strong>Ids from the URL can no longer shape an API request path.</strong> Every path segment the web app sends is now percent-encoded, a malformed <code>?incident=</code> link is ignored, and a detail page opened with a non-UUID id shows the not-found page without issuing a request.</li>
 <li><strong>The Python client's comparison report download now returns the file name and media type.</strong> <code>DataQClient.download_comparison_report</code> fills <code>file_name</code> from the server's <code>Content-Disposition</code> (<code>comparison-&lt;id&gt;.&lt;fmt&gt;</code>, with any directory part removed) and <code>mime_type</code> from <code>Content-Type</code>, so a caller can tell CSV from XLSX without reading the response headers.</li>
+<li><strong>The API's OpenAPI document now describes its errors.</strong> Every error the API returns is
+  <code>{"error": {"code", "message", "detail"}}</code>, but the document typed a validation failure as
+  FastAPI's own <code>HTTPValidationError</code> and declared no other error, so a client generated from it
+  parsed a 422 into an empty object and a 401, 403, 404, 409 or 429 into nothing. Every operation
+  now declares those six statuses with the DataQ error envelope (<code>ErrorResponse</code>), and the generated
+  Python client parses them into it.</li>
 <li><strong>Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.</strong>
   Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
   automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
