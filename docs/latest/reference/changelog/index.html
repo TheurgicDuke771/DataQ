@@ -2966,7 +2966,7 @@ section below.</p>
   run did not complete, skipped and errored checks, and anything no check tests.</li>
 <li><strong>MCP run tools say who or what started a run.</strong> <code>list_runs</code> returns <code>triggered_by_label</code>
   beside the stored <code>triggered_by</code> marker (<code>Manual — &lt;name&gt;</code>, <code>Schedule</code>,
-  <code>Airflow — &lt;pipeline and run&gt;</code>), the same label the app shows, and <code>get_run_results</code>,
+  <code>Apache Airflow — &lt;pipeline and run&gt;</code>), the same label the app shows, and <code>get_run_results</code>,
   <code>get_suite_results</code> and <code>get_run_status</code> now carry both fields too. The label is null when
   no trigger was recorded or the marker has a shape DataQ does not recognise, and an upstream
   suite is named only when the caller can see it.</li>
@@ -3209,6 +3209,7 @@ section below.</p>
 <ul>
 <li><strong>A comparison check's SQL queries are saved again.</strong> What you typed into the source query or the target's SQL projection never reached the form, so a comparison in SQL mode could not be saved and the projection was dropped.</li>
 <li><strong>Suites created by importing a data contract are linked to their table.</strong> They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run <code>python -m backend.scripts.backfill_suite_assets</code> once to link suites imported earlier.</li>
+<li><strong>Alerts name a run's trigger the way the runs table does.</strong> A run started by another suite, by an AI client over MCP, or by the connection probe showed the raw prefix (<code>suite</code>, <code>mcp</code>, <code>probe</code>) after "Triggered by" in Slack, Teams and email alerts; it now reads <code>Suite</code>, <code>MCP</code> or <code>Probe</code>. Apache Airflow is also spelled the same way everywhere (run labels, alerts, connection and trigger screens) instead of "Airflow" in some places and "Apache Airflow" in others.</li>
 <li><strong>Filtering the audit log by entity type now works for every type DataQ records.</strong> Run, result,
   contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
   events were refused with "unknown entity_type", although the log holds them. They can now be

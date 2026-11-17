@@ -122,7 +122,7 @@ section below.
   run did not complete, skipped and errored checks, and anything no check tests.
 - **MCP run tools say who or what started a run.** `list_runs` returns `triggered_by_label`
   beside the stored `triggered_by` marker (`Manual — <name>`, `Schedule`,
-  `Airflow — <pipeline and run>`), the same label the app shows, and `get_run_results`,
+  `Apache Airflow — <pipeline and run>`), the same label the app shows, and `get_run_results`,
   `get_suite_results` and `get_run_status` now carry both fields too. The label is null when
   no trigger was recorded or the marker has a shape DataQ does not recognise, and an upstream
   suite is named only when the caller can see it.
@@ -365,6 +365,7 @@ section below.
 
 - **A comparison check's SQL queries are saved again.** What you typed into the source query or the target's SQL projection never reached the form, so a comparison in SQL mode could not be saved and the projection was dropped.
 - **Suites created by importing a data contract are linked to their table.** They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run `python -m backend.scripts.backfill_suite_assets` once to link suites imported earlier.
+- **Alerts name a run's trigger the way the runs table does.** A run started by another suite, by an AI client over MCP, or by the connection probe showed the raw prefix (`suite`, `mcp`, `probe`) after "Triggered by" in Slack, Teams and email alerts; it now reads `Suite`, `MCP` or `Probe`. Apache Airflow is also spelled the same way everywhere (run labels, alerts, connection and trigger screens) instead of "Airflow" in some places and "Apache Airflow" in others.
 - **Filtering the audit log by entity type now works for every type DataQ records.** Run, result,
   contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
   events were refused with "unknown entity_type", although the log holds them. They can now be
