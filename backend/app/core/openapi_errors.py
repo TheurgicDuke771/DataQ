@@ -17,7 +17,6 @@ still an unexpected status to the generated client, as before.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from fastapi import FastAPI
@@ -52,15 +51,22 @@ def apply_error_envelope(spec: dict[str, Any]) -> None:
                 continue
             responses = operation.setdefault("responses", {})
             for status, description in _ERRORS.items():
-                responses[status] = {"description": description, "content": _CONTENT}
+                # A route that documents its own error keeps its description; only the body is
+                # the envelope.
+                declared = responses.get(status, {})
+                responses[status] = {
+                    "description": declared.get("description", description),
+                    "content": _CONTENT,
+                }
     schemas = spec.setdefault("components", {}).setdefault("schemas", {})
-    schemas.update(_envelope_schemas())
-    # FastAPI's own validation-error schemas are dropped once nothing refers to them.
+    envelope = _envelope_schemas()
+    clash = [n for n in envelope if n in schemas]
+    if clash:
+        raise RuntimeError(f"the OpenAPI document already has a schema named {clash}")
+    schemas.update(envelope)
+    # FastAPI's own validation-error schemas are unused once every 422 is the envelope.
     for name in _FASTAPI_SCHEMAS:
         schemas.pop(name, None)
-    leftover = [n for n in _FASTAPI_SCHEMAS if f"/schemas/{n}" in json.dumps(spec)]
-    if leftover:  # a route that names one itself would now have a dangling reference
-        raise RuntimeError(f"an operation still refers to FastAPI's {leftover}")
 
 
 def install(app: FastAPI) -> None:

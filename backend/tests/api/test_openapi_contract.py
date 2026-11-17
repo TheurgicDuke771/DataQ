@@ -167,3 +167,32 @@ def test_every_operation_declares_its_error_responses_as_the_dataq_envelope() ->
         "message",
         "detail",
     }
+
+
+def _refs(node: Any) -> set[str]:
+    if isinstance(node, dict):
+        found = {node["$ref"]} if isinstance(node.get("$ref"), str) else set()
+        return found.union(*(_refs(v) for v in node.values()))
+    if isinstance(node, list):
+        return set().union(*(_refs(v) for v in node))
+    return set()
+
+
+def test_every_reference_resolves_and_fastapis_validation_schemas_are_gone() -> None:
+    spec = app.openapi()
+    schemas = spec["components"]["schemas"]
+    dangling = {r for r in _refs(spec) if r.rsplit("/", 1)[-1] not in schemas}
+    assert dangling == set()
+    assert "ValidationError" not in schemas and "HTTPValidationError" not in schemas
+    assert schemas["ErrorBody"]["required"] == ["code", "message"]
+
+
+def test_a_route_that_documents_its_own_error_keeps_the_description() -> None:
+    spec = app.openapi()
+    compare = spec["paths"]["/api/v1/runs/{run_id}/compare/{other_run_id}"]["get"]["responses"][
+        "422"
+    ]
+    assert "runs_not_comparable" in compare["description"]
+    assert compare["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ErrorResponse"
+    }
