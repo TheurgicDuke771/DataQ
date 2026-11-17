@@ -538,14 +538,14 @@ def test_a_check_delete_waits_for_a_sweep_that_has_claimed_its_run() -> None:
         sweep = maker()
         sweep.execute(result_rollup._ADD_ONE, {"run_id": run_id})  # claimed, not committed
         done = threading.Event()
-        errors: list[BaseException] = []
+        errors: list[Exception] = []
 
         def delete_the_check() -> None:
             try:
                 with maker() as deleter:
                     result_rollup.forget_checks(deleter, [check_id])
                     deleter.commit()
-            except BaseException as exc:
+            except Exception as exc:
                 errors.append(exc)
             finally:
                 done.set()
