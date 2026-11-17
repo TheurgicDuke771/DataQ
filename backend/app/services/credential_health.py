@@ -38,7 +38,9 @@ def credential_status(conn: Connection) -> CredentialStatus:
     a connection that authenticates with no credential has none to observe, which is a different
     fact from `unknown` (a credential exists and has not been used yet).
     """
-    if is_datasource(conn.type) and credential_not_applicable(conn.type, conn.config, conn.secret_ref):
+    if is_datasource(conn.type) and credential_not_applicable(
+        conn.type, conn.config, conn.secret_ref
+    ):
         return "not_applicable"
     if conn.consecutive_auth_failures:
         return "failing"

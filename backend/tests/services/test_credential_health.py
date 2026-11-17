@@ -315,7 +315,7 @@ class TestStatusDerivation:
 
 
 class TestNotApplicable:
-    """A connection that authenticates with no credential has none to observe (derived, never stored)."""
+    """A connection that authenticates with no credential has none to observe (never stored)."""
 
     @pytest.mark.parametrize(("conn_type", "config"), NO_CREDENTIAL_CONFIGS)
     def test_a_credential_less_auth_mode_is_not_applicable(
@@ -368,7 +368,7 @@ class TestNotApplicable:
     def test_a_mode_that_needs_a_credential_but_has_none_stored_is_not_excused(
         self, db_session: Any
     ) -> None:
-        # Missing, not unnecessary: the auth mode asks for a secret, so this is not "not applicable".
+        # Missing, not unnecessary: the auth mode asks for a secret, so not "not applicable".
         conn = _connection(
             db_session,
             conn_type="trino",
