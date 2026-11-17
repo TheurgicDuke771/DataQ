@@ -2975,12 +2975,16 @@ of it. Catalog entries carry <code>selectable: false</code> when the name is not
 backslash, leading <code>/</code>, or an empty/<code>.</code>/<code>..</code> segment is refused with <code>422 browse_input_invalid</code>;
 a listing failure is <code>502 browse_failed</code> with a classified, secret-free <code>detail.reason</code>.</p>
 <p><strong>Credential health.</strong> Each datasource connection in <code>GET /connections</code> carries a
-<code>credential_health</code> object — <code>status</code> (<code>healthy</code> / <code>failing</code> / <code>unknown</code>),
+<code>credential_health</code> object — <code>status</code> (<code>healthy</code> / <code>failing</code> / <code>unknown</code> / <code>not_applicable</code>),
 <code>consecutive_auth_failures</code>, <code>last_auth_success_at</code>, <code>last_auth_failure_at</code> and a classified
 <code>last_error</code>. It is derived from real use (runs, dry-runs, profiles and
 <code>POST /connections/{id}/test</code>), never a periodic probe, and only a credential <strong>rejection</strong>
 moves it: a missing grant, an unreachable host and a bad table name leave it untouched.
-<code>unknown</code> means the credential has not been used yet and is never reported as <code>healthy</code>.
+<code>unknown</code> means a stored credential has not been used yet and is never reported as <code>healthy</code>.
+<code>not_applicable</code> means the connection authenticates with no credential (GCS <code>auth_type:
+anonymous</code>, Trino <code>auth_type: none</code>, an Iceberg catalog with no secret): there is nothing to
+observe, so it is neither a fault nor <code>unknown</code>. It is derived from the auth mode on each read,
+never stored.
 Orchestration connections carry <code>null</code> here — theirs is the poll health above.
 <code>GET /admin/health</code> returns the same shape for every datasource connection at once, worst
 status first.</p>

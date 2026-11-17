@@ -317,6 +317,15 @@ section below.
   MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
   `statement_timeout` is not yet. On Trino the limit includes the time a query waits in a
   resource-group queue.
+- **A connection that needs no credential now reports its credential health as `not_applicable`, not `unknown`.**
+  A GCS bucket with `auth_type: anonymous`, a Trino cluster with `auth_type: none` or an
+  Iceberg catalog with no secret has no credential to observe, so `credential_health.status`
+  in `GET /connections`, `GET /admin/health` and the `list_connections` MCP tool now says so
+  instead of reading `unknown` for ever. `unknown` keeps its meaning: a credential is stored
+  and nothing has used it yet. The value is worked out from the connection's auth mode on every
+  read and is never stored. The Connections page shows "No credential needed" in place of the
+  "no credential" warning for these connections and no longer shows an expiry badge for them,
+  and the admin health feed neither counts them as never observed nor raises them.
 - **Changelog entries are collected one file per change.** The **Unreleased** section of
   this page is now assembled from small per-change files in the repository's `changelog.d/`
   directory when the site is built, and a release gathers them into a dated section. The

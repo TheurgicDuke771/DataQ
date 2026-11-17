@@ -2400,11 +2400,12 @@ doing it with a credential you don't know is not.
 ### Credential health
 
 A datasource connection reports whether its stored credential is still being **accepted**,
-so an expired or revoked one is visible without anyone pressing Test. It has three states:
+so an expired or revoked one is visible without anyone pressing Test. It has four states:
 
 | State | Meaning |
 |---|---|
-| **Unknown** | The credential has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **Unknown** | A credential is stored but has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **No credential needed** (`not_applicable`) | The connection authenticates with no credential — a GCS bucket with `auth_type: anonymous`, Trino with `auth_type: none`, an Iceberg catalog with no secret — so there is nothing to observe. This is not a fault and not the same as Unknown. |
 | **Healthy** | The datasource accepted the credential the last time DataQ used it. |
 | **Failing** | The datasource **rejected** the credential. The connection also shows how many consecutive rejections it has had, and a classified reason — never raw driver text, which can carry a token or DSN fragment. |
 
@@ -5915,6 +5916,15 @@ section below.
   MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
   `statement_timeout` is not yet. On Trino the limit includes the time a query waits in a
   resource-group queue.
+- **A connection that needs no credential now reports its credential health as `not_applicable`, not `unknown`.**
+  A GCS bucket with `auth_type: anonymous`, a Trino cluster with `auth_type: none` or an
+  Iceberg catalog with no secret has no credential to observe, so `credential_health.status`
+  in `GET /connections`, `GET /admin/health` and the `list_connections` MCP tool now says so
+  instead of reading `unknown` for ever. `unknown` keeps its meaning: a credential is stored
+  and nothing has used it yet. The value is worked out from the connection's auth mode on every
+  read and is never stored. The Connections page shows "No credential needed" in place of the
+  "no credential" warning for these connections and no longer shows an expiry badge for them,
+  and the admin health feed neither counts them as never observed nor raises them.
 - **Changelog entries are collected one file per change.** The **Unreleased** section of
   this page is now assembled from small per-change files in the repository's `changelog.d/`
   directory when the site is built, and a release gathers them into a dated section. The
@@ -8193,12 +8203,16 @@ backslash, leading `/`, or an empty/`.`/`..` segment is refused with `422 browse
 a listing failure is `502 browse_failed` with a classified, secret-free `detail.reason`.
 
 **Credential health.** Each datasource connection in `GET /connections` carries a
-`credential_health` object — `status` (`healthy` / `failing` / `unknown`),
+`credential_health` object — `status` (`healthy` / `failing` / `unknown` / `not_applicable`),
 `consecutive_auth_failures`, `last_auth_success_at`, `last_auth_failure_at` and a classified
 `last_error`. It is derived from real use (runs, dry-runs, profiles and
 `POST /connections/{id}/test`), never a periodic probe, and only a credential **rejection**
 moves it: a missing grant, an unreachable host and a bad table name leave it untouched.
-`unknown` means the credential has not been used yet and is never reported as `healthy`.
+`unknown` means a stored credential has not been used yet and is never reported as `healthy`.
+`not_applicable` means the connection authenticates with no credential (GCS `auth_type:
+anonymous`, Trino `auth_type: none`, an Iceberg catalog with no secret): there is nothing to
+observe, so it is neither a fault nor `unknown`. It is derived from the auth mode on each read,
+never stored.
 Orchestration connections carry `null` here — theirs is the poll health above.
 `GET /admin/health` returns the same shape for every datasource connection at once, worst
 status first.
