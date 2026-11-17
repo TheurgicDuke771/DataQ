@@ -1028,9 +1028,8 @@ class Result(Base):
             "created_at",
             postgresql_where=text("observed_value ? 'unparsed_value'"),
         ),
-        # #2010: an hour's results by time. Results arrive in time order, so a block-range index
-        # stays a few pages however large the table grows.
-        Index("ix_results_created_brin", "created_at", postgresql_using="brin"),
+        # #2010: an hour's results by time, for the part-hours at a summary window's edges.
+        Index("ix_results_created_at", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -1066,7 +1065,10 @@ class ResultStatusHourly(Base):
     """
 
     __tablename__ = "result_status_hourly"
-    __table_args__ = (_in_check("status", RESULT_STATUSES, "status_valid"),)
+    __table_args__ = (
+        _in_check("status", RESULT_STATUSES, "status_valid"),
+        CheckConstraint("n >= 0", name="n_nonnegative"),
+    )
 
     # CASCADE: the counts die with the suite, as its runs and results do.
     suite_id: Mapped[uuid.UUID] = mapped_column(
