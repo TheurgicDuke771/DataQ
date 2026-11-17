@@ -5,7 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...models.notification_read import NotificationRead
 from ...types import UNSET, Response, Unset
 
@@ -38,7 +38,7 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | list[NotificationRead] | None:
+) -> ErrorResponse | list[NotificationRead] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -49,10 +49,35 @@ def _parse_response(
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -62,7 +87,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | list[NotificationRead]]:
+) -> Response[ErrorResponse | list[NotificationRead]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -77,7 +102,7 @@ def sync_detailed(
     unread_only: bool | Unset = False,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[NotificationRead]]:
+) -> Response[ErrorResponse | list[NotificationRead]]:
     """List my notifications (newest first)
 
     Args:
@@ -90,7 +115,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[NotificationRead]]
+        Response[ErrorResponse | list[NotificationRead]]
     """
 
     kwargs = _get_kwargs(
@@ -112,7 +137,7 @@ def sync(
     unread_only: bool | Unset = False,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[NotificationRead] | None:
+) -> ErrorResponse | list[NotificationRead] | None:
     """List my notifications (newest first)
 
     Args:
@@ -125,7 +150,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[NotificationRead]
+        ErrorResponse | list[NotificationRead]
     """
 
     return sync_detailed(
@@ -142,7 +167,7 @@ async def asyncio_detailed(
     unread_only: bool | Unset = False,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[NotificationRead]]:
+) -> Response[ErrorResponse | list[NotificationRead]]:
     """List my notifications (newest first)
 
     Args:
@@ -155,7 +180,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[NotificationRead]]
+        Response[ErrorResponse | list[NotificationRead]]
     """
 
     kwargs = _get_kwargs(
@@ -175,7 +200,7 @@ async def asyncio(
     unread_only: bool | Unset = False,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[NotificationRead] | None:
+) -> ErrorResponse | list[NotificationRead] | None:
     """List my notifications (newest first)
 
     Args:
@@ -188,7 +213,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[NotificationRead]
+        ErrorResponse | list[NotificationRead]
     """
 
     return (
