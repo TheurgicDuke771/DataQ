@@ -391,6 +391,47 @@ class TestNotApplicable:
         )
         assert credential_health.credential_status(conn) == "unknown"
 
+    @pytest.mark.parametrize(
+        "extra",
+        [{"catalog_secret_name": "catalog-pw"}, {"secret_property": "s3.secret-access-key"}],
+    )
+    def test_an_iceberg_catalog_with_a_credential_held_elsewhere_is_not_excused(
+        self, db_session: Any, extra: dict[str, Any]
+    ) -> None:
+        """No `secret_ref`, but the config names a catalog password or a storage credential:
+        one is expected, so "no credential needed" would be wrong."""
+        config = {"catalog_type": "rest", "catalog_uri": "https://catalog.example.com", **extra}
+        from backend.app.datasources.registry import get_connection_adapter
+
+        get_connection_adapter("iceberg").validate_config(dict(config))
+        conn = _connection(db_session, conn_type="iceberg", secret_ref=None, config=config)
+        assert credential_health.credential_status(conn) == "unknown"
+
+    def test_failure_counters_from_a_credential_that_is_gone_are_not_reported(
+        self, db_session: Any
+    ) -> None:
+        """A key was rejected three times, then the connection was switched to anonymous: the
+        status is not_applicable, and so are the numbers beside it."""
+        conn = _connection(
+            db_session,
+            conn_type="gcs",
+            secret_ref=None,
+            config={"bucket": "public-bucket", "auth_type": "anonymous"},
+        )
+        conn.consecutive_auth_failures = 3
+        conn.last_auth_error = "credential rejected"
+
+        assert credential_health.credential_status(conn) == "not_applicable"
+        assert credential_health.observed_failures(conn) == (0, None)
+
+    def test_failure_counters_are_reported_for_a_connection_that_has_a_credential(
+        self, db_session: Any
+    ) -> None:
+        conn = _connection(db_session, conn_type="snowflake", secret_ref="c-x", config={})
+        conn.consecutive_auth_failures = 3
+        conn.last_auth_error = "credential rejected"
+        assert credential_health.observed_failures(conn) == (3, "credential rejected")
+
     def test_an_orchestration_connection_is_never_not_applicable(self, db_session: Any) -> None:
         # dbt declares an optional secret too, but orchestration health is the poll signal.
         conn = _connection(

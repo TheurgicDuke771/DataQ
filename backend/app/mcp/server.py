@@ -1925,7 +1925,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
                     "credential_health": (
                         {
                             "status": credential_health.credential_status(c),
-                            "consecutive_auth_failures": c.consecutive_auth_failures or 0,
+                            "consecutive_auth_failures": credential_health.observed_failures(c)[0],
                             "last_auth_failure_at": (
                                 c.last_auth_failure_at.isoformat()
                                 if c.last_auth_failure_at
@@ -1936,7 +1936,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
                                 if c.last_auth_success_at
                                 else None
                             ),
-                            "last_error": c.last_auth_error,
+                            "last_error": credential_health.observed_failures(c)[1],
                         }
                         if credential_health.is_datasource(c.type)
                         else None

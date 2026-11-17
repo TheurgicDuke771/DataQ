@@ -116,12 +116,13 @@ class CredentialHealthRead(ApiModel):
     def of(cls, conn: Connection) -> CredentialHealthRead | None:
         if not credential_health.is_datasource(conn.type):
             return None
+        failures, last_error = credential_health.observed_failures(conn)
         return cls(
             status=credential_health.credential_status(conn),
-            consecutive_auth_failures=conn.consecutive_auth_failures or 0,
+            consecutive_auth_failures=failures,
             last_auth_failure_at=conn.last_auth_failure_at,
             last_auth_success_at=conn.last_auth_success_at,
-            last_error=conn.last_auth_error,
+            last_error=last_error,
         )
 
 

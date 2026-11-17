@@ -16,7 +16,6 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.datasources.registry import credential_not_applicable
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection
 from backend.app.services.connection_lock import lock_connection
 from backend.app.services.failure_classifier import AUTH_FAILURE_REASON, is_auth_failure
@@ -38,9 +37,7 @@ def credential_status(conn: Connection) -> CredentialStatus:
     a connection that authenticates with no credential has none to observe, which is a different
     fact from `unknown` (a credential exists and has not been used yet).
     """
-    if is_datasource(conn.type) and credential_not_applicable(
-        conn.type, conn.config, conn.secret_ref
-    ):
+    if _no_credential_needed(conn):
         return "not_applicable"
     if conn.consecutive_auth_failures:
         return "failing"
@@ -49,6 +46,29 @@ def credential_status(conn: Connection) -> CredentialStatus:
         # `failing` above; reaching here means nothing has been observed at all.
         return "unknown"
     return "healthy"
+
+
+def _no_credential_needed(conn: Connection) -> bool:
+    # The cheap tests first: a connection with a stored secret (most) never reaches the adapter.
+    if conn.secret_ref or not is_datasource(conn.type):
+        return False
+    # Imported here: the adapter registry pulls in every engine and is slow to import, and
+    # this module is imported by light paths.
+    from backend.app.datasources.registry import credential_not_applicable
+
+    return credential_not_applicable(conn.type, conn.config, conn.secret_ref)
+
+
+def observed_failures(conn: Connection) -> tuple[int, str | None]:
+    """``(consecutive failures, last error)`` as the read models report them.
+
+    A connection that needs no credential reports none: counters left from when it had one
+    (its auth mode was changed to a credential-less one) would otherwise sit beside
+    ``not_applicable`` and come back as a failing streak if a credential is set again.
+    """
+    if _no_credential_needed(conn):
+        return 0, None
+    return conn.consecutive_auth_failures or 0, conn.last_auth_error
 
 
 def record_credential_success(session: Session, *, connection_id: uuid.UUID) -> int:

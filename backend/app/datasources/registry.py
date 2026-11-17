@@ -88,6 +88,24 @@ def destination_fields(conn_type: str) -> dict[str, tuple[str, ...]]:
     return {slot: tuple(fields) for slot, fields in slots.items()}
 
 
+def _auth_mode_requires_secret(conn_type: str, config: dict[str, Any]) -> bool | None:
+    """What a ``secret_optional`` adapter says its config's auth mode needs: ``True`` (a
+    secret), ``False`` (none), or ``None`` when the type has no per-mode answer (an Iceberg
+    catalog) or declares no optional secret. Raises ``ValueError`` on a config that does not
+    validate.
+    """
+    adapter = _ADAPTERS.get(conn_type)
+    if adapter is None or not getattr(adapter, "secret_optional", False):
+        return None
+    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
+    return bool(requires()) if callable(requires) else None
+
+
+#: Config keys that name a credential held outside `secret_ref` (an Iceberg catalog password,
+#: a storage credential injected as a catalog property): present means one is expected.
+_EXTERNAL_CREDENTIAL_KEYS = ("catalog_secret_name", "secret_property")
+
+
 def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
     """Whether a connection of this config needs no stored secret at all (Trino ``auth_type:
     none``, GCS ``auth_type: anonymous``) — so a missing ``secret_ref`` is its normal state.
@@ -95,11 +113,7 @@ def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool
     Answered by the adapter: it declares ``secret_optional`` and its config says, per auth mode,
     whether it ``requires_secret()``.
     """
-    adapter = _ADAPTERS.get(conn_type)
-    if adapter is None or not getattr(adapter, "secret_optional", False):
-        return False
-    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
-    return callable(requires) and not requires()
+    return _auth_mode_requires_secret(conn_type, config) is False
 
 
 def credential_not_applicable(
@@ -108,22 +122,24 @@ def credential_not_applicable(
     """Whether a connection holds no credential BECAUSE it needs none: nothing is stored and its
     auth mode does not ask for one, so there is no credential whose acceptance could be observed.
 
-    The adapter answers, as in ``authenticates_without_secret``. It differs for a type that
-    declares ``secret_optional`` yet has no per-mode ``requires_secret`` (an Iceberg catalog —
-    credential-less or not by whether one was supplied): there, nothing stored means none needed.
-    A config that no longer validates answers ``False`` — not knowing is not "needs none".
+    It differs from ``authenticates_without_secret`` for a type that declares ``secret_optional``
+    yet has no per-mode ``requires_secret`` (an Iceberg catalog, credential-less or not by whether
+    one was supplied): there, nothing stored means none needed, unless the config names a
+    credential held elsewhere (``catalog_secret_name``, ``secret_property``). A config that no
+    longer validates answers ``False`` — not knowing is not "needs none".
     """
     if secret_ref:
         return False
-    adapter = _ADAPTERS.get(conn_type)
-    if adapter is None or not getattr(adapter, "secret_optional", False):
-        return False
     try:
-        validated = adapter.validate_config(dict(config))
+        requires = _auth_mode_requires_secret(conn_type, config)
     except ValueError:  # pydantic's ValidationError is a ValueError
         return False
-    requires = getattr(validated, "requires_secret", None)
-    return not (callable(requires) and requires())
+    if requires is None:
+        adapter = _ADAPTERS.get(conn_type)
+        return bool(adapter is not None and getattr(adapter, "secret_optional", False)) and not any(
+            config.get(key) for key in _EXTERNAL_CREDENTIAL_KEYS
+        )
+    return not requires
 
 
 class MissingCredentialError(ValueError):

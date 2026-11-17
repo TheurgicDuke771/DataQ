@@ -512,10 +512,10 @@ def list_credential_health(session: Session) -> list[CredentialHealthRow]:
             type=conn.type,
             env=conn.env,
             status=credential_health.credential_status(conn),
-            consecutive_auth_failures=conn.consecutive_auth_failures or 0,
+            consecutive_auth_failures=credential_health.observed_failures(conn)[0],
             last_auth_failure_at=conn.last_auth_failure_at,
             last_auth_success_at=conn.last_auth_success_at,
-            last_error=conn.last_auth_error,
+            last_error=credential_health.observed_failures(conn)[1],
         )
         for conn in rows
     ]
