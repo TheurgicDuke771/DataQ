@@ -512,15 +512,15 @@ def list_credential_health(session: Session) -> list[CredentialHealthRow]:
             type=conn.type,
             env=conn.env,
             status=credential_health.credential_status(conn),
-            consecutive_auth_failures=conn.consecutive_auth_failures or 0,
+            consecutive_auth_failures=credential_health.observed_failures(conn)[0],
             last_auth_failure_at=conn.last_auth_failure_at,
             last_auth_success_at=conn.last_auth_success_at,
-            last_error=conn.last_auth_error,
+            last_error=credential_health.observed_failures(conn)[1],
         )
         for conn in rows
     ]
-    # Failing first, then unknown, then healthy — an admin page is read top-down, and the
-    # rows that need action must not sit below the ones that do not.
-    order = {"failing": 0, "unknown": 1, "healthy": 2}
-    out.sort(key=lambda r: (order.get(r.status, 3), r.name, r.env))
+    # Failing first, then unknown, then healthy, then not-applicable — an admin page is read
+    # top-down, and the rows that need action must not sit below the ones that do not.
+    order = {"failing": 0, "unknown": 1, "healthy": 2, "not_applicable": 3}
+    out.sort(key=lambda r: (order.get(r.status, 4), r.name, r.env))
     return out

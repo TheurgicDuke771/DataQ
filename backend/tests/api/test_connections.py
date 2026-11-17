@@ -1034,6 +1034,68 @@ def test_list_reports_a_rejected_credential_as_failing(
     assert "390100" not in health["last_error"]
 
 
+def test_list_reports_a_connection_that_needs_no_credential_as_not_applicable(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
+    """Nothing is stored and nothing is needed: a different fact from `unknown` (a credential
+    exists and has not been used), derived from the auth mode rather than recorded."""
+    api, _ = client
+    gcs = {"bucket": "public-bucket", "auth_type": "anonymous"}
+    trino = {"host": "trino.example.com", "catalog": "hive", "user": "dq", "auth_type": "none"}
+    for name, conn_type, config in (("pub", "gcs", gcs), ("lake", "trino", trino)):
+        resp = api.post(
+            "/api/v1/connections",
+            json={
+                "name": name,
+                "type": conn_type,
+                "env": "dev",
+                "config": config,
+                "skip_test": True,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    rows = {r["name"]: r for r in api.get("/api/v1/connections").json()}
+
+    for name in ("pub", "lake"):
+        assert rows[name]["has_secret"] is False
+        health = rows[name]["credential_health"]
+        assert health["status"] == "not_applicable"
+        assert health["consecutive_auth_failures"] == 0
+        assert health["last_auth_success_at"] is None
+        assert health["last_error"] is None
+
+
+def test_list_reports_the_same_adapter_with_a_stored_credential_as_unknown_until_used(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
+    """The credential-requiring mode of an adapter that also has a no-credential mode keeps
+    today's meaning: a credential exists and nothing has observed it."""
+    api, _ = client
+    resp = api.post(
+        "/api/v1/connections",
+        json={
+            "name": "lake-pw",
+            "type": "trino",
+            "env": "dev",
+            "config": {
+                "host": "trino.example.com",
+                "catalog": "hive",
+                "user": "dq",
+                "auth_type": "password",
+            },
+            "secret": "pw",
+            "skip_test": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    [row] = api.get("/api/v1/connections").json()
+
+    assert row["has_secret"] is True
+    assert row["credential_health"]["status"] == "unknown"
+
+
 def test_orchestration_connections_carry_no_credential_health(
     client: tuple[TestClient, FakeSecretStore],
 ) -> None:

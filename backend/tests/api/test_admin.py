@@ -1138,6 +1138,36 @@ def test_admin_health_credentials_are_sorted_failing_first(
     assert [r["connection_id"] for r in ours] == [str(failing.id), str(healthy.id)]
 
 
+def test_admin_health_credential_less_connection_reads_not_applicable_and_sorts_last(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, f"cred-na-{uuid.uuid4().hex[:6]}@x.io")
+    tag = uuid.uuid4().hex[:6]
+    public = Connection(
+        name=f"aaa-{tag}",
+        type="gcs",
+        env="dev",
+        config={"bucket": "public-bucket", "auth_type": "anonymous"},
+        secret_ref=None,
+        created_by=owner.id,
+    )
+    db_session.add(public)
+    db_session.commit()
+    healthy = _health_datasource_connection(
+        db_session, owner, name=f"zzz-{tag}", last_auth_success_at=datetime.now(UTC)
+    )
+    _grant_admin(monkeypatch)
+
+    rows = client.get("/api/v1/admin/health").json()["credentials"]
+    ours = [r for r in rows if r["connection_id"] in {str(public.id), str(healthy.id)}]
+
+    # Not a fault and nothing to act on, so it sits below even a healthy row.
+    assert [(r["connection_id"], r["status"]) for r in ours] == [
+        (str(healthy.id), "healthy"),
+        (str(public.id), "not_applicable"),
+    ]
+
+
 # ── overview stat cards (#1696) ─────────────────────────────────────────────────
 
 
