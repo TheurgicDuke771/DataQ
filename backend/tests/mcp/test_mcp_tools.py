@@ -1371,7 +1371,7 @@ def test_list_runs_labels_what_triggered_each_run(db_session: Any, monkeypatch: 
         f"mcp:{other.id}": "MCP — grace@acme.io",
         f"manual:{gone}": "Manual",
         "schedule:abc": "Schedule",
-        "airflow:etl:daily:run-1": "Airflow — etl:daily:run-1",
+        "airflow:etl:daily:run-1": "Apache Airflow — etl:daily:run-1",
         "something-else": None,
         None: None,
     }

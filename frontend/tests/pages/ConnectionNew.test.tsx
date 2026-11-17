@@ -191,7 +191,9 @@ describe('ConnectionNew', () => {
 
     // Re-pick a different type — the form must start clean (no leftover name).
     await user.click(screen.getByText('Apache Airflow'));
-    expect(screen.getByRole('heading', { name: /New Apache Airflow connection/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /New Apache Airflow connection/ }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('');
   });
 
