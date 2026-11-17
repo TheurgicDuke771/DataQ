@@ -16,7 +16,9 @@ from backend.app.api.v1._base import (
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
-    total_count_responses,
+    cursor_page_responses,
+    finish_page,
+    read_cursor,
 )
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
@@ -51,6 +53,11 @@ from backend.app.services.value_set_redaction import redact_expected_value_with_
 
 router = APIRouter(tags=["runs"])
 
+_CURSOR_DESCRIPTION = (
+    "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous "
+    "page of the same list). Costs the same at any depth, where a large `offset` costs in "
+    "proportion to it. Opaque; send it instead of `offset`, never with it (422)."
+)
 _LIST_LIMIT_DEFAULT = 50
 _LIST_LIMIT_MAX = 200
 
@@ -340,7 +347,7 @@ def run_reads(
     "/runs",
     response_model=list[RunRead],
     summary="List runs",
-    responses=total_count_responses(
+    responses=cursor_page_responses(
         "Total runs visible to the caller (#1108) — the same accessible-suite-scoped "
         "population this page's limit/offset slice into (workspace-admins see every "
         "suite). Before this, `/runs` had `limit` only and could not be paged at all; "
@@ -365,6 +372,7 @@ def list_runs(
     ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None, description=_CURSOR_DESCRIPTION),
 ) -> list[RunRead]:
     # When a suite is named, gate on it up front so an inaccessible/unknown suite 404s (existence
     # hidden) rather than silently returning [].
@@ -386,14 +394,23 @@ def list_runs(
             include_all=include_all,
         )
     )
-    runs = svc.list_runs(
-        db,
-        user_id=current_user.id,
-        suite_id=suite_id,
-        status=run_status,
+    after = read_cursor("runs", cursor, offset)
+    # One row over the page: if it exists there is a next page, and its cursor is set.
+    runs = finish_page(
+        response,
+        svc.list_runs(
+            db,
+            user_id=current_user.id,
+            suite_id=suite_id,
+            status=run_status,
+            limit=limit + 1,
+            offset=offset,
+            include_all=include_all,
+            after=after,
+        ),
         limit=limit,
-        offset=offset,
-        include_all=include_all,
+        kind="runs",
+        moment="created_at",
     )
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
@@ -674,7 +691,7 @@ def cancel_run(
     "/pipeline_runs",
     response_model=list[PipelineRunRead],
     summary="List monitored orchestrator pipeline/DAG runs",
-    responses=total_count_responses(
+    responses=cursor_page_responses(
         "Total pipeline runs matching the `provider`/`status` filters (#1108) — the "
         "same unfiltered-by-paging population this page's limit/offset slice into. "
         "#928 added `offset` but shipped only that half of the /assets paging "
@@ -699,6 +716,7 @@ def list_pipeline_runs(
     ] = None,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None, description=_CURSOR_DESCRIPTION),
 ) -> list[PipelineRunRead]:
     """Paged (#928): before this, `limit` capped at 200 with no `offset`, so the 200 most recent
     runs were the only ones any client could ever see — and a caller passing `?offset=` got it
@@ -709,8 +727,19 @@ def list_pipeline_runs(
     response.headers[TOTAL_COUNT_HEADER] = str(
         orchestration_service.count_pipeline_runs(db, provider=provider, status=run_status)
     )
-    pipeline_runs = orchestration_service.list_pipeline_runs(
-        db, provider=provider, status=run_status, limit=limit, offset=offset
+    pipeline_runs = finish_page(
+        response,
+        orchestration_service.list_pipeline_runs(
+            db,
+            provider=provider,
+            status=run_status,
+            limit=limit + 1,
+            offset=offset,
+            after=read_cursor("pipeline_runs", cursor, offset),
+        ),
+        limit=limit,
+        kind="pipeline_runs",
+        moment="created_at",
     )
     triggered = markers.triggered_runs(db, pipeline_runs).by_pipeline_run
     visible = set(

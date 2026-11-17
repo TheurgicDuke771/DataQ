@@ -48,7 +48,7 @@ from backend.app.api.v1 import tags as tags_router
 from backend.app.api.v1 import telemetry as telemetry_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
-from backend.app.api.v1._base import TOTAL_COUNT_HEADER
+from backend.app.api.v1._base import NEXT_CURSOR_HEADER, TOTAL_COUNT_HEADER
 from backend.app.core import usage_telemetry
 from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
@@ -174,7 +174,7 @@ if _cors_origins:
         allow_headers=["*"],
         # X-Total-Count (#925, spread to /pipeline_runs, /incidents, /runs by #1108): every paged
         # list endpoint's total, over its CORS-headers allowlist.
-        expose_headers=[REQUEST_ID_HEADER, TOTAL_COUNT_HEADER],
+        expose_headers=[REQUEST_ID_HEADER, TOTAL_COUNT_HEADER, NEXT_CURSOR_HEADER],
     )
 
 

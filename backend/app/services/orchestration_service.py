@@ -27,7 +27,7 @@ from backend.app.db.models import (
 )
 from backend.app.orchestration.base import AlertPing, OrchestrationProvider, RunUpdate
 from backend.app.orchestration.registry import get_orchestration_provider
-from backend.app.services import run_dispatch, workspace_health_service
+from backend.app.services import paging, run_dispatch, workspace_health_service
 from backend.app.services.connection_lock import lock_connection as _lock_connection
 from backend.app.services.failure_classifier import classify_orchestration_poll_reason
 
@@ -507,8 +507,10 @@ def list_pipeline_runs(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    after: paging.Position | None = None,
 ) -> list[PipelineRun]:
-    """Monitored orchestrator pipeline/DAG runs, newest first, with paging (#928)."""
+    """Monitored orchestrator pipeline/DAG runs, newest first, with paging (#928);
+    ``after`` starts the page after that position instead of at ``offset`` (#1987)."""
     stmt = (
         select(PipelineRun)
         .where(*_pipeline_run_filters(provider=provider, status=status))
@@ -516,6 +518,8 @@ def list_pipeline_runs(
         .limit(limit)
         .offset(offset)
     )
+    if after is not None:
+        stmt = stmt.where(paging.after(PipelineRun.created_at, PipelineRun.id, after))
     return list(session.scalars(stmt))
 
 

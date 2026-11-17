@@ -12,6 +12,8 @@ from backend.app.db.models import TAG_NAME_MAX_LENGTH
 # `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
 # endpoint inventing its own convention).
 TOTAL_COUNT_HEADER: Final = "X-Total-Count"
+#: The cursor for the page after this one (#1987); absent on the last page.
+NEXT_CURSOR_HEADER: Final = "X-Next-Cursor"
 
 
 def total_count_responses(description: str) -> dict[int | str, dict[str, Any]]:
@@ -26,6 +28,24 @@ def total_count_responses(description: str) -> dict[int | str, dict[str, Any]]:
             }
         }
     }
+
+
+def cursor_page_responses(
+    total_description: str, cursor_note: str = ""
+) -> dict[int | str, dict[str, Any]]:
+    """`total_count_responses` plus the `NEXT_CURSOR_HEADER` of a list that pages by cursor.
+    ``cursor_note`` is what is specific to the list (an `/incidents` cursor's caveat)."""
+    responses = total_count_responses(total_description)
+    responses[200]["headers"][NEXT_CURSOR_HEADER] = {
+        "description": (
+            "Present when there are more rows after this page: pass it as `cursor` to get the "
+            "next page, at the same cost however deep. Absent on the last page. A cursor is "
+            "opaque, belongs to the list it came from, and replaces `offset` (sending both is a "
+            "422)." + (f" {cursor_note}" if cursor_note else "")
+        ),
+        "schema": {"type": "string"},
+    }
+    return responses
 
 
 def contains_nul(value: Any) -> bool:
@@ -103,3 +123,37 @@ TAG_FILTER_DESCRIPTION = (
     "`?tag=finance&tag=daily` returns rows tagged both. Matching ignores case. A name no tag "
     "has matches nothing, so an empty result is 'nothing carries all of these', not an error."
 )
+
+
+def read_cursor(kind: str, cursor: str | None, offset: int) -> Any:
+    """The position a request's ``cursor`` names, or ``None`` without one. A cursor and a
+    non-zero ``offset`` together is a 422: the cursor already says where the page starts."""
+    from backend.app.services import paging
+
+    if cursor is None:
+        return None
+    if offset:
+        raise paging.CursorWithOffsetError()
+    return paging.decode_cursor(kind, cursor)
+
+
+def finish_page(
+    response: Any,
+    rows: list[Any],
+    *,
+    limit: int,
+    kind: str,
+    moment: str,
+) -> list[Any]:
+    """Trim a page fetched with ``limit + 1`` rows to ``limit`` and, when that extra row proved
+    there is more, set ``NEXT_CURSOR_HEADER`` from the last row kept. ``moment`` names the row
+    attribute the list sorts by (its id is the tie-break)."""
+    from backend.app.services import paging
+
+    page = rows[:limit]
+    if len(rows) > limit and page:
+        last = page[-1]
+        response.headers[NEXT_CURSOR_HEADER] = paging.encode_cursor(
+            kind, getattr(last, moment), last.id
+        )
+    return page

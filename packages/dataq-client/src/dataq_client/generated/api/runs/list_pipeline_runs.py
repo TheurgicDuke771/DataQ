@@ -16,6 +16,7 @@ def _get_kwargs(
     status: None | str | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -37,6 +38,13 @@ def _get_kwargs(
     params["limit"] = limit
 
     params["offset"] = offset
+
+    json_cursor: None | str | Unset
+    if isinstance(cursor, Unset):
+        json_cursor = UNSET
+    else:
+        json_cursor = cursor
+    params["cursor"] = json_cursor
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -91,6 +99,7 @@ def sync_detailed(
     status: None | str | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[PipelineRunRead]]:
     """List monitored orchestrator pipeline/DAG runs
 
@@ -106,6 +115,10 @@ def sync_detailed(
             empty page.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the row this cursor names (the `X-Next-
+            Cursor` header of the previous page of the same list). Costs the same at any depth, where
+            a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never
+            with it (422).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -120,6 +133,7 @@ def sync_detailed(
         status=status,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = client.get_httpx_client().request(
@@ -136,6 +150,7 @@ def sync(
     status: None | str | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[PipelineRunRead] | None:
     """List monitored orchestrator pipeline/DAG runs
 
@@ -151,6 +166,10 @@ def sync(
             empty page.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the row this cursor names (the `X-Next-
+            Cursor` header of the previous page of the same list). Costs the same at any depth, where
+            a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never
+            with it (422).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -166,6 +185,7 @@ def sync(
         status=status,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     ).parsed
 
 
@@ -176,6 +196,7 @@ async def asyncio_detailed(
     status: None | str | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[PipelineRunRead]]:
     """List monitored orchestrator pipeline/DAG runs
 
@@ -191,6 +212,10 @@ async def asyncio_detailed(
             empty page.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the row this cursor names (the `X-Next-
+            Cursor` header of the previous page of the same list). Costs the same at any depth, where
+            a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never
+            with it (422).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -205,6 +230,7 @@ async def asyncio_detailed(
         status=status,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -219,6 +245,7 @@ async def asyncio(
     status: None | str | Unset = UNSET,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[PipelineRunRead] | None:
     """List monitored orchestrator pipeline/DAG runs
 
@@ -234,6 +261,10 @@ async def asyncio(
             empty page.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the row this cursor names (the `X-Next-
+            Cursor` header of the previous page of the same list). Costs the same at any depth, where
+            a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never
+            with it (422).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -250,5 +281,6 @@ async def asyncio(
             status=status,
             limit=limit,
             offset=offset,
+            cursor=cursor,
         )
     ).parsed

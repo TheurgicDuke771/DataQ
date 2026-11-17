@@ -1741,3 +1741,34 @@ whose runs share timestamps (so the `id` tie-break decides), a suite with no run
 scope passed as a list and as a subquery, and a point in the past. A plan test fails
 if the statement goes back to reading every run.
 
+## v1.3 — paging by cursor
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs, and 120,000 pipeline runs and incidents.
+
+The v1.2 ordering indexes removed the sort from `/runs`, `/pipeline_runs` and `/incidents`, but
+`OFFSET` still makes the database walk and discard every skipped index entry, so a deep page
+costs in proportion to its offset. A cursor names the last row a client saw by the list's total
+order (timestamp, then id), and the next page is `(timestamp, id) < cursor` on the same index:
+one descent at any depth.
+
+| Page of 50, p50 | By `offset` | By cursor |
+|---|---|---|
+| `/runs`, first page | 0.7 ms | 0.8 ms |
+| `/runs`, 10,000 deep | 3.1 ms | 1.1 ms |
+| `/runs`, 90,000 deep | 15.7 ms | 0.9 ms |
+| `/runs`, 500,000 deep | 79.0 ms | 1.1 ms |
+| `/pipeline_runs`, 90,000 deep | 8.9 ms | 1.1 ms |
+| `/incidents`, 90,000 deep | 10.9 ms | 1.4 ms |
+
+Both ways returned identical rows at every depth measured. Each list fetches one row past the
+page to know whether there is a next page, so a list of exactly `limit` rows is one page.
+`X-Total-Count` is unchanged and still counted per request: it is its own cost (22 ms at 1M
+runs in the table above), not the page's.
+
+Offset paging stays: the app's numbered pages need it, and its first pages are as cheap as a
+cursor's. The decision for the three lists is hybrid, and for `/incidents` it carries a stated
+caveat: its sort key, `last_seen_at`, moves, so a reader paging by cursor can miss an incident
+that jumps ahead of the cursor and never sees one twice, which is better than paging by
+`offset`, where the same move shifts every row behind it.
+

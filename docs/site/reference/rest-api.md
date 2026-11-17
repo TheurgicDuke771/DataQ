@@ -41,6 +41,20 @@ in production — this page is the reference.)
   requests per API key, unauthenticated per client-IP **prefix** (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget). Over the limit returns `429` with
   `code: "rate_limited"`, `detail.retry_after_seconds` (1–60), and a matching `Retry-After`
   header (plus `X-RateLimit-Limit` / `X-RateLimit-Remaining`). Back off for that many seconds.
+- **Paging:** the lists of runs (`/runs`), pipeline runs (`/pipeline_runs`) and incidents
+  (`/incidents`) page by `limit` and `offset`, and report the whole list in `X-Total-Count`.
+  A large `offset` costs in proportion to itself, since the database walks and discards every
+  skipped row. For deep or programmatic paging, send the **`X-Next-Cursor`** header of a
+  response as `cursor` on the next request (instead of `offset`; both together is a `422`
+  with `code: "cursor_with_offset"`). The header is present while there are more rows and
+  absent on the last page. Every page then costs the same however deep it is: about 1 ms at
+  500,000 runs, against about 80 ms for the same page by `offset`. A cursor is opaque, belongs
+  to the list it came from, and does not carry your filters, so send the same ones with each
+  page. A malformed or foreign cursor is a `422` with `code: "invalid_cursor"`. Incidents sort
+  by `last_seen_at`, which moves when an incident breaches again: while you page, an incident
+  that jumps ahead of your cursor can be missed, and none is returned twice (by `offset`, a
+  move shifts every row behind it, so rows repeat as well as go missing). The MCP tools keep
+  their `limit`/`offset` and `since_hours`/`until_hours` windows.
 - **IDs** are UUIDs. Timestamps are ISO-8601 UTC.
 
 ## Endpoints

@@ -18,6 +18,7 @@ def _get_kwargs(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -50,6 +51,13 @@ def _get_kwargs(
     params["limit"] = limit
 
     params["offset"] = offset
+
+    json_cursor: None | str | Unset
+    if isinstance(cursor, Unset):
+        json_cursor = UNSET
+    else:
+        json_cursor = cursor
+    params["cursor"] = json_cursor
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -105,6 +113,7 @@ def sync_detailed(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[IncidentRead]]:
     """List visible incidents
 
@@ -114,6 +123,10 @@ def sync_detailed(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -129,6 +142,7 @@ def sync_detailed(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = client.get_httpx_client().request(
@@ -146,6 +160,7 @@ def sync(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[IncidentRead] | None:
     """List visible incidents
 
@@ -155,6 +170,10 @@ def sync(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -171,6 +190,7 @@ def sync(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     ).parsed
 
 
@@ -182,6 +202,7 @@ async def asyncio_detailed(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> Response[HTTPValidationError | list[IncidentRead]]:
     """List visible incidents
 
@@ -191,6 +212,10 @@ async def asyncio_detailed(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -206,6 +231,7 @@ async def asyncio_detailed(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -221,6 +247,7 @@ async def asyncio(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> HTTPValidationError | list[IncidentRead] | None:
     """List visible incidents
 
@@ -230,6 +257,10 @@ async def asyncio(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -247,5 +278,6 @@ async def asyncio(
             state=state,
             limit=limit,
             offset=offset,
+            cursor=cursor,
         )
     ).parsed

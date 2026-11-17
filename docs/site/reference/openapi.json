@@ -17359,6 +17359,24 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "description": "Start the page after the incident this cursor names (the `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves: an incident bumped past the cursor while you page can be missed, none repeats.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start the page after the incident this cursor names (the `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves: an incident bumped past the cursor while you page can be missed, none repeats.",
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -17376,6 +17394,12 @@
             },
             "description": "Successful Response",
             "headers": {
+              "X-Next-Cursor": {
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422). An incident's position is its `last_seen_at`, which moves each time it breaches again, so an incident bumped past the cursor while a client pages can be missed; none is returned twice (paging by `offset` can repeat rows as well as miss them).",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "X-Total-Count": {
                 "description": "Total incidents visible to the caller matching the `asset_id`/`suite_id`/`state` filters (#1108) \u2014 the same accessible-suite-scoped population this page's limit/offset slice into. #772 added `offset` but shipped only that half of the /assets paging shape; a page shorter than `limit` doesn't by itself prove there's no more \u2014 compare against this header.",
                 "schema": {
@@ -18618,6 +18642,24 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -18635,6 +18677,12 @@
             },
             "description": "Successful Response",
             "headers": {
+              "X-Next-Cursor": {
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422).",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "X-Total-Count": {
                 "description": "Total pipeline runs matching the `provider`/`status` filters (#1108) \u2014 the same unfiltered-by-paging population this page's limit/offset slice into. #928 added `offset` but shipped only that half of the /assets paging shape; a page shorter than `limit` doesn't by itself prove there's no more \u2014 compare against this header.",
                 "schema": {
@@ -18721,6 +18769,24 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -18738,6 +18804,12 @@
             },
             "description": "Successful Response",
             "headers": {
+              "X-Next-Cursor": {
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422).",
+                "schema": {
+                  "type": "string"
+                }
+              },
               "X-Total-Count": {
                 "description": "Total runs visible to the caller (#1108) \u2014 the same accessible-suite-scoped population this page's limit/offset slice into (workspace-admins see every suite). Before this, `/runs` had `limit` only and could not be paged at all; a page shorter than `limit` doesn't by itself prove there's no more \u2014 compare against this header.",
                 "schema": {
