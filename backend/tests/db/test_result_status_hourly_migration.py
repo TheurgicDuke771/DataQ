@@ -15,7 +15,7 @@ from backend.app.db.base import Base
 from backend.tests.support.migrations import load_migration, table_exists
 
 _FILE = "c41f7a2d9e10_add_result_status_hourly.py"
-_INDEXES = ("ix_runs_results_unrolled", "ix_results_created_brin")
+_INDEXES = ("ix_runs_results_unrolled", "ix_results_created_at")
 
 
 def _indexdef(db: Any, name: str) -> str | None:
@@ -44,8 +44,8 @@ def _down(db: Any) -> None:
     """`downgrade()`'s own statements, CONCURRENTLY stripped: it cannot run inside this
     fixture's open transaction."""
     module = load_migration(_FILE)
-    for sql in module._drop_sql():
-        db.execute(text(sql.replace("CONCURRENTLY ", "")))
+    for name, _rest in module._INDEXES:
+        db.execute(text(f"DROP INDEX IF EXISTS {name}"))
     ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
     with Operations.context(ctx):
         module._drop_table_and_column()
@@ -57,8 +57,8 @@ def _up(db: Any) -> None:
     ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
     with Operations.context(ctx):
         module._create_table_and_column()
-    for sql in module._create_sql():
-        db.execute(text(sql.replace("CONCURRENTLY ", "")))
+    for name, rest in module._INDEXES:
+        db.execute(text(f"CREATE INDEX IF NOT EXISTS {name} {rest}"))
     db.expire_all()
 
 
@@ -120,7 +120,7 @@ def test_the_indexes_are_the_ones_the_model_declares(db_session: Any) -> None:
     assert "(id)" in unrolled
     assert "status" in unrolled and "succeeded" in unrolled
     assert "results_rolled_up_at IS NULL" in unrolled
-    assert "USING brin (created_at)" in (_indexdef(db_session, "ix_results_created_brin") or "")
+    assert "USING btree (created_at)" in (_indexdef(db_session, "ix_results_created_at") or "")
 
 
 def test_a_run_from_before_the_migration_reads_as_not_rolled_up(db_session: Any) -> None:
@@ -153,3 +153,29 @@ def test_counts_are_keyed_by_suite_hour_and_status_and_die_with_the_suite(db_ses
 
     db_session.execute(text("DELETE FROM suites WHERE id = :id"), {"id": suite_id})
     assert db_session.scalar(text("SELECT count(*) FROM result_status_hourly")) == 0
+
+
+def test_a_retry_after_a_cancelled_index_build_finds_the_table_and_column_there(
+    db_session: Any,
+) -> None:
+    """`upgrade()` commits the table and the column before the CONCURRENTLY builds, so a retry
+    runs those two steps on a schema that already has them."""
+    _up(db_session)  # fixture schema: already present
+    _up(db_session)  # the retry
+    assert table_exists(db_session, "result_status_hourly") and _has_column(db_session)
+    _down(db_session)
+    _down(db_session)  # a downgrade after a half-finished downgrade
+    assert not table_exists(db_session, "result_status_hourly")
+    assert not _has_column(db_session)
+
+
+def test_a_count_cannot_go_negative(db_session: Any) -> None:
+    suite_id, _run = _suite_and_run(db_session)
+    with pytest.raises(IntegrityError), db_session.begin_nested():
+        db_session.execute(
+            text(
+                "INSERT INTO result_status_hourly (suite_id, hour, status, n) "
+                "VALUES (:s, TIMESTAMPTZ '2026-11-01 05:00+00', 'pass', -1)"
+            ),
+            {"s": suite_id},
+        )

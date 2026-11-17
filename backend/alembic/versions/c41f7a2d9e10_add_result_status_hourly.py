@@ -11,24 +11,25 @@ later change fills and reads instead.
 - `runs.results_rolled_up_at`: when a run's results were added to the table. NULL for every
   existing row, which a reader treats as "count this run's results from `results`".
 - `ix_runs_results_unrolled`: the succeeded runs not yet added. Partial, so it stays small.
-- `ix_results_created_brin`: an hour's results by time, for the two part-hours at a window's
-  edges. Block-range, so it is a few pages on any table size.
+- `ix_results_created_at`: an hour's results by time, for the two part-hours at a window's
+  edges. A plain btree: a block-range index would be a few pages, but it depends on rows being
+  stored in time order, which `created_at` (a transaction's start) and reused heap pages do
+  not guarantee. 21 MB at one million rows.
 
 Additive. No code reads or writes any of it yet; that ships in the next PR, after this one is
 deployed. Nothing is backfilled here: a beat task in that PR adds existing runs in batches, and
 until it has, those runs are still counted from `results`.
 
 Both indexes are built `CONCURRENTLY`, outside the migration's transaction, so neither table
-is locked against writes.
+is locked against writes. Because that step commits the table and the column first, every step
+is re-runnable (`IF NOT EXISTS`, drop-then-create): a build that is cancelled on a large table
+is retried by running `alembic upgrade head` again.
 
 Rollback: `alembic downgrade -1` drops the indexes, the column and the table. Tested up, down
 and up again against a scratch Postgres database.
 """
 
 from collections.abc import Sequence
-
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
 
 from alembic import op
 
@@ -44,54 +45,48 @@ _INDEXES = (
         "ix_runs_results_unrolled",
         "ON runs (id) WHERE status = 'succeeded' AND results_rolled_up_at IS NULL",
     ),
-    ("ix_results_created_brin", "ON results USING brin (created_at)"),
+    ("ix_results_created_at", "ON results (created_at)"),
 )
 
 
-def _create_sql() -> list[str]:
-    return [f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} {rest}" for name, rest in _INDEXES]
-
-
-def _drop_sql() -> list[str]:
-    return [f"DROP INDEX CONCURRENTLY IF EXISTS {name}" for name, _rest in _INDEXES]
-
-
 def _create_table_and_column() -> None:
-    op.create_table(
-        "result_status_hourly",
-        sa.Column("suite_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("hour", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("status", sa.String(16), nullable=False),
-        sa.Column("n", sa.BigInteger(), nullable=False),
-        sa.PrimaryKeyConstraint("suite_id", "hour", "status"),
-        sa.ForeignKeyConstraint(["suite_id"], ["suites.id"], ondelete="CASCADE"),
-        sa.CheckConstraint(
-            "status IN (" + ", ".join(f"'{s}'" for s in _STATUSES) + ")", name="status_valid"
-        ),
-    )
-    op.add_column(
-        "runs", sa.Column("results_rolled_up_at", sa.DateTime(timezone=True), nullable=True)
-    )
+    statuses = ", ".join(f"'{s}'" for s in _STATUSES)
+    # IF NOT EXISTS: `upgrade()` commits these before the index builds, so a retry after a
+    # cancelled build arrives with both already there.
+    op.execute(f"""
+        CREATE TABLE IF NOT EXISTS result_status_hourly (
+            suite_id UUID NOT NULL,
+            hour TIMESTAMP WITH TIME ZONE NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            n BIGINT NOT NULL,
+            CONSTRAINT pk_result_status_hourly PRIMARY KEY (suite_id, hour, status),
+            CONSTRAINT fk_result_status_hourly_suite_id_suites
+                FOREIGN KEY (suite_id) REFERENCES suites (id) ON DELETE CASCADE,
+            CONSTRAINT ck_result_status_hourly_status_valid CHECK (status IN ({statuses})),
+            CONSTRAINT ck_result_status_hourly_n_nonnegative CHECK (n >= 0)
+        )
+        """)
+    op.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS results_rolled_up_at TIMESTAMPTZ")
 
 
 def _drop_table_and_column() -> None:
-    op.drop_column("runs", "results_rolled_up_at")
-    op.drop_table("result_status_hourly")
+    op.execute("ALTER TABLE runs DROP COLUMN IF EXISTS results_rolled_up_at")
+    op.execute("DROP TABLE IF EXISTS result_status_hourly")
 
 
 def upgrade() -> None:
     _create_table_and_column()
     # autocommit_block: Postgres refuses CREATE INDEX CONCURRENTLY inside a transaction block.
     with op.get_context().autocommit_block():
-        for drop, create in zip(_drop_sql(), _create_sql(), strict=True):
+        for name, rest in _INDEXES:
             # DROP first: a crashed earlier attempt can leave an INVALID index that
             # CREATE ... IF NOT EXISTS would then skip over.
-            op.execute(drop)
-            op.execute(create)
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
+            op.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} {rest}")
 
 
 def downgrade() -> None:
     with op.get_context().autocommit_block():
-        for drop in _drop_sql():
-            op.execute(drop)
+        for name, _rest in _INDEXES:
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
     _drop_table_and_column()
