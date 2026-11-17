@@ -1,6 +1,36 @@
 {
   "components": {
     "schemas": {
+      "AccessSummaryRead": {
+        "description": "The caller's suite access, counted server-side: what the Profile page renders.",
+        "properties": {
+          "counts_by_level": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts By Level",
+            "type": "object"
+          },
+          "owned": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedSuiteSummary"
+            },
+            "title": "Owned",
+            "type": "array"
+          },
+          "total_visible": {
+            "title": "Total Visible",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_visible",
+          "counts_by_level",
+          "owned"
+        ],
+        "title": "AccessSummaryRead",
+        "type": "object"
+      },
       "AdditionalTableRef": {
         "additionalProperties": false,
         "description": "A join-relevant related table on the SUITE'S OWN connection (#1649).\nThere is deliberately no connection reference here: cross-connection\njoins are out of scope (a federated engine is a different ADR) and the\n`comparison` kind (ADR 0015) is the reconciliation shape for that \u2014\nrefusing it is structural, not an error path to hit.",
@@ -9315,6 +9345,37 @@
         "title": "OwnedSuiteRead",
         "type": "object"
       },
+      "OwnedSuiteSummary": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "title": "OwnedSuiteSummary",
+        "type": "object"
+      },
       "PipelineRunRead": {
         "description": "A monitored orchestrator pipeline/DAG run (`pipeline_runs` \u2260 `runs`).",
         "properties": {
@@ -17819,6 +17880,28 @@
           }
         },
         "summary": "Update the current user's profile",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/access-summary": {
+      "get": {
+        "description": "How many suites the caller holds at each level and which ones they own, without listing\nevery suite (`GET /suites` returns each one's full payload).",
+        "operationId": "my_access_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessSummaryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The caller's suite access, counted",
         "tags": [
           "auth"
         ]

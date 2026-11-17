@@ -50,6 +50,7 @@ in production — this page is the reference.)
 | Method | Path | What |
 |---|---|---|
 | GET / PATCH | `/me` | The current user + `role` (`admin` / `member` / `viewer`) + `is_workspace_admin`; PATCH updates `display_name`. |
+| GET | `/me/access-summary` | The caller's suite access, counted server-side: `total_visible`, `counts_by_level` (`owner` / `admin` / `edit` / `view`) and the suites they `owned`. For a workspace admin every suite they did not create counts as `admin`, shared or not. |
 | POST | `/me/api-keys` | Mint a PAT (plaintext returned **once**). |
 | GET | `/me/api-keys` | List your keys (metadata only, never the token). |
 | DELETE | `/me/api-keys/{id}` | Revoke a key. |

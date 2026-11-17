@@ -12,7 +12,7 @@ from backend.app.core.auth import credential_kind, get_current_user
 from backend.app.core.roles import is_workspace_admin, resolve_role
 from backend.app.db.models import DEFAULT_WORKSPACE_ROLE, User
 from backend.app.db.session import get_db
-from backend.app.services import user_service
+from backend.app.services import access_summary, user_service
 
 router = APIRouter(tags=["auth"])
 
@@ -88,3 +88,43 @@ def update_me(
     resp.role = resolve_role(updated)
     resp.is_workspace_admin = is_workspace_admin(updated)
     return resp
+
+
+class OwnedSuiteSummary(ApiModel):
+    id: UUID
+    name: str
+    description: str | None
+
+
+class AccessSummaryRead(ApiModel):
+    """The caller's suite access, counted server-side: what the Profile page renders."""
+
+    total_visible: int
+    # Suites by the level the caller holds on them: `owner | admin | edit | view`. For a workspace
+    # admin every suite they did not create is `admin` whether or not anyone shared it (ADR 0033),
+    # so for them these are not share counts. A workspace viewer holds every suite at `view`.
+    counts_by_level: dict[str, int]
+    # The suites the caller created, by name; empty for a workspace viewer.
+    owned: list[OwnedSuiteSummary]
+
+
+@router.get(
+    "/me/access-summary",
+    response_model=AccessSummaryRead,
+    summary="The caller's suite access, counted",
+)
+def my_access_summary(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AccessSummaryRead:
+    """How many suites the caller holds at each level and which ones they own, without listing
+    every suite (`GET /suites` returns each one's full payload)."""
+    summary = access_summary.access_summary(db, current_user)
+    return AccessSummaryRead(
+        total_visible=summary.total_visible,
+        counts_by_level=summary.counts_by_level,
+        owned=[
+            OwnedSuiteSummary(id=o.id, name=o.name, description=o.description)
+            for o in summary.owned
+        ],
+    )
