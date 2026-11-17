@@ -2014,7 +2014,8 @@ def test_runs_page_by_cursor_through_ties_to_the_same_rows_as_offset(
     assert [len(p) for p in pages] == [3, 3, 1]
     by_cursor = [i for page in pages for i in page]
     assert len(set(by_cursor)) == 7
-    assert by_cursor == [r["id"] for r in client.get("/api/v1/runs?limit=200").json()]
+    by_offset = client.get("/api/v1/runs?limit=200")
+    assert by_cursor == [r["id"] for r in by_offset.json()]
 
 
 def test_a_page_that_ends_exactly_at_the_last_row_has_no_next_cursor(
@@ -2087,7 +2088,8 @@ def test_a_cursor_with_an_offset_is_a_422(client: TestClient, db_session: Any) -
 
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "cursor_with_offset"
-    assert client.get(f"/api/v1/runs?cursor={cursor}&offset=0").status_code == 200
+    zero_offset = client.get(f"/api/v1/runs?cursor={cursor}&offset=0")
+    assert zero_offset.status_code == 200
 
 
 @pytest.mark.parametrize("path", ["/api/v1/runs", "/api/v1/pipeline_runs", "/api/v1/incidents"])
@@ -2128,7 +2130,8 @@ def test_pipeline_runs_page_by_cursor_to_the_same_rows_as_offset(
 
     assert [len(p) for p in pages] == [2, 2, 1]
     by_cursor = [i for page in pages for i in page]
-    assert by_cursor == [p["id"] for p in client.get("/api/v1/pipeline_runs?limit=200").json()]
+    by_offset = client.get("/api/v1/pipeline_runs?limit=200")
+    assert by_cursor == [p["id"] for p in by_offset.json()]
 
 
 def test_the_cursor_header_is_documented_and_exposed_to_browsers() -> None:
