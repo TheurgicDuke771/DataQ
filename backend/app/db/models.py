@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -941,6 +942,14 @@ class Run(Base):
         # Results read, which is `suite_id IN (<accessible suites>)` and so cannot use
         # `ix_runs_suite_created`) and, by filtered index scan, the `?status=` one.
         Index("ix_runs_created_id", text("created_at DESC"), text("id DESC")),
+        # #2010: succeeded runs whose results are not yet in `result_status_hourly`. Normally
+        # empty or a handful of rows, so finding them costs nothing whatever the history. The
+        # predicate is TEXTUALLY the reader's and the sweep's WHERE.
+        Index(
+            "ix_runs_results_unrolled",
+            "id",
+            postgresql_where=text("status = 'succeeded' AND results_rolled_up_at IS NULL"),
+        ),
         _in_check("recorded_worst_severity", FAILING_TIERS, "recorded_worst_severity_valid"),
         CheckConstraint(
             "recorded_checks_passed >= 0 AND recorded_checks_passed <= recorded_checks_total"
@@ -979,6 +988,9 @@ class Run(Base):
     recorded_checks_total: Mapped[int | None] = mapped_column(Integer)
     recorded_checks_passed: Mapped[int | None] = mapped_column(Integer)
     recorded_worst_severity: Mapped[str | None] = mapped_column(String(16))
+    # When this run's results were added to `result_status_hourly` (#2010). NULL = not yet: a
+    # reader counts such a run's results from `results` itself, so the rollup is never stale.
+    results_rolled_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -1016,6 +1028,9 @@ class Result(Base):
             "created_at",
             postgresql_where=text("observed_value ? 'unparsed_value'"),
         ),
+        # #2010: an hour's results by time. Results arrive in time order, so a block-range index
+        # stays a few pages however large the table grows.
+        Index("ix_results_created_brin", "created_at", postgresql_using="brin"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -1039,6 +1054,28 @@ class Result(Base):
     # How much of the dataset the check saw (#595).
     sampling: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = _created_at()
+
+
+class ResultStatusHourly(Base):
+    """Result counts per suite, UTC hour and status, over runs that succeeded (#2010).
+
+    A summary of `results`, never a second source: it equals
+    ``SELECT suite, hour, status, count(*)`` over the results of the runs whose
+    ``results_rolled_up_at`` is set. It is added to when a run succeeds and subtracted from
+    when a check (and so its results) is deleted. ``n`` can reach 0; such a row means nothing.
+    """
+
+    __tablename__ = "result_status_hourly"
+    __table_args__ = (_in_check("status", RESULT_STATUSES, "status_valid"),)
+
+    # CASCADE: the counts die with the suite, as its runs and results do.
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: `results.created_at` truncated to the hour in UTC.
+    hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), primary_key=True)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class Share(Base):
@@ -1915,6 +1952,7 @@ __all__ = [
     "LlmSetting",
     "PipelineRun",
     "Result",
+    "ResultStatusHourly",
     "Run",
     "Schedule",
     "Share",
