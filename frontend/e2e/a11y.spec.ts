@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,11 +46,15 @@ const MEMBER_TOKEN = memberToken();
  * script) to avoid a write race across routes. */
 type Theme = 'light' | 'dark';
 
-async function checkRoute(
-  theme: Theme,
-  page: import('@playwright/test').Page,
-  route: string,
-): Promise<void> {
+/** What proves a route's data arrived: a locator for content that only renders once it has.
+ * A heading is not enough (it renders before the data), and neither is `settle`, which a page
+ * stuck on a fallback or a failed-fetch state passes too. `STATIC` is for a route that fetches
+ * nothing its markup depends on. */
+const STATIC = 'static' as const;
+type Loaded = Locator | typeof STATIC;
+
+async function checkRoute(theme: Theme, page: Page, route: string, loaded: Loaded): Promise<void> {
+  if (loaded !== STATIC) await expect(loaded.first()).toBeVisible();
   await settle(page);
   // A dark scan that silently rendered light would pass for the wrong reason.
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -73,19 +77,25 @@ function defineScans(mode: Theme): void {
     test('dashboard', async ({ page }) => {
       await page.goto('/dashboard');
       await expect(page.getByRole('heading', { name: 'Dashboard', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/dashboard');
+      const suitePerformance = page.locator('.ant-card').filter({ hasText: /Suite Performance/i });
+      await checkRoute(
+        mode,
+        page,
+        'route:/dashboard',
+        suitePerformance.getByText('Orders quality'),
+      );
     });
 
     test('connections', async ({ page }) => {
       await page.goto('/connections');
       await expect(page.getByRole('heading', { name: 'Connections', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/connections');
+      await checkRoute(mode, page, 'route:/connections', page.getByText('snowflake-analytics'));
     });
 
     test('suites list', async ({ page }) => {
       await page.goto('/suites');
       await expect(page.getByRole('heading', { name: 'Suites', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/suites');
+      await checkRoute(mode, page, 'route:/suites', page.getByText('Orders quality'));
     });
 
     test('suite detail', async ({ page }) => {
@@ -93,14 +103,14 @@ function defineScans(mode: Theme): void {
       await page.getByText('Orders quality').click();
       await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
       await expect(page.getByRole('heading', { name: 'Orders quality', level: 4 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/suites/:id');
+      await checkRoute(mode, page, 'route:/suites/:id', page.getByText('order_id not null'));
     });
 
     test('results', async ({ page }) => {
       await page.goto('/results');
       await expect(page.getByRole('heading', { name: 'Results', level: 3 })).toBeVisible();
       await expect(page.locator('tr.ant-table-row').first()).toBeVisible();
-      await checkRoute(mode, page, 'route:/results');
+      await checkRoute(mode, page, 'route:/results', page.locator('tr.ant-table-row'));
     });
 
     test('run detail', async ({ page }) => {
@@ -108,43 +118,53 @@ function defineScans(mode: Theme): void {
       await page.locator('tr.ant-table-row').first().click();
       await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
       await expect(page.getByTestId('rd-screen')).toBeVisible();
-      await checkRoute(mode, page, 'route:/results/:id');
+      await checkRoute(
+        mode,
+        page,
+        'route:/results/:id',
+        page.getByTestId('rd-screen').getByText('order_id not null'),
+      );
     });
 
     test('assets', async ({ page }) => {
       await page.goto('/assets');
       await expect(page.getByRole('heading', { name: 'Assets', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/assets');
+      await checkRoute(mode, page, 'route:/assets', page.getByRole('treeitem', { name: /ORDERS/ }));
     });
 
     test('contracts', async ({ page }) => {
       await page.goto('/contracts');
       await expect(page.getByRole('heading', { name: 'Data contracts', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/contracts');
+      await checkRoute(mode, page, 'route:/contracts', page.getByText('Orders delivery'));
     });
 
     // Every admin sub-page is its own route; `/admin` redirects to Overview.
-    for (const sub of [
-      'overview',
-      'members',
-      'suites',
-      'integrations',
-      'settings',
-      'calendar',
-      'compliance',
-    ]) {
+    // Each sub-page's seeded content is judged order-independently: another spec may add or
+    // remove a channel or a seasonal period, so those two accept an empty list or a row.
+    const adminLoaded: Record<string, (page: Page) => Loaded> = {
+      overview: (page) => page.getByText(/across \d+ connection\(s\)/),
+      members: (page) => page.getByText('dev-bypass@dataq.local'),
+      suites: (page) => page.getByRole('main').getByText('Orders quality'),
+      integrations: (page) => page.getByText('adf-orchestrator'),
+      settings: (page) =>
+        page.getByText('No channels yet.').or(page.locator('[role="listitem"], tr.ant-table-row')),
+      calendar: (page) =>
+        page.getByText('No seasonal periods declared.').or(page.locator('tr.ant-table-row')),
+      compliance: (page) => page.getByText('api_key.mint'),
+    };
+    for (const sub of Object.keys(adminLoaded)) {
       test(`admin ${sub}`, async ({ page }) => {
         // dev-bypass is workspace-admin in this lane (CI + compose parity, see e2e/README.md).
         await page.goto(`/admin/${sub}`);
         await expect(page.getByRole('heading', { name: 'Admin', level: 3 })).toBeVisible();
-        await checkRoute(mode, page, `route:/admin/${sub}`);
+        await checkRoute(mode, page, `route:/admin/${sub}`, adminLoaded[sub](page));
       });
     }
 
     test('profile', async ({ page }) => {
       await page.goto('/profile');
       await expect(page.getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
-      await checkRoute(mode, page, 'route:/profile');
+      await checkRoute(mode, page, 'route:/profile', page.getByLabel('Suites by access level'));
     });
 
     // What a non-admin sees at every admin URL, and at the retired /settings.
@@ -160,14 +180,20 @@ function defineScans(mode: Theme): void {
       test('forbidden', async ({ page }) => {
         await page.goto('/settings');
         await expect(page.getByText(/restricted to workspace admins/i)).toBeVisible();
-        await checkRoute(mode, page, 'route:/403');
+        // The forbidden page is the loaded state: it renders once `/me` has resolved the role.
+        await checkRoute(
+          mode,
+          page,
+          'route:/403',
+          page.getByText(/restricted to workspace admins/i),
+        );
       });
     });
 
     test('not found', async ({ page }) => {
       await page.goto('/no-such-route');
       await expect(page.getByText('404')).toBeVisible();
-      await checkRoute(mode, page, 'route:/404');
+      await checkRoute(mode, page, 'route:/404', STATIC);
     });
 
     // The authoring + detail routes are id-addressed; resolve the seeded ids through the API
@@ -179,6 +205,11 @@ function defineScans(mode: Theme): void {
       let connectionId: string;
       let contractId: string;
       let compareUrl: string;
+      // Names the seed gave them, which each page shows only once its own fetch has returned.
+      let checkName: string;
+      let assetName: string;
+      let connectionName: string;
+      let contractName: string;
 
       test.beforeAll(async ({ request }) => {
         const suites: { id: string; name: string }[] = await (
@@ -187,20 +218,28 @@ function defineScans(mode: Theme): void {
         const orders = suites.find((s) => s.name === 'Orders quality');
         expect(orders, 'seeded "Orders quality" suite').toBeDefined();
         suiteId = orders?.id ?? '';
-        const checks: { id: string }[] = await (
+        const checks: { id: string; name: string }[] = await (
           await request.get(`/api/v1/suites/${suiteId}/checks`)
         ).json();
         checkId = checks[0].id;
-        const assets: { id: string }[] = await (await request.get('/api/v1/assets')).json();
+        checkName = checks[0].name;
+        const assets: { id: string; name: string }[] = await (
+          await request.get('/api/v1/assets')
+        ).json();
         assetId = assets[0].id;
-        const connections: { id: string }[] = await (
+        assetName = assets[0].name;
+        const connections: { id: string; name: string }[] = await (
           await request.get('/api/v1/connections')
         ).json();
         connectionId = connections[0].id;
+        connectionName = connections[0].name;
         // The demo seed imports one data contract (backend/scripts/demo_data.py).
-        const contracts: { id: string }[] = await (await request.get('/api/v1/contracts')).json();
+        const contracts: { id: string; name: string }[] = await (
+          await request.get('/api/v1/contracts')
+        ).json();
         expect(contracts.length, 'the seeded data contract').toBeGreaterThan(0);
         contractId = contracts[0].id;
+        contractName = contracts[0].name;
         // The seeded suite's two most recent runs, the older one as the base.
         const runs: { id: string }[] = await (
           await request.get(`/api/v1/runs?suite_id=${suiteId}&limit=2`)
@@ -209,22 +248,54 @@ function defineScans(mode: Theme): void {
         compareUrl = `/results/${runs[1].id}/compare/${runs[0].id}`;
       });
 
-      const routes: [string, () => string][] = [
-        ['route:/results/:id/compare/:id', () => compareUrl],
-        ['route:/connections/new', () => '/connections/new'],
-        ['route:/connections/:id/edit', () => `/connections/${connectionId}/edit`],
-        ['route:/suites/new', () => '/suites/new'],
-        ['route:/suites/:id/edit', () => `/suites/${suiteId}/edit`],
-        ['route:/suites/:id/checks/new', () => `/suites/${suiteId}/checks/new`],
-        ['route:/suites/:id/checks/:id/edit', () => `/suites/${suiteId}/checks/${checkId}/edit`],
-        ['route:/assets/:id', () => `/assets/${assetId}`],
-        ['route:/contracts/:id', () => `/contracts/${contractId}`],
+      const routes: [string, () => string, (page: Page) => Loaded][] = [
+        [
+          'route:/results/:id/compare/:id',
+          () => compareUrl,
+          (page) => page.getByText(/Showing \d+ of \d+ checks/),
+        ],
+        // The connection catalogue is the page's own markup: nothing is fetched for it.
+        ['route:/connections/new', () => '/connections/new', () => STATIC],
+        [
+          'route:/connections/:id/edit',
+          () => `/connections/${connectionId}/edit`,
+          (page) => page.getByLabel('Name').and(page.locator(`[value="${connectionName}"]`)),
+        ],
+        // The blank suite form: its connection list is fetched, but the fields are the content.
+        ['route:/suites/new', () => '/suites/new', () => STATIC],
+        [
+          'route:/suites/:id/edit',
+          () => `/suites/${suiteId}/edit`,
+          (page) => page.getByRole('heading', { name: 'Edit “Orders quality”' }),
+        ],
+        [
+          'route:/suites/:id/checks/new',
+          () => `/suites/${suiteId}/checks/new`,
+          // Offered per the suite's connection engine: Snowflake's native engine appears only once
+          // the suite and its connection have loaded.
+          (page) => page.getByText('Snowflake DMF', { exact: true }),
+        ],
+        [
+          'route:/suites/:id/checks/:id/edit',
+          () => `/suites/${suiteId}/checks/${checkId}/edit`,
+          (page) => page.getByRole('heading', { name: `Edit “${checkName}”` }),
+        ],
+        [
+          'route:/assets/:id',
+          () => `/assets/${assetId}`,
+          (page) => page.getByRole('heading', { name: assetName }),
+        ],
+        [
+          'route:/contracts/:id',
+          () => `/contracts/${contractId}`,
+          (page) => page.getByRole('heading', { name: new RegExp(contractName) }),
+        ],
       ];
-      for (const [surface, url] of routes) {
+      for (const [surface, url, loaded] of routes) {
         test(surface, async ({ page }) => {
           await page.goto(url());
           await expect(page.getByRole('heading').first()).toBeVisible();
-          await checkRoute(mode, page, surface);
+          await checkRoute(mode, page, surface, loaded(page));
         });
       }
     });
