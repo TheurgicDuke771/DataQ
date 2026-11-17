@@ -18,15 +18,19 @@ T = TypeVar("T", bound="AdminCredentialHealthRead")
 class AdminCredentialHealthRead:
     """One datasource connection's stored-credential health (#1697).
 
-    `status="unknown"` — never `healthy` — means the credential has not been used
-    since the signal shipped, so nothing has been observed about it. `failing` means
+    `status="unknown"` — never `healthy` — means a stored credential has not been used
+    since the signal shipped, so nothing has been observed about it.
+    `not_applicable` means the connection authenticates with no credential (an
+    anonymous bucket, Trino `auth_type: none`), so there is nothing to observe and
+    nothing to act on. `failing` means
     the datasource rejected it on its last use, and `last_error` is then the
     classified, secret-free reason. Only credential REJECTIONS move this: a missing
     grant, an unreachable host and a bad table name leave it untouched.
 
     Derived from real work (runs, dry-runs, profiles, connection tests), not from a
     periodic probe — so a connection nothing uses stays `unknown` indefinitely, which
-    is the honest answer rather than a reassuring one.
+    is the honest answer rather than a reassuring one. `not_applicable` is derived from
+    the connection's auth mode on every read, never stored.
 
         Attributes:
             connection_id (UUID):

@@ -22,7 +22,7 @@ from backend.app.services.failure_classifier import AUTH_FAILURE_REASON, is_auth
 
 log = get_logger(__name__)
 
-CredentialStatus = Literal["healthy", "failing", "unknown"]
+CredentialStatus = Literal["healthy", "failing", "unknown", "not_applicable"]
 
 
 def is_datasource(connection_type: str) -> bool:
@@ -31,7 +31,14 @@ def is_datasource(connection_type: str) -> bool:
 
 
 def credential_status(conn: Connection) -> CredentialStatus:
-    """The three-state signal. Never `healthy` on a credential never used (#828)."""
+    """The credential-health signal. Never `healthy` on a credential never used (#828).
+
+    `not_applicable` is derived here, per call, from the connection's auth mode — never stored:
+    a connection that authenticates with no credential has none to observe, which is a different
+    fact from `unknown` (a credential exists and has not been used yet).
+    """
+    if _no_credential_needed(conn):
+        return "not_applicable"
     if conn.consecutive_auth_failures:
         return "failing"
     if conn.last_auth_success_at is None:
@@ -39,6 +46,28 @@ def credential_status(conn: Connection) -> CredentialStatus:
         # `failing` above; reaching here means nothing has been observed at all.
         return "unknown"
     return "healthy"
+
+
+def _no_credential_needed(conn: Connection) -> bool:
+    if not is_datasource(conn.type):
+        return False
+    # Imported here: the adapter registry pulls in every engine and is slow to import, and
+    # this module is imported by light paths.
+    from backend.app.datasources.registry import credential_not_applicable
+
+    return credential_not_applicable(conn.type, conn.config, conn.secret_ref)
+
+
+def observed_failures(conn: Connection) -> tuple[int, str | None]:
+    """``(consecutive failures, last error)`` as the read models report them.
+
+    A connection that needs no credential reports none: counters left from when it had one
+    (its auth mode was changed to a credential-less one) would otherwise sit beside
+    ``not_applicable`` and come back as a failing streak if a credential is set again.
+    """
+    if _no_credential_needed(conn):
+        return 0, None
+    return conn.consecutive_auth_failures or 0, conn.last_auth_error
 
 
 def record_credential_success(session: Session, *, connection_id: uuid.UUID) -> int:

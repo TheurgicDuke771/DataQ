@@ -103,7 +103,7 @@
         "type": "object"
       },
       "AdminCredentialHealthRead": {
-        "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used\nsince the signal shipped, so nothing has been observed about it. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one.",
+        "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means a stored credential has not been used\nsince the signal shipped, so nothing has been observed about it.\n`not_applicable` means the connection authenticates with no credential (an\nanonymous bucket, Trino `auth_type: none`), so there is nothing to observe and\nnothing to act on. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one. `not_applicable` is derived from\nthe connection's auth mode on every read, never stored.",
         "properties": {
           "connection_id": {
             "format": "uuid",
@@ -161,7 +161,8 @@
             "enum": [
               "healthy",
               "failing",
-              "unknown"
+              "unknown",
+              "not_applicable"
             ],
             "title": "Status",
             "type": "string"
@@ -5840,7 +5841,7 @@
         "type": "object"
       },
       "CredentialHealthRead": {
-        "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used since\nthe signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
+        "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means a credential is stored but has not been used\nsince the signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n`not_applicable` means the connection authenticates with no credential (GCS\n`auth_type: anonymous`, Trino `auth_type: none`, an Iceberg catalog with no secret), so\nthere is nothing to observe \u2014 not a fault, and not the same as `unknown`. It is derived\nfrom the connection's auth mode on every read and never stored.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
         "properties": {
           "consecutive_auth_failures": {
             "title": "Consecutive Auth Failures",
@@ -5885,7 +5886,8 @@
             "enum": [
               "healthy",
               "failing",
-              "unknown"
+              "unknown",
+              "not_applicable"
             ],
             "title": "Status",
             "type": "string"

@@ -322,6 +322,8 @@ function ConnectionCard({
   ];
 
   const isOrchestration = CONNECTION_KIND[connection.type] === 'orchestration';
+  // Derived by the backend from the auth mode (never stored): no credential exists to observe.
+  const credentialNotApplicable = connection.credential_health?.status === 'not_applicable';
 
   return (
     <Card size="small" className="dq-card--interactive" styles={{ body: { padding: 20 } }}>
@@ -362,7 +364,11 @@ function ConnectionCard({
             <Tag color={ENV_COLORS[connection.env]} style={{ marginInlineEnd: 0 }}>
               {envLabel(connection.env)}
             </Tag>
-            {connection.has_secret ? (
+            {credentialNotApplicable ? (
+              <Tooltip title="This connection authenticates without a credential, so there is none to store or check.">
+                <Badge status="default" text="No credential needed" />
+              </Tooltip>
+            ) : connection.has_secret ? (
               <Badge status="success" text="credential set" />
             ) : (
               <Badge status="warning" text="no credential" />
@@ -404,11 +410,16 @@ function ConnectionCard({
                 was told until prod lineage had been dark for six days — this is
                 the warning that arrives before the outage rather than after it.
                 Silent when the expiry is unknown: no badge is not a clean bill. */}
-            <CredentialExpiryBadge
-              expiresAt={connection.credential_expires_at}
-              checkedAt={connection.credential_expiry_checked_at}
-              notReadable={activeAuthOption(connection.type, connection.config)?.expiryNotReadable}
-            />
+            {/* Nothing to read an expiry from when no credential is used at all. */}
+            {!credentialNotApplicable && (
+              <CredentialExpiryBadge
+                expiresAt={connection.credential_expires_at}
+                checkedAt={connection.credential_expiry_checked_at}
+                notReadable={
+                  activeAuthOption(connection.type, connection.config)?.expiryNotReadable
+                }
+              />
+            )}
             {(connection.consecutive_run_failures ?? 0) > 0 && (
               <Tooltip
                 title={
