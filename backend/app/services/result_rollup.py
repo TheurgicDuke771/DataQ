@@ -22,9 +22,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
-from sqlalchemy import ColumnElement, CursorResult, and_, func, or_, select, text, union_all
+from sqlalchemy import ColumnElement, and_, func, or_, select, text, union_all
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.core.logging import get_logger
@@ -258,7 +258,7 @@ def status_counts(
 
     counts: dict[str, int] = {}
     prev_counts: dict[str, int] = {}
-    for status, n_current, n_prev in cast("CursorResult[Any]", session.execute(stmt)):
+    for status, n_current, n_prev in session.execute(stmt):
         counts[status] = counts.get(status, 0) + int(n_current)
         prev_counts[status] = prev_counts.get(status, 0) + int(n_prev)
     # A zero is no key: a status absent from a window is absent from its dict, and a bucket
