@@ -106,12 +106,22 @@ describe('Connections', () => {
         has_secret: false,
         credential_health: { status: 'unknown', ...health },
       }),
+      // Switched to a credential-less mode: the old secret is still stored, and unused.
+      conn({
+        id: 'g3',
+        name: 'trino-open',
+        type: 'trino',
+        env: 'dev',
+        has_secret: true,
+        credential_health: { status: 'not_applicable', ...health },
+      }),
     ]);
 
     renderPage();
 
     expect(await screen.findByText('gcs-public')).toBeInTheDocument();
-    expect(screen.getByText('No credential needed')).toBeInTheDocument();
+    expect(screen.getAllByText('No credential needed')).toHaveLength(2);
+    expect(screen.queryByText('credential set')).not.toBeInTheDocument();
     // The connection that does need a credential and lacks one is still a warning.
     expect(screen.getAllByText('no credential')).toHaveLength(1);
     // No credential, so no expiry to say anything about: only the keyed connection has a badge.

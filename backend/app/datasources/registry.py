@@ -119,27 +119,27 @@ def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool
 def credential_not_applicable(
     conn_type: str, config: dict[str, Any], secret_ref: str | None
 ) -> bool:
-    """Whether a connection holds no credential BECAUSE it needs none: nothing is stored and its
-    auth mode does not ask for one, so there is no credential whose acceptance could be observed.
+    """Whether a connection's auth mode needs no credential, so there is none whose acceptance
+    could be observed.
 
-    It differs from ``authenticates_without_secret`` for a type that declares ``secret_optional``
-    yet has no per-mode ``requires_secret`` (an Iceberg catalog, credential-less or not by whether
-    one was supplied): there, nothing stored means none needed, unless the config names a
-    credential held elsewhere (``catalog_secret_name``, ``secret_property``). A config that no
-    longer validates answers ``False`` — not knowing is not "needs none".
+    Where the adapter answers per auth mode (Trino ``none``, GCS ``anonymous``) the mode decides,
+    whatever ``secret_ref`` holds: the edit flow leaves an old secret in place when a connection
+    is switched to a credential-less mode, and an unused secret is not a credential in use. For a
+    type that declares ``secret_optional`` but has no per-mode answer (an Iceberg catalog,
+    credential-less or not by whether one was supplied), nothing stored means none needed, unless
+    the config names a credential held elsewhere (``catalog_secret_name``, ``secret_property``).
+    A config that no longer validates answers ``False`` — not knowing is not "needs none".
     """
-    if secret_ref:
-        return False
     try:
         requires = _auth_mode_requires_secret(conn_type, config)
     except ValueError:  # pydantic's ValidationError is a ValueError
         return False
-    if requires is None:
-        adapter = _ADAPTERS.get(conn_type)
-        return bool(adapter is not None and getattr(adapter, "secret_optional", False)) and not any(
-            config.get(key) for key in _EXTERNAL_CREDENTIAL_KEYS
-        )
-    return not requires
+    if requires is not None:
+        return not requires
+    adapter = _ADAPTERS.get(conn_type)
+    if adapter is None or not getattr(adapter, "secret_optional", False) or secret_ref:
+        return False
+    return not any(config.get(key) for key in _EXTERNAL_CREDENTIAL_KEYS)
 
 
 class MissingCredentialError(ValueError):

@@ -49,8 +49,7 @@ def credential_status(conn: Connection) -> CredentialStatus:
 
 
 def _no_credential_needed(conn: Connection) -> bool:
-    # The cheap tests first: a connection with a stored secret (most) never reaches the adapter.
-    if conn.secret_ref or not is_datasource(conn.type):
+    if not is_datasource(conn.type):
         return False
     # Imported here: the adapter registry pulls in every engine and is slow to import, and
     # this module is imported by light paths.

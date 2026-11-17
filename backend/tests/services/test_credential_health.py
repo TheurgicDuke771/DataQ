@@ -407,6 +407,24 @@ class TestNotApplicable:
         conn = _connection(db_session, conn_type="iceberg", secret_ref=None, config=config)
         assert credential_health.credential_status(conn) == "unknown"
 
+    def test_a_connection_switched_to_a_credential_less_mode_keeps_its_old_secret_unused(
+        self, db_session: Any
+    ) -> None:
+        """The edit flow leaves the stored secret in place when the new config sends none.
+        The mode decides: an unused secret is not a credential in use."""
+        conn = _connection(
+            db_session,
+            conn_type="trino",
+            secret_ref="c-old-password",
+            config={
+                "host": "trino.example.com",
+                "catalog": "hive",
+                "user": "dq",
+                "auth_type": "none",
+            },
+        )
+        assert credential_health.credential_status(conn) == "not_applicable"
+
     def test_failure_counters_from_a_credential_that_is_gone_are_not_reported(
         self, db_session: Any
     ) -> None:

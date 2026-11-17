@@ -364,12 +364,12 @@ function ConnectionCard({
             <Tag color={ENV_COLORS[connection.env]} style={{ marginInlineEnd: 0 }}>
               {envLabel(connection.env)}
             </Tag>
-            {connection.has_secret ? (
-              <Badge status="success" text="credential set" />
-            ) : credentialNotApplicable ? (
+            {credentialNotApplicable ? (
               <Tooltip title="This connection authenticates without a credential, so there is none to store or check.">
                 <Badge status="default" text="No credential needed" />
               </Tooltip>
+            ) : connection.has_secret ? (
+              <Badge status="success" text="credential set" />
             ) : (
               <Badge status="warning" text="no credential" />
             )}
