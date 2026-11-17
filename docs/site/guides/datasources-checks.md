@@ -1325,7 +1325,11 @@ each run's **z-score** through the usual warn / fail / critical thresholds. Opti
 just for being smaller than Monday.
 
 Below its `min_points` of history the check reports **skip**, never a fabricated
-pass — a baseline that hasn't seen enough runs has no opinion. The per-check
+pass — a baseline that hasn't seen enough runs has no opinion. If the history has
+learned something it should not have, such as a bad load or a backfill, an editor can
+**Re-baseline** the check from the suite page: the stored history is dropped, the check
+reports skip until `min_points` runs have built it up again, and a weekday pattern is
+relearned. Attached seasonal periods are kept. The per-check
 **trend view** overlays the learned baseline band on the metric history so you can
 see what "normal" currently means. SQL datasources only: the anomaly executor takes
 its own measurement over a live SQL connection, which the natively-computed Iceberg

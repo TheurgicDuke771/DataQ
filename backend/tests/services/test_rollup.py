@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, select, text
 
 from backend.app.db.models import (
     RESULT_OPERATIONAL_STATUSES,
@@ -227,6 +227,108 @@ def test_the_latest_run_counts_whatever_its_status(db_session: Any, status: str)
 
 def test_empty_scope_returns_nothing(db_session: Any) -> None:
     assert list(db_session.scalars(latest_runs_per_suite_stmt([]))) == []
+
+
+def test_a_suite_with_no_run_is_absent(db_session: Any) -> None:
+    ran, never_ran = _suite(db_session, "ran"), _suite(db_session, "never")
+    run = _seed_run(db_session, suite=ran, created_at=datetime.now(UTC), statuses=[])
+
+    runs = list(db_session.scalars(latest_runs_per_suite_stmt([ran.id, never_ran.id])))
+    assert [(r.suite_id, r.id) for r in runs] == [(ran.id, run.id)]
+
+
+def test_as_of_picks_the_newest_run_at_or_before_that_moment(db_session: Any) -> None:
+    suite = _suite(db_session)
+    now = datetime.now(UTC)
+    old = _seed_run(db_session, suite=suite, created_at=now - timedelta(days=3), statuses=[])
+    mid = _seed_run(db_session, suite=suite, created_at=now - timedelta(days=2), statuses=[])
+    _seed_run(db_session, suite=suite, created_at=now, statuses=[])
+
+    def latest(as_of: datetime) -> list[uuid.UUID]:
+        return [
+            r.id for r in db_session.scalars(latest_runs_per_suite_stmt([suite.id], as_of=as_of))
+        ]
+
+    assert latest(now - timedelta(days=2)) == [mid.id]  # at the moment counts
+    assert latest(now - timedelta(days=2, seconds=1)) == [old.id]
+    assert latest(now - timedelta(days=4)) == []
+
+
+def _distinct_on(scope: Any, *, as_of: datetime | None = None) -> Any:
+    """The statement `latest_runs_per_suite_stmt` replaced (#2012), kept as the reference."""
+    stmt = select(Run).where(Run.suite_id.in_(scope))
+    if as_of is not None:
+        stmt = stmt.where(Run.created_at <= as_of)
+    return stmt.order_by(Run.suite_id, Run.created_at.desc(), Run.id.desc()).distinct(Run.suite_id)
+
+
+def test_it_returns_what_the_distinct_on_it_replaced_returned(db_session: Any) -> None:
+    """Many suites, runs sharing timestamps (so the id tie-break decides), a suite with
+    no run, and a scope given both as a list and as a subquery, now and as of the past.
+    """
+    now = datetime.now(UTC)
+    suites = [_suite(db_session, f"s{i}") for i in range(6)]
+    for i, suite in enumerate(suites[:5]):
+        for age in range(4):
+            for _ in range(1 + i % 3):  # 1 to 3 runs sharing each timestamp
+                _seed_run(
+                    db_session, suite=suite, created_at=now - timedelta(hours=age), statuses=[]
+                )
+    ids = [s.id for s in suites]
+    scopes: list[Any] = [
+        ids,
+        ids[:2],
+        select(Suite.id).where(Suite.id.in_(ids)),
+        # Two FROM elements, one of them `suites`: SQLAlchemy would correlate this to an
+        # enclosing `suites`, and the LIMIT would then pick every suite instead of one.
+        select(Suite.id)
+        .where(Suite.connection_id == Connection.id, Suite.id.in_(ids[:5]))
+        .order_by(Suite.name)
+        .limit(1),
+    ]
+
+    for scope in scopes:
+        for as_of in (None, now - timedelta(hours=2), now - timedelta(days=1)):
+            got = sorted(
+                (r.suite_id, r.id)
+                for r in db_session.scalars(latest_runs_per_suite_stmt(scope, as_of=as_of))
+            )
+            want = sorted(
+                (r.suite_id, r.id) for r in db_session.scalars(_distinct_on(scope, as_of=as_of))
+            )
+            assert got == want
+    assert len(list(db_session.scalars(latest_runs_per_suite_stmt(ids)))) == 5
+
+
+def test_it_reads_a_few_runs_per_suite_not_every_run(db_session: Any) -> None:
+    """The cost must follow the number of suites: each suite's newest run is one
+    `LIMIT 1` index descent. The `DISTINCT ON` it replaced read all 2,000 runs here."""
+    suites = [_suite(db_session, f"s{i}") for i in range(5)]
+    now = datetime.now(UTC)
+    db_session.add_all(
+        Run(suite_id=suites[i % 5].id, status="succeeded", created_at=now - timedelta(seconds=i))
+        for i in range(2000)
+    )
+    db_session.flush()
+    db_session.execute(text("ANALYZE runs"))
+    stmt = latest_runs_per_suite_stmt([s.id for s in suites]).compile(
+        db_session.get_bind(), compile_kwargs={"literal_binds": True}
+    )
+    plan = db_session.execute(text(f"EXPLAIN (ANALYZE, FORMAT JSON) {stmt}")).scalar_one()
+
+    def nodes(node: dict[str, Any]) -> Any:
+        yield node
+        for child in node.get("Plans", []):
+            yield from nodes(child)
+
+    scans = [n for n in nodes(plan[0]["Plan"]) if n.get("Relation Name") == "runs"]
+    assert scans, plan
+    read = sum(
+        (n["Actual Rows"] + n.get("Rows Removed by Filter", 0)) * n["Actual Loops"] for n in scans
+    )
+    # Far under the 2,000 a scan of every run reads, with room for the planner's choice of
+    # index on a table this small.
+    assert read <= 200, plan
 
 
 # ── connection_scores (#1557) ──

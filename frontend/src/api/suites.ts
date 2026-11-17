@@ -368,8 +368,9 @@ export async function bulkSetThresholds(
   return data;
 }
 
-/** Drop a schema_drift or pii_drift check's stored baseline — the NEXT run recaptures it from
- *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
+/** Drop a stateful monitor check's stored baseline (schema_drift, pii_drift, anomaly). The NEXT
+ *  run recaptures a drift baseline from the live target; an anomaly check rebuilds its history
+ *  over the following runs. Edit-gated; 422 for non-stateful kinds. */
 export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {
   await api.post(apiPath`/suites/${suiteId}/checks/${checkId}/rebaseline`);
 }
