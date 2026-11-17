@@ -51,6 +51,7 @@ from backend.app.services import (
     orchestration_service,
     otp_service,
     profile_service,
+    result_rollup,
     run_admission,
     run_service,
     run_target,
@@ -939,6 +940,30 @@ def reap_stuck_runs() -> int:
     try:
         threshold = get_settings().stuck_run_threshold_minutes
         return len(run_service.reap_stuck_runs(session, threshold_minutes=threshold))
+    finally:
+        session.close()
+
+
+# ─────────────────────── result-status summary sweep (#2010) ───────────────
+
+#: One tick stops adding after this long and leaves the rest to the next tick.
+_ROLL_UP_BUDGET_S = 60.0
+
+
+@celery_app.task(name="roll_up_results")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def roll_up_results() -> int:
+    """Add succeeded runs missing from `result_status_hourly`, in batches, for up to a
+    minute. Returns how many are still missing; logs it when the budget ran out.
+    """
+    session = get_session()
+    try:
+        started = time.monotonic()
+        remaining = result_rollup.roll_up_pending(session)
+        while remaining and time.monotonic() - started < _ROLL_UP_BUDGET_S:
+            remaining = result_rollup.roll_up_pending(session)
+        if remaining:
+            log.info("result_rollup_backlog", remaining=remaining)
+        return remaining
     finally:
         session.close()
 

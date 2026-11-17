@@ -80,6 +80,7 @@ from backend.app.services import (
     audit_scrub,
     audit_service,
     coverage_settings_service,
+    result_rollup,
     suggestion_claims,
     tag_service,
     version_redaction,
@@ -1444,6 +1445,8 @@ def delete_check(
     """Delete a check."""
     check = get_check(session, suite_id, check_id)
     audit_before = audit_service.snapshot("check", check)
+    # Before the delete: it cascades to the results the summary counted.
+    result_rollup.forget_checks(session, [check.id])
     session.delete(check)
     audit_service.record_entity_change(
         session,
@@ -1640,6 +1643,8 @@ def bulk_delete_checks(
     Like the single delete, each check's results, versions and baseline go with it.
     """
     checks = _checks_for_bulk(session, suite_id, check_ids)
+    # Before the deletes: they cascade to the results the summary counted.
+    result_rollup.forget_checks(session, [check.id for check in checks])
     for check in checks:
         audit_before = audit_service.snapshot("check", check)
         session.delete(check)

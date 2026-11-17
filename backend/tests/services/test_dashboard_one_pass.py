@@ -15,9 +15,18 @@ from typing import Any
 import pytest
 from sqlalchemy import Select, event, func, select
 
-from backend.app.db.models import Check, Connection, Result, Run, Share, Suite, User
+from backend.app.db.models import (
+    Check,
+    Connection,
+    Result,
+    ResultStatusHourly,
+    Run,
+    Share,
+    Suite,
+    User,
+)
 from backend.app.services import dashboard_service as svc
-from backend.app.services import scoring_settings_service, suite_service
+from backend.app.services import result_rollup, scoring_settings_service, suite_service
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 # ── the pre-#1997 per-window implementation, kept as the oracle ──────────────
@@ -164,11 +173,32 @@ def _run(
         db.add(Result(run_id=run.id, check_id=check.id, status=s, created_at=when))
 
 
-def _seed_both_windows(db: Any) -> User:
+#: Where the result counts come from (#2010): `results` alone, the hourly summary, or both.
+SUMMARY_STATES = ("counted from results", "in the summary", "partly in the summary")
+
+
+@pytest.fixture(params=SUMMARY_STATES)
+def summary_state(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+def _seed_both_windows(db: Any, summary_state: str = SUMMARY_STATES[0]) -> User:
     """A population that exercises every branch the collapse could break: both
     windows, every severity tier, skip/error, a shared suite, an unshared one,
     an in-flight run, a clock-skewed run, and rows outside both windows.
+
+    ``summary_state`` then moves all, some or none of the succeeded runs into
+    `result_status_hourly`: the dashboard must read the same numbers in every state.
     """
+    alice = _seed_runs(db)
+    if summary_state == "in the summary":
+        assert result_rollup.roll_up_pending(db) == 0
+    elif summary_state == "partly in the summary":
+        assert result_rollup.roll_up_pending(db, limit=4) > 0
+    return alice
+
+
+def _seed_runs(db: Any) -> User:
     alice, bob = _user(db), _user(db)
     mine = _suite(db, alice, name="mine")
     shared = _suite(db, bob, name="shared")
@@ -237,8 +267,8 @@ def _seed_both_windows(db: Any) -> User:
 # ── equivalence ──────────────────────────────────────────────────────────────
 
 
-def test_one_pass_kpis_match_the_per_window_reference(db_session: Any) -> None:
-    alice = _seed_both_windows(db_session)
+def test_one_pass_kpis_match_the_per_window_reference(db_session: Any, summary_state: str) -> None:
+    alice = _seed_both_windows(db_session, summary_state)
 
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
     reference = _reference_kpis(
@@ -256,15 +286,24 @@ def test_one_pass_kpis_match_the_per_window_reference(db_session: Any) -> None:
     assert summary.kpis.avg_duration_delta_pct is not None
 
 
-def test_previous_window_status_does_not_leak_as_a_current_zero(db_session: Any) -> None:
+def test_previous_window_status_does_not_leak_as_a_current_zero(
+    db_session: Any, summary_state: str
+) -> None:
     """`error` exists only 9 days back. A FILTER aggregate reports 0 for it in the
     current window; the dict must simply not carry the key, as it did not before.
     """
-    alice = _seed_both_windows(db_session)
+    alice = _seed_both_windows(db_session, summary_state)
     since = svc._window_start(7)
-    visible = suite_service.accessible_suite_filter(Run.suite_id, alice.id)
 
-    counts, prev_counts = svc._status_counts(db_session, visible, since, since - timedelta(days=7))
+    counts, prev_counts = result_rollup.status_counts(
+        db_session,
+        runs_visible=suite_service.accessible_suite_filter(Run.suite_id, alice.id),
+        buckets_visible=suite_service.accessible_suite_filter(
+            ResultStatusHourly.suite_id, alice.id
+        ),
+        since=since,
+        prev_since=since - timedelta(days=7),
+    )
 
     assert "error" in prev_counts
     assert "error" not in counts
@@ -272,10 +311,10 @@ def test_previous_window_status_does_not_leak_as_a_current_zero(db_session: Any)
     assert 0 not in prev_counts.values()
 
 
-def test_admin_include_all_matches_the_per_suite_scope(db_session: Any) -> None:
+def test_admin_include_all_matches_the_per_suite_scope(db_session: Any, summary_state: str) -> None:
     """`include_all` is the whole workspace — the array-form visibility predicate
     must be the same population the subquery form selected."""
-    alice = _seed_both_windows(db_session)
+    alice = _seed_both_windows(db_session, summary_state)
     assert len(db_session.execute(select(Suite.id)).scalars().all()) == 3
 
     as_admin = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7, include_all=True)
@@ -292,13 +331,14 @@ def test_admin_include_all_matches_the_per_suite_scope(db_session: Any) -> None:
 
 # ── statement count ──────────────────────────────────────────────────────────
 
-#: Weights, result-status histogram (both windows), run count + duration (both
-#: windows), active connections, trend, per-suite performance.
-EXPECTED_STATEMENTS = 6
+#: Weights, the runs not in the result summary yet, result-status histogram (both
+#: windows), run count + duration (both windows), active connections, trend, per-suite
+#: performance.
+EXPECTED_STATEMENTS = 7
 
 
-def test_summary_issues_one_pass_per_aggregate(db_session: Any) -> None:
-    alice_id = _seed_both_windows(db_session).id
+def test_summary_issues_one_pass_per_aggregate(db_session: Any, summary_state: str) -> None:
+    alice_id = _seed_both_windows(db_session, summary_state).id
 
     statements: list[str] = []
 
@@ -313,14 +353,21 @@ def test_summary_issues_one_pass_per_aggregate(db_session: Any) -> None:
         event.remove(db_session.bind, "before_cursor_execute", _record)
 
     assert len(statements) == EXPECTED_STATEMENTS, "\n".join(statements)
-    # The two windows share one scan each, so neither aggregate is issued twice.
-    assert sum("FROM results JOIN runs" in s for s in statements) == 1
+    # The two windows share one statement each, so neither aggregate is issued twice.
+    histogram = [s for s in statements if "FROM results JOIN runs" in s]
+    assert len(histogram) == 1
     assert sum("avg(EXTRACT(epoch" in s for s in statements) == 1
+    # With every run in the summary, `results` is read for the two part-hours only.
+    if summary_state == "in the summary":
+        assert "result_status_hourly" in histogram[0]
+        assert histogram[0].count("FROM results JOIN runs") == 1
 
 
 @pytest.mark.parametrize("window_days", [1, 7, 30, 90])
-def test_equivalence_holds_across_window_sizes(db_session: Any, window_days: int) -> None:
-    alice = _seed_both_windows(db_session)
+def test_equivalence_holds_across_window_sizes(
+    db_session: Any, window_days: int, summary_state: str
+) -> None:
+    alice = _seed_both_windows(db_session, summary_state)
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=window_days)
     reference = _reference_kpis(
         db_session,

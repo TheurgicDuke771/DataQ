@@ -58,7 +58,12 @@ from backend.app.db.models import (
     Run,
     worst_severity,
 )
-from backend.app.services import privacy_settings_service, run_dispatch, suite_service
+from backend.app.services import (
+    privacy_settings_service,
+    result_rollup,
+    run_dispatch,
+    suite_service,
+)
 from backend.app.services.classification_vocab import (
     DETECTED,
     copy_tags,
@@ -520,6 +525,10 @@ def _mark_succeeded(session: Session, run: Run) -> bool:
         .values(status="succeeded", finished_at=finished, failure_reason=None, **recorded)
     )
     won = cast("CursorResult[Any]", result).rowcount == 1
+    if won:
+        # With the status, in one transaction: the run is never visible as succeeded with its
+        # results counted neither from the summary nor, as an un-added run, from `results`.
+        result_rollup.roll_up_run(session, run.id)
     session.commit()
     if not won:
         return False
@@ -571,6 +580,8 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
     run.finished_at = _now()
     for name, value in recorded_outcome_values(session, run.id).items():
         setattr(run, name, value)
+    session.flush()
+    result_rollup.roll_up_run(session, run.id)
     session.commit()
     log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
     return run

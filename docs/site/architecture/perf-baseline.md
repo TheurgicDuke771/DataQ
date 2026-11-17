@@ -1741,3 +1741,46 @@ whose runs share timestamps (so the `id` tie-break decides), a suite with no run
 scope passed as a list and as a subquery, and a point in the past. A plan test fails
 if the statement goes back to reading every run.
 
+## v1.3 — the result-status histogram, pre-counted
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs and 1,000,000 results.
+
+The dashboard summary's single largest statement counts every result row in two windows
+(`results JOIN runs`), and the v1.2 section above showed that no index or rewrite removes
+that cost. It is now read from `result_status_hourly`: result counts per suite, UTC hour and
+status, over succeeded runs.
+
+- **Always exact.** The table summarises `results`; it is never a second source. A run's
+  results are added in the transaction that marks it `succeeded`. A run that is not in the
+  table (history from before the upgrade, a failed add) is counted from `results` by the
+  reader, so a number is never stale. A beat task, every five minutes, adds such runs in
+  batches.
+- **Hourly.** A window starts at a moment, not at midnight, so the two part-buckets at its
+  edges are counted from `results` using a block-range index on `created_at` (24 kB at 1M
+  rows). With daily buckets those two edge days still cost about 80 ms.
+- **Falls back, never guesses.** While more than 200 succeeded runs are missing from the
+  table (just after the upgrade, before the sweep has caught up) the reader counts from
+  `results` alone, as before the table.
+- **Deleting a check** subtracts its results first, because deleting a check deletes them;
+  deleting a suite removes its rows with it.
+
+| At 1,000,000 results, p50 of 15 | Before | After |
+|---|---|---|
+| The histogram statement alone, 7-day window | 189–239 ms | 17 ms |
+| The histogram statement alone, 30-day window | 167–198 ms | 2.5 ms |
+| `dashboard_summary`, 7-day window | 385 ms | 246 ms |
+| `dashboard_summary`, 30-day window | 507 ms | 363 ms |
+
+The summary is 7 statements, up from 6: the added one lists the runs not yet in the table.
+What remains is the run count and duration pass, the run trend and the per-suite scores,
+each linear in the window's runs; the histogram was the largest single piece, not all of it.
+
+**Backfill.** On this database the sweep added 1,000,000 results (200,000 runs) in 14 to
+20 seconds, in batches of 2,000 runs.
+
+**Same answers.** At fixed window bounds, the table's read and the old statement returned
+identical histograms for 7 and 30 days. The tests compare the summary with the per-window
+reference with the table empty, partly filled and full, and over results placed on each side
+of both window edges.
+

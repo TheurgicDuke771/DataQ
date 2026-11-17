@@ -11,8 +11,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import ColumnElement, Select, and_, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Result, Run, Suite
-from backend.app.services import scoring_settings_service, suite_service
+from backend.app.db.models import Result, ResultStatusHourly, Run, Suite
+from backend.app.services import result_rollup, scoring_settings_service, suite_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     health_score,
@@ -85,45 +85,6 @@ class DashboardSummary:
 
 def _window_start(window_days: int) -> datetime:
     return datetime.now(UTC) - timedelta(days=window_days)
-
-
-def _status_counts(
-    session: Session,
-    runs_visible: ColumnElement[bool],
-    since: datetime,
-    prev_since: datetime,
-) -> tuple[dict[str, int], dict[str, int]]:
-    """Histograms of result statuses across accessible suites for the current
-    window ``[since, ∞)`` and the adjacent previous one ``[prev_since, since)``,
-    from ONE scan of ``[prev_since, ∞)`` (#1997).
-
-    A status absent from a window is absent from its dict, as it was when the two
-    windows were separate statements — a zero-count key is not the same evidence
-    as no key.
-    """
-    current = Result.created_at >= since
-    stmt = (
-        select(
-            Result.status,
-            func.count().filter(current),
-            func.count().filter(Result.created_at < since),
-        )
-        .join(Run, Result.run_id == Run.id)
-        .where(
-            runs_visible,
-            Run.status.in_(AGGREGATABLE_RUN_STATUSES),
-            Result.created_at >= prev_since,
-        )
-        .group_by(Result.status)
-    )
-    counts: dict[str, int] = {}
-    prev_counts: dict[str, int] = {}
-    for status, n_current, n_prev in session.execute(stmt):
-        if n_current:
-            counts[status] = n_current
-        if n_prev:
-            prev_counts[status] = n_prev
-    return counts, prev_counts
 
 
 @dataclass(frozen=True)
@@ -299,7 +260,16 @@ def dashboard_summary(
     prev_since = since - timedelta(days=window_days)
 
     weights = scoring_settings_service.weights(session)
-    counts, prev_counts = _status_counts(session, runs_visible, since, prev_since)
+    # From the hourly summary where it can be (#2010); the counts are exact either way.
+    counts, prev_counts = result_rollup.status_counts(
+        session,
+        runs_visible=runs_visible,
+        buckets_visible=suite_service.accessible_suite_filter(
+            ResultStatusHourly.suite_id, user_id, include_all=include_all
+        ),
+        since=since,
+        prev_since=prev_since,
+    )
     score = health_score(counts, weights)
     rate = pass_rate(counts)
     window, prev_window = _run_windows(session, runs_visible, since, prev_since)
