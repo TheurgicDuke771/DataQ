@@ -658,33 +658,62 @@ describe('Suites', () => {
     await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', 'chk-drift'));
   });
 
-  it('offers Re-baseline on a pii_drift check with its own wording', async () => {
+  it.each([
+    ['pii_drift', 'chk-pii', /PII-looking unclassified columns/, /the next run recaptures it/],
+    [
+      'anomaly',
+      'chk-anomaly',
+      /enough history has built up again/,
+      /reports skip until enough runs have built it up again/,
+    ],
+  ])('offers Re-baseline on a %s check with its own wording', async (kind, id, copy, done) => {
     const user = userEvent.setup();
     mockListConnections.mockResolvedValue([connection]);
     mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
-    const drift = check({
-      id: 'chk-pii',
-      name: 'pii drift',
-      kind: 'pii_drift',
-      expectation_type: 'monitor:pii_drift',
+    const monitor = check({
+      id,
+      name: `${kind} monitor`,
+      kind: kind as Check['kind'],
+      expectation_type: `monitor:${kind}`,
     });
-    mockListChecks.mockResolvedValue([drift, check({ id: 'chk-exp' })]);
+    mockListChecks.mockResolvedValue([monitor, check({ id: 'chk-exp' })]);
     mockRebaseline.mockResolvedValue(undefined);
 
     renderPage();
     await user.click(await screen.findByText('orders-suite'));
-    await screen.findByText('pii drift');
+    await screen.findByText(`${kind} monitor`);
 
     const buttons = screen.getAllByRole('button', { name: /^Re-baseline\b/ });
     expect(buttons).toHaveLength(1);
     await user.click(buttons[0]);
-    await screen.findByText(/PII-looking unclassified columns/);
+    await screen.findByText(copy);
     const ok = screen
       .getAllByRole('button', { name: /^Re-baseline\b/ })
       .find((b) => b.className.includes('ant-btn-primary'));
     if (!ok) throw new Error('confirm modal OK button not found');
     await user.click(ok);
-    await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', 'chk-pii'));
+    await waitFor(() => expect(mockRebaseline).toHaveBeenCalledWith('s1', id));
+    // The confirmation says what really happens next for this kind.
+    expect(await screen.findByText(done)).toBeInTheDocument();
+  });
+
+  it('offers no Re-baseline on a freshness check (not a stateful kind)', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    mockListChecks.mockResolvedValue([
+      check({
+        id: 'chk-fresh',
+        name: 'freshness monitor',
+        kind: 'freshness',
+        expectation_type: 'monitor:freshness',
+      }),
+    ]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('freshness monitor');
+    expect(screen.queryByRole('button', { name: /^Re-baseline\b/ })).not.toBeInTheDocument();
   });
 
   it('unsnoozes a snoozed check (badge + Unsnooze action) (#653)', async () => {

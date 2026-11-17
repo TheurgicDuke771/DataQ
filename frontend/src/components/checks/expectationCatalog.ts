@@ -1331,6 +1331,17 @@ const ANOMALY_CATEGORY: ExpectationCategory = 'Anomaly';
  */
 const MONITOR_CATEGORY_SET = new Set<ExpectationCategory>(MONITOR_CATEGORIES);
 
+/**
+ * The monitor kinds that keep a stored baseline between runs, and so can be re-baselined. Mirrors
+ * the backend's `STATEFUL_MONITOR_KINDS` (the kinds with no scalar statement), which is what the
+ * re-baseline route accepts; any other kind is refused with a 422.
+ */
+export const STATEFUL_MONITOR_KINDS: ReadonlySet<string> = new Set([
+  'schema_drift',
+  'anomaly',
+  'pii_drift',
+]);
+
 const DMF_CATEGORY: ExpectationCategory = 'Snowflake DMF';
 const DQX_CATEGORY: ExpectationCategory = 'Databricks DQX';
 

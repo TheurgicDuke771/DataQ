@@ -1711,3 +1711,33 @@ broker waits on a cloud test instance.
   logged as they happen, the decision lasting the tick, and staying serial on a fast
   broker or a CPU-bound publish.
 
+## v1.3 — the latest run of each suite
+
+> Measured **2026-11-16** on the development machine: PostgreSQL 16, a scratch
+> database seeded to 1,000,000 runs across 10 suites.
+
+The dashboard's per-suite performance, the asset view, connection scores, contract
+status and three MCP tools all start from "the newest run of each suite". That was a
+`SELECT DISTINCT ON (suite_id) … ORDER BY suite_id, created_at DESC, id DESC`.
+Postgres has no skip scan, so it walked **every run of every suite in scope** to keep
+one row per suite. The cost followed the workspace's whole history.
+
+It is now one index descent per suite: for each suite in scope, a correlated
+`ORDER BY created_at DESC, id DESC LIMIT 1` finds the newest run's id on the existing
+`(suite_id, created_at DESC, id DESC)` index, and the run is read by primary key. The
+cost follows the number of suites. No index was added.
+
+| At 1,000,000 runs, p50 of 15 | Before | After |
+|---|---|---|
+| Latest run of each suite (statement alone, full rows) | 293 ms | 1.7 ms |
+| Dashboard per-suite performance (`_suite_performance`) | 103 ms | 3.5 ms |
+
+The plan reads 10 suites, 10 index-only descents of one row each, and 10 primary-key
+reads: 73 buffers in all.
+
+**Same answers.** On the 1M database both forms returned the same ten runs and the same
+performance rows. The tests compare the new statement with the old one over suites
+whose runs share timestamps (so the `id` tie-break decides), a suite with no run, a
+scope passed as a list and as a subquery, and a point in the past. A plan test fails
+if the statement goes back to reading every run.
+
