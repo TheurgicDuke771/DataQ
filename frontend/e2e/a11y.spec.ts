@@ -122,7 +122,7 @@ function defineScans(mode: Theme): void {
         mode,
         page,
         'route:/results/:id',
-        page.getByTestId('rd-screen').getByText('order_id not null'),
+        page.getByTestId('rd-screen').locator('tr.ant-table-row'),
       );
     });
 
@@ -146,11 +146,15 @@ function defineScans(mode: Theme): void {
       members: (page) => page.getByText('dev-bypass@dataq.local'),
       suites: (page) => page.getByRole('main').getByText('Orders quality'),
       integrations: (page) => page.getByText('adf-orchestrator'),
-      settings: (page) =>
-        page.getByText('No channels yet.').or(page.locator('[role="listitem"], tr.ant-table-row')),
+      // Scoped to the channels card: the page's allowlist table has rows whatever that fetch does.
+      settings: (page) => {
+        const channels = page.locator('.ant-card').filter({ hasText: 'Notification channels' });
+        return channels.getByText('No channels yet.').or(channels.locator('tr.ant-table-row'));
+      },
       calendar: (page) =>
         page.getByText('No seasonal periods declared.').or(page.locator('tr.ant-table-row')),
-      compliance: (page) => page.getByText('api_key.mint'),
+      // Rendered from the fetched page (a seeded event could scroll off the first page).
+      compliance: (page) => page.getByText(/Retained \d+ days/),
     };
     for (const sub of Object.keys(adminLoaded)) {
       test(`admin ${sub}`, async ({ page }) => {
@@ -208,7 +212,6 @@ function defineScans(mode: Theme): void {
       // Names the seed gave them, which each page shows only once its own fetch has returned.
       let checkName: string;
       let assetName: string;
-      let connectionName: string;
       let contractName: string;
 
       test.beforeAll(async ({ request }) => {
@@ -232,7 +235,6 @@ function defineScans(mode: Theme): void {
           await request.get('/api/v1/connections')
         ).json();
         connectionId = connections[0].id;
-        connectionName = connections[0].name;
         // The demo seed imports one data contract (backend/scripts/demo_data.py).
         const contracts: { id: string; name: string }[] = await (
           await request.get('/api/v1/contracts')
@@ -259,10 +261,15 @@ function defineScans(mode: Theme): void {
         [
           'route:/connections/:id/edit',
           () => `/connections/${connectionId}/edit`,
-          (page) => page.getByLabel('Name').and(page.locator(`[value="${connectionName}"]`)),
+          // The type in the title comes from the fetched connection.
+          (page) => page.getByRole('heading', { name: /^Edit .* connection$/ }),
         ],
-        // The blank suite form: its connection list is fetched, but the fields are the content.
-        ['route:/suites/new', () => '/suites/new', () => STATIC],
+        // The form renders only once the connection list has loaded and has a datasource.
+        [
+          'route:/suites/new',
+          () => '/suites/new',
+          (page) => page.getByRole('button', { name: /Create & add checks/ }),
+        ],
         [
           'route:/suites/:id/edit',
           () => `/suites/${suiteId}/edit`,
@@ -288,7 +295,7 @@ function defineScans(mode: Theme): void {
         [
           'route:/contracts/:id',
           () => `/contracts/${contractId}`,
-          (page) => page.getByRole('heading', { name: new RegExp(contractName) }),
+          (page) => page.getByRole('heading', { name: contractName }),
         ],
       ];
       for (const [surface, url, loaded] of routes) {
