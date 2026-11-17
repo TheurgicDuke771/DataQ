@@ -11,6 +11,7 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import (
+    INCIDENTS_LIST,
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
@@ -185,16 +186,18 @@ def list_incidents(
             detail={"state": state, "allowed": list(INCIDENT_STATUSES)},
         )
     include_all = is_workspace_admin(current_user)
-    response.headers[TOTAL_COUNT_HEADER] = str(
-        incident_service.count_incidents(
-            db,
-            user_id=current_user.id,
-            include_all=include_all,
-            asset_id=asset_id,
-            suite_id=suite_id,
-            state=state,
+    after = read_cursor(INCIDENTS_LIST, cursor, offset)
+    if cursor is None:  # a cursor page leaves the total to the first page (see `/runs`)
+        response.headers[TOTAL_COUNT_HEADER] = str(
+            incident_service.count_incidents(
+                db,
+                user_id=current_user.id,
+                include_all=include_all,
+                asset_id=asset_id,
+                suite_id=suite_id,
+                state=state,
+            )
         )
-    )
     incidents = finish_page(
         response,
         incident_service.list_incidents(
@@ -206,11 +209,10 @@ def list_incidents(
             state=state,
             limit=limit + 1,
             offset=offset,
-            after=read_cursor("incidents", cursor, offset),
+            after=after,
         ),
         limit=limit,
-        kind="incidents",
-        moment="last_seen_at",
+        page_list=INCIDENTS_LIST,
     )
     return [_to_summary(i) for i in incidents]
 

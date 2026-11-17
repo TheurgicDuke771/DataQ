@@ -2050,6 +2050,11 @@ def test_a_cursor_keeps_the_filters_the_client_sends_and_the_total(
     first = client.get("/api/v1/runs?status=succeeded&limit=2")
     assert first.headers["X-Total-Count"] == "3"
     assert all(r["status"] == "succeeded" for r in first.json())
+    # The total is the first page's: a page asked for by cursor does not count it again.
+    later = client.get(
+        f"/api/v1/runs?status=succeeded&limit=2&cursor={first.headers['X-Next-Cursor']}"
+    )
+    assert later.status_code == 200 and "X-Total-Count" not in later.headers
 
 
 def test_a_cursor_never_reaches_a_run_the_caller_cannot_see(
@@ -2134,9 +2139,31 @@ def test_the_cursor_header_is_documented_and_exposed_to_browsers() -> None:
         operation = schema["paths"][path]["get"]
         assert "X-Next-Cursor" in operation["responses"]["200"]["headers"], path
         assert any(p["name"] == "cursor" for p in operation["parameters"]), path
-    # The CORS middleware exists only where origins are configured, so read what it is given.
-    import inspect
+    from backend.app.main import CORS_EXPOSE_HEADERS
 
-    from backend.app import main as main_module
+    assert "X-Next-Cursor" in CORS_EXPOSE_HEADERS
 
-    assert "NEXT_CURSOR_HEADER" in inspect.getsource(main_module).split("expose_headers=")[1][:120]
+
+@pytest.mark.parametrize("path", ["/api/v1/runs", "/api/v1/pipeline_runs", "/api/v1/incidents"])
+def test_a_bad_cursor_is_refused_before_anything_is_counted(
+    client: TestClient, db_session: Any, path: str
+) -> None:
+    """A request that will be a 422 must not first pay for the count of the whole list."""
+    from sqlalchemy import event
+
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+    selects: list[str] = []
+
+    def before(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if "count(" in statement.lower():
+            selects.append(statement)
+
+    event.listen(db_session.get_bind(), "before_cursor_execute", before)
+    try:
+        assert client.get(f"{path}?cursor=garbage").status_code == 422
+        assert client.get(f"{path}?cursor=garbage&offset=3").status_code == 422
+    finally:
+        event.remove(db_session.get_bind(), "before_cursor_execute", before)
+
+    assert selects == []

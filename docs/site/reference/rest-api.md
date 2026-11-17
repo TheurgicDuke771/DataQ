@@ -48,9 +48,12 @@ in production — this page is the reference.)
   response as `cursor` on the next request (instead of `offset`; both together is a `422`
   with `code: "cursor_with_offset"`). The header is present while there are more rows and
   absent on the last page. Every page then costs the same however deep it is: about 1 ms at
-  500,000 runs, against about 80 ms for the same page by `offset`. A cursor is opaque, belongs
+  500,000 runs, against about 80 ms for the same page by `offset`. Take `X-Total-Count` from the
+  first page: a page asked for by cursor does not carry it, so it is not counted again. A cursor is opaque, belongs
   to the list it came from, and does not carry your filters, so send the same ones with each
-  page. A malformed or foreign cursor is a `422` with `code: "invalid_cursor"`. Incidents sort
+  page. A malformed or foreign cursor is a `422` with `code: "invalid_cursor"`. A row takes its
+  timestamp when its transaction starts, so a row that commits after your cursor has passed its
+  timestamp can be missed. Incidents sort
   by `last_seen_at`, which moves when an incident breaches again: while you page, an incident
   that jumps ahead of your cursor can be missed, and none is returned twice (by `offset`, a
   move shifts every row behind it, so rows repeat as well as go missing). The MCP tools keep

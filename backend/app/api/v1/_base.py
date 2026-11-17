@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Final
+import uuid
+from dataclasses import dataclass
+from typing import Annotated, Any, Final, Protocol
 
+from fastapi import Response
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from backend.app.db.models import TAG_NAME_MAX_LENGTH
+from backend.app.services import paging
+
+
+class _HasId(Protocol):
+    id: uuid.UUID
+
 
 # The one paging-total header name for every list endpoint that carries one (#925 introduced it on
 # `/assets`; #1108 spread it to `/pipeline_runs`, `/incidents`, and `/runs` rather than each
@@ -41,7 +50,10 @@ def cursor_page_responses(
             "Present when there are more rows after this page: pass it as `cursor` to get the "
             "next page, at the same cost however deep. Absent on the last page. A cursor is "
             "opaque, belongs to the list it came from, and replaces `offset` (sending both is a "
-            "422)." + (f" {cursor_note}" if cursor_note else "")
+            "422). Send the total from the first page only: a page requested with a cursor "
+            "carries no `X-Total-Count`. A row takes its timestamp when its transaction "
+            "starts, so a row that commits after the cursor has passed its timestamp can be "
+            "missed." + (f" {cursor_note}" if cursor_note else "")
         ),
         "schema": {"type": "string"},
     }
@@ -125,35 +137,44 @@ TAG_FILTER_DESCRIPTION = (
 )
 
 
-def read_cursor(kind: str, cursor: str | None, offset: int) -> Any:
-    """The position a request's ``cursor`` names, or ``None`` without one. A cursor and a
-    non-zero ``offset`` together is a 422: the cursor already says where the page starts."""
-    from backend.app.services import paging
+@dataclass(frozen=True)
+class CursorList:
+    """A list that pages by cursor: its name (a cursor belongs to one list) and the row
+    attribute it sorts by (the id is the tie-break)."""
 
+    kind: str
+    moment: str
+
+
+RUNS_LIST: Final = CursorList("runs", "created_at")
+PIPELINE_RUNS_LIST: Final = CursorList("pipeline_runs", "created_at")
+INCIDENTS_LIST: Final = CursorList("incidents", "last_seen_at")
+
+
+def read_cursor(page_list: CursorList, cursor: str | None, offset: int) -> paging.Position | None:
+    """The position a request's ``cursor`` names, or ``None`` without one. A cursor and a
+    non-zero ``offset`` together is a 422: the cursor already says where the page starts.
+    Call this first: a bad request should cost nothing before it is refused."""
     if cursor is None:
         return None
     if offset:
         raise paging.CursorWithOffsetError()
-    return paging.decode_cursor(kind, cursor)
+    return paging.decode_cursor(page_list.kind, cursor)
 
 
-def finish_page(
-    response: Any,
-    rows: list[Any],
+def finish_page[Row: _HasId](
+    response: Response,
+    rows: list[Row],
     *,
     limit: int,
-    kind: str,
-    moment: str,
-) -> list[Any]:
+    page_list: CursorList,
+) -> list[Row]:
     """Trim a page fetched with ``limit + 1`` rows to ``limit`` and, when that extra row proved
-    there is more, set ``NEXT_CURSOR_HEADER`` from the last row kept. ``moment`` names the row
-    attribute the list sorts by (its id is the tie-break)."""
-    from backend.app.services import paging
-
+    there is more, set ``NEXT_CURSOR_HEADER`` from the last row kept."""
     page = rows[:limit]
     if len(rows) > limit and page:
         last = page[-1]
         response.headers[NEXT_CURSOR_HEADER] = paging.encode_cursor(
-            kind, getattr(last, moment), last.id
+            page_list.kind, getattr(last, page_list.moment), last.id
         )
     return page

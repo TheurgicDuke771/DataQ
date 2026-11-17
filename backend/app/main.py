@@ -163,6 +163,10 @@ app = FastAPI(
 # Rate limiting (#725, ADR 0035).
 app.middleware("http")(rate_limit_middleware)
 
+#: Response headers a browser on another origin may read: the request id and the two paging
+#: headers (X-Total-Count #925/#1108, X-Next-Cursor #1987).
+CORS_EXPOSE_HEADERS = [REQUEST_ID_HEADER, TOTAL_COUNT_HEADER, NEXT_CURSOR_HEADER]
+
 # Cross-origin access for the prod Static-Web-App ↔ Container-Apps split.
 _cors_origins = get_settings().cors_allow_origin_list
 if _cors_origins:
@@ -172,9 +176,7 @@ if _cors_origins:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        # X-Total-Count (#925, spread to /pipeline_runs, /incidents, /runs by #1108): every paged
-        # list endpoint's total, over its CORS-headers allowlist.
-        expose_headers=[REQUEST_ID_HEADER, TOTAL_COUNT_HEADER, NEXT_CURSOR_HEADER],
+        expose_headers=CORS_EXPOSE_HEADERS,
     )
 
 

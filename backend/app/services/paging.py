@@ -80,7 +80,7 @@ def decode_cursor(kind: str, token: str) -> Position:
         return moment, uuid.UUID(str(payload["i"]))
     except InvalidCursorError:
         raise
-    except (ValueError, KeyError, TypeError, binascii.Error, UnicodeDecodeError):
+    except (ValueError, KeyError, TypeError, binascii.Error, UnicodeDecodeError, RecursionError):
         raise InvalidCursorError("it is not readable") from None
 
 

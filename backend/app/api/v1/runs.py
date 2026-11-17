@@ -13,6 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import (
+    PIPELINE_RUNS_LIST,
+    RUNS_LIST,
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
@@ -56,7 +58,9 @@ router = APIRouter(tags=["runs"])
 _CURSOR_DESCRIPTION = (
     "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous "
     "page of the same list). Costs the same at any depth, where a large `offset` costs in "
-    "proportion to it. Opaque; send it instead of `offset`, never with it (422)."
+    "proportion to it. Opaque; send it instead of `offset`, never with it (422). Take "
+    "`X-Total-Count` from the first page: a cursor page does not carry it. A row that commits "
+    "after the cursor has passed its timestamp can be missed."
 )
 _LIST_LIMIT_DEFAULT = 50
 _LIST_LIMIT_MAX = 200
@@ -383,18 +387,21 @@ def list_runs(
     # `/incidents` apply).
     svc.validate_read_filters(status=run_status)
     include_all = is_workspace_admin(current_user)
+    after = read_cursor(RUNS_LIST, cursor, offset)
     # The header carries the total (#1108, matching #925's /assets shape) — the response BODY stays
-    # a bare list so an existing caller keeps parsing it unchanged.
-    response.headers[TOTAL_COUNT_HEADER] = str(
-        svc.count_runs(
-            db,
-            user_id=current_user.id,
-            suite_id=suite_id,
-            status=run_status,
-            include_all=include_all,
+    # a bare list so an existing caller keeps parsing it unchanged. A page asked for by cursor
+    # leaves it out: the total is the first page's to report, and counting it again on every
+    # page is what would make deep paging cost what the cursor saves.
+    if cursor is None:
+        response.headers[TOTAL_COUNT_HEADER] = str(
+            svc.count_runs(
+                db,
+                user_id=current_user.id,
+                suite_id=suite_id,
+                status=run_status,
+                include_all=include_all,
+            )
         )
-    )
-    after = read_cursor("runs", cursor, offset)
     # One row over the page: if it exists there is a next page, and its cursor is set.
     runs = finish_page(
         response,
@@ -409,8 +416,7 @@ def list_runs(
             after=after,
         ),
         limit=limit,
-        kind="runs",
-        moment="created_at",
+        page_list=RUNS_LIST,
     )
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
@@ -724,9 +730,11 @@ def list_pipeline_runs(
     20,200 rows against a 211-row table.
     """
     orchestration_service.validate_read_filters(provider=provider, status=run_status)
-    response.headers[TOTAL_COUNT_HEADER] = str(
-        orchestration_service.count_pipeline_runs(db, provider=provider, status=run_status)
-    )
+    after = read_cursor(PIPELINE_RUNS_LIST, cursor, offset)
+    if cursor is None:  # a cursor page leaves the total to the first page (see `/runs`)
+        response.headers[TOTAL_COUNT_HEADER] = str(
+            orchestration_service.count_pipeline_runs(db, provider=provider, status=run_status)
+        )
     pipeline_runs = finish_page(
         response,
         orchestration_service.list_pipeline_runs(
@@ -735,11 +743,10 @@ def list_pipeline_runs(
             status=run_status,
             limit=limit + 1,
             offset=offset,
-            after=read_cursor("pipeline_runs", cursor, offset),
+            after=after,
         ),
         limit=limit,
-        kind="pipeline_runs",
-        moment="created_at",
+        page_list=PIPELINE_RUNS_LIST,
     )
     triggered = markers.triggered_runs(db, pipeline_runs).by_pipeline_run
     visible = set(

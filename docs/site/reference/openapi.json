@@ -17395,7 +17395,7 @@
             "description": "Successful Response",
             "headers": {
               "X-Next-Cursor": {
-                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422). An incident's position is its `last_seen_at`, which moves each time it breaches again, so an incident bumped past the cursor while a client pages can be missed; none is returned twice (paging by `offset` can repeat rows as well as miss them).",
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422). Send the total from the first page only: a page requested with a cursor carries no `X-Total-Count`. A row takes its timestamp when its transaction starts, so a row that commits after the cursor has passed its timestamp can be missed. An incident's position is its `last_seen_at`, which moves each time it breaches again, so an incident bumped past the cursor while a client pages can be missed; none is returned twice (paging by `offset` can repeat rows as well as miss them).",
                 "schema": {
                   "type": "string"
                 }
@@ -18644,7 +18644,7 @@
             }
           },
           {
-            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422). Take `X-Total-Count` from the first page: a cursor page does not carry it. A row that commits after the cursor has passed its timestamp can be missed.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -18657,7 +18657,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422). Take `X-Total-Count` from the first page: a cursor page does not carry it. A row that commits after the cursor has passed its timestamp can be missed.",
               "title": "Cursor"
             }
           }
@@ -18678,7 +18678,7 @@
             "description": "Successful Response",
             "headers": {
               "X-Next-Cursor": {
-                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422).",
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422). Send the total from the first page only: a page requested with a cursor carries no `X-Total-Count`. A row takes its timestamp when its transaction starts, so a row that commits after the cursor has passed its timestamp can be missed.",
                 "schema": {
                   "type": "string"
                 }
@@ -18771,7 +18771,7 @@
             }
           },
           {
-            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+            "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422). Take `X-Total-Count` from the first page: a cursor page does not carry it. A row that commits after the cursor has passed its timestamp can be missed.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -18784,7 +18784,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422).",
+              "description": "Start the page after the row this cursor names (the `X-Next-Cursor` header of the previous page of the same list). Costs the same at any depth, where a large `offset` costs in proportion to it. Opaque; send it instead of `offset`, never with it (422). Take `X-Total-Count` from the first page: a cursor page does not carry it. A row that commits after the cursor has passed its timestamp can be missed.",
               "title": "Cursor"
             }
           }
@@ -18805,7 +18805,7 @@
             "description": "Successful Response",
             "headers": {
               "X-Next-Cursor": {
-                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422).",
+                "description": "Present when there are more rows after this page: pass it as `cursor` to get the next page, at the same cost however deep. Absent on the last page. A cursor is opaque, belongs to the list it came from, and replaces `offset` (sending both is a 422). Send the total from the first page only: a page requested with a cursor carries no `X-Total-Count`. A row takes its timestamp when its transaction starts, so a row that commits after the cursor has passed its timestamp can be missed.",
                 "schema": {
                   "type": "string"
                 }

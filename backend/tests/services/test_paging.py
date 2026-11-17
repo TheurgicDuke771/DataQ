@@ -57,6 +57,7 @@ def timezone_plus_5_30() -> Any:
         _forge(i="not-a-uuid"),
         _forge(i=...),
         _forge(t=...),
+        base64.urlsafe_b64encode(b"[" * 100_000 + b"]" * 100_000).decode(),  # nests past the parser
     ],
     ids=[
         "empty",
@@ -71,6 +72,7 @@ def timezone_plus_5_30() -> Any:
         "bad id",
         "no id",
         "no time",
+        "deeply nested",
     ],
 )
 def test_anything_that_is_not_a_cursor_of_this_list_is_refused(token: str) -> None:

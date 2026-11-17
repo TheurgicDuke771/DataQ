@@ -1763,12 +1763,18 @@ one descent at any depth.
 
 Both ways returned identical rows at every depth measured. Each list fetches one row past the
 page to know whether there is a next page, so a list of exactly `limit` rows is one page.
-`X-Total-Count` is unchanged and still counted per request: it is its own cost (22 ms at 1M
-runs in the table above), not the page's.
+`X-Total-Count` is the first page's: the count is its own cost (22 ms at 1M runs in the table
+above), so a page asked for by cursor does not repeat it, and the cursor's saving holds end to
+end. A request whose cursor is malformed, or sent with an `offset`, is refused before anything
+is counted.
 
 Offset paging stays: the app's numbered pages need it, and its first pages are as cheap as a
 cursor's. The decision for the three lists is hybrid, and for `/incidents` it carries a stated
 caveat: its sort key, `last_seen_at`, moves, so a reader paging by cursor can miss an incident
 that jumps ahead of the cursor and never sees one twice, which is better than paging by
 `offset`, where the same move shifts every row behind it.
+
+Two things a cursor can miss, both stated where it is documented. A row takes its timestamp
+when its transaction starts, so a row that commits after a cursor has passed its timestamp is
+not returned to that reader. And an incident's `last_seen_at` moves, as above.
 
