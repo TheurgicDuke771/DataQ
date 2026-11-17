@@ -1,7 +1,7 @@
 """Contains all the data models used in inputs/outputs"""
 
+from .access_level_counts import AccessLevelCounts
 from .access_summary_read import AccessSummaryRead
-from .access_summary_read_counts_by_level import AccessSummaryReadCountsByLevel
 from .additional_table_ref import AdditionalTableRef
 from .admin_access_read import AdminAccessRead
 from .admin_credential_health_read import AdminCredentialHealthRead
@@ -410,8 +410,8 @@ from .workspace_config_read_otp_default_role import WorkspaceConfigReadOtpDefaul
 from .workspace_config_read_sign_in_mode import WorkspaceConfigReadSignInMode
 
 __all__ = (
+    "AccessLevelCounts",
     "AccessSummaryRead",
-    "AccessSummaryReadCountsByLevel",
     "AdditionalTableRef",
     "AdminAccessRead",
     "AdminCredentialHealthRead",

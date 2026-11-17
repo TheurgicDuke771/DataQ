@@ -96,6 +96,13 @@ class OwnedSuiteSummary(ApiModel):
     description: str | None
 
 
+class AccessLevelCounts(ApiModel):
+    owner: int
+    admin: int
+    edit: int
+    view: int
+
+
 class AccessSummaryRead(ApiModel):
     """The caller's suite access, counted server-side: what the Profile page renders."""
 
@@ -103,7 +110,7 @@ class AccessSummaryRead(ApiModel):
     # Suites by the level the caller holds on them: `owner | admin | edit | view`. For a workspace
     # admin every suite they did not create is `admin` whether or not anyone shared it (ADR 0033),
     # so for them these are not share counts. A workspace viewer holds every suite at `view`.
-    counts_by_level: dict[str, int]
+    counts_by_level: AccessLevelCounts
     # The suites the caller created, by name; empty for a workspace viewer.
     owned: list[OwnedSuiteSummary]
 
@@ -122,7 +129,7 @@ def my_access_summary(
     summary = access_summary.access_summary(db, current_user)
     return AccessSummaryRead(
         total_visible=summary.total_visible,
-        counts_by_level=summary.counts_by_level,
+        counts_by_level=AccessLevelCounts(**summary.counts_by_level),
         owned=[
             OwnedSuiteSummary(id=o.id, name=o.name, description=o.description)
             for o in summary.owned

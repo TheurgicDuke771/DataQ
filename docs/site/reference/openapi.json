@@ -1,15 +1,39 @@
 {
   "components": {
     "schemas": {
+      "AccessLevelCounts": {
+        "properties": {
+          "admin": {
+            "title": "Admin",
+            "type": "integer"
+          },
+          "edit": {
+            "title": "Edit",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "integer"
+          },
+          "view": {
+            "title": "View",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "admin",
+          "edit",
+          "view"
+        ],
+        "title": "AccessLevelCounts",
+        "type": "object"
+      },
       "AccessSummaryRead": {
         "description": "The caller's suite access, counted server-side: what the Profile page renders.",
         "properties": {
           "counts_by_level": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "title": "Counts By Level",
-            "type": "object"
+            "$ref": "#/components/schemas/AccessLevelCounts"
           },
           "owned": {
             "items": {

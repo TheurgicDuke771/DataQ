@@ -351,3 +351,23 @@ def test_the_access_summary_of_a_user_with_no_suites_is_empty(
         "counts": {"owner": 0, "admin": 0, "edit": 0, "view": 0},
         "owned": [],
     }
+
+
+def test_a_share_on_a_suite_whose_creator_was_deleted_still_counts(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    """`suites.created_by` is NULL once its creator is deleted; the suite list still shows it."""
+    from backend.app.db.models import Share
+
+    get_settings.cache_clear()
+    creator, _ = as_role("member")
+    member, headers = as_role("member")
+    suite = _suite_for(db_session, creator, "orphaned")
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
+    suite.created_by = None
+    db_session.commit()
+
+    summary = _summary(client, headers)
+
+    assert summary["counts"]["view"] == 1 and summary["total"] == 1
+    assert summary == _from_the_suite_list(client, headers)

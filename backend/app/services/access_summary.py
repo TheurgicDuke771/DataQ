@@ -63,7 +63,9 @@ def access_summary(session: Session, user: User) -> AccessSummary:
     shared = session.execute(
         select(Share.permission, func.count())
         .join(Suite, Suite.id == Share.suite_id)
-        .where(Share.user_id == user.id, Suite.created_by != user.id)
+        # `is_distinct_from`: a suite whose creator was deleted has NULL `created_by`, and a share
+        # on it still counts (`!=` would drop it).
+        .where(Share.user_id == user.id, Suite.created_by.is_distinct_from(user.id))
         .group_by(Share.permission)
     ).all()
     total = len(created) + sum(int(n) for _, n in shared)

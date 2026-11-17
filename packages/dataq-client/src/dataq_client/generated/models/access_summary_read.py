@@ -8,7 +8,7 @@ from attrs import field as _attrs_field
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from ..models.access_summary_read_counts_by_level import AccessSummaryReadCountsByLevel
+    from ..models.access_level_counts import AccessLevelCounts
     from ..models.owned_suite_summary import OwnedSuiteSummary
 
 
@@ -20,12 +20,12 @@ class AccessSummaryRead:
     """The caller's suite access, counted server-side: what the Profile page renders.
 
     Attributes:
-        counts_by_level (AccessSummaryReadCountsByLevel):
+        counts_by_level (AccessLevelCounts):
         owned (list[OwnedSuiteSummary]):
         total_visible (int):
     """
 
-    counts_by_level: AccessSummaryReadCountsByLevel
+    counts_by_level: AccessLevelCounts
     owned: list[OwnedSuiteSummary]
     total_visible: int
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -54,13 +54,11 @@ class AccessSummaryRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.access_summary_read_counts_by_level import (
-            AccessSummaryReadCountsByLevel,
-        )
+        from ..models.access_level_counts import AccessLevelCounts
         from ..models.owned_suite_summary import OwnedSuiteSummary
 
         d = dict(src_dict)
-        counts_by_level = AccessSummaryReadCountsByLevel.from_dict(d.pop("counts_by_level"))
+        counts_by_level = AccessLevelCounts.from_dict(d.pop("counts_by_level"))
 
         owned = []
         _owned = d.pop("owned")
