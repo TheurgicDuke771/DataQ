@@ -3142,8 +3142,15 @@ flowchart LR
         int recorded_checks_total
         int recorded_checks_passed
         string recorded_worst_severity "warn / fail / critical"
+        timestamptz results_rolled_up_at "when its results joined result_status_hourly; NULL = not yet"
         timestamptz started_at
         timestamptz finished_at
+    }
+    result_status_hourly {
+        uuid suite_id PK,FK
+        timestamptz hour PK "results.created_at truncated to the UTC hour"
+        string status PK "pass warn fail critical + skip error"
+        bigint n "results of succeeded runs; a summary of results, never a second source"
     }
     results {
         uuid id PK
@@ -3355,6 +3362,7 @@ flowchart LR
     contracts |o--o{ suites : "enforced by (SET NULL)"
     connections |o--o{ checks : "comparison source (ADR 0015, RESTRICT)"
     suites ||--o{ runs : "executed as (CASCADE)"
+    suites ||--o{ result_status_hourly : "summarised as (CASCADE)"
     suites ||--o{ shares : "shared via (CASCADE)"
     suites ||--o{ trigger_bindings : "triggered by (CASCADE)"
     suites ||--o{ schedules : "scheduled by (CASCADE)"
