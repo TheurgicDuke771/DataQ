@@ -143,3 +143,27 @@ def test_a_text_alternate_beside_json_passes() -> None:
         }
     }
     assert _unmapped_media(op, {}) == []
+
+
+_ERROR_STATUSES = ("401", "403", "404", "409", "422", "429")
+
+
+def test_every_operation_declares_its_error_responses_as_the_dataq_envelope() -> None:
+    """A client generated from the spec must parse an error as ``{"error": {...}}``, not as
+    FastAPI's ``HTTPValidationError`` (which has no ``detail`` here) or as nothing at all."""
+    spec = app.openapi()
+    wrong: list[str] = []
+    for name, op in _operations(spec):
+        for status in _ERROR_STATUSES:
+            response = op.get("responses", {}).get(status)
+            schema = ((response or {}).get("content") or {}).get("application/json", {})
+            if schema.get("schema") != {"$ref": "#/components/schemas/ErrorResponse"}:
+                wrong.append(f"{name} {status}")
+    assert wrong == []
+    assert "HTTPValidationError" not in spec["components"]["schemas"]
+    assert set(spec["components"]["schemas"]["ErrorResponse"]["properties"]) == {"error"}
+    assert set(spec["components"]["schemas"]["ErrorBody"]["properties"]) == {
+        "code",
+        "message",
+        "detail",
+    }

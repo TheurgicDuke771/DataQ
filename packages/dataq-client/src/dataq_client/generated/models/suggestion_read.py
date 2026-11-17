@@ -133,7 +133,9 @@ class SuggestionRead:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.suggestion_read_config import SuggestionReadConfig
-        from ..models.suggestion_read_redaction_reasons import SuggestionReadRedactionReasons
+        from ..models.suggestion_read_redaction_reasons import (
+            SuggestionReadRedactionReasons,
+        )
 
         d = dict(src_dict)
 

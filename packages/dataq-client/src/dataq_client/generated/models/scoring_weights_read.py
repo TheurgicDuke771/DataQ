@@ -79,7 +79,9 @@ class ScoringWeightsRead:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.scoring_weights_read_defaults import ScoringWeightsReadDefaults
+        from ..models.scoring_weights_read_defaults import (
+            ScoringWeightsReadDefaults,
+        )
 
         d = dict(src_dict)
         critical = d.pop("critical")
