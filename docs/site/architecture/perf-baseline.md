@@ -1757,8 +1757,10 @@ status, over succeeded runs.
   reader, so a number is never stale. A beat task, every five minutes, adds such runs in
   batches.
 - **Hourly.** A window starts at a moment, not at midnight, so the two part-buckets at its
-  edges are counted from `results` using a block-range index on `created_at` (24 kB at 1M
-  rows). With daily buckets those two edge days still cost about 80 ms.
+  edges are counted from `results` through a btree on `created_at` (21 MB at 1M rows; a
+  block-range index would be tiny but needs rows stored in time order, which a transaction's
+  start time does not guarantee). With daily buckets those two edge days still cost about
+  80 ms.
 - **Falls back, never guesses.** While more than 200 succeeded runs are missing from the
   table (just after the upgrade, before the sweep has caught up) the reader counts from
   `results` alone, as before the table.
@@ -1769,8 +1771,8 @@ status, over succeeded runs.
 |---|---|---|
 | The histogram statement alone, 7-day window | 189–239 ms | 17 ms |
 | The histogram statement alone, 30-day window | 167–198 ms | 2.5 ms |
-| `dashboard_summary`, 7-day window | 385 ms | 246 ms |
-| `dashboard_summary`, 30-day window | 507 ms | 363 ms |
+| `dashboard_summary`, 7-day window | 361 ms | 261 ms |
+| `dashboard_summary`, 30-day window | 484 ms | 385 ms |
 
 The summary is 7 statements, up from 6: the added one lists the runs not yet in the table.
 What remains is the run count and duration pass, the run trend and the per-suite scores,
