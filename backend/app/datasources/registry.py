@@ -102,6 +102,30 @@ def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool
     return callable(requires) and not requires()
 
 
+def credential_not_applicable(
+    conn_type: str, config: dict[str, Any], secret_ref: str | None
+) -> bool:
+    """Whether a connection holds no credential BECAUSE it needs none: nothing is stored and its
+    auth mode does not ask for one, so there is no credential whose acceptance could be observed.
+
+    The adapter answers, as in ``authenticates_without_secret``. It differs for a type that
+    declares ``secret_optional`` yet has no per-mode ``requires_secret`` (an Iceberg catalog —
+    credential-less or not by whether one was supplied): there, nothing stored means none needed.
+    A config that no longer validates answers ``False`` — not knowing is not "needs none".
+    """
+    if secret_ref:
+        return False
+    adapter = _ADAPTERS.get(conn_type)
+    if adapter is None or not getattr(adapter, "secret_optional", False):
+        return False
+    try:
+        validated = adapter.validate_config(dict(config))
+    except ValueError:  # pydantic's ValidationError is a ValueError
+        return False
+    requires = getattr(validated, "requires_secret", None)
+    return not (callable(requires) and requires())
+
+
 class MissingCredentialError(ValueError):
     """The connection stores no credential and its auth mode needs one."""
 

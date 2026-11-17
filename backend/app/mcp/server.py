@@ -1841,25 +1841,27 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
 
     ``credential_health`` answers the narrower question "is this connection's
     stored credential still accepted?" — and it is the right field for "why did
-    every suite on this warehouse start failing?". Its ``status`` is
-    ``healthy`` / ``failing`` / ``unknown``, and **only a credential REJECTION
-    moves it**: a missing SELECT grant, an unreachable host and a bad table name
-    all leave it untouched, because none of them says the credential is dead. It
-    is derived from work DataQ already does — runs, dry-runs, profiles, and
-    ``test_connection`` — never from a periodic probe, so a connection nothing
-    has used is ``unknown`` indefinitely. **``unknown`` is not a clean bill of
-    health**; it means nothing has been observed, and it is also what every
-    connection reads until it is next used. ``credential_health`` is ``null`` on
-    an orchestration connection, whose equivalent is the poll fields above.
+    every suite on this warehouse start failing?". Its ``status`` is one of:
 
-    **No stored credential is not a fault on a connection that authenticates with
-    none** — a GCS bucket with ``auth_type: anonymous`` (a public bucket), Trino with
-    ``auth_type: none``, an Iceberg catalog with no secret. Such a connection reports
-    no credential stored, its ``credential_health.status`` stays ``unknown`` for good
-    (there is no credential whose acceptance could be recorded) and
-    ``credential_expiry_checked_at`` stays null for good (there is nothing to read an
-    expiry from). Judge it by ``last_run_at`` / ``last_run_error`` instead; check its
-    ``config.auth_type`` before calling it broken.
+    - ``healthy`` — the credential was accepted on its last use.
+    - ``failing`` — the datasource rejected the credential on its last use.
+    - ``unknown`` — a credential is stored but nothing has used it yet, so
+      nothing has been observed. **Not a clean bill of health.**
+    - ``not_applicable`` — the connection authenticates with no credential (a GCS
+      bucket with ``auth_type: anonymous``, Trino with ``auth_type: none``, an
+      Iceberg catalog with no secret), so there is nothing to observe. This is not
+      a fault and not the same as ``unknown``; do not report it as a problem.
+      ``has_secret`` is false and ``credential_expiry_checked_at`` stays null for
+      good (there is nothing to read an expiry from). Judge such a connection by
+      ``last_run_at`` / ``last_run_error`` instead.
+
+    **Only a credential REJECTION moves it**: a missing SELECT grant, an
+    unreachable host and a bad table name all leave it untouched, because none of
+    them says the credential is dead. It is derived from work DataQ already does —
+    runs, dry-runs, profiles, and ``test_connection`` — never from a periodic
+    probe, so a connection with a stored credential that nothing has used is
+    ``unknown`` indefinitely. ``credential_health`` is ``null`` on an orchestration
+    connection, whose equivalent is the poll fields above.
 
     ``last_run_error``/``last_poll_error`` are a **stored, classified** reason
     from the connection's last real run or poll (safe to quote verbatim — never

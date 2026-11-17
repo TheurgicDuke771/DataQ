@@ -519,8 +519,8 @@ def list_credential_health(session: Session) -> list[CredentialHealthRow]:
         )
         for conn in rows
     ]
-    # Failing first, then unknown, then healthy — an admin page is read top-down, and the
-    # rows that need action must not sit below the ones that do not.
-    order = {"failing": 0, "unknown": 1, "healthy": 2}
-    out.sort(key=lambda r: (order.get(r.status, 3), r.name, r.env))
+    # Failing first, then unknown, then healthy, then not-applicable — an admin page is read
+    # top-down, and the rows that need action must not sit below the ones that do not.
+    order = {"failing": 0, "unknown": 1, "healthy": 2, "not_applicable": 3}
+    out.sort(key=lambda r: (order.get(r.status, 4), r.name, r.env))
     return out

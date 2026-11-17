@@ -16,13 +16,14 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
+from backend.app.datasources.registry import credential_not_applicable
 from backend.app.db.models import ORCHESTRATION_PROVIDERS, Connection
 from backend.app.services.connection_lock import lock_connection
 from backend.app.services.failure_classifier import AUTH_FAILURE_REASON, is_auth_failure
 
 log = get_logger(__name__)
 
-CredentialStatus = Literal["healthy", "failing", "unknown"]
+CredentialStatus = Literal["healthy", "failing", "unknown", "not_applicable"]
 
 
 def is_datasource(connection_type: str) -> bool:
@@ -31,7 +32,14 @@ def is_datasource(connection_type: str) -> bool:
 
 
 def credential_status(conn: Connection) -> CredentialStatus:
-    """The three-state signal. Never `healthy` on a credential never used (#828)."""
+    """The credential-health signal. Never `healthy` on a credential never used (#828).
+
+    `not_applicable` is derived here, per call, from the connection's auth mode — never stored:
+    a connection that authenticates with no credential has none to observe, which is a different
+    fact from `unknown` (a credential exists and has not been used yet).
+    """
+    if is_datasource(conn.type) and credential_not_applicable(conn.type, conn.config, conn.secret_ref):
+        return "not_applicable"
     if conn.consecutive_auth_failures:
         return "failing"
     if conn.last_auth_success_at is None:

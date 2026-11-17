@@ -101,12 +101,16 @@ backslash, leading `/`, or an empty/`.`/`..` segment is refused with `422 browse
 a listing failure is `502 browse_failed` with a classified, secret-free `detail.reason`.
 
 **Credential health.** Each datasource connection in `GET /connections` carries a
-`credential_health` object — `status` (`healthy` / `failing` / `unknown`),
+`credential_health` object — `status` (`healthy` / `failing` / `unknown` / `not_applicable`),
 `consecutive_auth_failures`, `last_auth_success_at`, `last_auth_failure_at` and a classified
 `last_error`. It is derived from real use (runs, dry-runs, profiles and
 `POST /connections/{id}/test`), never a periodic probe, and only a credential **rejection**
 moves it: a missing grant, an unreachable host and a bad table name leave it untouched.
-`unknown` means the credential has not been used yet and is never reported as `healthy`.
+`unknown` means a stored credential has not been used yet and is never reported as `healthy`.
+`not_applicable` means the connection authenticates with no credential (GCS `auth_type:
+anonymous`, Trino `auth_type: none`, an Iceberg catalog with no secret): there is nothing to
+observe, so it is neither a fault nor `unknown`. It is derived from the auth mode on each read,
+never stored.
 Orchestration connections carry `null` here — theirs is the poll health above.
 `GET /admin/health` returns the same shape for every datasource connection at once, worst
 status first.

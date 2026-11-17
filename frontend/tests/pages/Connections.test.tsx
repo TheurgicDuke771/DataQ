@@ -82,6 +82,42 @@ describe('Connections', () => {
     expect(screen.getByText('no credential')).toBeInTheDocument();
   });
 
+  it('says no credential is needed, neutrally, when the backend reports it not applicable', async () => {
+    const health = {
+      consecutive_auth_failures: 0,
+      last_auth_failure_at: null,
+      last_auth_success_at: null,
+      last_error: null,
+    };
+    mockList.mockResolvedValue([
+      conn({
+        id: 'g1',
+        name: 'gcs-public',
+        type: 'gcs',
+        env: 'dev',
+        has_secret: false,
+        credential_health: { status: 'not_applicable', ...health },
+      }),
+      conn({
+        id: 'g2',
+        name: 'gcs-keyed',
+        type: 'gcs',
+        env: 'qa',
+        has_secret: false,
+        credential_health: { status: 'unknown', ...health },
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('gcs-public')).toBeInTheDocument();
+    expect(screen.getByText('No credential needed')).toBeInTheDocument();
+    // The connection that does need a credential and lacks one is still a warning.
+    expect(screen.getAllByText('no credential')).toHaveLength(1);
+    // No credential, so no expiry to say anything about: only the keyed connection has a badge.
+    expect(screen.getAllByText(/^expiry (unknown|not visible)$/)).toHaveLength(1);
+  });
+
   it('shows the data-quality score only for a connection that has one', async () => {
     mockList.mockResolvedValue([
       conn({ id: 'c1', name: 'sf-dev', type: 'snowflake', env: 'dev', health_score: 87.5 }),
