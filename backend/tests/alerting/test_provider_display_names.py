@@ -89,6 +89,27 @@ def test_non_provider_trigger_sources_keep_their_names() -> None:
     assert render.triggered_source(None) == "Manual"
 
 
+# What the runs table calls the kind of run (`services.trigger_labels`); an alert says the same.
+NON_PROVIDER_KINDS = [
+    ("manual:00000000-0000-0000-0000-000000000001", "Manual"),
+    ("mcp:00000000-0000-0000-0000-000000000001", "MCP"),
+    ("probe:00000000-0000-0000-0000-000000000001", "Probe"),
+    ("suite:00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000002", "Suite"),
+    ("schedule:00000000-0000-0000-0000-000000000001", "Schedule"),
+]
+
+
+@pytest.mark.parametrize(("marker", "name"), NON_PROVIDER_KINDS)
+def test_alert_names_a_non_provider_trigger_as_the_runs_table_does(marker: str, name: str) -> None:
+    assert render.triggered_source(marker) == name
+    report = _run_report(marker)
+    route = route_for(report, "warn")
+    assert f"Triggered by: {name}" in email_mod.render_text_body(report)
+    assert name in email_mod.render_html_body(report)
+    assert name in json.dumps(render_slack_message(report, route))
+    assert {"title": "Triggered by", "value": name} in _facts(render_teams_message(report, route))
+
+
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_run_alert_names_the_provider_on_every_channel(provider: str) -> None:
     name = PROVIDER_LABELS[provider]

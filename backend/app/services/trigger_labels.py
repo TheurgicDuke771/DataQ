@@ -20,6 +20,24 @@ PROVIDER_LABELS = provider_display_names()
 _SCHEDULE_LABEL = "Schedule"
 
 
+def trigger_kind_label(marker: str) -> str | None:
+    """The name of what kind of source started a run — ``Schedule`` / ``Manual`` / ``MCP`` /
+    ``Probe`` / ``Suite`` / a provider's display name — from the marker's prefix alone, or
+    ``None`` for a prefix that is none of these. No database: this is the one mapping from a
+    marker to a label, shared by the runs table (`trigger_labels`, which adds the person's or
+    the upstream suite's name) and by an alert (which has no viewer to scope a name to, and
+    goes to a channel, so it carries the kind only).
+    """
+    kind = marker.partition(":")[0]
+    if kind in _USER_KINDS:
+        return _USER_KINDS[kind]
+    if kind == "schedule":
+        return _SCHEDULE_LABEL
+    if kind == SUITE_TRIGGER_PROVIDER:
+        return _SUITE_LABEL
+    return PROVIDER_LABELS.get(kind)
+
+
 def _suite_id(marker: str) -> uuid.UUID | None:
     parsed = parse_suite_marker(marker)
     return parsed[0] if parsed else None
@@ -69,19 +87,21 @@ def trigger_labels(
     labels: dict[str, str] = {}
     for marker in wanted:
         kind, sep, rest = marker.partition(":")
+        label = trigger_kind_label(marker)
+        if label is None or (kind in PROVIDER_LABELS and not sep):
+            continue
         if kind in _USER_KINDS:
             uid = _user_id(marker)
             name = names.get(uid) if uid is not None else None
-            labels[marker] = f"{_USER_KINDS[kind]} — {name}" if name else _USER_KINDS[kind]
-        elif kind == "schedule":
-            labels[marker] = _SCHEDULE_LABEL
         elif kind == SUITE_TRIGGER_PROVIDER:
             # ADR 0051: `suite:<upstream suite>:<upstream run>` — the one marker that splits.
             sid = _suite_id(marker)
             name = suite_names.get(sid) if sid is not None else None
-            labels[marker] = f"{_SUITE_LABEL} — {name}" if name else _SUITE_LABEL
-        elif kind in PROVIDER_LABELS and sep:
+        elif kind in PROVIDER_LABELS:
             # The pipeline id and the provider's run id cannot be split apart (see
             # `orchestration.markers`), so the remainder is shown whole.
-            labels[marker] = f"{PROVIDER_LABELS[kind]} — {rest}"
+            name = rest
+        else:
+            name = None  # a schedule's id is not shown
+        labels[marker] = f"{label} — {name}" if name else label
     return labels

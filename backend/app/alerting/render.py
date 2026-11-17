@@ -16,6 +16,7 @@ from backend.app.alerting.base import (
 )
 from backend.app.orchestration.registry import provider_display_name
 from backend.app.services.incident_evidence import blast_radius_assets_and_qualifiers
+from backend.app.services.trigger_labels import trigger_kind_label
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
 # can't blow up a card; the full detail lives on the linked run-detail page.
@@ -26,20 +27,12 @@ _MAX_SAMPLE_VALUES = 3
 # name several sources, and this whole clause still has to fit a Slack block budget (#1990).
 _MAX_QUALIFIER_CLAUSE = 200
 
-# triggered_by is stored as "<provider>:<...>" (schedule/adf/airflow/dbt) or NULL
-# for a manual run. These are the prefixes that are not an orchestration provider; a
-# provider's name comes from the provider itself (`_source_label`).
-_TRIGGER_LABELS = {
-    "schedule": "Schedule",
-    "manual": "Manual",
-}
 
-
-def _source_label(prefix: str) -> str:
-    """Display name for a trigger prefix or a provider value. Every alert text that names a
-    provider goes through here, so an alert and the app use one name for it (#2354).
+def _source_label(provider: str) -> str:
+    """Display name for a provider value. Every alert text that names a provider goes
+    through here, so an alert and the app use one name for it.
     """
-    return _TRIGGER_LABELS.get(prefix) or provider_display_name(prefix)
+    return provider_display_name(provider)
 
 
 def format_number(value: float | int) -> str:
@@ -597,13 +590,16 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
 
 
 def triggered_source(triggered_by: str | None) -> str:
-    """Friendly trigger source: ``Schedule`` / ``Azure Data Factory`` / ``Airflow`` /
-    ``dbt`` / ``Manual`` (from the ``<provider>:...`` prefix), else the raw prefix.
+    """Friendly trigger source for the alert's "Triggered by" line, from the marker's
+    prefix: the same label the runs table gives that kind of run (``Schedule``, ``Manual``,
+    ``MCP``, ``Probe``, ``Suite``, a provider's name — `services.trigger_labels`), a
+    run with no marker is ``Manual``, and a prefix nothing recognises is shown as stored.
+    The kind only: an alert goes to a channel with no viewer, so it never names the person
+    or the upstream suite the way the runs table does for someone allowed to see them.
     """
     if not triggered_by:
         return "Manual"
-    prefix = triggered_by.split(":", 1)[0]
-    return _source_label(prefix)
+    return trigger_kind_label(triggered_by) or triggered_by.split(":", 1)[0]
 
 
 def format_duration(seconds: float | None) -> str | None:
