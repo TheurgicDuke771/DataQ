@@ -245,8 +245,10 @@ class _ChainRows:
     """
 
     def __init__(self, session: Session, batch: int | None = None) -> None:
+        if batch is not None and batch < 1:
+            raise ValueError("a batch holds at least one row")
         self._session = session
-        self._batch = batch or _WALK_BATCH
+        self._batch = batch if batch is not None else _WALK_BATCH
         self._links: dict[str, tuple[uuid.UUID, str | None]] = {
             row_hash: (row_id, prev_hash)
             for row_hash, row_id, prev_hash in session.execute(
@@ -264,15 +266,16 @@ class _ChainRows:
             return None
         if row_hash not in self._loaded:
             self._load_from(row_hash)
-        return self._loaded.pop(row_hash)
+        # None when the row was deleted since the links were read: a dangling pointer.
+        return self._loaded.pop(row_hash, None)
 
     def _load_from(self, row_hash: str) -> None:
         # The hashes the walk will ask for next: this row, the one its `prev_hash` names, and so on.
         ahead: list[str] = []
         current: str | None = row_hash
         while current is not None and current in self._links and len(ahead) < self._batch:
-            if current in self._loaded:
-                break
+            if current in self._loaded or current in ahead:
+                break  # already here, or a link that loops back on itself
             ahead.append(current)
             current = self._links[current][1]
         ids = {self._links[h][0]: h for h in ahead}
@@ -285,6 +288,23 @@ class _ChainRows:
 
 
 def verify_chain(session: Session) -> ChainVerification:
+    """Walk the chain and report whether it holds (see `_verify_chain_once` for how).
+
+    A walk of a long chain takes a while and reads in several queries, so a purge, a scrub or a
+    new event that commits in the middle of it can make a healthy chain look broken for that one
+    pass: a row it expected has gone, or a scrubbed payload is read before its scrub event is.
+    A break is therefore believed only if a second walk, on the state as it is then, finds it
+    too. Tampering is still there the second time; a race is not.
+    """
+    first = _verify_chain_once(session)
+    if first.first_break is None:
+        return first
+    # No rollback: the caller may hold pending work, and each statement of the second walk
+    # already reads what has committed by then (READ COMMITTED).
+    return _verify_chain_once(session)
+
+
+def _verify_chain_once(session: Session) -> ChainVerification:
     """Walk the chain by FOLLOWING its `prev_hash` links backward from the
     current head — not by sorting rows on `occurred_at`.
 
