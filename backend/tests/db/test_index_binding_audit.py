@@ -96,6 +96,14 @@ _GENERIC_PLANS = [
         "ORDER BY created_at DESC, id DESC LIMIT $2",
         True,
     ),
+    # The retention sweeps send the JSON key, the type name and the `?` operand as parameters.
+    (
+        "ix_results_unpurged_created",
+        "SELECT id FROM results WHERE sample_failures_purged_at IS NULL "
+        "AND sample_failures IS NOT NULL AND jsonb_typeof(sample_failures) <> $1 "
+        "AND created_at < $2 LIMIT $3",
+        False,
+    ),
     (
         "ix_results_unpurged_created",
         "SELECT id FROM results WHERE sample_failures_purged_at IS NULL "
@@ -105,15 +113,33 @@ _GENERIC_PLANS = [
     ),
     (
         "ix_results_unpurged_observed",
+        "SELECT id FROM results WHERE jsonb_typeof(observed_value -> $1) = $2 "
+        "AND created_at < $3 LIMIT $4",
+        False,
+    ),
+    (
+        "ix_results_unpurged_observed",
         "SELECT id FROM results WHERE jsonb_typeof(observed_value -> 'observed_value') = 'array' "
         "AND created_at < $1 LIMIT $2",
         True,
     ),
     (
         "ix_results_unpurged_unparsed",
+        "SELECT id FROM results WHERE observed_value ? $1 AND created_at < $2 LIMIT $3",
+        False,
+    ),
+    (
+        "ix_results_unpurged_unparsed",
         "SELECT id FROM results WHERE observed_value ? 'unparsed_value' "
         "AND created_at < $1 LIMIT $2",
         True,
+    ),
+    # The marker's `:` separators are parameters too, so the expression no longer matches.
+    (
+        "ix_pipeline_runs_marker",
+        "SELECT id FROM pipeline_runs "
+        "WHERE (provider || $1 || pipeline_or_dag_id || $2 || provider_run_id) = ANY($3)",
+        False,
     ),
     (
         "ix_pipeline_runs_marker",

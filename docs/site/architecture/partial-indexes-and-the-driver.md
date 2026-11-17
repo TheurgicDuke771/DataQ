@@ -28,7 +28,7 @@ server-binding driver would send it:
 | `col IS NULL` / `col IS NOT NULL` against a predicate on the same | Reaches it |
 | `triggered_by = ANY($1)` against `triggered_by IS NOT NULL` | Reaches it (`=` is strict, so a match implies not null) |
 | `jsonb_typeof(x -> 'k') = 'array'` and similar, with the JSON path written in the SQL | Reaches it |
-| `lower(email) = lower($1)`, or the marker expression `= ANY($1)` | Reaches it (the expression matches; only the compared value is a parameter) |
+| `lower(email) = lower($1)`, or `= ANY($1)` against an expression whose constants are written as literals | Reaches it (the expression matches; only the compared value is a parameter) |
 
 The first row is the one that matters. A test per row of this table runs the generic plan and
 holds the verdict (`tests/db/test_index_binding_audit.py`), so the table cannot drift from what
@@ -41,15 +41,15 @@ predicate in the statement text, which is a constant under any driver, so these 
 
 | Index | Table | What it is for | Under server-side binding | If the driver changes |
 |---|---|---|---|---|
-| `ix_llm_invocations_status_open` | `llm_invocations` | The reaper's scan of invocations still `pending` or `running` | **Affected** if the status is sent as a parameter | Write the two statuses as literals in the statement (`literal_column`), as the reaper's `IN` list already is |
+| `ix_llm_invocations_status_open` | `llm_invocations` | The reaper's scan of invocations still `pending` or `running` | **Affected** if the status is sent as a parameter | Write the two statuses as literals in the statement (`literal_column`), the reaper's two `status ==` statements are affected the same way |
 | `ix_llm_invocations_rca_incident` | `llm_invocations` | The latest RCA narrative for an incident (`kind`, `status` and `request ->> 'incident_id'`) | **Affected**: the kind, the status and the JSON key are all parameters | Compile the closed-vocabulary `kind` and `status`, and the JSON key, as literals |
-| `ix_runs_results_unrolled` | `runs` | Succeeded runs not yet counted in the result summary, read by the sweep and by the dashboard | **Affected** where `status` is a parameter; the sweep and the backlog check write it as a literal and are not | Write `'succeeded'` as a literal wherever a query should use this index |
+| `ix_runs_results_unrolled` | `runs` | Succeeded runs not yet counted in the result summary. No query reads it yet: the readers arrive with the summary's sweep | **Affected** wherever `status` is a parameter | Every reader must write `'succeeded'` as a literal |
 | `ix_runs_triggered_by` | `runs` | The lookup of runs by orchestration marker | Reached | None |
 | `ix_notifications_user_unread` | `notifications` | A user's unread notifications, newest first | Reached | None |
-| `ix_results_unpurged_created` | `results` | The retention sweep of failing-row samples | Reached | None |
-| `ix_results_unpurged_observed` | `results` | The retention sweep of list-shaped observed values | Reached | None |
-| `ix_results_unpurged_unparsed` | `results` | The retention sweep of unparsed monitor values | Reached | None |
-| `ix_pipeline_runs_marker` | `pipeline_runs` | The marker a pipeline run triggers suite runs by | Reached | None |
+| `ix_results_unpurged_created` | `results` | The retention sweep of failing-row samples | **Affected**: the type name `'null'` is a parameter | Compile it as a literal |
+| `ix_results_unpurged_observed` | `results` | The retention sweep of list-shaped observed values | **Affected**: the JSON key and the type name are parameters | Compile both as literals |
+| `ix_results_unpurged_unparsed` | `results` | The retention sweep of unparsed monitor values | **Affected**: the `?` operand is a parameter | Compile the key as a literal |
+| `ix_pipeline_runs_marker` | `pipeline_runs` | The marker a pipeline run triggers suite runs by | **Affected**: the `:` separators are parameters, so the expression no longer matches the index | Compile the separators as literals (`literal_column`) |
 | `uq_users_email_lower` | `users` | One account per address, and the sign-in lookup by `lower(email)` | Reached | None |
 | `uq_workspace_members_email_lower` | `workspace_members` | One membership per address | Constraint | None |
 | `uq_asset_column_classifications_cell` | `asset_column_classifications` | One classification per asset, column and source | Constraint | None |
