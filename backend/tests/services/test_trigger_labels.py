@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import event
 
 from backend.app.db.models import User
-from backend.app.orchestration.registry import _PROVIDERS
-from backend.app.services.trigger_labels import PROVIDER_LABELS, trigger_labels
+from backend.app.orchestration.registry import _PROVIDERS, provider_display_names
+from backend.app.services.trigger_labels import trigger_labels
 
 
 def _user(db_session: Any, email: str, display_name: str | None = None) -> User:
@@ -53,7 +53,7 @@ def test_orchestration_marker_keeps_the_remainder_whole(db_session: Any) -> None
     marker = "airflow:nightly_etl:scheduled__2026-06-01T00:00:00+00:00"
 
     assert trigger_labels(db_session, [marker]) == {
-        marker: "Airflow — nightly_etl:scheduled__2026-06-01T00:00:00+00:00"
+        marker: "Apache Airflow — nightly_etl:scheduled__2026-06-01T00:00:00+00:00"
     }
 
 
@@ -90,7 +90,7 @@ def test_suite_marker_names_the_upstream_suite(db_session: Any) -> None:
 
 
 def test_every_registered_provider_has_a_label() -> None:
-    assert set(PROVIDER_LABELS) == set(_PROVIDERS)
+    assert set(provider_display_names()) == set(_PROVIDERS)
 
 
 @pytest.mark.parametrize("marker", ["seed:run:failed", "airflow", "gibberish"])
@@ -114,3 +114,24 @@ def test_a_page_of_user_markers_costs_one_query(db_session: Any) -> None:
 
     assert len(labels) == 5
     assert len(statements) == 1
+
+
+def test_an_alert_and_the_runs_table_name_every_kind_of_trigger_alike(db_session: Any) -> None:
+    """One mapping: the alert's "Triggered by" is the runs-table label up to the name it
+    adds for someone allowed to see it, for every marker shape."""
+    from backend.app.alerting import render
+
+    user = _user(db_session, "olivia@ex", "Olivia Admin")
+    markers = [
+        f"manual:{user.id}",
+        f"mcp:{user.id}",
+        f"probe:{user.id}",
+        f"schedule:{uuid.uuid4()}",
+        f"suite:{uuid.uuid4()}:{uuid.uuid4()}",
+        *(f"{provider}:pipe:run1" for provider in _PROVIDERS),
+    ]
+    labels = trigger_labels(db_session, markers)
+
+    assert set(labels) == set(markers)
+    for marker in markers:
+        assert render.triggered_source(marker) == labels[marker].split(" — ")[0], marker

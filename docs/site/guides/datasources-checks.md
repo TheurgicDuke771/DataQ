@@ -131,11 +131,12 @@ doing it with a credential you don't know is not.
 ### Credential health
 
 A datasource connection reports whether its stored credential is still being **accepted**,
-so an expired or revoked one is visible without anyone pressing Test. It has three states:
+so an expired or revoked one is visible without anyone pressing Test. It has four states:
 
 | State | Meaning |
 |---|---|
-| **Unknown** | The credential has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **Unknown** | A credential is stored but has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **No credential needed** (`not_applicable`) | The connection authenticates with no credential — a GCS bucket with `auth_type: anonymous`, Trino with `auth_type: none`, an Iceberg catalog with no secret — so there is nothing to observe. This is not a fault and not the same as Unknown. |
 | **Healthy** | The datasource accepted the credential the last time DataQ used it. |
 | **Failing** | The datasource **rejected** the credential. The connection also shows how many consecutive rejections it has had, and a classified reason — never raw driver text, which can carry a token or DSN fragment. |
 

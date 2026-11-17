@@ -17,10 +17,14 @@ T = TypeVar("T", bound="CredentialHealthRead")
 class CredentialHealthRead:
     """A datasource connection's stored-credential health, derived from real use (#1697).
 
-    `status="unknown"` — never `healthy` — means the credential has not been used since
-    the signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ
+    `status="unknown"` — never `healthy` — means a credential is stored but has not been used
+    since the signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ
     has observed nothing. `failing` means the datasource rejected the credential on its
     last use; `last_error` is then the classified, secret-free reason.
+    `not_applicable` means the connection authenticates with no credential (GCS
+    `auth_type: anonymous`, Trino `auth_type: none`, an Iceberg catalog with no secret), so
+    there is nothing to observe — not a fault, and not the same as `unknown`. It is derived
+    from the connection's auth mode on every read and never stored.
 
     Only credential REJECTIONS move this. A missing grant, an unreachable host and a bad
     table name leave it untouched, because none of them says the credential is dead.
