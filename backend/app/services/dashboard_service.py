@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import ColumnElement, Select, and_, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Result, ResultStatusHourly, Run, Suite
+from backend.app.db.models import Result, Run, Suite
 from backend.app.services import result_rollup, scoring_settings_service, suite_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
@@ -263,9 +263,8 @@ def dashboard_summary(
     # From the hourly summary where it can be (#2010); the counts are exact either way.
     counts, prev_counts = result_rollup.status_counts(
         session,
-        runs_visible=runs_visible,
-        buckets_visible=suite_service.accessible_suite_filter(
-            ResultStatusHourly.suite_id, user_id, include_all=include_all
+        visible=lambda column: suite_service.accessible_suite_filter(
+            column, user_id, include_all=include_all
         ),
         since=since,
         prev_since=prev_since,

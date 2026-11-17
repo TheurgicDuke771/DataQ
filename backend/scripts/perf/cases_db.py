@@ -251,7 +251,7 @@ def _roll_up_results(session: Session, *, echo: Callable[[str], None]) -> None:
         return
     echo(f"adding {pending} succeeded runs to the result summary")
     while result_rollup.roll_up_pending(session):
-        pass
+        pass  # each call returns how many runs it added
 
 
 def create_database(*, echo: Callable[[str], None] = print) -> None:

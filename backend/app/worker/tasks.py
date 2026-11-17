@@ -90,6 +90,11 @@ def _terminal_failed(
     """Drive ``run`` to terminal ``failed`` — never left ``queued``/``running``.
     ``reason`` is the redaction-safe classified message (#605).
     """
+    if not run_service.still_non_terminal(session, run):
+        # A duplicate delivery of a run that already finished: it keeps its outcome.
+        session.commit()
+        log.warning("run_suite_already_terminal", run_id=str(run_id), during=event)
+        return str(run.status)
     run.status = "failed"
     run.started_at = run.started_at or datetime.now(UTC)
     run.finished_at = datetime.now(UTC)
@@ -953,14 +958,19 @@ _ROLL_UP_BUDGET_S = 60.0
 @celery_app.task(name="roll_up_results")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def roll_up_results() -> int:
     """Add succeeded runs missing from `result_status_hourly`, in batches, for up to a
-    minute. Returns how many are still missing; logs it when the budget ran out.
+    minute. Returns how many are still missing; logs it when any are.
     """
     session = get_session()
     try:
         started = time.monotonic()
-        remaining = result_rollup.roll_up_pending(session)
-        while remaining and time.monotonic() - started < _ROLL_UP_BUDGET_S:
-            remaining = result_rollup.roll_up_pending(session)
+        # Stops when a batch claims nothing: all added, or the rest held by another sweep or
+        # unable to be added (logged by the batch).
+        while (
+            result_rollup.roll_up_pending(session)
+            and time.monotonic() - started < _ROLL_UP_BUDGET_S
+        ):
+            pass
+        remaining = result_rollup.pending_count(session)
         if remaining:
             log.info("result_rollup_backlog", remaining=remaining)
         return remaining

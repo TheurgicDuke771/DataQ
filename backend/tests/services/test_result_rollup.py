@@ -6,12 +6,14 @@ with a per-window reference in three states of the table. These cover the table 
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import event, func, select, text, true
+from sqlalchemy.orm import sessionmaker
 from structlog.testing import capture_logs
 
 from backend.app.db.models import (
@@ -23,9 +25,10 @@ from backend.app.db.models import (
     Suite,
     User,
 )
-from backend.app.services import check_service, result_rollup, run_service, suite_service
+from backend.app.services import check_service, result_rollup, rollup, run_service, suite_service
 from backend.app.worker import tasks
 from backend.app.worker.celery_app import celery_app
+from backend.tests.support.scratch_db import scratch_engine
 
 NOW = datetime(2026, 11, 10, 14, 37, 12, tzinfo=UTC)
 SINCE = NOW - timedelta(days=7)  # mid-hour, so both window edges are part-hours
@@ -105,7 +108,7 @@ def _from_results(db: Any) -> tuple[dict[str, int], dict[str, int]]:
 
 def _read(db: Any) -> tuple[dict[str, int], dict[str, int]]:
     return result_rollup.status_counts(
-        db, runs_visible=true(), buckets_visible=true(), since=SINCE, prev_since=PREV
+        db, visible=lambda _column: true(), since=SINCE, prev_since=PREV
     )
 
 
@@ -215,7 +218,8 @@ def test_a_failed_add_does_not_fail_the_run_and_is_retried_by_the_sweep(
     assert [e["event"] for e in logs] == ["result_rollup_failed"]
     assert _table(db_session) == {}
     assert _read(db_session) == _from_results(db_session) == ({"pass": 1}, {})
-    assert result_rollup.roll_up_pending(db_session) == 0
+    assert result_rollup.roll_up_pending(db_session) == 1
+    assert result_rollup.pending_count(db_session) == 0
     assert sum(_table(db_session).values()) == 1
     assert _read(db_session) == ({"pass": 1}, {})
 
@@ -314,8 +318,7 @@ def test_a_read_sees_only_visible_suites_in_the_table(db_session: Any) -> None:
     assert owner is not None
     current, _previous = result_rollup.status_counts(
         db_session,
-        runs_visible=suite_service.accessible_suite_filter(Run.suite_id, owner),
-        buckets_visible=suite_service.accessible_suite_filter(ResultStatusHourly.suite_id, owner),
+        visible=lambda column: suite_service.accessible_suite_filter(column, owner),
         since=SINCE,
         prev_since=PREV,
     )
@@ -360,7 +363,8 @@ def test_with_nothing_pending_results_are_read_for_the_part_hours_only(db_sessio
 
     assert len(statements) == 2
     assert "result_status_hourly" in statements[1]
-    assert statements[1].count("FROM results JOIN runs") == 1
+    # `results` is read for the two part-hours, and for the runs the table does not hold.
+    assert statements[1].count("FROM results JOIN runs") == 2
 
 
 def test_the_sweep_works_in_batches_and_reports_what_is_left(db_session: Any) -> None:
@@ -369,9 +373,11 @@ def test_the_sweep_works_in_batches_and_reports_what_is_left(db_session: Any) ->
         _run(db_session, suite, NOW - timedelta(hours=hours), ["pass"])
     db_session.commit()
 
-    assert result_rollup.roll_up_pending(db_session, limit=2) == 3
+    assert result_rollup.roll_up_pending(db_session, limit=2) == 2
+    assert result_rollup.pending_count(db_session) == 3
+    assert result_rollup.roll_up_pending(db_session, limit=2) == 2
     assert result_rollup.roll_up_pending(db_session, limit=2) == 1
-    assert result_rollup.roll_up_pending(db_session, limit=2) == 0
+    assert result_rollup.roll_up_pending(db_session, limit=2) == 0  # nothing left to claim
     assert sum(_table(db_session).values()) == 5
 
 
@@ -414,23 +420,151 @@ def test_the_sweep_task_stops_at_its_budget_and_says_what_is_left(
     assert said == [("result_rollup_backlog", {"remaining": 3})]
 
 
+def _after_the_backlog_check(db: Any, hook: Any) -> Any:
+    """Run ``hook`` once, right after `status_counts` asks how big the backlog is: the moment
+    between its two statements."""
+    fired: list[int] = []
+
+    def after(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if statement.startswith("SELECT count(*) FROM (SELECT 1 FROM runs") and not fired:
+            fired.append(1)
+            hook()
+
+    event.listen(db.get_bind(), "after_cursor_execute", after)
+    try:
+        return _read(db), fired
+    finally:
+        event.remove(db.get_bind(), "after_cursor_execute", after)
+
+
 def test_a_run_added_between_the_two_statements_is_counted_once(db_session: Any) -> None:
-    """The first statement lists the un-added runs; the sweep can add one before the second
-    reads. The second must then take that run from the table only."""
+    """The sweep can add a run after the read asked about the backlog and before it counts."""
     _seed_every_edge(db_session)
     result_rollup.roll_up_pending(db_session, limit=5)
     expected = _from_results(db_session)
-    swept: list[int] = []
 
-    def sweep_after_the_listing(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
-        if statement.startswith("SELECT id FROM runs") and not swept:
-            swept.append(1)
-            db_session.execute(result_rollup._ADD_PENDING, {"limit": 10_000})
+    counted, fired = _after_the_backlog_check(
+        db_session, lambda: db_session.execute(result_rollup._ADD_PENDING, {"limit": 10_000})
+    )
 
-    event.listen(db_session.get_bind(), "after_cursor_execute", sweep_after_the_listing)
+    assert fired and counted == expected
+
+
+def test_a_run_that_succeeds_between_the_two_statements_is_still_counted(db_session: Any) -> None:
+    """A run that succeeds, and fails to be added, after the backlog was asked about."""
+    suite = _suite(db_session, "late")
+    _run(db_session, suite, SINCE + timedelta(days=2), ["pass"])
+    result_rollup.roll_up_pending(db_session)
+
+    counted, fired = _after_the_backlog_check(
+        db_session, lambda: _run(db_session, suite, SINCE + timedelta(days=3), ["fail", "fail"])
+    )
+
+    assert fired
+    assert counted == ({"pass": 1, "fail": 2}, {}) == _from_results(db_session)
+
+
+def test_the_table_counts_the_one_status_the_aggregates_count() -> None:
+    """The table is built for succeeded runs; if the shared aggregates ever count more, it
+    must be told, or the histogram would silently stop matching the other dashboard figures."""
+    assert rollup.AGGREGATABLE_RUN_STATUSES == {"succeeded"}
+
+
+def test_one_run_that_cannot_be_added_does_not_hold_back_the_rest(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = _suite(db_session)
+    runs = [_run(db_session, suite, NOW - timedelta(hours=h), ["pass"]) for h in range(4)]
+    db_session.commit()
+    poison = min(runs, key=lambda r: str(r.id))
+    real = result_rollup.roll_up_run
+    monkeypatch.setattr(result_rollup, "_ADD_PENDING", text("SELECT 1 FROM no_such_table"))
+    monkeypatch.setattr(
+        result_rollup,
+        "roll_up_run",
+        lambda session, run_id: run_id != poison.id and real(session, run_id),
+    )
+    said: list[str] = []
+    monkeypatch.setattr(result_rollup.log, "exception", lambda event, **_kw: said.append(event))
+
+    added = result_rollup.roll_up_pending(db_session)
+
+    assert added == 3
+    assert said == ["result_rollup_batch_failed"]
+    assert sum(_table(db_session).values()) == 3
+    assert result_rollup.pending_count(db_session) == 1
+    assert _read(db_session) == _from_results(db_session)  # the run left out is still counted
+
+
+def test_forgetting_a_check_locks_before_it_writes(db_session: Any) -> None:
+    """Runs by id, then buckets by key, then the subtraction: the order every writer takes."""
+    suite = _suite(db_session)
+    check = _check(db_session, suite)
+    _run(db_session, suite, NOW, ["pass"], check=check)
+    result_rollup.roll_up_pending(db_session)
+
+    written: list[str] = []
+
+    def before(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        written.append(" ".join(statement.split()))
+
+    event.listen(db_session.get_bind(), "before_cursor_execute", before)
     try:
-        counted = _read(db_session)
+        result_rollup.forget_checks(db_session, [check.id])
     finally:
-        event.remove(db_session.get_bind(), "after_cursor_execute", sweep_after_the_listing)
+        event.remove(db_session.get_bind(), "before_cursor_execute", before)
 
-    assert swept and counted == expected
+    written = [w for w in written if "FROM runs" in w[:40] or "result_status_hourly" in w[:60]]
+    assert len(written) == 3
+    assert written[0].startswith("SELECT id FROM runs") and written[0].endswith("FOR UPDATE")
+    assert "ORDER BY h.suite_id, h.hour, h.status FOR UPDATE OF h" in written[1]
+    assert written[2].startswith("UPDATE result_status_hourly")
+
+
+def test_a_check_delete_waits_for_a_sweep_that_has_claimed_its_run() -> None:
+    """Two real connections. The sweep has claimed a run and not committed; deleting a check
+    of that run must wait, then subtract what the sweep added — not read the run as un-added,
+    subtract nothing, and leave the sweep's counts for results that are about to be gone."""
+    with scratch_engine("dataq_result_rollup_race") as engine:
+        maker = sessionmaker(bind=engine)
+        with maker() as setup:
+            suite = _suite(setup, "race")
+            check = _check(setup, suite)
+            run = _run(setup, suite, NOW, ["pass", "pass"], check=check)
+            setup.commit()
+            suite_id, check_id, run_id = suite.id, check.id, run.id
+            del suite, run
+
+        sweep = maker()
+        sweep.execute(result_rollup._ADD_ONE, {"run_id": run_id})  # claimed, not committed
+        done = threading.Event()
+        errors: list[BaseException] = []
+
+        def delete_the_check() -> None:
+            try:
+                with maker() as deleter:
+                    result_rollup.forget_checks(deleter, [check_id])
+                    deleter.commit()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                done.set()
+
+        worker = threading.Thread(target=delete_the_check, daemon=True)
+        worker.start()
+        try:
+            assert not done.wait(1.5), "the delete did not wait for the sweep's claim"
+            sweep.commit()
+            assert done.wait(15), "the delete never finished"
+        finally:
+            sweep.rollback()
+            sweep.close()
+            worker.join(5)
+        assert not errors, errors
+        with maker() as check_session:
+            held = check_session.scalar(
+                select(func.coalesce(func.sum(ResultStatusHourly.n), 0)).where(
+                    ResultStatusHourly.suite_id == suite_id
+                )
+            )
+        assert held == 0

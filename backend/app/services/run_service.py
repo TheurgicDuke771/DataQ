@@ -800,9 +800,25 @@ def results_final(run: Run) -> bool:
     return run.status in _TERMINAL_STATUSES
 
 
+def still_non_terminal(session: Session, run: Run) -> bool:
+    """Re-read ``run`` under a row lock and say whether it is still non-terminal.
+
+    Every transition out of a non-terminal status goes through this first: the caller's copy
+    of the run can be stale (a worker may have committed ``succeeded`` since it was loaded), and
+    flushing a status from a stale copy would take a succeeded run out of ``succeeded`` — after
+    its results were counted in `result_status_hourly`, which would then count a run no reader
+    does. The lock also makes a concurrent worker's ``succeeded`` wait for this commit.
+    """
+    session.refresh(run, with_for_update=True)
+    return run.status in _NON_TERMINAL_STATUSES
+
+
 def cancel_run(session: Session, run: Run) -> bool:
     """Transition a non-terminal run to ``cancelled``; return whether it changed."""
     if run.status in _TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     run.status = "cancelled"
     run.finished_at = _now()
@@ -2070,11 +2086,15 @@ def reap_stuck_runs(
     moment = now or _now()
     cutoff = moment - timedelta(minutes=threshold_minutes)
     reference = func.coalesce(Run.started_at, Run.created_at)
-    stuck = list(
+    candidates = list(
         session.scalars(
             select(Run).where(Run.status.in_(_NON_TERMINAL_STATUSES), reference < cutoff)
         )
     )
+    # Each one re-read under a lock: a run a worker finished since is not stuck.
+    stuck = [run for run in candidates if still_non_terminal(session, run)]
+    if candidates and not stuck:
+        session.commit()  # nothing pending; releases the row locks the re-reads took
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
     # Hygiene (#318): aggregates already ignore these, but the run's own detail page
     # would otherwise show a half-populated set.
@@ -2110,6 +2130,9 @@ def fail_run_worker_lost(
     """Drive a single run to ``failed`` after its worker process died (#755)."""
     run = session.get(Run, run_id)
     if run is None or run.status not in _NON_TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     moment = now or _now()
     was_running = run.status == "running"

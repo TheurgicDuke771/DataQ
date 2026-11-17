@@ -1764,13 +1764,22 @@ status, over succeeded runs.
 - **Falls back, never guesses.** While more than 200 succeeded runs are missing from the
   table (just after the upgrade, before the sweep has caught up) the reader counts from
   `results` alone, as before the table.
-- **Deleting a check** subtracts its results first, because deleting a check deletes them;
-  deleting a suite removes its rows with it.
+- **Deleting a check** subtracts its results first, because deleting a check deletes them,
+  after locking the runs and buckets it touches in the order every writer takes them, so it
+  waits for a sweep that has claimed one of those runs instead of missing its counts.
+  Deleting a suite removes its rows with it.
+- **A succeeded run stays succeeded.** The table counts a run's results once it has succeeded,
+  so cancelling a run, the stuck-run reaper and the worker-lost path now re-read the run
+  under a row lock first: a worker that finished it a moment earlier is not overwritten from a
+  stale copy.
+- **A run that cannot be added does not stop the rest.** The sweep adds a batch in one
+  statement; if that fails it adds the runs one by one, so one bad run is logged and the
+  others still go in.
 
 | At 1,000,000 results, p50 of 15 | Before | After |
 |---|---|---|
-| The histogram statement alone, 7-day window | 189–239 ms | 17 ms |
-| The histogram statement alone, 30-day window | 167–198 ms | 2.5 ms |
+| The histogram statement alone, 7-day window | 128 ms | 8.5 ms |
+| The histogram statement alone, 30-day window | 128 ms | 10 ms |
 | `dashboard_summary`, 7-day window | 361 ms | 261 ms |
 | `dashboard_summary`, 30-day window | 484 ms | 385 ms |
 

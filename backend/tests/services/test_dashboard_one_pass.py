@@ -19,7 +19,6 @@ from backend.app.db.models import (
     Check,
     Connection,
     Result,
-    ResultStatusHourly,
     Run,
     Share,
     Suite,
@@ -192,9 +191,11 @@ def _seed_both_windows(db: Any, summary_state: str = SUMMARY_STATES[0]) -> User:
     """
     alice = _seed_runs(db)
     if summary_state == "in the summary":
-        assert result_rollup.roll_up_pending(db) == 0
+        result_rollup.roll_up_pending(db)
+        assert result_rollup.pending_count(db) == 0
     elif summary_state == "partly in the summary":
-        assert result_rollup.roll_up_pending(db, limit=4) > 0
+        result_rollup.roll_up_pending(db, limit=4)
+        assert result_rollup.pending_count(db) > 0
     return alice
 
 
@@ -297,10 +298,7 @@ def test_previous_window_status_does_not_leak_as_a_current_zero(
 
     counts, prev_counts = result_rollup.status_counts(
         db_session,
-        runs_visible=suite_service.accessible_suite_filter(Run.suite_id, alice.id),
-        buckets_visible=suite_service.accessible_suite_filter(
-            ResultStatusHourly.suite_id, alice.id
-        ),
+        visible=lambda column: suite_service.accessible_suite_filter(column, alice.id),
         since=since,
         prev_since=since - timedelta(days=7),
     )
@@ -360,7 +358,8 @@ def test_summary_issues_one_pass_per_aggregate(db_session: Any, summary_state: s
     # With every run in the summary, `results` is read for the two part-hours only.
     if summary_state == "in the summary":
         assert "result_status_hourly" in histogram[0]
-        assert histogram[0].count("FROM results JOIN runs") == 1
+        # `results` is read for the two part-hours and for the runs the table does not hold.
+        assert histogram[0].count("FROM results JOIN runs") == 2
 
 
 @pytest.mark.parametrize("window_days", [1, 7, 30, 90])
