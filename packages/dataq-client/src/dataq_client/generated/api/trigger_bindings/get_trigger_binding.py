@@ -7,7 +7,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...models.trigger_binding_read import TriggerBindingRead
 from ...types import Response
 
@@ -28,16 +28,41 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | TriggerBindingRead | None:
+) -> ErrorResponse | TriggerBindingRead | None:
     if response.status_code == 200:
         response_200 = TriggerBindingRead.from_dict(response.json())
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -47,7 +72,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | TriggerBindingRead]:
+) -> Response[ErrorResponse | TriggerBindingRead]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,7 +85,7 @@ def sync_detailed(
     binding_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[HTTPValidationError | TriggerBindingRead]:
+) -> Response[ErrorResponse | TriggerBindingRead]:
     """Get a trigger binding
 
     Args:
@@ -71,7 +96,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TriggerBindingRead]
+        Response[ErrorResponse | TriggerBindingRead]
     """
 
     kwargs = _get_kwargs(
@@ -89,7 +114,7 @@ def sync(
     binding_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> HTTPValidationError | TriggerBindingRead | None:
+) -> ErrorResponse | TriggerBindingRead | None:
     """Get a trigger binding
 
     Args:
@@ -100,7 +125,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | TriggerBindingRead
+        ErrorResponse | TriggerBindingRead
     """
 
     return sync_detailed(
@@ -113,7 +138,7 @@ async def asyncio_detailed(
     binding_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[HTTPValidationError | TriggerBindingRead]:
+) -> Response[ErrorResponse | TriggerBindingRead]:
     """Get a trigger binding
 
     Args:
@@ -124,7 +149,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | TriggerBindingRead]
+        Response[ErrorResponse | TriggerBindingRead]
     """
 
     kwargs = _get_kwargs(
@@ -140,7 +165,7 @@ async def asyncio(
     binding_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> HTTPValidationError | TriggerBindingRead | None:
+) -> ErrorResponse | TriggerBindingRead | None:
     """Get a trigger binding
 
     Args:
@@ -151,7 +176,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | TriggerBindingRead
+        ErrorResponse | TriggerBindingRead
     """
 
     return (
