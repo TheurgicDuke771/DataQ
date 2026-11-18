@@ -194,8 +194,12 @@ def _seed_both_windows(db: Any, summary_state: str = SUMMARY_STATES[0]) -> User:
         result_rollup.roll_up_pending(db)
         assert result_rollup.pending_count(db) == 0
     elif summary_state == "partly in the summary":
-        result_rollup.roll_up_pending(db, limit=4)
-        assert result_rollup.pending_count(db) > 0
+        # Half of whatever is pending, so some runs are in the summary and some are not however
+        # many runs other tests have left in the database.
+        pending = result_rollup.pending_count(db)
+        assert pending >= 2
+        result_rollup.roll_up_pending(db, limit=pending // 2)
+        assert 0 < result_rollup.pending_count(db) < pending
     return alice
 
 
