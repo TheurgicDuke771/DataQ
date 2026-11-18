@@ -17,10 +17,18 @@ from backend.app.services import membership_service as svc
 from backend.tests.support.scratch_db import scratch_engine
 
 
-def Settings(**fields: Any) -> _Settings:
+def Settings(**fields: Any) -> _Settings:  # the name is kept so the call sites read as before
     """A deployment built from the given fields alone: the runner's `.env` and the variables
     that name admins or the sign-in address must not change what these tests decide (#2135)."""
-    fields.setdefault("workspace_admin_emails", "")
+    # Everything an operator's environment can use to admit or promote an address.
+    for name in (
+        "workspace_admin_emails",
+        "oidc_allowed_emails",
+        "oidc_allowed_domains",
+        "auth_otp_allowed_emails",
+        "auth_otp_allowed_domains",
+    ):
+        fields.setdefault(name, "")
     return _Settings(_env_file=None, **fields)  # type: ignore[call-arg]
 
 
