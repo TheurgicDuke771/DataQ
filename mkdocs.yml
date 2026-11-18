@@ -176,6 +176,7 @@ nav:
       - MCP tool design (honesty): architecture/mcp-honesty.md
       - Incident evidence card: architecture/evidence-card.md
       - Performance baseline: architecture/perf-baseline.md
+      - Partial indexes and the driver: architecture/partial-indexes-and-the-driver.md
       - Contributing: architecture/contributing.md
   - Security & compliance:
       - security/index.md
