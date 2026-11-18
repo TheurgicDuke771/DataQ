@@ -8,7 +8,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.column_trace_read import ColumnTraceRead
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...models.trace_direction import TraceDirection
 from ...types import UNSET, Response, Unset
 
@@ -48,16 +48,41 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ColumnTraceRead | HTTPValidationError | None:
+) -> ColumnTraceRead | ErrorResponse | None:
     if response.status_code == 200:
         response_200 = ColumnTraceRead.from_dict(response.json())
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -67,7 +92,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ColumnTraceRead | HTTPValidationError]:
+) -> Response[ColumnTraceRead | ErrorResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -83,7 +108,7 @@ def sync_detailed(
     column: str,
     direction: TraceDirection | Unset = UNSET,
     max_depth: int | Unset = 10,
-) -> Response[ColumnTraceRead | HTTPValidationError]:
+) -> Response[ColumnTraceRead | ErrorResponse]:
     """Trace one column's lineage
 
     Args:
@@ -97,7 +122,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ColumnTraceRead | HTTPValidationError]
+        Response[ColumnTraceRead | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
@@ -121,7 +146,7 @@ def sync(
     column: str,
     direction: TraceDirection | Unset = UNSET,
     max_depth: int | Unset = 10,
-) -> ColumnTraceRead | HTTPValidationError | None:
+) -> ColumnTraceRead | ErrorResponse | None:
     """Trace one column's lineage
 
     Args:
@@ -135,7 +160,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ColumnTraceRead | HTTPValidationError
+        ColumnTraceRead | ErrorResponse
     """
 
     return sync_detailed(
@@ -154,7 +179,7 @@ async def asyncio_detailed(
     column: str,
     direction: TraceDirection | Unset = UNSET,
     max_depth: int | Unset = 10,
-) -> Response[ColumnTraceRead | HTTPValidationError]:
+) -> Response[ColumnTraceRead | ErrorResponse]:
     """Trace one column's lineage
 
     Args:
@@ -168,7 +193,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ColumnTraceRead | HTTPValidationError]
+        Response[ColumnTraceRead | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
@@ -190,7 +215,7 @@ async def asyncio(
     column: str,
     direction: TraceDirection | Unset = UNSET,
     max_depth: int | Unset = 10,
-) -> ColumnTraceRead | HTTPValidationError | None:
+) -> ColumnTraceRead | ErrorResponse | None:
     """Trace one column's lineage
 
     Args:
@@ -204,7 +229,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ColumnTraceRead | HTTPValidationError
+        ColumnTraceRead | ErrorResponse
     """
 
     return (

@@ -132,13 +132,12 @@ class RunOutcome:
         return self.status in TERMINAL_RUN_STATUSES
 
 
-def _error_from(response: Any) -> DataQError:
-    """``response`` is a generated ``Response`` or a raw ``httpx.Response``: both carry
-    ``status_code`` and ``content``."""
-    status = int(response.status_code)
-    code, message = f"http_{status}", response.content.decode("utf-8", "replace")[:500]
+def _describe(status: int, content: bytes) -> tuple[str, str]:
+    """The ``(code, message)`` of an error body: the DataQ envelope, FastAPI's ``detail``, or
+    whatever else the answer was (a proxy's HTML page, an empty body)."""
+    code, message = f"http_{status}", content.decode("utf-8", "replace")[:500]
     try:
-        body = json.loads(response.content)
+        body = json.loads(content)
     except ValueError:
         body = None
     if isinstance(body, dict) and isinstance(body.get("error"), dict):
@@ -146,12 +145,43 @@ def _error_from(response: Any) -> DataQError:
         message = str(body["error"].get("message") or message)
     elif isinstance(body, dict) and "detail" in body:
         message = str(body["detail"])[:500]
+    return code, message
+
+
+def _error_from(response: Any) -> DataQError:
+    """``response`` is a generated ``Response`` or a raw ``httpx.Response``: both carry
+    ``status_code`` and ``content``."""
+    status = int(response.status_code)
+    code, message = _describe(status, response.content)
     kind: type[DataQError] = DataQError
     if status in (401, 403):
         kind = AuthError
     elif status == 429:
         kind = RateLimitedError
     return kind(status, code, message)
+
+
+def _as_envelope(response: Any) -> None:
+    """An httpx response hook: an error answer that is not the DataQ envelope (a proxy's HTML
+    404, an empty 429, FastAPI's ``{"detail": ...}``) is rewritten into it.
+
+    The generated code parses every declared error status as the envelope and would raise on
+    anything else before :func:`_error_from` ran; with the rewrite it always gets one.
+    """
+    if response.status_code < 400:
+        return
+    response.read()
+    try:
+        body = json.loads(response.content)
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        return
+    code, message = _describe(int(response.status_code), response.content)
+    # httpx has no public way to replace a read body.
+    response._content = json.dumps({"error": {"code": code, "message": message}}).encode()
+    response.headers["content-type"] = "application/json"
+    response.headers.pop("content-encoding", None)
 
 
 def _ok(response: Response[Any]) -> Any:
@@ -249,6 +279,14 @@ def _outcome(run: Any) -> RunOutcome:
     )
 
 
+def _with_envelope_hook(httpx_args: dict[str, Any] | None) -> dict[str, Any]:
+    args = dict(httpx_args or {})
+    hooks = dict(args.get("event_hooks") or {})
+    hooks["response"] = [_as_envelope, *hooks.get("response", [])]
+    args["event_hooks"] = hooks
+    return args
+
+
 class DataQClient:
     """A DataQ API client authenticated with a personal access token.
 
@@ -277,7 +315,7 @@ class DataQClient:
             base_url=base_url.rstrip("/"),
             token=pat,
             timeout=httpx.Timeout(timeout),
-            httpx_args=httpx_args or {},
+            httpx_args=_with_envelope_hook(httpx_args),
         )
 
     def __enter__(self) -> DataQClient:

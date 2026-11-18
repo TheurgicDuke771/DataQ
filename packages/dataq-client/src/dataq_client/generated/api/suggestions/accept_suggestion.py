@@ -7,7 +7,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...models.suggestion_read import SuggestionRead
 from ...types import Response
 
@@ -28,16 +28,41 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | SuggestionRead | None:
+) -> ErrorResponse | SuggestionRead | None:
     if response.status_code == 200:
         response_200 = SuggestionRead.from_dict(response.json())
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -47,7 +72,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | SuggestionRead]:
+) -> Response[ErrorResponse | SuggestionRead]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,7 +85,7 @@ def sync_detailed(
     suggestion_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[HTTPValidationError | SuggestionRead]:
+) -> Response[ErrorResponse | SuggestionRead]:
     """Accept a proposed rule: it becomes a check in the suite
 
      Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
@@ -74,7 +99,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | SuggestionRead]
+        Response[ErrorResponse | SuggestionRead]
     """
 
     kwargs = _get_kwargs(
@@ -92,7 +117,7 @@ def sync(
     suggestion_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> HTTPValidationError | SuggestionRead | None:
+) -> ErrorResponse | SuggestionRead | None:
     """Accept a proposed rule: it becomes a check in the suite
 
      Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
@@ -106,7 +131,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | SuggestionRead
+        ErrorResponse | SuggestionRead
     """
 
     return sync_detailed(
@@ -119,7 +144,7 @@ async def asyncio_detailed(
     suggestion_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> Response[HTTPValidationError | SuggestionRead]:
+) -> Response[ErrorResponse | SuggestionRead]:
     """Accept a proposed rule: it becomes a check in the suite
 
      Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
@@ -133,7 +158,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | SuggestionRead]
+        Response[ErrorResponse | SuggestionRead]
     """
 
     kwargs = _get_kwargs(
@@ -149,7 +174,7 @@ async def asyncio(
     suggestion_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-) -> HTTPValidationError | SuggestionRead | None:
+) -> ErrorResponse | SuggestionRead | None:
     """Accept a proposed rule: it becomes a check in the suite
 
      Refused with 409 `suggestion_values_sensitive` when the rule's value set is over a column classified
@@ -163,7 +188,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | SuggestionRead
+        ErrorResponse | SuggestionRead
     """
 
     return (
