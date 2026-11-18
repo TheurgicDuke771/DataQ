@@ -1,8 +1,7 @@
-"""What the access write costs, and the shape of that cost — G1 / #431 AC-3."""
+"""What the access write costs, and the shape of that cost — G1 / #431 AC-3 (counted, not timed)."""
 
 from __future__ import annotations
 
-import time
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -16,15 +15,10 @@ from backend.app.db.models import AuditEvent, Check, Connection, Result, Run, Su
 from backend.app.db.session import get_db
 from backend.app.main import app
 
-#: The two sizes whose overheads are compared. A 10x spread in results, so an
-#: O(results) write would show up as a large ratio while jitter cannot.
+#: The two sizes whose audit SQL is compared. A 10x spread in results, so an
+#: O(results) write shows up as more statements.
 _SMALL = 5
 _LARGE = 50
-
-_ROUNDS = 5
-
-#: How much more the write may cost at 10x the results.
-_MAX_GROWTH = 3.0
 
 
 @pytest.fixture
@@ -81,58 +75,42 @@ def _seed(db_session: Any, results: int) -> Run:
     return run
 
 
-def _median(values: list[float]) -> float:
-    return sorted(values)[len(values) // 2]
-
-
-def _time_read(client: TestClient, run: Run) -> float:
-    samples = []
-    for _ in range(_ROUNDS):
-        start = time.perf_counter()
-        resp = client.get(f"/api/v1/runs/{run.id}")
-        elapsed = time.perf_counter() - start
-        assert resp.status_code == 200, resp.text
-        samples.append(elapsed)
-    return _median(samples)
-
-
-def _overhead(client: TestClient, db_session: Any, monkeypatch: Any, results: int) -> float:
-    """Median cost the access write adds to one read of `results` results."""
-    from backend.app.services import audit_service
+def _audit_statements(client: TestClient, db_session: Any, results: int) -> list[str]:
+    """The SQL one read of a run with `results` results sends to the audit tables."""
+    from sqlalchemy import event
 
     run = _seed(db_session, results)
     client.get(f"/api/v1/runs/{run.id}")  # warm: first call pays import/compile costs
+    seen: list[str] = []
+    connection = db_session.connection()
 
-    audited = _time_read(client, run)
-    monkeypatch.setattr(audit_service, "record_access", lambda *a, **k: None)
-    baseline = _time_read(client, run)
-    monkeypatch.undo()
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if "audit_" in statement:
+            seen.append(statement.split("(")[0].strip())
 
-    print(
-        f"\n[G1 AC-3] {results:>3} results: read {baseline * 1000:6.2f}ms → "
-        f"{audited * 1000:6.2f}ms with the access event "
-        f"(+{max(audited - baseline, 0) * 1000:.2f}ms)"
-    )
-    return max(audited - baseline, 0.0)
+    event.listen(connection, "before_cursor_execute", _record)
+    try:
+        assert client.get(f"/api/v1/runs/{run.id}").status_code == 200
+    finally:
+        event.remove(connection, "before_cursor_execute", _record)
+    return seen
 
 
 def test_the_access_write_cost_does_not_grow_with_the_result_count(
-    client: TestClient, db_session: Any, monkeypatch: Any
+    client: TestClient, db_session: Any
 ) -> None:
-    """The machine-independent property: one event per READ, so the write is O(1)."""
-    small = _overhead(client, db_session, monkeypatch, _SMALL)
-    large = _overhead(client, db_session, monkeypatch, _LARGE)
+    """One event per READ, so the write is O(1): the audit SQL one read sends is the same
+    statements at 5 and at 50 results. Counting statements replaces the timing ratio this test
+    used to assert, which flaked on shared CI runners (#2573, #2115) because a millisecond-scale
+    difference is mostly noise; the statements it would have been measuring are the cause."""
+    small = _audit_statements(client, db_session, _SMALL)
+    large = _audit_statements(client, db_session, _LARGE)
 
-    # A floor guards against dividing by a near-zero measurement on a fast, idle
-    # machine, which would manufacture an enormous ratio out of noise.
-    growth = large / small if small > 0.0005 else 1.0
-    print(f"[G1 AC-3] cost growth from {_SMALL} to {_LARGE} results: {growth:.2f}x\n")
-
-    assert growth <= _MAX_GROWTH, (
-        f"the access write costs {growth:.1f}x more at {_LARGE} results than at "
-        f"{_SMALL} — it is scaling with the data, so the design has drifted from "
-        "one event per READ. Check nothing is writing an event per result or "
-        "querying per row."
+    assert small, "a read must send the access event to the audit tables"
+    assert large == small, (
+        f"the access write sends {len(large)} audit statements at {_LARGE} results but "
+        f"{len(small)} at {_SMALL} — it is scaling with the data, so the design has drifted from "
+        "one event per READ. Check nothing is writing an event per result or querying per row."
     )
 
 
