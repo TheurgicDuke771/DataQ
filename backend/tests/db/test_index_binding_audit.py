@@ -162,6 +162,21 @@ def test_the_audit_verdict_is_what_a_generic_plan_does(
     """``enable_seqscan = off`` removes the empty-table preference for a scan, so an index the
     planner can use is the one it picks; it cannot make an unprovable predicate usable."""
     connection = db_session.connection()
+    # The other non-unique indexes of the table are dropped (inside the test's transaction, rolled
+    # back with it): with them present the planner may prefer a plain index on an empty table, so
+    # "reached" would say nothing about the partial one and "missed" would hide behind them.
+    rivals = connection.execute(
+        text(
+            "SELECT other.indexrelid::regclass::text FROM pg_index AS target "
+            "JOIN pg_index AS other ON other.indrelid = target.indrelid "
+            "WHERE target.indexrelid = CAST(:index AS regclass) "
+            "AND other.indexrelid <> target.indexrelid "
+            "AND NOT other.indisunique AND NOT other.indisprimary"
+        ),
+        {"index": index},
+    ).scalars()
+    for rival in list(rivals):
+        connection.execute(text(f"DROP INDEX {rival}"))
     connection.execute(text("SET LOCAL enable_seqscan = off"))
     plan = "\n".join(
         row[0] for row in connection.execute(text(f"EXPLAIN (GENERIC_PLAN) {statement}"))
