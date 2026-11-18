@@ -273,8 +273,7 @@ def _no_committed_audit_state(request: pytest.FixtureRequest) -> "Iterator[None]
     from sqlalchemy import text
 
     probe = " UNION ALL ".join(
-        f"SELECT '{table}' AS name, count(*) AS n FROM {table}"
-        for table in _LEAK_GUARDED_TABLES
+        f"SELECT '{table}' AS name, count(*) AS n FROM {table}" for table in _LEAK_GUARDED_TABLES
     )
     with engine.begin() as conn:  # type: ignore[attr-defined]
         # A leaker that still holds a row lock must fail here, not hang the run.
