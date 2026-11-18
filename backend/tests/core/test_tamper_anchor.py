@@ -332,6 +332,22 @@ def test_object_lock_read_failure_raises_unavailable_not_empty() -> None:
     assert any(e.get("event") == "tamper_anchor_read_failed" for e in logs)
 
 
+@pytest.fixture(autouse=True)
+def _env_secret_store(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """These tests put their secrets in `KV_SECRET_*` variables, which only the env store reads.
+    The store is built from the process settings, so a runner whose `.env.app` selects another
+    (OpenBao on the local stack) would read its real vault instead (#2551)."""
+    from backend.app.core.secrets import reset_secret_store_cache
+
+    monkeypatch.setenv("SECRET_STORE", "env")
+    get_settings.cache_clear()
+    reset_secret_store_cache()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()
+    reset_secret_store_cache()
+
+
 def _object_lock_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "tamper_anchor": "object_lock",
