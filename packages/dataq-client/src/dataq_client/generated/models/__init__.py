@@ -192,6 +192,9 @@ from .effective_sensitivity import EffectiveSensitivity
 from .effective_sensitivity_source import EffectiveSensitivitySource
 from .effective_shape import EffectiveShape
 from .effective_shape_source import EffectiveShapeSource
+from .error_body import ErrorBody
+from .error_body_detail import ErrorBodyDetail
+from .error_response import ErrorResponse
 from .event_ack import EventAck
 from .export_contract_document_format import ExportContractDocumentFormat
 from .export_contract_document_response_export_contract_document import (
@@ -210,7 +213,6 @@ from .gate_request_provider import GateRequestProvider
 from .gate_suite_read import GateSuiteRead
 from .gate_suite_read_state import GateSuiteReadState
 from .healthz_response_healthz import HealthzResponseHealthz
-from .http_validation_error import HTTPValidationError
 from .incident_action_request import IncidentActionRequest
 from .incident_detail_read import IncidentDetailRead
 from .incident_detail_read_evidence_type_0 import IncidentDetailReadEvidenceType0
@@ -399,8 +401,6 @@ from .unread_count_read import UnreadCountRead
 from .user_role_update import UserRoleUpdate
 from .user_role_update_role import UserRoleUpdateRole
 from .user_summary import UserSummary
-from .validation_error import ValidationError
-from .validation_error_context import ValidationErrorContext
 from .warehouse_lineage_status_read import WarehouseLineageStatusRead
 from .webhook_regenerate_response import WebhookRegenerateResponse
 from .webhook_regenerate_response_auth_mode import WebhookRegenerateResponseAuthMode
@@ -588,6 +588,9 @@ __all__ = (
     "EffectiveSensitivitySource",
     "EffectiveShape",
     "EffectiveShapeSource",
+    "ErrorBody",
+    "ErrorBodyDetail",
+    "ErrorResponse",
     "EventAck",
     "ExportContractDocumentFormat",
     "ExportContractDocumentResponseExportContractDocument",
@@ -603,7 +606,6 @@ __all__ = (
     "GateRequestProvider",
     "GateSuiteRead",
     "GateSuiteReadState",
-    "HTTPValidationError",
     "HealthzResponseHealthz",
     "IncidentActionRequest",
     "IncidentDetailRead",
@@ -789,8 +791,6 @@ __all__ = (
     "UserRoleUpdate",
     "UserRoleUpdateRole",
     "UserSummary",
-    "ValidationError",
-    "ValidationErrorContext",
     "WarehouseLineageStatusRead",
     "WebhookRegenerateResponse",
     "WebhookRegenerateResponseAuthMode",

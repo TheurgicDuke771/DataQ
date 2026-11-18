@@ -169,6 +169,46 @@ def test_an_auth_refusal_carries_the_servers_code() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("status", "answer", "kind", "code", "message"),
+    [
+        (
+            404,
+            httpx.Response(404, text="<html>not found</html>"),
+            "DataQError",
+            "http_404",
+            "<html",
+        ),
+        (429, httpx.Response(429), "RateLimitedError", "http_429", ""),
+        (
+            401,
+            httpx.Response(401, json={"detail": "bad token"}),
+            "AuthError",
+            "http_401",
+            "bad token",
+        ),
+        (
+            403,
+            httpx.Response(403, json={"error": {"code": "forbidden", "message": "no"}}),
+            "AuthError",
+            "forbidden",
+            "no",
+        ),
+    ],
+)
+def test_an_error_that_is_not_the_envelope_is_still_a_typed_error(
+    status: int, answer: httpx.Response, kind: str, code: str, message: str
+) -> None:
+    """The generated code parses every declared error status as the envelope: a proxy's page, an
+    empty body or FastAPI's ``detail`` must not crash it before the typed error is raised."""
+    import dataq_client
+
+    with pytest.raises(getattr(dataq_client, kind)) as exc:
+        _client(_Server(answer)).trigger_run(SUITE)
+    assert (exc.value.status_code, exc.value.code) == (status, code)
+    assert message in exc.value.message
+
+
 def test_an_unparseable_success_is_an_error_not_a_crash() -> None:
     from dataq_client import DataQError
 

@@ -54,6 +54,7 @@ from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import error_envelope, register_exception_handlers
 from backend.app.core.logging import configure_logging, get_logger, request_id_var
+from backend.app.core.openapi_errors import install as install_error_envelope
 from backend.app.core.rate_limit import rate_limit_middleware
 from backend.app.core.tracing import (
     configure_tracing,
@@ -159,6 +160,8 @@ app = FastAPI(
     redoc_url=_docs["redoc_url"],
     openapi_url=_docs["openapi_url"],
 )
+
+install_error_envelope(app)
 
 # Rate limiting (#725, ADR 0035).
 app.middleware("http")(rate_limit_middleware)

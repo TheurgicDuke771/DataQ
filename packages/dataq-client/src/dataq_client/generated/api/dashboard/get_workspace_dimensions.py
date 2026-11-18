@@ -5,6 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.error_response import ErrorResponse
 from ...models.scorecard_read import ScorecardRead
 from ...types import Response
 
@@ -21,11 +22,41 @@ def _get_kwargs() -> dict[str, Any]:
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ScorecardRead | None:
+) -> ErrorResponse | ScorecardRead | None:
     if response.status_code == 200:
         response_200 = ScorecardRead.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
+    if response.status_code == 422:
+        response_422 = ErrorResponse.from_dict(response.json())
+
+        return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -35,7 +66,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ScorecardRead]:
+) -> Response[ErrorResponse | ScorecardRead]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -47,7 +78,7 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ScorecardRead]:
+) -> Response[ErrorResponse | ScorecardRead]:
     """Each DQ dimension across every suite in the workspace
 
      One row per DQ dimension that has checks anywhere; `uncovered` lists the
@@ -65,7 +96,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ScorecardRead]
+        Response[ErrorResponse | ScorecardRead]
     """
 
     kwargs = _get_kwargs()
@@ -80,7 +111,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-) -> ScorecardRead | None:
+) -> ErrorResponse | ScorecardRead | None:
     """Each DQ dimension across every suite in the workspace
 
      One row per DQ dimension that has checks anywhere; `uncovered` lists the
@@ -98,7 +129,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ScorecardRead
+        ErrorResponse | ScorecardRead
     """
 
     return sync_detailed(
@@ -109,7 +140,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[ScorecardRead]:
+) -> Response[ErrorResponse | ScorecardRead]:
     """Each DQ dimension across every suite in the workspace
 
      One row per DQ dimension that has checks anywhere; `uncovered` lists the
@@ -127,7 +158,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ScorecardRead]
+        Response[ErrorResponse | ScorecardRead]
     """
 
     kwargs = _get_kwargs()
@@ -140,7 +171,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-) -> ScorecardRead | None:
+) -> ErrorResponse | ScorecardRead | None:
     """Each DQ dimension across every suite in the workspace
 
      One row per DQ dimension that has checks anywhere; `uncovered` lists the
@@ -158,7 +189,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ScorecardRead
+        ErrorResponse | ScorecardRead
     """
 
     return (

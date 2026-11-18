@@ -10,33 +10,43 @@ from typing_extensions import Self
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.validation_error import ValidationError
+    from ..models.error_body_detail import ErrorBodyDetail
 
 
-T = TypeVar("T", bound="HTTPValidationError")
+T = TypeVar("T", bound="ErrorBody")
 
 
 @_attrs_define
-class HTTPValidationError:
+class ErrorBody:
     """
     Attributes:
-        detail (list[ValidationError] | Unset):
+        code (str):
+        message (str):
+        detail (ErrorBodyDetail | Unset):
     """
 
-    detail: list[ValidationError] | Unset = UNSET
+    code: str
+    message: str
+    detail: ErrorBodyDetail | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        detail: list[dict[str, Any]] | Unset = UNSET
+        code = self.code
+
+        message = self.message
+
+        detail: dict[str, Any] | Unset = UNSET
         if not isinstance(self.detail, Unset):
-            detail = []
-            for detail_item_data in self.detail:
-                detail_item = detail_item_data.to_dict()
-                detail.append(detail_item)
+            detail = self.detail.to_dict()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({})
+        field_dict.update(
+            {
+                "code": code,
+                "message": message,
+            }
+        )
         if detail is not UNSET:
             field_dict["detail"] = detail
 
@@ -44,24 +54,28 @@ class HTTPValidationError:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.validation_error import ValidationError
+        from ..models.error_body_detail import ErrorBodyDetail
 
         d = dict(src_dict)
+        code = d.pop("code")
+
+        message = d.pop("message")
+
         _detail = d.pop("detail", UNSET)
-        detail: list[ValidationError] | Unset = UNSET
-        if _detail is not UNSET:
-            detail = []
-            for detail_item_data in _detail:
-                detail_item = ValidationError.from_dict(detail_item_data)
+        detail: ErrorBodyDetail | Unset
+        if isinstance(_detail, Unset):
+            detail = UNSET
+        else:
+            detail = ErrorBodyDetail.from_dict(_detail)
 
-                detail.append(detail_item)
-
-        http_validation_error = cls(
+        error_body = cls(
+            code=code,
+            message=message,
             detail=detail,
         )
 
-        http_validation_error.additional_properties = d
-        return http_validation_error
+        error_body.additional_properties = d
+        return error_body
 
     @property
     def additional_keys(self) -> list[str]:
