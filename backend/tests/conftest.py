@@ -252,7 +252,7 @@ def _db_engine() -> "Iterator[object]":
 _SHARED_ENGINE: object | None = None
 #: Tables whose committed rows leak into every later test: the audit chain is one shared head, so
 #: a leftover row (or a head whose event a later test deleted) breaks every test that verifies it.
-_LEAK_GUARDED_TABLES = ("audit_events", "audit_chain_state")
+_LEAK_GUARDED_TABLES = ("audit_events", "audit_chain_state", "audit_chain_checkpoints")
 
 
 @pytest.fixture(autouse=True)
@@ -272,12 +272,14 @@ def _no_committed_audit_state(request: pytest.FixtureRequest) -> "Iterator[None]
         return
     from sqlalchemy import text
 
+    probe = " UNION ALL ".join(
+        f"SELECT '{table}' AS name, count(*) AS n FROM {table}"
+        for table in _LEAK_GUARDED_TABLES
+    )
     with engine.begin() as conn:  # type: ignore[attr-defined]
-        left = {
-            table: count
-            for table in _LEAK_GUARDED_TABLES
-            if (count := conn.execute(text(f"SELECT count(*) FROM {table}")).scalar())
-        }
+        # A leaker that still holds a row lock must fail here, not hang the run.
+        conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+        left = {name: n for name, n in conn.execute(text(probe)) if n}
         if left:
             for table in _LEAK_GUARDED_TABLES:
                 conn.execute(text(f"DELETE FROM {table}"))
