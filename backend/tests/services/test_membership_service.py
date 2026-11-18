@@ -11,10 +11,18 @@ import pytest
 from sqlalchemy import Table, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings as _Settings
 from backend.app.db.models import AuditEvent, User, WorkspaceMember
 from backend.app.services import membership_service as svc
 from backend.tests.support.scratch_db import scratch_engine
+
+
+def Settings(**fields: Any) -> _Settings:
+    """A deployment built from the given fields alone: the runner's `.env` and the variables
+    that name admins or the sign-in address must not change what these tests decide (#2135)."""
+    fields.setdefault("workspace_admin_emails", "")
+    return _Settings(_env_file=None, **fields)  # type: ignore[call-arg]
+
 
 # A deployment where dev bypass is NOT the selected mode, so the gate actually runs.
 _ENFORCING = Settings(
