@@ -1795,3 +1795,24 @@ identical histograms for 7 and 30 days. The tests compare the summary with the p
 reference with the table empty, partly filled and full, and over results placed on each side
 of both window edges.
 
+## v1.3 — verifying the audit chain
+
+> Measured **2026-11-17** on the development machine: a real hash chain of 100,000 audit rows
+> with payloads of about 1 KB each, in the perf harness's PostgreSQL 16 scratch database.
+
+`GET /admin/audit-events/verify` and the daily `verify_audit_chain` task walk the hash chain
+back from its head. The walk used to load every hashed row, payload and all, before it started,
+so its memory grew with the whole history. It now keeps, for every row, only its hash, id and
+previous hash (enough to know which row follows which), and loads the full rows 500 at a time in
+the order the walk wants them, letting each go once it is checked.
+
+| 100,000 rows | Before | After |
+|---|---|---|
+| Peak Python memory | 460 MiB | 61 MiB |
+| Wall time | 32 s | 37 s |
+
+The wall time is the hashing, which is unchanged; the extra 5 s is the 200 batched reads.
+Memory is still linear in the number of rows, at about 0.6 KB each instead of about 4.6 KB, and
+no schema change was needed (a recursive walk would have wanted an index on `row_hash`, which
+every audit write would then maintain).
+

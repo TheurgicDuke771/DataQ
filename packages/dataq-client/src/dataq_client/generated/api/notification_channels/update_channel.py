@@ -9,7 +9,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.channel_read import ChannelRead
 from ...models.channel_update import ChannelUpdate
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...types import Response
 
 
@@ -37,16 +37,41 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ChannelRead | HTTPValidationError | None:
+) -> ChannelRead | ErrorResponse | None:
     if response.status_code == 200:
         response_200 = ChannelRead.from_dict(response.json())
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -56,7 +81,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ChannelRead | HTTPValidationError]:
+) -> Response[ChannelRead | ErrorResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -70,7 +95,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: ChannelUpdate,
-) -> Response[ChannelRead | HTTPValidationError]:
+) -> Response[ChannelRead | ErrorResponse]:
     """Update a channel
 
     Args:
@@ -82,7 +107,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ChannelRead | HTTPValidationError]
+        Response[ChannelRead | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
@@ -102,7 +127,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
     body: ChannelUpdate,
-) -> ChannelRead | HTTPValidationError | None:
+) -> ChannelRead | ErrorResponse | None:
     """Update a channel
 
     Args:
@@ -114,7 +139,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ChannelRead | HTTPValidationError
+        ChannelRead | ErrorResponse
     """
 
     return sync_detailed(
@@ -129,7 +154,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: ChannelUpdate,
-) -> Response[ChannelRead | HTTPValidationError]:
+) -> Response[ChannelRead | ErrorResponse]:
     """Update a channel
 
     Args:
@@ -141,7 +166,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ChannelRead | HTTPValidationError]
+        Response[ChannelRead | ErrorResponse]
     """
 
     kwargs = _get_kwargs(
@@ -159,7 +184,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     body: ChannelUpdate,
-) -> ChannelRead | HTTPValidationError | None:
+) -> ChannelRead | ErrorResponse | None:
     """Update a channel
 
     Args:
@@ -171,7 +196,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ChannelRead | HTTPValidationError
+        ChannelRead | ErrorResponse
     """
 
     return (

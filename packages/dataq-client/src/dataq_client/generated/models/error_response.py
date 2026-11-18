@@ -1,33 +1,55 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
-T = TypeVar("T", bound="ValidationErrorContext")
+if TYPE_CHECKING:
+    from ..models.error_body import ErrorBody
+
+
+T = TypeVar("T", bound="ErrorResponse")
 
 
 @_attrs_define
-class ValidationErrorContext:
+class ErrorResponse:
+    """
+    Attributes:
+        error (ErrorBody):
+    """
+
+    error: ErrorBody
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        error = self.error.to_dict()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "error": error,
+            }
+        )
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        d = dict(src_dict)
-        validation_error_context = cls()
+        from ..models.error_body import ErrorBody
 
-        validation_error_context.additional_properties = d
-        return validation_error_context
+        d = dict(src_dict)
+        error = ErrorBody.from_dict(d.pop("error"))
+
+        error_response = cls(
+            error=error,
+        )
+
+        error_response.additional_properties = d
+        return error_response
 
     @property
     def additional_keys(self) -> list[str]:
