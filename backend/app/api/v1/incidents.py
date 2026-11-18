@@ -11,10 +11,13 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import (
+    INCIDENTS_LIST,
     TOTAL_COUNT_HEADER,
     ApiModel,
     ApiRequestModel,
-    total_count_responses,
+    cursor_page_responses,
+    finish_page,
+    read_cursor,
 )
 from backend.app.core.auth import get_current_user
 from backend.app.core.errors import DataQError
@@ -143,12 +146,15 @@ def _to_detail(incident: Incident, evidence: dict[str, Any] | None) -> IncidentD
     "/incidents",
     response_model=list[IncidentRead],
     summary="List visible incidents",
-    responses=total_count_responses(
+    responses=cursor_page_responses(
         "Total incidents visible to the caller matching the `asset_id`/`suite_id`/"
         "`state` filters (#1108) — the same accessible-suite-scoped population "
         "this page's limit/offset slice into. #772 added `offset` but shipped only "
         "that half of the /assets paging shape; a page shorter than `limit` "
-        "doesn't by itself prove there's no more — compare against this header."
+        "doesn't by itself prove there's no more — compare against this header.",
+        "An incident's position is its `last_seen_at`, which moves each time it breaches again, "
+        "so an incident bumped past the cursor while a client pages can be missed; none is "
+        "returned twice (paging by `offset` can repeat rows as well as miss them).",
     ),
 )
 def list_incidents(
@@ -161,6 +167,15 @@ def list_incidents(
     limit: int = Query(default=100, ge=1, le=500),
     # Pagination offset — the #772 /assets shape; limit alone truncated silently.
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(
+        default=None,
+        description=(
+            "Start the page after the incident this cursor names (the `X-Next-Cursor` header of "
+            "the previous page). Costs the same at any depth. Opaque; send it instead of "
+            "`offset`, never with it (422). Incidents sort by `last_seen_at`, which moves: an "
+            "incident bumped past the cursor while you page can be missed, none repeats."
+        ),
+    ),
 ) -> list[IncidentRead]:
     if state is not None and state not in INCIDENT_STATUSES:
         # A bogus state is a 422, not a silent empty list (the #570 clean-input rule).
@@ -171,25 +186,33 @@ def list_incidents(
             detail={"state": state, "allowed": list(INCIDENT_STATUSES)},
         )
     include_all = is_workspace_admin(current_user)
-    response.headers[TOTAL_COUNT_HEADER] = str(
-        incident_service.count_incidents(
+    after = read_cursor(INCIDENTS_LIST, cursor, offset)
+    if cursor is None:  # a cursor page leaves the total to the first page (see `/runs`)
+        response.headers[TOTAL_COUNT_HEADER] = str(
+            incident_service.count_incidents(
+                db,
+                user_id=current_user.id,
+                include_all=include_all,
+                asset_id=asset_id,
+                suite_id=suite_id,
+                state=state,
+            )
+        )
+    incidents = finish_page(
+        response,
+        incident_service.list_incidents(
             db,
             user_id=current_user.id,
             include_all=include_all,
             asset_id=asset_id,
             suite_id=suite_id,
             state=state,
-        )
-    )
-    incidents = incident_service.list_incidents(
-        db,
-        user_id=current_user.id,
-        include_all=include_all,
-        asset_id=asset_id,
-        suite_id=suite_id,
-        state=state,
+            limit=limit + 1,
+            offset=offset,
+            after=after,
+        ),
         limit=limit,
-        offset=offset,
+        page_list=INCIDENTS_LIST,
     )
     return [_to_summary(i) for i in incidents]
 

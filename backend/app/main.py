@@ -48,7 +48,7 @@ from backend.app.api.v1 import tags as tags_router
 from backend.app.api.v1 import telemetry as telemetry_router
 from backend.app.api.v1 import trigger_bindings as trigger_bindings_router
 from backend.app.api.v1 import users as users_router
-from backend.app.api.v1._base import TOTAL_COUNT_HEADER
+from backend.app.api.v1._base import NEXT_CURSOR_HEADER, TOTAL_COUNT_HEADER
 from backend.app.core import usage_telemetry
 from backend.app.core.auth import init_auth
 from backend.app.core.config import Settings, get_settings
@@ -166,6 +166,10 @@ install_error_envelope(app)
 # Rate limiting (#725, ADR 0035).
 app.middleware("http")(rate_limit_middleware)
 
+#: Response headers a browser on another origin may read: the request id and the two paging
+#: headers (X-Total-Count #925/#1108, X-Next-Cursor #1987).
+CORS_EXPOSE_HEADERS = [REQUEST_ID_HEADER, TOTAL_COUNT_HEADER, NEXT_CURSOR_HEADER]
+
 # Cross-origin access for the prod Static-Web-App ↔ Container-Apps split.
 _cors_origins = get_settings().cors_allow_origin_list
 if _cors_origins:
@@ -175,9 +179,7 @@ if _cors_origins:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        # X-Total-Count (#925, spread to /pipeline_runs, /incidents, /runs by #1108): every paged
-        # list endpoint's total, over its CORS-headers allowlist.
-        expose_headers=[REQUEST_ID_HEADER, TOTAL_COUNT_HEADER],
+        expose_headers=CORS_EXPOSE_HEADERS,
     )
 
 

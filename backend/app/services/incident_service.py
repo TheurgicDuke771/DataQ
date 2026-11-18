@@ -24,7 +24,7 @@ from backend.app.db.models import (
     Suite,
     SuiteNotification,
 )
-from backend.app.services import audit_service, run_service, suite_service
+from backend.app.services import audit_service, paging, run_service, suite_service
 from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.incident_evidence import (
     RedactionContext,
@@ -753,10 +753,16 @@ def list_incidents(
     offset: int = 0,
     since_hours: float | None = None,
     until_hours: float | None = None,
+    after: paging.Position | None = None,
 ) -> list[Incident]:
     """Incidents on suites the caller can view, most-recently-active first
     (``last_seen_at`` desc), paginated with ``limit``/``offset`` (the #772
-    /assets pagination shape).
+    /assets pagination shape) or, with ``after``, from a cursor position (#1987).
+
+    ``last_seen_at`` moves: every new breach bumps it, which moves the incident to the front
+    of this list. A reader paging by cursor therefore never sees an incident twice, but can
+    miss one that was bumped past its cursor while it paged. (Paging by ``offset`` is worse:
+    a bump shifts every row behind it, so rows repeat as well as go missing.)
 
     Ordered, filtered (``since_hours``/``until_hours``) and windowed
     (``_page_window`` in the MCP tool) all on the SAME field —
@@ -785,6 +791,8 @@ def list_incidents(
         .limit(limit)
         .offset(offset)
     )
+    if after is not None:
+        stmt = stmt.where(paging.after(Incident.last_seen_at, Incident.id, after))
     return list(session.scalars(stmt))
 
 

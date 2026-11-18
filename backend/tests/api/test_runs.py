@@ -1976,3 +1976,197 @@ def test_a_result_from_a_complete_read_reports_no_sampling(
     _as(dev)
     resp = client.get(f"/api/v1/runs/{run.id}")
     assert resp.json()["results"][0]["sampling"] is None
+
+
+# ───────────────────── cursor paging (#1987) ─────────────────────
+
+
+def _page_through(client: TestClient, path: str, *, limit: int) -> list[list[str]]:
+    """Follow `X-Next-Cursor` from the first page to the last; the ids of each page."""
+    pages: list[list[str]] = []
+    url = f"{path}{'&' if '?' in path else '?'}limit={limit}"
+    cursor = None
+    while True:
+        resp = client.get(url if cursor is None else f"{url}&cursor={cursor}")
+        assert resp.status_code == 200, resp.text
+        pages.append([row["id"] for row in resp.json()])
+        cursor = resp.headers.get("X-Next-Cursor")
+        if cursor is None:
+            return pages
+        assert len(pages) < 50, "the cursor never ended"
+
+
+def test_runs_page_by_cursor_through_ties_to_the_same_rows_as_offset(
+    client: TestClient, db_session: Any
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    same = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
+    for i in range(7):  # four share one timestamp: the id tie-break decides their order
+        db_session.add(
+            Run(suite_id=s.id, status="queued", created_at=same - timedelta(minutes=max(i - 3, 0)))
+        )
+    db_session.commit()
+    _as(dev)
+
+    pages = _page_through(client, "/api/v1/runs", limit=3)
+
+    assert [len(p) for p in pages] == [3, 3, 1]
+    by_cursor = [i for page in pages for i in page]
+    assert len(set(by_cursor)) == 7
+    by_offset = client.get("/api/v1/runs?limit=200")
+    assert by_cursor == [r["id"] for r in by_offset.json()]
+
+
+def test_a_page_that_ends_exactly_at_the_last_row_has_no_next_cursor(
+    client: TestClient, db_session: Any
+) -> None:
+    """The extra row fetched past the limit is what proves there is a next page: a list of
+    exactly `limit` rows is one page, not a page and an empty one."""
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for _ in range(3):
+        _run(db_session, s)
+    _as(dev)
+
+    resp = client.get("/api/v1/runs?limit=3")
+
+    assert len(resp.json()) == 3
+    assert "X-Next-Cursor" not in resp.headers
+    assert resp.headers["X-Total-Count"] == "3"
+
+
+def test_a_cursor_keeps_the_filters_the_client_sends_and_the_total(
+    client: TestClient, db_session: Any
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for status in ("succeeded", "failed", "succeeded", "failed", "succeeded"):
+        _run(db_session, s, status=status)
+    _as(dev)
+
+    pages = _page_through(client, "/api/v1/runs?status=succeeded", limit=2)
+
+    assert [len(p) for p in pages] == [2, 1]
+    first = client.get("/api/v1/runs?status=succeeded&limit=2")
+    assert first.headers["X-Total-Count"] == "3"
+    assert all(r["status"] == "succeeded" for r in first.json())
+    # The total is the first page's: a page asked for by cursor does not count it again.
+    later = client.get(
+        f"/api/v1/runs?status=succeeded&limit=2&cursor={first.headers['X-Next-Cursor']}"
+    )
+    assert later.status_code == 200 and "X-Total-Count" not in later.headers
+
+
+def test_a_cursor_never_reaches_a_run_the_caller_cannot_see(
+    client: TestClient, db_session: Any
+) -> None:
+    dev, other = _user(db_session, "dev@ex"), _user(db_session, "other@ex")
+    mine = _suite(db_session, dev, target={"table": "T"})
+    theirs = _suite(db_session, other, target={"table": "T"})
+    for _ in range(3):
+        _run(db_session, mine)
+        _run(db_session, theirs)
+    _as(dev)
+
+    pages = _page_through(client, "/api/v1/runs", limit=2)
+
+    seen = {i for page in pages for i in page}
+    assert len(seen) == 3
+    assert seen == {str(r.id) for r in db_session.query(Run).filter(Run.suite_id == mine.id)}
+
+
+def test_a_cursor_with_an_offset_is_a_422(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for _ in range(3):
+        _run(db_session, s)
+    _as(dev)
+    cursor = client.get("/api/v1/runs?limit=1").headers["X-Next-Cursor"]
+
+    resp = client.get(f"/api/v1/runs?cursor={cursor}&offset=1")
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "cursor_with_offset"
+    zero_offset = client.get(f"/api/v1/runs?cursor={cursor}&offset=0")
+    assert zero_offset.status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/api/v1/runs", "/api/v1/pipeline_runs", "/api/v1/incidents"])
+def test_a_malformed_cursor_is_a_422_on_every_list(
+    client: TestClient, db_session: Any, path: str
+) -> None:
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+
+    resp = client.get(f"{path}?cursor=garbage")
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_cursor"
+
+
+def test_a_cursor_from_one_list_is_refused_by_another(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    s = _suite(db_session, dev, target={"table": "T"})
+    for _ in range(3):
+        _run(db_session, s)
+    _pipeline_runs_on_one_connection(db_session, dev, count=3)
+    _as(dev)
+    runs_cursor = client.get("/api/v1/runs?limit=1").headers["X-Next-Cursor"]
+
+    resp = client.get(f"/api/v1/pipeline_runs?cursor={runs_cursor}")
+
+    assert resp.status_code == 422 and resp.json()["error"]["code"] == "invalid_cursor"
+
+
+def test_pipeline_runs_page_by_cursor_to_the_same_rows_as_offset(
+    client: TestClient, db_session: Any
+) -> None:
+    owner = _user(db_session, "owner@ex")
+    _pipeline_runs_on_one_connection(db_session, owner, count=5)
+    _as(owner)
+
+    pages = _page_through(client, "/api/v1/pipeline_runs", limit=2)
+
+    assert [len(p) for p in pages] == [2, 2, 1]
+    by_cursor = [i for page in pages for i in page]
+    by_offset = client.get("/api/v1/pipeline_runs?limit=200")
+    assert by_cursor == [p["id"] for p in by_offset.json()]
+
+
+def test_the_cursor_header_is_documented_and_exposed_to_browsers() -> None:
+    from backend.app.main import app as the_app
+
+    schema = the_app.openapi()
+    for path in ("/api/v1/runs", "/api/v1/pipeline_runs", "/api/v1/incidents"):
+        operation = schema["paths"][path]["get"]
+        assert "X-Next-Cursor" in operation["responses"]["200"]["headers"], path
+        assert any(p["name"] == "cursor" for p in operation["parameters"]), path
+    from backend.app.main import CORS_EXPOSE_HEADERS
+
+    assert "X-Next-Cursor" in CORS_EXPOSE_HEADERS
+
+
+@pytest.mark.parametrize("path", ["/api/v1/runs", "/api/v1/pipeline_runs", "/api/v1/incidents"])
+def test_a_bad_cursor_is_refused_before_anything_is_counted(
+    client: TestClient, db_session: Any, path: str
+) -> None:
+    """A request that will be a 422 must not first pay for the count of the whole list."""
+    from sqlalchemy import event
+
+    dev = _user(db_session, "dev@ex")
+    _as(dev)
+    selects: list[str] = []
+
+    def before(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        if "count(" in statement.lower():
+            selects.append(statement)
+
+    event.listen(db_session.get_bind(), "before_cursor_execute", before)
+    try:
+        assert client.get(f"{path}?cursor=garbage").status_code == 422
+        assert client.get(f"{path}?cursor=garbage&offset=3").status_code == 422
+    finally:
+        event.remove(db_session.get_bind(), "before_cursor_execute", before)
+
+    assert selects == []
