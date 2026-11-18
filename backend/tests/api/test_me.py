@@ -212,3 +212,162 @@ def test_patch_me_cannot_touch_another_users_row(client: TestClient, db_session:
 
     db_session.refresh(victim)
     assert victim.display_name is None
+
+
+# ── GET /me/access-summary (#2537) ───────────────────────────────────────────
+
+
+def _suite_for(db: Any, creator: User, name: str) -> Any:
+    from backend.app.db.models import Connection, Suite
+
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=creator.id,
+    )
+    db.add(conn)
+    db.flush()
+    suite = Suite(name=name, connection_id=conn.id, created_by=creator.id)
+    db.add(suite)
+    db.flush()
+    return suite
+
+
+def _from_the_suite_list(client: TestClient, headers: dict[str, str]) -> dict[str, Any]:
+    """What the Profile page used to compute: the same figures from every suite's payload."""
+    suites = client.get("/api/v1/suites", headers=headers).json()
+    counts = dict.fromkeys(("owner", "admin", "edit", "view"), 0)
+    for s in suites:
+        if s["my_permission"]:
+            counts[s["my_permission"]] += 1
+    owned = sorted(
+        ({"id": s["id"], "name": s["name"]} for s in suites if s["my_permission"] == "owner"),
+        key=lambda s: s["name"],
+    )
+    return {"total": len(suites), "counts": counts, "owned": owned}
+
+
+def _summary(client: TestClient, headers: dict[str, str]) -> dict[str, Any]:
+    resp = client.get("/api/v1/me/access-summary", headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    return {
+        "total": body["total_visible"],
+        "counts": body["counts_by_level"],
+        "owned": [{"id": o["id"], "name": o["name"]} for o in body["owned"]],
+    }
+
+
+def _world(db_session: Any, as_role: Any) -> dict[str, tuple[User, dict[str, str]]]:
+    """Two owners and three kinds of caller over suites owned by each, shared at every level."""
+    from backend.app.db.models import Share
+
+    other, _ = as_role("member")
+    member, member_headers = as_role("member")
+    admin, admin_headers = as_role("admin")
+    viewer, viewer_headers = as_role("viewer")
+    mine_b = _suite_for(db_session, member, "b mine")
+    _suite_for(db_session, member, "a mine")
+    theirs = [_suite_for(db_session, other, f"theirs {i}") for i in range(5)]
+    _suite_for(db_session, admin, "admins own")
+    for suite, who, level in (
+        (theirs[0], member, "admin"),
+        (theirs[1], member, "edit"),
+        (theirs[2], member, "view"),
+        (theirs[2], viewer, "edit"),  # a viewer's share is capped to view
+        (theirs[3], viewer, "view"),
+        (mine_b, viewer, "view"),
+        (theirs[0], admin, "view"),  # an admin's share changes nothing
+    ):
+        db_session.add(Share(suite_id=suite.id, user_id=who.id, permission=level))
+    db_session.commit()
+    return {
+        "member": (member, member_headers),
+        "admin": (admin, admin_headers),
+        "viewer": (viewer, viewer_headers),
+    }
+
+
+@pytest.mark.parametrize("who", ["member", "admin", "viewer"])
+def test_the_access_summary_equals_what_the_suite_list_says(
+    client: TestClient, db_session: Any, as_role: Any, who: str
+) -> None:
+    get_settings.cache_clear()
+    _, headers = _world(db_session, as_role)[who]
+
+    summary = _summary(client, headers)
+
+    assert summary == _from_the_suite_list(client, headers)
+    assert summary["total"] > 0
+
+
+def test_the_access_summary_figures_for_each_role(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    get_settings.cache_clear()
+    world = _world(db_session, as_role)
+
+    member = _summary(client, world["member"][1])
+    assert member["counts"] == {"owner": 2, "admin": 1, "edit": 1, "view": 1}
+    assert [o["name"] for o in member["owned"]] == ["a mine", "b mine"]
+
+    admin = _summary(client, world["admin"][1])
+    assert admin["counts"]["owner"] == 1 and admin["counts"]["edit"] == admin["counts"]["view"] == 0
+    assert admin["total"] == 1 + admin["counts"]["admin"]
+
+    viewer = _summary(client, world["viewer"][1])
+    assert viewer["counts"] == {"owner": 0, "admin": 0, "edit": 0, "view": 3}
+    assert viewer["owned"] == []
+
+
+def test_a_suite_owned_and_shared_to_its_owner_counts_once(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    from backend.app.db.models import Share
+
+    get_settings.cache_clear()
+    member, headers = as_role("member")
+    suite = _suite_for(db_session, member, "mine")
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
+    db_session.commit()
+
+    summary = _summary(client, headers)
+
+    assert summary["counts"] == {"owner": 1, "admin": 0, "edit": 0, "view": 0}
+    assert summary == _from_the_suite_list(client, headers)
+
+
+def test_the_access_summary_of_a_user_with_no_suites_is_empty(
+    client: TestClient, as_role: Any
+) -> None:
+    get_settings.cache_clear()
+    _, headers = as_role("member")
+
+    assert _summary(client, headers) == {
+        "total": 0,
+        "counts": {"owner": 0, "admin": 0, "edit": 0, "view": 0},
+        "owned": [],
+    }
+
+
+def test_a_share_on_a_suite_whose_creator_was_deleted_still_counts(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    """`suites.created_by` is NULL once its creator is deleted; the suite list still shows it."""
+    from backend.app.db.models import Share
+
+    get_settings.cache_clear()
+    creator, _ = as_role("member")
+    member, headers = as_role("member")
+    suite = _suite_for(db_session, creator, "orphaned")
+    db_session.add(Share(suite_id=suite.id, user_id=member.id, permission="view"))
+    suite.created_by = None
+    db_session.commit()
+
+    summary = _summary(client, headers)
+
+    assert summary["counts"]["view"] == 1 and summary["total"] == 1
+    assert summary == _from_the_suite_list(client, headers)

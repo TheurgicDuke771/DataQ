@@ -1,6 +1,60 @@
 {
   "components": {
     "schemas": {
+      "AccessLevelCounts": {
+        "properties": {
+          "admin": {
+            "title": "Admin",
+            "type": "integer"
+          },
+          "edit": {
+            "title": "Edit",
+            "type": "integer"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "integer"
+          },
+          "view": {
+            "title": "View",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "admin",
+          "edit",
+          "view"
+        ],
+        "title": "AccessLevelCounts",
+        "type": "object"
+      },
+      "AccessSummaryRead": {
+        "description": "The caller's suite access, counted server-side: what the Profile page renders.",
+        "properties": {
+          "counts_by_level": {
+            "$ref": "#/components/schemas/AccessLevelCounts"
+          },
+          "owned": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedSuiteSummary"
+            },
+            "title": "Owned",
+            "type": "array"
+          },
+          "total_visible": {
+            "title": "Total Visible",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_visible",
+          "counts_by_level",
+          "owned"
+        ],
+        "title": "AccessSummaryRead",
+        "type": "object"
+      },
       "AdditionalTableRef": {
         "additionalProperties": false,
         "description": "A join-relevant related table on the SUITE'S OWN connection (#1649).\nThere is deliberately no connection reference here: cross-connection\njoins are out of scope (a federated engine is a different ADR) and the\n`comparison` kind (ADR 0015) is the reconciliation shape for that \u2014\nrefusing it is structural, not an error path to hit.",
@@ -9335,6 +9389,37 @@
           "result_count"
         ],
         "title": "OwnedSuiteRead",
+        "type": "object"
+      },
+      "OwnedSuiteSummary": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "title": "OwnedSuiteSummary",
         "type": "object"
       },
       "PipelineRunRead": {
@@ -22731,6 +22816,88 @@
           }
         },
         "summary": "Update the current user's profile",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/access-summary": {
+      "get": {
+        "description": "How many suites the caller holds at each level and which ones they own, without listing\nevery suite (`GET /suites` returns each one's full payload).",
+        "operationId": "my_access_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessSummaryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not signed in, or the credential is not valid (`unauthenticated`)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The caller's role or access to this resource does not allow it (`forbidden`)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The resource does not exist, or the caller cannot see it (`not_found`)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request conflicts with the resource's current state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request is not valid (`validation_error`)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too many requests: retry after the `Retry-After` header (`rate_limited`)."
+          }
+        },
+        "summary": "The caller's suite access, counted",
         "tags": [
           "auth"
         ]
