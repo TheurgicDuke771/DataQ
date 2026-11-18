@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -75,18 +76,17 @@ def _seed(db_session: Any, results: int) -> Run:
     return run
 
 
-def _audit_statements(client: TestClient, db_session: Any, results: int) -> list[str]:
-    """The SQL one read of a run with `results` results sends to the audit tables."""
+def _read_statements(client: TestClient, db_session: Any, results: int) -> list[str]:
+    """Every SQL statement one read of a run with `results` results sends, by its leading text."""
     from sqlalchemy import event
 
     run = _seed(db_session, results)
-    client.get(f"/api/v1/runs/{run.id}")  # warm: first call pays import/compile costs
     seen: list[str] = []
     connection = db_session.connection()
 
     def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
-        if "audit_" in statement:
-            seen.append(statement.split("(")[0].strip())
+        # Savepoint names carry a running counter, which differs between any two reads.
+        seen.append(re.sub(r"sa_savepoint_\d+", "sa_savepoint", " ".join(statement.split()))[:80])
 
     event.listen(connection, "before_cursor_execute", _record)
     try:
@@ -99,18 +99,23 @@ def _audit_statements(client: TestClient, db_session: Any, results: int) -> list
 def test_the_access_write_cost_does_not_grow_with_the_result_count(
     client: TestClient, db_session: Any
 ) -> None:
-    """One event per READ, so the write is O(1): the audit SQL one read sends is the same
-    statements at 5 and at 50 results. Counting statements replaces the timing ratio this test
-    used to assert, which flaked on shared CI runners (#2573, #2115) because a millisecond-scale
-    difference is mostly noise; the statements it would have been measuring are the cause."""
-    small = _audit_statements(client, db_session, _SMALL)
-    large = _audit_statements(client, db_session, _LARGE)
+    """One event per READ, so the write is O(1): a read sends the same SQL at 5 and at 50
+    results. Counting statements replaces the timing ratio this test used to assert, which flaked
+    on shared CI runners (#2573, #2115): a millisecond-scale difference is mostly noise, while
+    the cause it was measuring (an event or a query per result) shows up as more statements. Every
+    statement is compared, not only the audit ones, so a query per row anywhere fails it too.
+    What it cannot see is a slower single statement; that is a timing question, not a scaling one.
+    """
+    small = _read_statements(client, db_session, _SMALL)
+    large = _read_statements(client, db_session, _LARGE)
 
-    assert small, "a read must send the access event to the audit tables"
-    assert large == small, (
-        f"the access write sends {len(large)} audit statements at {_LARGE} results but "
-        f"{len(small)} at {_SMALL} — it is scaling with the data, so the design has drifted from "
-        "one event per READ. Check nothing is writing an event per result or querying per row."
+    assert any(
+        "audit_" in statement for statement in small
+    ), "a read must send the access event to the audit tables"
+    assert sorted(large) == sorted(small), (
+        f"a read sends {len(large)} statements at {_LARGE} results but {len(small)} at "
+        f"{_SMALL} — it is scaling with the data, so the design has drifted from one event per "
+        "READ. Check nothing is writing an event per result or querying per row."
     )
 
 
