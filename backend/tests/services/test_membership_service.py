@@ -29,7 +29,7 @@ def Settings(**fields: Any) -> _Settings:  # the name is kept so the call sites 
         "auth_otp_allowed_domains",
     ):
         fields.setdefault(name, "")
-    return _Settings(_env_file=None, **fields)  # type: ignore[call-arg]
+    return _Settings(_env_file=None, **fields)
 
 
 # A deployment where dev bypass is NOT the selected mode, so the gate actually runs.
