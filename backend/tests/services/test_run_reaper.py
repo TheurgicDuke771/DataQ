@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.services import run_dispatch, run_service
@@ -182,3 +182,61 @@ def test_reaping_a_queued_run_touches_no_results(db_session: Any) -> None:
     _reap(db_session)
 
     assert len(db_session.scalars(select(Result).where(Result.run_id == other.id)).all()) == 1
+
+
+# ── a run a worker finished behind the caller's back (#2010) ─────────────────
+#
+# `result_status_hourly` counts a succeeded run's results, so a run must never leave
+# `succeeded`. Each transition below is handed a copy of the run loaded while it was still
+# `running`; the worker's commit of `succeeded` is stood in for by an UPDATE that leaves the
+# caller's copy stale, as a second connection's commit would.
+
+
+def _finished_behind_its_back(db_session: Any, run: Run) -> None:
+    db_session.execute(
+        text("UPDATE runs SET status = 'succeeded', finished_at = now() WHERE id = :id"),
+        {"id": run.id},
+    )
+    assert run.status == "running"  # the caller's copy is stale
+
+
+def test_cancel_does_not_overwrite_a_run_that_just_succeeded(db_session: Any) -> None:
+    run = _run(db_session, status="running", created_min_ago=5, started_min_ago=5)
+    _finished_behind_its_back(db_session, run)
+
+    assert run_service.cancel_run(db_session, run) is False
+
+    db_session.refresh(run)
+    assert run.status == "succeeded"
+
+
+def test_the_reaper_does_not_fail_a_run_that_just_succeeded(db_session: Any) -> None:
+    run = _run(db_session, status="running", created_min_ago=300, started_min_ago=300)
+    _finished_behind_its_back(db_session, run)
+
+    reaped = run_service.reap_stuck_runs(db_session, threshold_minutes=60, now=NOW)
+
+    assert reaped == []
+    db_session.refresh(run)
+    assert run.status == "succeeded"
+
+
+def test_worker_lost_does_not_fail_a_run_that_just_succeeded(db_session: Any) -> None:
+    run = _run(db_session, status="running", created_min_ago=5, started_min_ago=5)
+    db_session.expire_all()
+    run = db_session.get(Run, run.id)
+    assert run is not None and run.status == "running"
+    _finished_behind_its_back(db_session, run)
+
+    assert run_service.fail_run_worker_lost(db_session, run_id=run.id) is False
+
+    db_session.refresh(run)
+    assert run.status == "succeeded"
+
+
+def test_a_run_that_is_still_running_is_still_cancelled(db_session: Any) -> None:
+    run = _run(db_session, status="running", created_min_ago=5, started_min_ago=5)
+
+    assert run_service.cancel_run(db_session, run) is True
+
+    assert run.status == "cancelled"
