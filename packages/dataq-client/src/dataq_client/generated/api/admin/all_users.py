@@ -6,6 +6,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.admin_user_read import AdminUserRead
+from ...models.error_response import ErrorResponse
 from ...types import Response
 
 
@@ -21,7 +22,7 @@ def _get_kwargs() -> dict[str, Any]:
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> list[AdminUserRead] | None:
+) -> ErrorResponse | list[AdminUserRead] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -32,6 +33,36 @@ def _parse_response(
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
+    if response.status_code == 422:
+        response_422 = ErrorResponse.from_dict(response.json())
+
+        return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -40,7 +71,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[list[AdminUserRead]]:
+) -> Response[ErrorResponse | list[AdminUserRead]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -52,7 +83,7 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[list[AdminUserRead]]:
+) -> Response[ErrorResponse | list[AdminUserRead]]:
     """All users (admin)
 
     Raises:
@@ -60,7 +91,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[AdminUserRead]]
+        Response[ErrorResponse | list[AdminUserRead]]
     """
 
     kwargs = _get_kwargs()
@@ -75,7 +106,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-) -> list[AdminUserRead] | None:
+) -> ErrorResponse | list[AdminUserRead] | None:
     """All users (admin)
 
     Raises:
@@ -83,7 +114,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[AdminUserRead]
+        ErrorResponse | list[AdminUserRead]
     """
 
     return sync_detailed(
@@ -94,7 +125,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[list[AdminUserRead]]:
+) -> Response[ErrorResponse | list[AdminUserRead]]:
     """All users (admin)
 
     Raises:
@@ -102,7 +133,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[AdminUserRead]]
+        Response[ErrorResponse | list[AdminUserRead]]
     """
 
     kwargs = _get_kwargs()
@@ -115,7 +146,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-) -> list[AdminUserRead] | None:
+) -> ErrorResponse | list[AdminUserRead] | None:
     """All users (admin)
 
     Raises:
@@ -123,7 +154,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[AdminUserRead]
+        ErrorResponse | list[AdminUserRead]
     """
 
     return (
