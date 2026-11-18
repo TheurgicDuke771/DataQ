@@ -90,7 +90,8 @@ def _read_statements(client: TestClient, db_session: Any, results: int) -> list[
 
     event.listen(connection, "before_cursor_execute", _record)
     try:
-        assert client.get(f"/api/v1/runs/{run.id}").status_code == 200
+        resp = client.get(f"/api/v1/runs/{run.id}")
+        assert resp.status_code == 200
     finally:
         event.remove(connection, "before_cursor_execute", _record)
     return seen
