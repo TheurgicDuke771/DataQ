@@ -21,7 +21,7 @@ anthropic==1.15.0                  # MIT (rule 40); the LLMProvider seam's Anthr
 httpx==0.28.1                     # the backend's outbound HTTP client — Teams/Slack alerting, ADF + Airflow polling, Marquez lineage, the OpenBao secret store (ADR 0039). Was dev-only and reached prod transitively via openlineage, i.e. unpinned from our side (#1055)
 
 # ── Task queue ──
-celery[redis]==5.6.3
+celery[redis]==5.7.0
 redis==5.3.1
 croniter==6.2.4                   # cron-expression parsing for suite run schedules (A7)
 
