@@ -307,6 +307,9 @@ section below.
 - **The task queue runs on Celery 5.7 and redis-py 7.4.** Celery 5.7 needs a newer Redis client
   than the 5.x line DataQ pinned, so the two move together. Nothing changes for the API, the
   worker or the scheduler: every Redis client still fails fast on its own short timeouts.
+- **Browser tests also run on Firefox and WebKit, once a week.** Pull requests still test on
+  Chromium. Every Monday, and on demand, CI runs the same end-to-end specs on Firefox and
+  WebKit too, each from a fresh seed, and uploads a report per browser.
 - **The Azure OpenTofu stack stands up on an empty subscription.** By default it now creates the
   resource group, the Container Apps environment and a PostgreSQL Flexible Server with the app's
   database, as the AWS stack does. To attach to existing ones instead (a free or trial
