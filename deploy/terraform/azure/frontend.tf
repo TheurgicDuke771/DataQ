@@ -2,8 +2,8 @@
 
 resource "azurerm_container_app" "frontend" {
   name                         = "dataq-app-frontend"
-  container_app_environment_id = data.azurerm_container_app_environment.shared.id
-  resource_group_name          = data.azurerm_resource_group.dataq.name
+  container_app_environment_id = local.container_app_environment_id
+  resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
 
   ingress {

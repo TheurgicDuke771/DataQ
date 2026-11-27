@@ -3,7 +3,7 @@
 resource "azurerm_key_vault" "app" {
   name                       = "dataq-app-kv-${random_string.suffix.result}"
   location                   = var.azure_location
-  resource_group_name        = data.azurerm_resource_group.dataq.name
+  resource_group_name        = local.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   rbac_authorization_enabled = true

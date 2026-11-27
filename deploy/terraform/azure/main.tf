@@ -1,25 +1,20 @@
-# Shared data sources, locals, and the idempotent RG ensure-step.
+# Shared data sources, locals, and the resource group (created, or referenced when
+# create_shared_resources = false).
 
 data "azurerm_client_config" "current" {}
 
 data "azurerm_subscription" "current" {}
 
-# ── Idempotent RG step ─────────────────────────────────────────────────────── `az group create`
-# is idempotent: it creates dataq-rg if absent and is a no-op (with the same tags) if it already
-# exists.
-resource "null_resource" "ensure_rg" {
-  triggers = {
-    rg       = var.azure_resource_group
-    location = var.azure_location
-  }
-  provisioner "local-exec" {
-    command = "az group create --name ${var.azure_resource_group} --location '${var.azure_location}' --tags project=dataq --only-show-errors --output none"
-  }
+resource "azurerm_resource_group" "dataq" {
+  count    = var.create_shared_resources ? 1 : 0
+  name     = var.azure_resource_group
+  location = var.azure_location
+  tags     = { project = var.project_tag }
 }
 
 data "azurerm_resource_group" "dataq" {
-  name       = var.azure_resource_group
-  depends_on = [null_resource.ensure_rg]
+  count = var.create_shared_resources ? 0 : 1
+  name  = var.azure_resource_group
 }
 
 resource "random_string" "suffix" {
@@ -31,6 +26,10 @@ resource "random_string" "suffix" {
 }
 
 locals {
+  resource_group_name = one(concat(
+    azurerm_resource_group.dataq[*].name, data.azurerm_resource_group.dataq[*].name
+  ))
+
   # All DataQ-APP resources carry purpose=dataq-app so they're trivially distinguishable from any
   # other resources sharing the group in the shared RG (see the verification query in
   # deploy/terraform/README.md).
@@ -42,7 +41,7 @@ locals {
 
   # Deterministic Container App FQDNs, derived from the shared environment's default domain rather
   # than each app's own ingress[0].fqdn.
-  env_default_domain = data.azurerm_container_app_environment.shared.default_domain
+  env_default_domain = local.container_app_environment_default_domain
   api_fqdn           = "dataq-app-api.internal.${local.env_default_domain}"
   frontend_fqdn      = "dataq-app-frontend.${local.env_default_domain}"
   api_internal_url   = "http://${local.api_fqdn}"

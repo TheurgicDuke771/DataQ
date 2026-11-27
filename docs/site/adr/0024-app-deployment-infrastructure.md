@@ -242,3 +242,21 @@ rendered diff would not have settled it.
 - **Rename `deploy/terraform/` → `deploy/opentofu/`.** Rejected — see Decision above.
 - **Fold state encryption into the same change.** Rejected: it mixes a
   provably-zero-diff swap with a state-rewriting change and burns the rollback path.
+
+## Amendment (2026-11-27) — the stack creates its shared resources by default
+
+- **Status:** Accepted
+- **Date:** 2026-11-27
+- **Amends:** "referenced, not created" for the resource group, the Container Apps environment
+  and the Postgres Flexible Server. Every other decision above stands.
+
+The stack was built beside the project's own test estate, which owned those three, so it read
+them as data sources. A deployer on an empty subscription had to create them by hand first,
+unlike the AWS stack. The stack now creates them by default (`create_shared_resources = true`),
+with the environment's name a variable (`container_app_environment_name`, default `dataq-cae`).
+On a server it creates, the app's one role is the server's administrator and owns the `dataq`
+database, the model the AWS stack's RDS instance already uses; the single-role constraint is
+unchanged. The original reason, a free/trial subscription capped at one environment and one
+server that other workloads may share, is kept as the opt-in: `create_shared_resources = false`
+attaches to existing ones exactly as before. Both paths are planned in `tofu test` against
+mocked providers; a plan against a real subscription waits on a cloud test instance.

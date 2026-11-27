@@ -41,7 +41,7 @@ resource "azurerm_role_assignment" "github_deploy_contributor" {
 # `az containerapp update --image` / `job start` resolve the app's managed environment (the
 # referenced dataq-cae); without read there the deploy can 403.
 resource "azurerm_role_assignment" "github_deploy_env_reader" {
-  scope                = data.azurerm_container_app_environment.shared.id
+  scope                = local.container_app_environment_id
   role_definition_name = "Reader"
   principal_id         = azuread_service_principal.github_deploy.object_id
 }

@@ -1,17 +1,17 @@
 # DataQ — app infra (OpenTofu)
 
-Provisions DataQ's production resources on Azure. Three resources are **referenced, not
-created** (data sources), because a free/trial subscription allows only one Container Apps
-environment and one Postgres Flexible Server, which other workloads may already use
-(ADR 0024):
+Provisions DataQ's production resources on Azure. On an empty subscription the first
+`tofu apply` creates everything, as the AWS stack does: the **resource group**
+(`azure_resource_group`, default `dataq-rg`), the **Container Apps environment**
+(`container_app_environment_name`, default `dataq-cae`) and a **Postgres Flexible Server**
+with the app's `dataq` database.
 
-- the **resource group** (`azure_resource_group`, default `dataq-rg`),
-- the **Container Apps environment**, which must be named `dataq-cae`,
-- the **Postgres Flexible Server** (`shared_pg_server_name`).
-
-Create them first if your subscription does not have them yet (see
-[Prerequisites](#prerequisites)). Everything this stack creates is `dataq-app-*` /
-`purpose=dataq-app`; any other resources in the group are untouched.
+A free/trial subscription allows only one Container Apps environment and one Flexible
+Server, which other workloads may already use (ADR 0024). For that case set
+**`create_shared_resources = false`**: the stack then attaches to the existing three instead
+of creating them (see [Using existing resources](#using-existing-resources)). Everything else
+this stack creates is `dataq-app-*` / `purpose=dataq-app`; any other resources in the group
+are untouched.
 
 ## What it creates
 
@@ -27,9 +27,11 @@ Create them first if your subscription does not have them yet (see
 | Azure AD SSO app regs | `dataq-app-api-sso` (API) + `dataq-app-spa` (SPA) |
 | GitHub-deploy app registration | `dataq-github-deploy` (OIDC federated cred) |
 
-**Referenced, not created:** the resource group, the `dataq-cae` environment and the
-Postgres server. The app's database is a **distinct
-`dataq` database** + least-privilege **`dataq_app`** role on the shared server.
+Plus, by default, the resource group, the Container Apps environment and the Postgres
+Flexible Server (`dataq-pg-<suffix>` unless `shared_pg_server_name` names it). On a server
+the stack creates, the app's role **`dataq_app`** is the server's administrator and owns the
+`dataq` database, the same one-role model as the AWS stack's RDS instance; the single-role
+constraint in `postgres.tf` holds either way.
 
 Images (GHCR, public — ACA pulls anonymously, ADR 0023; must exist + be **public**
 before apply):
@@ -46,30 +48,29 @@ before apply):
 - `az login` as a subscription **Owner** (registers RPs; creates role assignments,
   AAD app registrations, and Key Vault secrets). Use your own login, not a service
   principal without Key Vault data-plane rights: the apply writes secrets and would 403.
-- The resource group, Container Apps environment and Postgres server exist, all in
-  `azure_location` (a postcondition refuses a mismatch). If they do not:
-
-  ```bash
-  az group create -n dataq-rg -l westus2
-  az containerapp env create -n dataq-cae -g dataq-rg -l westus2
-  # PostgreSQL 16; --public-access 0.0.0.0 adds the allow-Azure-services firewall rule
-  az postgres flexible-server create -n <server> -g dataq-rg -l westus2 --version 16 \
-    --tier Burstable --sku-name Standard_B1ms --admin-user <admin> \
-    --admin-password '<admin password>' --public-access 0.0.0.0
-  ```
 - The GHCR backend **and** frontend images pushed + public.
-- The `dataq` database + `dataq_app` role provisioned (one-off, below).
 - State is **local + gitignored**.
 
-## Postgres — one-off role + database
+Nothing needs to exist beforehand: with the default `create_shared_resources = true` the
+apply creates the resource group, the environment and the server.
 
-Name the server with **`shared_pg_server_name`** in your `terraform.tfvars`. It is
-**required and has no default**: the server pre-exists and this stack only attaches
-to it, so no default could be right for more than one deployment. With
-`-input=false` (which the apply below uses) a missing value fails fast rather than
-prompting into a redirected stdout — which looks exactly like a hang.
+## Using existing resources
 
-The app's DB lives on that server but is provisioned **out-of-band** (keeps
+Set `create_shared_resources = false` to attach to a resource group, a Container Apps
+environment and a Postgres Flexible Server that already exist, all in `azure_location` (a
+postcondition refuses a mismatch). Name the environment with
+`container_app_environment_name` if it is not `dataq-cae`, and the server with
+**`shared_pg_server_name`**, which is then required: with `-input=false` (which the apply
+below uses) a missing value fails at plan time rather than prompting into a redirected
+stdout, which looks exactly like a hang.
+
+**Upgrading a deployment made before the stack could create these:** set
+`create_shared_resources = false` (and the server name you already pass) before the next
+`tofu plan`, or the plan proposes to create a resource group, an environment and a server
+that already exist. The plan also removes `null_resource.ensure_rg`, the old
+`az group create` step; that removal touches nothing in Azure.
+
+On an existing server the app's DB is provisioned **out-of-band** (keeps
 this stack connection-free / CI-friendly — no postgres provider). Run once,
 connected as the server admin (add a temp firewall rule for your IP first):
 
@@ -84,7 +85,8 @@ ALTER SCHEMA public OWNER TO dataq_app;
 ```
 
 Pass that password at apply time as `TF_VAR_app_db_password` (it becomes the
-`DATABASE_URL` Container App secret; never committed). The app reaches the server
+`DATABASE_URL` Container App secret; never committed). On a server the stack creates, the
+same variable is the administrator password the server is created with. The app reaches the server
 at runtime over the server's allow-Azure-services firewall rule.
 
 ## Apply

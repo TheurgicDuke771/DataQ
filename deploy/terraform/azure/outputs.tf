@@ -17,13 +17,13 @@ output "key_vault_url" {
 
 output "postgres_fqdn" {
   description = "Shared Postgres host (app uses the `dataq` database on it)."
-  value       = data.azurerm_postgresql_flexible_server.shared.fqdn
+  value       = local.pg_fqdn
 }
 
 # ── Container Apps names -> Deploy workflow VARIABLES ─────────────────────────
 output "resource_group" {
   description = "-> repo var AZURE_RESOURCE_GROUP"
-  value       = data.azurerm_resource_group.dataq.name
+  value       = local.resource_group_name
 }
 
 output "api_app_name" {

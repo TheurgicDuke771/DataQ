@@ -31,10 +31,34 @@ variable "shared_pg_expected_location" {
 
 # ── Postgres (the app's DB lives on a pre-existing Flexible Server) ───────────
 
-# No default, deliberately.
-variable "shared_pg_server_name" {
-  description = "Name of the pre-existing Postgres Flexible Server hosting the app's database. The app's database + least-privilege role live here (provisioned out-of-band — see README)."
+variable "create_shared_resources" {
+  description = "Create the resource group, the Container Apps environment and the Postgres Flexible Server (true, for an empty subscription). False attaches to existing ones instead, for a subscription that already has them (a free/trial one is capped at one environment and one server, ADR 0024)."
+  type        = bool
+  default     = true
+}
+
+variable "container_app_environment_name" {
+  description = "Name of the Container Apps environment, created or existing."
   type        = string
+  default     = "dataq-cae"
+}
+
+variable "shared_pg_server_name" {
+  description = "Name of the Postgres Flexible Server. Required with create_shared_resources = false: the existing server hosting the app's database (provisioned out-of-band, README). When the stack creates the server, null names it dataq-pg-<suffix> (server names are global DNS names)."
+  type        = string
+  default     = null
+}
+
+variable "pg_sku_name" {
+  description = "SKU of a server the stack creates."
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "pg_storage_mb" {
+  description = "Storage of a server the stack creates, in MB."
+  type        = number
+  default     = 32768
 }
 
 variable "app_db_name" {

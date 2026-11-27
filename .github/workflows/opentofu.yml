@@ -1,0 +1,51 @@
+name: OpenTofu
+
+# The reference stacks under deploy/terraform: format, validate, and the mocked-provider tests
+# (`tofu test`, no cloud credentials). Runs only when a stack changes.
+on:
+  pull_request:
+    paths: ["deploy/terraform/**", ".github/workflows/opentofu.yml"]
+  push:
+    branches: [main]
+    paths: ["deploy/terraform/**", ".github/workflows/opentofu.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opentofu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stacks:
+    name: OpenTofu — fmt, validate, test (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [azure, aws]
+    defaults:
+      run:
+        working-directory: deploy/terraform/${{ matrix.stack }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.13.10
+          tofu_wrapper: false
+      - run: tofu fmt -check -recursive
+      - run: tofu init -backend=false -input=false
+      # The secret inputs are throwaway values made per run: nothing is applied, and no
+      # credential, even a mock one, lives in the repository.
+      - name: Throwaway secret inputs
+        run: |
+          echo "::add-mask::$(openssl rand -hex 16 | tee /tmp/p1)"
+          echo "::add-mask::$(openssl rand -hex 16 | tee /tmp/p2)"
+          echo "TF_VAR_app_db_password=$(cat /tmp/p1)" >> "$GITHUB_ENV"
+          echo "TF_VAR_state_encryption_passphrase=$(cat /tmp/p2)" >> "$GITHUB_ENV"
+          rm /tmp/p1 /tmp/p2
+      - run: tofu validate
+      - name: tofu test (mocked providers)
+        if: hashFiles(format('deploy/terraform/{0}/tests/*.tftest.hcl', matrix.stack)) != ''
+        run: tofu test
