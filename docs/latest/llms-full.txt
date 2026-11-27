@@ -5899,6 +5899,9 @@ section below.
 
 ### Changed
 
+- **The task queue runs on Celery 5.7 and redis-py 7.4.** Celery 5.7 needs a newer Redis client
+  than the 5.x line DataQ pinned, so the two move together. Nothing changes for the API, the
+  worker or the scheduler: every Redis client still fails fast on its own short timeouts.
 - **Snowflake and Unity Catalog queries now carry the datasource query limit too.** Every session
   DataQ opens on either engine sets `DATASOURCE_QUERY_TIMEOUT_S` through the engine's own setting:
   `STATEMENT_TIMEOUT_IN_SECONDS` on Snowflake and `STATEMENT_TIMEOUT` on Databricks SQL. A
