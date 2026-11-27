@@ -1795,6 +1795,34 @@ identical histograms for 7 and 30 days. The tests compare the summary with the p
 reference with the table empty, partly filled and full, and over results placed on each side
 of both window edges.
 
+## v1.3 — reconciling the result-status table
+
+> Measured **2026-11-27** on the development machine: PostgreSQL 16.15, the perf harness's
+> scratch database at 1,000,000 runs and 1,000,000 results. The harness places every result
+> within 11 hours, so all of them fall inside the 48-hour span; 200,000 are from succeeded
+> runs, in 72 hourly counts.
+
+The pre-counted table above is kept equal to `results` by its writers. Once a day a beat task
+recounts the last 48 hours from `results` and repairs any count that differs, so a path that
+changed results without the table (a manual repair, a restore) heals and is logged
+(`result_rollup_drift_repaired`) instead of staying wrong.
+
+- **Detection locks nothing.** One read-only statement compares the recount with the table.
+  On a normal day it finds nothing and the task ends there.
+- **A repair locks only what drifted**, in the order every writer locks, then recounts those
+  counts and moves each by the difference, never sets it: a run that finishes during the
+  repair keeps its results whichever commits first.
+
+| At 1,000,000 results in the span | p50 |
+|---|---|
+| Daily run, nothing drifted (48 hours, 15 runs) | 65 ms |
+| Every hour recounted, nothing drifted (5 runs) | 64 ms |
+| 50 drifted counts found and repaired (7 runs) | 336 ms |
+
+The repair costs about five times the detection because a statement that writes runs without
+parallel workers: it is one serial scan of the drifted hours' results. Both grow with the
+results inside the span, not with the size of `results`.
+
 ## v1.3 — verifying the audit chain
 
 > Measured **2026-11-17** on the development machine: a real hash chain of 100,000 audit rows
