@@ -161,7 +161,11 @@ test.describe('Seasonal calendar', () => {
   test('the trend draws the expected value, the calendar and detected periods', async ({
     page,
     request,
+    browserName,
   }) => {
+    // axe-core's walk of the trend drawer crashes Firefox's renderer (#2759). The page itself
+    // works there, and Chromium scans the drawer on every PR.
+    const scanDrawer = browserName !== 'firefox';
     const stamp = Date.now();
     const entryName = `e2e black friday ${stamp}`;
     const entry = await addEntry(request, entryName);
@@ -270,7 +274,7 @@ test.describe('Seasonal calendar', () => {
       await expect(drawer.getByRole('radiogroup', { name: 'Trend view' })).toBeVisible();
       await expect(drawer.getByTestId('detected-periods')).toContainText('Seen once');
       await expect(drawer.getByRole('button', { name: /^Promote to calendar/ })).toBeVisible();
-      await expectAccessible(page, '.ant-drawer [role="dialog"]');
+      if (scanDrawer) await expectAccessible(page, '.ant-drawer [role="dialog"]');
 
       // By keyboard: the promote dialog hands focus back on Escape, and after a promote that
       // removes its own button, focus stays on the detected periods instead of the page.
@@ -293,7 +297,7 @@ test.describe('Seasonal calendar', () => {
       await drawer.getByText('Table', { exact: true }).click();
       await expect(drawer.getByRole('columnheader', { name: 'Expected' })).toBeVisible();
       await expect(drawer.getByText('5050.00 ± 120.00').first()).toBeVisible();
-      await expectAccessible(page, '.ant-drawer [role="dialog"]');
+      if (scanDrawer) await expectAccessible(page, '.ant-drawer [role="dialog"]');
     } finally {
       await request.delete(`${API}/suites/${suite}/checks/${check}`);
       await request.delete(`${API}/admin/seasonal-periods/${entry}`);

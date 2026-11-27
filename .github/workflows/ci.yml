@@ -8,9 +8,15 @@ on:
     # labeled/unlabeled: the `no-changelog` label is read by the changelog check, so adding
     # it must re-run CI rather than wait for a push.
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  # The weekly cross-browser lane (#2662): the whole CI on main, plus the E2E specs on Firefox and
+  # WebKit. A run by hand does the same on any branch.
+  schedule:
+    - cron: "17 5 * * 1" # Mondays, 05:17 UTC
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # The event is in the key so the weekly run and a push to main never cancel each other.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -525,15 +531,17 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: frontend
-        # Split the browser download from its OS deps (#704).
+        # Split the browser download from its OS deps (#704). The weekly lane adds Firefox and WebKit.
+        env:
+          BROWSERS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'chromium firefox webkit' || 'chromium' }}
         run: |
-          pnpm exec playwright install chromium
+          pnpm exec playwright install $BROWSERS
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
           echo 'Acquire::http::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99ci-timeout >/dev/null
           for attempt in 1 2 3; do
             # #1484: a stalled apt mirror hangs rather than exits non-zero, which the retry loop
             # below can't detect on its own.
-            if timeout 300 pnpm exec playwright install-deps chromium; then ok=1; break; fi
+            if timeout 300 pnpm exec playwright install-deps $BROWSERS; then ok=1; break; fi
             # #2320: the signal stops at sudo's `sh -c`, so apt-get survives it and
             # the orphan holds the dpkg lock against every retry.
             sudo pkill -x apt-get || true
@@ -571,6 +579,33 @@ jobs:
         env:
           VITE_API_PROXY_TARGET: http://localhost:8000
         run: pnpm e2e
+
+      # ── Weekly cross-browser lane (#2662) ─────────────────────────────── The same specs on
+      # Firefox and WebKit. Each browser starts from a fresh seed: the Chromium run above has
+      # offboarded the fixture users the admin specs act on, and the seed re-mints them.
+      - name: Cross-browser E2E (Firefox, WebKit)
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        working-directory: frontend
+        env:
+          VITE_API_PROXY_TARGET: http://localhost:8000
+          E2E_CROSS_BROWSER: "1"
+        run: |
+          rc=0
+          for browser in firefox webkit; do
+            (cd .. && python -m backend.scripts.seed_dev >/dev/null)
+            PLAYWRIGHT_HTML_REPORT="playwright-report-$browser" pnpm e2e --project="$browser" || rc=1
+          done
+          exit $rc
+
+      - name: Upload the cross-browser reports
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-cross-browser
+          path: |
+            frontend/playwright-report-firefox/
+            frontend/playwright-report-webkit/
+          retention-days: 7
 
       # ── Email-OTP lane (ADR 0032, #736) ────────────────────────────────── A SECOND api, because
       # the auth seam picks its mode at import time and OTP wins over dev-bypass.
