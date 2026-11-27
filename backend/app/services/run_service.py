@@ -58,7 +58,12 @@ from backend.app.db.models import (
     Run,
     worst_severity,
 )
-from backend.app.services import privacy_settings_service, run_dispatch, suite_service
+from backend.app.services import (
+    privacy_settings_service,
+    result_rollup,
+    run_dispatch,
+    suite_service,
+)
 from backend.app.services.classification_vocab import (
     DETECTED,
     copy_tags,
@@ -520,6 +525,10 @@ def _mark_succeeded(session: Session, run: Run) -> bool:
         .values(status="succeeded", finished_at=finished, failure_reason=None, **recorded)
     )
     won = cast("CursorResult[Any]", result).rowcount == 1
+    if won:
+        # With the status, in one transaction: the run is never visible as succeeded with its
+        # results counted neither from the summary nor, as an un-added run, from `results`.
+        result_rollup.roll_up_run(session, run.id)
     session.commit()
     if not won:
         return False
@@ -571,6 +580,8 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
     run.finished_at = _now()
     for name, value in recorded_outcome_values(session, run.id).items():
         setattr(run, name, value)
+    session.flush()
+    result_rollup.roll_up_run(session, run.id)
     session.commit()
     log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
     return run
@@ -789,9 +800,25 @@ def results_final(run: Run) -> bool:
     return run.status in _TERMINAL_STATUSES
 
 
+def still_non_terminal(session: Session, run: Run) -> bool:
+    """Re-read ``run`` under a row lock and say whether it is still non-terminal.
+
+    Every transition out of a non-terminal status goes through this first: the caller's copy
+    of the run can be stale (a worker may have committed ``succeeded`` since it was loaded), and
+    flushing a status from a stale copy would take a succeeded run out of ``succeeded`` — after
+    its results were counted in `result_status_hourly`, which would then count a run no reader
+    does. The lock also makes a concurrent worker's ``succeeded`` wait for this commit.
+    """
+    session.refresh(run, with_for_update=True)
+    return run.status in _NON_TERMINAL_STATUSES
+
+
 def cancel_run(session: Session, run: Run) -> bool:
     """Transition a non-terminal run to ``cancelled``; return whether it changed."""
     if run.status in _TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     run.status = "cancelled"
     run.finished_at = _now()
@@ -2059,11 +2086,15 @@ def reap_stuck_runs(
     moment = now or _now()
     cutoff = moment - timedelta(minutes=threshold_minutes)
     reference = func.coalesce(Run.started_at, Run.created_at)
-    stuck = list(
+    candidates = list(
         session.scalars(
             select(Run).where(Run.status.in_(_NON_TERMINAL_STATUSES), reference < cutoff)
         )
     )
+    # Each one re-read under a lock: a run a worker finished since is not stuck.
+    stuck = [run for run in candidates if still_non_terminal(session, run)]
+    if candidates and not stuck:
+        session.commit()  # nothing pending; releases the row locks the re-reads took
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
     # Hygiene (#318): aggregates already ignore these, but the run's own detail page
     # would otherwise show a half-populated set.
@@ -2099,6 +2130,9 @@ def fail_run_worker_lost(
     """Drive a single run to ``failed`` after its worker process died (#755)."""
     run = session.get(Run, run_id)
     if run is None or run.status not in _NON_TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     moment = now or _now()
     was_running = run.status == "running"

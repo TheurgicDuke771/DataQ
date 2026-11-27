@@ -237,6 +237,7 @@ def test_promoting_someone_first_then_demoting_works(db_session: Any) -> None:
     assert only_admin.role == "member"
 
 
+@pytest.mark.commits_for_real
 def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
     """The race the `FOR UPDATE` exists for — with two REAL, COMMITTED sessions."""
     from sqlalchemy.orm import Session as SASession
@@ -295,6 +296,7 @@ def test_concurrent_demotions_cannot_both_succeed(_db_engine: Any) -> None:
         setup.close()
 
 
+@pytest.mark.commits_for_real
 def test_a_stale_in_session_read_cannot_bypass_the_guard(_db_engine: Any) -> None:
     """The interleaving that reached zero stored admins (found in review)."""
     from sqlalchemy.orm import Session as SASession
