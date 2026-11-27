@@ -409,6 +409,7 @@ def _result(db: Any, run: Run) -> Any:
     return db.scalars(select(Result).where(Result.run_id == run.id)).one()
 
 
+@pytest.mark.commits_for_real
 def test_concurrent_failing_syncs_no_duplicate(_db_engine: Any) -> None:
     """A genuine two-connection race: two failing runs of the SAME (asset, check)
     sync concurrently. The partial unique index + ON CONFLICT guarantees exactly
@@ -532,6 +533,7 @@ def test_ack_with_stale_object_after_resolve_conflicts_and_never_reopens(
     assert refreshed.resolved_by == "auto"  # the winner's outcome intact
 
 
+@pytest.mark.commits_for_real
 def test_concurrent_manual_resolves_exactly_one_wins(_db_engine: Any) -> None:
     """Two sessions resolve the SAME incident concurrently: the FOR-UPDATE lock
     serializes them — exactly one wins, the loser gets a clean 409 (not a silent
