@@ -17,9 +17,9 @@ are set by whoever deployed DataQ through environment configuration.
 
 ## 2. Turn alerts on for the suite
 
-Open the suite and scroll to **Notifications**:
+Open the suite and scroll to **Alerting**:
 
-![A suite's Notifications panel: the on/off switch, the alert threshold, and the linked channels](../assets/screenshots/suite-notifications.png){ .screenshot }
+![A suite's Alerting panel: the switch that turns its alerts on, the alert threshold, and the channel picker, here with no channels linked yet](../assets/screenshots/suite-notifications.png){ .screenshot }
 
 *Everything an alert needs, on the suite itself.*
 

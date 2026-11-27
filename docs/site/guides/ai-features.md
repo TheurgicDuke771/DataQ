@@ -188,7 +188,7 @@ DataQ profiles the table's columns live (masked statistics only), sends the prof
 value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
 types — and gets back candidate checks, each with a name, a rationale and a full config:
 
-![The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining](../assets/screenshots/suggest-checks.png){ .screenshot }
+![The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining; the values of a column classified as sensitive show as redacted](../assets/screenshots/suggest-checks.png){ .screenshot }
 
 A **freshness** suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the

@@ -133,8 +133,7 @@ test('suite — notifications panel', async ({ page }) => {
   await page.goto('/suites');
   await page.getByText('Orders quality').click();
   await heading(page, 'Orders quality', 4);
-  const panel = page.getByText('Notifications', { exact: true }).first();
-  await panel.scrollIntoViewIfNeeded();
+  await scrollCard(page, 'Alerting');
   await shot(page, 'suite-notifications');
 });
 
@@ -142,16 +141,19 @@ test('suite — schedules panel', async ({ page }) => {
   await page.goto('/suites');
   await page.getByText('Orders quality').click();
   await heading(page, 'Orders quality', 4);
-  const panel = page.getByText('Schedules', { exact: true }).first();
-  await panel.scrollIntoViewIfNeeded();
+  await scrollCard(page, 'Schedules');
   await shot(page, 'suite-schedules');
 });
 
 test('admin — LLM provider settings', async ({ page }) => {
   await page.goto('/admin/settings');
   await heading(page, /Admin/);
+  // The cards above it load and reflow first, so scroll once its own form is in.
+  await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeVisible();
   await scrollCard(page, 'LLM provider');
-  await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
+  await page
+    .getByText('LLM provider', { exact: true })
+    .evaluate((el) => el.closest('.ant-card')?.scrollIntoView({ block: 'start' }));
   await shot(page, 'admin-llm-settings');
 });
 
@@ -162,7 +164,7 @@ test('asset — incident evidence card', async ({ page }) => {
   await page
     .getByRole('table')
     .filter({ hasText: 'Evidence' })
-    .getByRole('button', { name: 'View', exact: true })
+    .getByRole('button', { name: /^View evidence/ })
     .first()
     .click();
   await expect(page.getByText('Incident evidence')).toBeVisible();
@@ -181,13 +183,13 @@ test('check editor — Custom SQL step with the "Generate from a description" sh
   await shot(page, 'check-editor-custom-sql-picker');
 });
 
-// The two live-warehouse captures below need a real SQL connection (`DOCS_SNOWFLAKE_ACCOUNT`
-// at capture-stack start, see the README) — they profile/introspect the target table for real.
+// The two live-warehouse captures below introspect a real table: the capture stack's own
+// PostgreSQL warehouse (`capture-stack.sh start`, see the README).
 
 test('check editor — SQL generated from a description', async ({ page }) => {
   await page.goto('/suites');
-  await page.getByText('Retail orders (reader)').click();
-  await heading(page, 'Retail orders (reader)', 4);
+  await page.getByText('Shop orders (demo)').click();
+  await heading(page, 'Shop orders (demo)', 4);
   await page.getByRole('button', { name: 'Add check' }).click();
   await page.getByText('Custom SQL', { exact: true }).click();
   await page.getByText('Generate from a description').click();
@@ -201,8 +203,8 @@ test('check editor — SQL generated from a description', async ({ page }) => {
 
 test('suite — suggested checks', async ({ page }) => {
   await page.goto('/suites');
-  await page.getByText('Retail orders (reader)').click();
-  await heading(page, 'Retail orders (reader)', 4);
+  await page.getByText('Shop orders (demo)').click();
+  await heading(page, 'Shop orders (demo)', 4);
   await page.getByRole('button', { name: 'Suggest checks' }).click();
   await expect(page.getByText(/suggestion.+passed validation/)).toBeVisible({ timeout: 60_000 });
   await shot(page, 'suggest-checks');

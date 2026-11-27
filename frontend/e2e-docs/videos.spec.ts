@@ -82,8 +82,7 @@ test('wire-alert', async ({ page }) => {
   await page.getByText('Orders quality').click();
   await expect(page.getByRole('heading', { name: 'Orders quality', level: 4 })).toBeVisible();
   await beat(800);
-  const notif = page.getByText(/Notifications/).first();
-  await notif.scrollIntoViewIfNeeded();
+  await scrollCard(page, 'Alerting');
   await beat(1500);
   await page.mouse.wheel(0, 500);
   await beat(2000);
@@ -93,8 +92,8 @@ test('configure-llm', async ({ page }) => {
   await page.goto('/admin/settings');
   await expect(page.getByRole('heading', { name: /Admin/ })).toBeVisible();
   await beat(1000);
+  await expect(page.getByRole('button', { name: 'Test', exact: true })).toBeVisible();
   await scrollCard(page, 'LLM provider');
-  await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
   await beat(1500);
   await page.getByLabel('Provider').click();
   await page.locator('.ant-select-item-option', { hasText: 'OpenAI-compatible endpoint' }).click();
@@ -105,7 +104,7 @@ test('configure-llm', async ({ page }) => {
   await page.getByLabel('Base URL').fill('');
   await page.getByLabel('Base URL').pressSequentially('http://127.0.0.1:11434/v1', { delay: 40 });
   await beat(800);
-  await page.getByRole('button', { name: 'Test' }).click();
+  await page.getByRole('button', { name: 'Test', exact: true }).click();
   // The badge text is the real outcome: "OK — <model> · <ms>" or a named failure.
   await expect(page.getByText(/^(OK — |Test failed|Provider |Credential |Invalid )/)).toBeVisible({
     timeout: 30_000,
@@ -113,15 +112,13 @@ test('configure-llm', async ({ page }) => {
   await beat(2500);
 });
 
-// Needs a live SQL connection (DOCS_SNOWFLAKE_ACCOUNT at capture-stack start).
+// Needs the capture stack's PostgreSQL warehouse (a live table to introspect).
 test('generate-sql', async ({ page }) => {
   await page.goto('/suites');
   await expect(page.getByRole('heading', { name: 'Suites', level: 3 })).toBeVisible();
   await beat();
-  await page.getByText('Retail orders (reader)').click();
-  await expect(
-    page.getByRole('heading', { name: 'Retail orders (reader)', level: 4 }),
-  ).toBeVisible();
+  await page.getByText('Shop orders (demo)').click();
+  await expect(page.getByRole('heading', { name: 'Shop orders (demo)', level: 4 })).toBeVisible();
   await beat(1000);
   await page.getByRole('button', { name: 'Add check' }).click();
   await beat(800);
@@ -141,15 +138,13 @@ test('generate-sql', async ({ page }) => {
   await beat(2000);
 });
 
-// Needs a live SQL connection (DOCS_SNOWFLAKE_ACCOUNT at capture-stack start).
+// Needs the capture stack's PostgreSQL warehouse (a live table to introspect).
 test('suggest-checks', async ({ page }) => {
   await page.goto('/suites');
   await expect(page.getByRole('heading', { name: 'Suites', level: 3 })).toBeVisible();
   await beat();
-  await page.getByText('Retail orders (reader)').click();
-  await expect(
-    page.getByRole('heading', { name: 'Retail orders (reader)', level: 4 }),
-  ).toBeVisible();
+  await page.getByText('Shop orders (demo)').click();
+  await expect(page.getByRole('heading', { name: 'Shop orders (demo)', level: 4 })).toBeVisible();
   await beat(1000);
   await page.getByRole('button', { name: 'Suggest checks' }).click();
   await expect(page.getByText(/suggestion.+passed validation/)).toBeVisible({ timeout: 60_000 });
@@ -166,7 +161,7 @@ test('explain-failure', async ({ page }) => {
   await page
     .getByRole('table')
     .filter({ hasText: 'Evidence' })
-    .getByRole('button', { name: 'View', exact: true })
+    .getByRole('button', { name: /^View evidence/ })
     .first()
     .click();
   await expect(page.getByText('Incident evidence')).toBeVisible();
