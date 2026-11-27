@@ -44,16 +44,84 @@ def _resolve_test_database_url() -> str | None:
     return f"postgresql+psycopg2://{user}:{password}@localhost:5432/dataq_test"
 
 
-TEST_DATABASE_URL = _resolve_test_database_url()
+#: Set by pytest-xdist in each worker (`gw0`, `gw1`, …); absent in a plain run.
+XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER")
+
+
+def _per_worker_database(url: str | None) -> str | None:
+    """Under pytest-xdist every worker gets its own database, `<name>_<worker>`, created here on
+    first use: the session fixture creates and drops every table, so two workers sharing one
+    database would drop each other's schema mid-run."""
+    if not url or not XDIST_WORKER:
+        return url
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    base = make_url(url)
+    name = f"{base.database}_{XDIST_WORKER}"
+    # AUTOCOMMIT: CREATE DATABASE can't run inside a transaction.
+    admin = create_engine(base.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}
+            ).scalar()
+            if not exists:
+                conn.execute(text(f'CREATE DATABASE "{name}"'))
+    except Exception:  # pragma: no cover - environment-dependent
+        pass  # Postgres down / no perms — _db_engine's connect below skips cleanly.
+    finally:
+        admin.dispose()
+    return base.set(database=name).render_as_string(hide_password=False)
+
+
+def _per_worker_redis(url: str | None) -> str | None:
+    """Each worker on its own Redis database (the base index plus the worker number), so rate
+    limits, throttles and broker keys one worker sets are not another worker's state."""
+    if not url or not XDIST_WORKER:
+        return url
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    base = int(parts.path.lstrip("/") or 0)
+    index = (base + int(XDIST_WORKER.removeprefix("gw")) + 1) % 16
+    return urlunsplit(parts._replace(path=f"/{index}"))
+
+
+_BASE_TEST_DATABASE_URL = _resolve_test_database_url()
+TEST_DATABASE_URL = _per_worker_database(_BASE_TEST_DATABASE_URL)
 # If we defaulted to the local compose Postgres, export it so per-test skipif guards that read
-# os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests) also run.
+# os.environ['TEST_DATABASE_URL'] directly (e.g. the custom-SQL GX tests) also run. A worker's
+# own database replaces the base one.
 if TEST_DATABASE_URL:
-    os.environ.setdefault("TEST_DATABASE_URL", TEST_DATABASE_URL)
+    if XDIST_WORKER:
+        os.environ["TEST_DATABASE_URL"] = TEST_DATABASE_URL
+    else:
+        os.environ.setdefault("TEST_DATABASE_URL", TEST_DATABASE_URL)
 
 # #1130: point DATABASE_URL at the same database, UNLESS the caller already set DATABASE_URL
-# explicitly.
-if TEST_DATABASE_URL and not os.environ.get("DATABASE_URL"):
+# explicitly (to a database other than the test one, which a worker swaps for its own).
+if TEST_DATABASE_URL and os.environ.get("DATABASE_URL") in (None, "", _BASE_TEST_DATABASE_URL):
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+if XDIST_WORKER and os.environ.get("REDIS_URL"):
+    os.environ["REDIS_URL"] = _per_worker_redis(os.environ["REDIS_URL"]) or ""
+
+import structlog  # noqa: E402
+
+_structlog_configure = structlog.configure
+
+
+def _configure_without_logger_cache(*args: object, **kwargs: object) -> None:
+    """The app caches each module's logger on its first use (`core/logging.py`), after which
+    `structlog.testing.capture_logs` cannot see it: a test asserting a log line then passes or
+    fails by whether an earlier test in the same process logged through that module first. Under
+    parallel workers that order changes run to run, so tests never cache."""
+    kwargs["cache_logger_on_first_use"] = False
+    _structlog_configure(*args, **kwargs)  # type: ignore[arg-type]
+
+
+structlog.configure = _configure_without_logger_cache
 
 import pytest  # noqa: E402 — must follow the env-var setup above
 

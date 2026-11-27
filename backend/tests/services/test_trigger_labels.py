@@ -35,7 +35,10 @@ def test_user_without_a_display_name_shows_the_email(db_session: Any) -> None:
     assert trigger_labels(db_session, [marker]) == {marker: "Manual — otp-user@ex"}
 
 
-@pytest.mark.parametrize("rest", [str(uuid.uuid4()), "u1", ""])
+# Fixed ids: a random one differs per process, and parallel workers must collect the same tests.
+@pytest.mark.parametrize(
+    "rest", [str(uuid.uuid4()), "u1", ""], ids=["unknown-uuid", "not-a-uuid", "empty"]
+)
 def test_unresolvable_user_marker_shows_the_kind_only(db_session: Any, rest: str) -> None:
     marker = f"manual:{rest}"
 
