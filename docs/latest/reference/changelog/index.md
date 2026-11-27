@@ -83,6 +83,10 @@ section below.
 
 ### Added
 
+- **The dashboard's pre-counted result histogram checks itself every day.** The worker recounts
+  the last 48 hours from the results themselves at 02:23 UTC and repairs any hour whose count
+  drifted. A repair is logged as the `result_rollup_drift_repaired` warning, with how many counts
+  were wrong and by how much, so operators can alert on it.
 - **Anomaly checks on a value per day or week.** Two new anomaly metrics,
   `period_row_count` and `period_sum`, watch the rows or the summed amount in each calendar
   period of a date column, for tables whose whole-table row count only grows. A period is

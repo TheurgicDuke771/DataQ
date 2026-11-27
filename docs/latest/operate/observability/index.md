@@ -37,6 +37,16 @@
 
 ## Operating notes
 
+**Alert on `result_rollup_drift_repaired`.** The dashboard's result-status histogram is read
+from a pre-counted table that every write keeps equal to the results it summarises. Once a day
+(02:23 UTC) the worker recounts the last 48 hours from the results themselves and repairs any
+hour that differs. A repair is logged as a `result_rollup_drift_repaired` warning with
+`buckets` (how many suite, hour and status counts were wrong), `results_off` (by how many
+results in total) and the first 20 of them with what each held and what it should have held.
+The figures shown afterwards are correct again, but a repair means some path changed results
+without updating the table, so any occurrence is worth a look: a manual edit or restore of
+the database is the usual cause.
+
 After a shared-Postgres delete/recreate, **restart dependent Container Apps** (the DB host
 is a start-time secret snapshot). Full deploy + ops runbook: the repository's
 `deploy/README.md`.

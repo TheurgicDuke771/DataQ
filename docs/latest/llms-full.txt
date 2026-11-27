@@ -5682,6 +5682,10 @@ section below.
 
 ### Added
 
+- **The dashboard's pre-counted result histogram checks itself every day.** The worker recounts
+  the last 48 hours from the results themselves at 02:23 UTC and repairs any hour whose count
+  drifted. A repair is logged as the `result_rollup_drift_repaired` warning, with how many counts
+  were wrong and by how much, so operators can alert on it.
 - **Anomaly checks on a value per day or week.** Two new anomaly metrics,
   `period_row_count` and `period_sum`, watch the rows or the summed amount in each calendar
   period of a date column, for tables whose whole-table row count only grows. A period is
@@ -11740,6 +11744,34 @@ identical histograms for 7 and 30 days. The tests compare the summary with the p
 reference with the table empty, partly filled and full, and over results placed on each side
 of both window edges.
 
+## v1.3 — reconciling the result-status table
+
+> Measured **2026-11-27** on the development machine: PostgreSQL 16.15, the perf harness's
+> scratch database at 1,000,000 runs and 1,000,000 results. The harness places every result
+> within 11 hours, so all of them fall inside the 48-hour span; 200,000 are from succeeded
+> runs, in 72 hourly counts.
+
+The pre-counted table above is kept equal to `results` by its writers. Once a day a beat task
+recounts the last 48 hours from `results` and repairs any count that differs, so a path that
+changed results without the table (a manual repair, a restore) heals and is logged
+(`result_rollup_drift_repaired`) instead of staying wrong.
+
+- **Detection locks nothing.** One read-only statement compares the recount with the table.
+  On a normal day it finds nothing and the task ends there.
+- **A repair locks only what drifted**, in the order every writer locks, then recounts those
+  counts and moves each by the difference, never sets it: a run that finishes during the
+  repair keeps its results whichever commits first.
+
+| At 1,000,000 results in the span | p50 |
+|---|---|
+| Daily run, nothing drifted (48 hours, 15 runs) | 65 ms |
+| Every hour recounted, nothing drifted (5 runs) | 64 ms |
+| 50 drifted counts found and repaired (7 runs) | 336 ms |
+
+The repair costs about five times the detection because a statement that writes runs without
+parallel workers: it is one serial scan of the drifted hours' results. Both grow with the
+results inside the span, not with the size of `results`.
+
 ## v1.3 — verifying the audit chain
 
 > Measured **2026-11-17** on the development machine: a real hash chain of 100,000 audit rows
@@ -14171,6 +14203,16 @@ deploy/helm/kind-smoke/smoke.sh          # KEEP=1 keeps the cluster afterwards
 | Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. **Custom SQL** and **anomaly** monitors need a SQL datasource (Snowflake, Unity Catalog, PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift — not flat files or Iceberg); the **Snowflake DMF** engine is Snowflake-only and **Databricks DQX** is Unity Catalog-only. |
 
 ## Operating notes
+
+**Alert on `result_rollup_drift_repaired`.** The dashboard's result-status histogram is read
+from a pre-counted table that every write keeps equal to the results it summarises. Once a day
+(02:23 UTC) the worker recounts the last 48 hours from the results themselves and repairs any
+hour that differs. A repair is logged as a `result_rollup_drift_repaired` warning with
+`buckets` (how many suite, hour and status counts were wrong), `results_off` (by how many
+results in total) and the first 20 of them with what each held and what it should have held.
+The figures shown afterwards are correct again, but a repair means some path changed results
+without updating the table, so any occurrence is worth a look: a manual edit or restore of
+the database is the usual cause.
 
 After a shared-Postgres delete/recreate, **restart dependent Container Apps** (the DB host
 is a start-time secret snapshot). Full deploy + ops runbook: the repository's

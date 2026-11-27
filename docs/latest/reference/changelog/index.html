@@ -2957,6 +2957,10 @@ section below.</p>
   <code>redact_stale_incident_evidence</code> backfill also rewrites it on disk.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>The dashboard's pre-counted result histogram checks itself every day.</strong> The worker recounts
+  the last 48 hours from the results themselves at 02:23 UTC and repairs any hour whose count
+  drifted. A repair is logged as the <code>result_rollup_drift_repaired</code> warning, with how many counts
+  were wrong and by how much, so operators can alert on it.</li>
 <li><strong>Anomaly checks on a value per day or week.</strong> Two new anomaly metrics,
   <code>period_row_count</code> and <code>period_sum</code>, watch the rows or the summed amount in each calendar
   period of a date column, for tables whose whole-table row count only grows. A period is

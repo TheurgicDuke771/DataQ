@@ -2725,6 +2725,15 @@
 </tbody>
 </table>
 <h2 id="operating-notes">Operating notes<a class="headerlink" href="#operating-notes" title="Permanent link">¶</a></h2>
+<p><strong>Alert on <code>result_rollup_drift_repaired</code>.</strong> The dashboard's result-status histogram is read
+from a pre-counted table that every write keeps equal to the results it summarises. Once a day
+(02:23 UTC) the worker recounts the last 48 hours from the results themselves and repairs any
+hour that differs. A repair is logged as a <code>result_rollup_drift_repaired</code> warning with
+<code>buckets</code> (how many suite, hour and status counts were wrong), <code>results_off</code> (by how many
+results in total) and the first 20 of them with what each held and what it should have held.
+The figures shown afterwards are correct again, but a repair means some path changed results
+without updating the table, so any occurrence is worth a look: a manual edit or restore of
+the database is the usual cause.</p>
 <p>After a shared-Postgres delete/recreate, <strong>restart dependent Container Apps</strong> (the DB host
 is a start-time secret snapshot). Full deploy + ops runbook: the repository's
 <code>deploy/README.md</code>.</p>
