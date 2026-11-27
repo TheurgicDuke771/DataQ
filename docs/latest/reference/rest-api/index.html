@@ -2876,6 +2876,23 @@ in production — this page is the reference.)</p>
   requests per API key, unauthenticated per client-IP <strong>prefix</strong> (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget). Over the limit returns <code>429</code> with
   <code>code: "rate_limited"</code>, <code>detail.retry_after_seconds</code> (1–60), and a matching <code>Retry-After</code>
   header (plus <code>X-RateLimit-Limit</code> / <code>X-RateLimit-Remaining</code>). Back off for that many seconds.</li>
+<li><strong>Paging:</strong> the lists of runs (<code>/runs</code>), pipeline runs (<code>/pipeline_runs</code>) and incidents
+  (<code>/incidents</code>) page by <code>limit</code> and <code>offset</code>, and report the whole list in <code>X-Total-Count</code>.
+  A large <code>offset</code> costs in proportion to itself, since the database walks and discards every
+  skipped row. For deep or programmatic paging, send the <strong><code>X-Next-Cursor</code></strong> header of a
+  response as <code>cursor</code> on the next request (instead of <code>offset</code>; both together is a <code>422</code>
+  with <code>code: "cursor_with_offset"</code>). The header is present while there are more rows and
+  absent on the last page. Every page then costs the same however deep it is: about 1 ms at
+  500,000 runs, against about 80 ms for the same page by <code>offset</code>. Take <code>X-Total-Count</code> from the
+  first page: a page asked for by cursor does not carry it, so it is not counted again. A cursor is opaque, belongs
+  to the list it came from, and does not carry your filters, so send the same ones with each
+  page. A malformed or foreign cursor is a <code>422</code> with <code>code: "invalid_cursor"</code>. A row takes its
+  timestamp when its transaction starts, so a row that commits after your cursor has passed its
+  timestamp can be missed. Incidents sort
+  by <code>last_seen_at</code>, which moves when an incident breaches again: while you page, an incident
+  that jumps ahead of your cursor can be missed, and none is returned twice (by <code>offset</code>, a
+  move shifts every row behind it, so rows repeat as well as go missing). The MCP tools keep
+  their <code>limit</code>/<code>offset</code> and <code>since_hours</code>/<code>until_hours</code> windows.</li>
 <li><strong>IDs</strong> are UUIDs. Timestamps are ISO-8601 UTC.</li>
 </ul>
 <h2 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">¶</a></h2>

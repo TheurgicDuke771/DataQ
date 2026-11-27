@@ -144,6 +144,7 @@ section below.
   `unclassified` (fail-closed mode), `detected` (the profiler), `classifier`, or `default_mask` — the
   column was never classified, so masking is precautionary. The run page shows the reason beside
   each masked column; the in-app notification feed links to it. What is masked is unchanged.
+- **Long lists can be paged by cursor.** `/runs`, `/pipeline_runs` and `/incidents` return an `X-Next-Cursor` header while there are more rows; send it back as `cursor` (instead of `offset`) for the next page. A page then costs about the same however deep it is, where a large `offset` costs in proportion to itself: 500,000 runs deep, 1.1 ms against 79 ms. The total (`X-Total-Count`) comes with the first page only, and offset paging is unchanged. Incidents sort by when they last breached, so an incident that breaches again while you page can be missed; none is returned twice.
 - **Data contracts in the Open Data Contract Standard.** Import an ODCS v3 document and DataQ
   creates one suite per schema object with the checks its schema, quality rules and latency promise
   describe; every clause it cannot enforce is listed with the reason, never dropped. A new version

@@ -2497,6 +2497,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v13-paging-by-cursor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — paging by cursor
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3988,6 +3999,17 @@
     <span class="md-ellipsis">
       
         v1.3 — verifying the audit chain
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v13-paging-by-cursor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — paging by cursor
       
     </span>
   </a>
@@ -7586,6 +7608,71 @@ the order the walk wants them, letting each go once it is checked.</p>
 Memory is still linear in the number of rows, at about 0.6 KB each instead of about 4.6 KB, and
 no schema change was needed (a recursive walk would have wanted an index on <code>row_hash</code>, which
 every audit write would then maintain).</p>
+<h2 id="v13-paging-by-cursor">v1.3 — paging by cursor<a class="headerlink" href="#v13-paging-by-cursor" title="Permanent link">¶</a></h2>
+<blockquote>
+<p>Measured <strong>2026-11-17</strong> on the development machine: PostgreSQL 16, the perf harness's
+scratch database at 1,000,000 runs, and 120,000 pipeline runs and incidents.</p>
+</blockquote>
+<p>The v1.2 ordering indexes removed the sort from <code>/runs</code>, <code>/pipeline_runs</code> and <code>/incidents</code>, but
+<code>OFFSET</code> still makes the database walk and discard every skipped index entry, so a deep page
+costs in proportion to its offset. A cursor names the last row a client saw by the list's total
+order (timestamp, then id), and the next page is <code>(timestamp, id) &lt; cursor</code> on the same index:
+one descent at any depth.</p>
+<table>
+<thead>
+<tr>
+<th>Page of 50, p50</th>
+<th>By <code>offset</code></th>
+<th>By cursor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/runs</code>, first page</td>
+<td>0.7 ms</td>
+<td>0.8 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code>, 10,000 deep</td>
+<td>3.1 ms</td>
+<td>1.1 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code>, 90,000 deep</td>
+<td>15.7 ms</td>
+<td>0.9 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code>, 500,000 deep</td>
+<td>79.0 ms</td>
+<td>1.1 ms</td>
+</tr>
+<tr>
+<td><code>/pipeline_runs</code>, 90,000 deep</td>
+<td>8.9 ms</td>
+<td>1.1 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code>, 90,000 deep</td>
+<td>10.9 ms</td>
+<td>1.4 ms</td>
+</tr>
+</tbody>
+</table>
+<p>Both ways returned identical rows at every depth measured. Each list fetches one row past the
+page to know whether there is a next page, so a list of exactly <code>limit</code> rows is one page.
+<code>X-Total-Count</code> is the first page's: the count is its own cost (22 ms at 1M runs in the table
+above), so a page asked for by cursor does not repeat it, and the cursor's saving holds end to
+end. A request whose cursor is malformed, or sent with an <code>offset</code>, is refused before anything
+is counted.</p>
+<p>Offset paging stays: the app's numbered pages need it, and its first pages are as cheap as a
+cursor's. The decision for the three lists is hybrid, and for <code>/incidents</code> it carries a stated
+caveat: its sort key, <code>last_seen_at</code>, moves, so a reader paging by cursor can miss an incident
+that jumps ahead of the cursor and never sees one twice, which is better than paging by
+<code>offset</code>, where the same move shifts every row behind it.</p>
+<p>Two things a cursor can miss, both stated where it is documented. A row takes its timestamp
+when its transaction starts, so a row that commits after a cursor has passed its timestamp is
+not returned to that reader. And an incident's <code>last_seen_at</code> moves, as above.</p>
 
 
 
