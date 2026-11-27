@@ -56,6 +56,7 @@ lists which).
 - [Incident evidence card](https://theurgicduke771.github.io/DataQ/docs/latest/architecture/evidence-card/index.md): When a check breaches into a warning or failure severe enough to open or update an incident,
 - [MCP tool design (honesty)](https://theurgicduke771.github.io/DataQ/docs/latest/architecture/mcp-honesty/index.md): A REST caller wrote their own query and reads it back through a UI with a row count, a
 - [System architecture](https://theurgicduke771.github.io/DataQ/docs/latest/architecture/overview/index.md): %%{init: {'flowchart': {'curve': 'linear'}}}%%
+- [Partial indexes and the driver](https://theurgicduke771.github.io/DataQ/docs/latest/architecture/partial-indexes-and-the-driver/index.md): DataQ's backend talks to PostgreSQL through **psycopg2**, which puts each bind parameter into the
 - [Performance baseline](https://theurgicduke771.github.io/DataQ/docs/latest/architecture/perf-baseline/index.md): Two sentences of conclusion:
 
 ## Security & compliance
