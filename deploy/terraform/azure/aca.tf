@@ -1,8 +1,34 @@
-# The Container Apps environment is referenced, not created: a free/trial subscription allows ONE,
-# which other workloads may already use (ADR 0024).
+# The Container Apps environment: created, or referenced when create_shared_resources = false (a
+# free/trial subscription allows ONE, which other workloads may already use, ADR 0024).
+resource "azurerm_container_app_environment" "shared" {
+  count                      = var.create_shared_resources ? 1 : 0
+  name                       = var.container_app_environment_name
+  location                   = var.azure_location
+  resource_group_name        = local.resource_group_name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.app.id
+  tags                       = local.common_tags
+}
+
+locals {
+  # One of the two exists; one() reads it from whichever list is not empty.
+  container_app_environment_id = one(concat(
+    azurerm_container_app_environment.shared[*].id,
+    data.azurerm_container_app_environment.shared[*].id,
+  ))
+  container_app_environment_location = one(concat(
+    azurerm_container_app_environment.shared[*].location,
+    data.azurerm_container_app_environment.shared[*].location,
+  ))
+  container_app_environment_default_domain = one(concat(
+    azurerm_container_app_environment.shared[*].default_domain,
+    data.azurerm_container_app_environment.shared[*].default_domain,
+  ))
+}
+
 data "azurerm_container_app_environment" "shared" {
-  name                = "dataq-cae"
-  resource_group_name = data.azurerm_resource_group.dataq.name
+  count               = var.create_shared_resources ? 0 : 1
+  name                = var.container_app_environment_name
+  resource_group_name = local.resource_group_name
 
   # ── Residency assertion (G4 / #434) ──────────────────────────────────────── This environment is
   # SHARED and declared as a `data` source, so its region is whatever someone else created it in.

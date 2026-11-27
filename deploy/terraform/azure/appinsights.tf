@@ -5,7 +5,7 @@
 resource "azurerm_application_insights" "app" {
   name                = "dataq-app-ai"
   location            = var.azure_location
-  resource_group_name = data.azurerm_resource_group.dataq.name
+  resource_group_name = local.resource_group_name
   workspace_id        = azurerm_log_analytics_workspace.app.id
   application_type    = "web"
   tags                = local.common_tags

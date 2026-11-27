@@ -42,6 +42,8 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.12"
     }
+    # No resource uses it now. Kept for one release so a state that still holds the removed
+    # `null_resource.ensure_rg` can destroy it on the next apply.
     null = {
       source  = "hashicorp/null"
       version = "~> 3.2"

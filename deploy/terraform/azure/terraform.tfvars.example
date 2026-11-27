@@ -21,16 +21,18 @@
 #        python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 #   state_encryption_passphrase = "..."   # 16 chars minimum; never commit
 #
-#   3. shared_pg_server_name — NOT secret, but deployment-specific: it names a
-#      PRE-EXISTING Postgres Flexible Server this stack attaches to rather than
-#      creates, so no default could be right for more than one deployment. Set it
-#      below.
+#   3. create_shared_resources — true (the default) creates the resource group, the
+#      Container Apps environment and the Postgres server, for an empty subscription.
+#      Set false to attach to existing ones (a subscription capped at one of each);
+#      shared_pg_server_name is then REQUIRED and names that existing server.
 
 # REQUIRED, no default — the tag the app is CREATED with; later rollouts are deploy.yml's.
 # Pass what prod runs now (README.md, Apply) rather than pinning it here.
 # image_tag          = "<sha>"     # backend  (immutable tag, never "latest")
 # frontend_image_tag = "<sha>"     # frontend (immutable tag, never "latest")
-shared_pg_server_name = "my-shared-pg-server"      # REQUIRED — the pre-existing PG server
+# create_shared_resources        = false
+# container_app_environment_name = "dataq-cae"
+# shared_pg_server_name          = "my-shared-pg-server"  # required when create_shared_resources = false
 # Region that server is EXPECTED in. Leave unset for an ordinary deployment —
 # it then defaults to azure_location and the residency check stays silent. Set it
 # only where the shared server sits in a different region from the app, to record

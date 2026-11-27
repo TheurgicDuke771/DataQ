@@ -135,11 +135,11 @@ fallback for the other; the choice is the deployer's. GCP remains planned.
 - An Azure **subscription** + a region with quota for **1 Container Apps environment**,
   **1 PostgreSQL Flexible Server**, Cache for Redis, Key Vault, and App Insights + Log
   Analytics (the frontend is a Container App, not a Static Web App — ADR 0028).
-  The stack **references** the resource group, the Container Apps environment (`dataq-cae`)
-  and the Postgres server rather than creating them — free/trial tiers cap one environment
-  and one Postgres server per subscription, which other workloads may already use — so
-  create them first ([commands](terraform/azure/README.md#prerequisites)); the app
-  namespaces its own database + role on the server — ADR [0024](../docs/site/adr/0024-app-deployment-infrastructure.md).
+  The stack creates the resource group, the Container Apps environment and the Postgres
+  server on an empty subscription. Where free/trial caps mean they already exist and are
+  shared with other workloads, set `create_shared_resources = false` to attach to them
+  instead ([details](terraform/azure/README.md#using-existing-resources)); the app keeps
+  its own database + role on the server — ADR [0024](../docs/site/adr/0024-app-deployment-infrastructure.md).
 - The **resource providers** and **app registrations** from §2 registered/created.
 - The **GHCR** backend package public. Then follow [One-time provisioning](#one-time-provisioning).
 
@@ -190,8 +190,9 @@ eval stack (`DATAQ_AUTH_MODE=otp` by default, #1150) and prod (`=oidc`).
 
 ## One-time provisioning
 
-Create the resource group, Container Apps environment and Postgres server first (see the
-[stack README](terraform/azure/README.md#prerequisites)). Beyond that, this app needs:
+The stack creates the resource group, Container Apps environment and Postgres server, or
+attaches to existing ones (see the
+[stack README](terraform/azure/README.md#using-existing-resources)). Beyond that, this app needs:
 
 1. An **ACA environment** + the three apps/job above (the backend image is on
    **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;

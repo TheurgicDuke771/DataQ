@@ -67,8 +67,8 @@ locals {
 # ── API (FastAPI, external ingress) ──────────────────────────────────────────
 resource "azurerm_container_app" "api" {
   name                         = "dataq-app-api"
-  container_app_environment_id = data.azurerm_container_app_environment.shared.id
-  resource_group_name          = data.azurerm_resource_group.dataq.name
+  container_app_environment_id = local.container_app_environment_id
+  resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
 
   identity {
@@ -132,8 +132,8 @@ resource "azurerm_container_app" "api" {
 # ── Worker (Celery worker — task execution only, no beat since #1811) ───────
 resource "azurerm_container_app" "worker" {
   name                         = "dataq-app-worker"
-  container_app_environment_id = data.azurerm_container_app_environment.shared.id
-  resource_group_name          = data.azurerm_resource_group.dataq.name
+  container_app_environment_id = local.container_app_environment_id
+  resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
 
   identity {
@@ -193,8 +193,8 @@ resource "azurerm_container_app" "worker" {
 # min = max = 1: beat must run EXACTLY ONE instance or every periodic task fires twice.
 resource "azurerm_container_app" "beat" {
   name                         = "dataq-app-beat"
-  container_app_environment_id = data.azurerm_container_app_environment.shared.id
-  resource_group_name          = data.azurerm_resource_group.dataq.name
+  container_app_environment_id = local.container_app_environment_id
+  resource_group_name          = local.resource_group_name
   revision_mode                = "Single"
 
   identity {
@@ -251,10 +251,10 @@ resource "azurerm_container_app" "beat" {
 # docker-compose's migrate svc).
 resource "azurerm_container_app_job" "migrate" {
   name                         = "dataq-app-migrate"
-  container_app_environment_id = data.azurerm_container_app_environment.shared.id
-  resource_group_name          = data.azurerm_resource_group.dataq.name
+  container_app_environment_id = local.container_app_environment_id
+  resource_group_name          = local.resource_group_name
   # A Container Apps Job must be in the same region as its (shared) environment.
-  location = data.azurerm_container_app_environment.shared.location
+  location = local.container_app_environment_location
 
   replica_timeout_in_seconds = 900
   replica_retry_limit        = 1
