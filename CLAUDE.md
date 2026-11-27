@@ -304,8 +304,8 @@ The full decision index — one line per ADR with status — lives at **[docs/si
 **Releases:** `v1.0.0` 2026-07-04 · `v1.1.0` 2026-08-21 · `v1.2.0` 2026-10-04. Frozen ledgers: [progress-v1.md](docs/progress-v1.md), [progress-v1.1.md](docs/progress-v1.1.md), [progress-v1.2.md](docs/progress-v1.2.md); retros: [v1](docs/retro-v1.md), [v1.1](docs/retro-v1.1.md), [v1.2](docs/retro-v1.2.md).
 
 **Current cycle: v1.3 — 8 weeks, 2026-10-05 → 2026-11-29, no net-new features** (user direction 2026-10-05): roadmap and filed features (Weeks 1–5), bug fixes and security (Week 6), polish (Week 7), debt, decisions and the close (Week 8). Theme in [context/roadmap-v1.2-v1.3.md](context/roadmap-v1.2-v1.3.md).
-- **Current week: Week 7 — polish: MCP & API, performance, accessibility (due 2026-11-22).**
-- Weeks 1–3 closed 2026-10-20/21, Weeks 4–5 on 2026-10-25 (two weeks early), Week 6 on 2026-11-08 (a week early, nothing rolled). Highlights: GCS and BigQuery datasources, PII-drift monitor, data contracts on ODCS v3 (ADR 0052), suite-on-suite triggers (ADR 0051), tags, run comparison, notification centre, command palette, the audited audit-log scrub (ADR 0041 amendment) and the per-query time limit on every SQL engine.
+- **Current week: Week 8 — test & dependency debt, decisions & the close (due 2026-11-29).**
+- Weeks 1–3 closed 2026-10-20/21, Weeks 4–5 on 2026-10-25 (two weeks early), Week 6 on 2026-11-08 (a week early, nothing rolled), Week 7 on 2026-11-28 (six days late, nothing rolled). Highlights: GCS and BigQuery datasources, PII-drift monitor, data contracts on ODCS v3 (ADR 0052), suite-on-suite triggers (ADR 0051), tags, run comparison, notification centre, command palette, the audited audit-log scrub (ADR 0041 amendment) and the per-query time limit on every SQL engine.
 - **Exit gate (every week):** each item shipped or rolled by name with a reason, every one meeting CONTRIBUTING rules 44 (new code meets the standards in force, accessibility included) and 45 (interfaces use their open standard).
 - **Active blockers:** none.
 
