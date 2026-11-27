@@ -7,7 +7,7 @@ import ipaddress
 import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -65,10 +65,10 @@ class RateLimitStore(Protocol):
 
 
 # ── Redis-backed store (production) ──────────────────────────────────────────
-_redis_client: AsyncRedis[Any] | None = None
+_redis_client: AsyncRedis | None = None
 
 
-def _get_redis_client() -> AsyncRedis[Any]:
+def _get_redis_client() -> AsyncRedis:
     """Lazily build the shared async Redis client. Short timeouts so a slow/down
     Redis fails fast into the fail-open path rather than stalling the request.
     """

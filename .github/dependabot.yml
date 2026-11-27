@@ -11,8 +11,9 @@ updates:
     ignore:
       # GX Core is manually pinned — do not auto-update (API drifts across point releases)
       - dependency-name: great-expectations
-      # redis-py 8.x (Redis-8-aligned renumber) is capped by kombu's [redis] extra (redis<6.5); no
-      # released celery/kombu allows it yet.
+      # redis-py majors move only together with celery/kombu, whose [redis] extra bounds them
+      # (kombu 5.7: redis>=6.4,<9), so a lone major bump cannot resolve. 8.x also switches the
+      # wire to RESP3 and changes connection/retry defaults: move to it deliberately.
       - dependency-name: redis
         update-types:
           - version-update:semver-major
