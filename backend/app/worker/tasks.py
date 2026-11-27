@@ -978,6 +978,40 @@ def roll_up_results() -> int:
         session.close()
 
 
+#: Repaired buckets named in the warning; the counts cover all of them.
+_DRIFT_LOGGED = 20
+
+
+@celery_app.task(name="reconcile_result_rollup")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def reconcile_result_rollup() -> int:
+    """Recount the last two days of `result_status_hourly` from `results` and repair what
+    differs. Returns the number of buckets repaired; a non-zero one is a warning to alert on.
+    """
+    session = get_session()
+    try:
+        repaired = result_rollup.reconcile(session)
+    finally:
+        session.close()
+    if repaired:
+        log.warning(
+            "result_rollup_drift_repaired",
+            buckets=len(repaired),
+            results_off=sum(abs(d.counted - d.held) for d in repaired),
+            hours=result_rollup.RECONCILE_HOURS,
+            drift=[
+                {
+                    "suite_id": str(d.suite_id),
+                    "hour": d.hour.isoformat(),
+                    "status": d.status,
+                    "held": d.held,
+                    "counted": d.counted,
+                }
+                for d in repaired[:_DRIFT_LOGGED]
+            ],
+        )
+    return len(repaired)
+
+
 # ─────────────────────── llm_invocations reaper (#1644) ────────────────────
 
 

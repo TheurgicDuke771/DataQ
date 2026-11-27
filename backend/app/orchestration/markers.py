@@ -27,6 +27,7 @@ from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
+from backend.app.db.literals import sql_constant
 from backend.app.db.models import SUITE_TRIGGER_PROVIDER, PipelineRun, Run
 
 log = get_logger(__name__)
@@ -60,11 +61,12 @@ def pipeline_run_marker(pipeline_run: PipelineRun) -> str:
 
 def _reconstructed_marker() -> ColumnElement[str]:
     # `||`, not concat(): textually the expression `ix_pipeline_runs_marker` is built on (#1814).
+    # The separators are literals in the SQL, so the expression matches the index under any driver.
     return (
         PipelineRun.provider
-        + ":"
+        + sql_constant(":")
         + PipelineRun.pipeline_or_dag_id
-        + ":"
+        + sql_constant(":")
         + PipelineRun.provider_run_id
     )
 
@@ -106,15 +108,19 @@ def ambiguous_markers(session: Session, markers: Iterable[str]) -> set[str]:
     wanted = set(markers)
     if not wanted:
         return set()
-    providers = {m.partition(":")[0] for m in wanted}
+    rows = session.execute(ambiguous_markers_statement(wanted)).all()
+    return {marker for marker, _count in rows}
+
+
+def ambiguous_markers_statement(markers: Collection[str]) -> Select[tuple[str, int]]:
+    providers = {m.partition(":")[0] for m in markers}
     reconstructed = _reconstructed_marker()
-    rows = session.execute(
+    return (
         select(reconstructed, func.count())
-        .where(PipelineRun.provider.in_(providers), reconstructed.in_(wanted))
+        .where(PipelineRun.provider.in_(providers), reconstructed.in_(markers))
         .group_by(reconstructed)
         .having(func.count() > 1)
-    ).all()
-    return {marker for marker, _count in rows}
+    )
 
 
 def runs_for_markers_statement(markers: Collection[str]) -> Select[tuple[Run]]:

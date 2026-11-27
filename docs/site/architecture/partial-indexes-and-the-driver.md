@@ -12,9 +12,12 @@ become unprovable. The query still returns the right rows by another route, whic
 turns red. This page records, index by index, which queries that would affect, so swapping the
 driver is a decision and not an accident.
 
-**Today nothing is affected:** the driver is pinned (`psycopg2-binary` in
-`backend/requirements.txt`), and one shared test guard (`tests/support/driver_guard.py`) fails
-every test that depends on this the moment the driver changes, with a message that points here.
+**Nothing is affected under either driver.** Where an index compares a column with a constant
+(a status, a kind, a JSON key, a separator), the app writes that constant into the SQL as a
+literal (`sql_constant` in `backend/app/db/literals.py`), not as a bind parameter. The driver is
+still pinned (`psycopg2-binary` in `backend/requirements.txt`), and one shared test guard
+(`tests/support/driver_guard.py`) fails every test that depends on client-side binding the
+moment the driver changes, with a message that points here.
 
 ## What defeats a partial index, and what does not
 
@@ -32,7 +35,9 @@ server-binding driver would send it:
 
 The first row is the one that matters. A test per row of this table runs the generic plan and
 holds the verdict (`tests/db/test_index_binding_audit.py`), so the table cannot drift from what
-the planner does.
+the planner does. A second test in the same file plans **the statements the app builds**, each
+compiled by the server-binding driver's own SQLAlchemy dialect, and requires every one to reach
+its index. A hand-written copy of a query proves only that the copy matches.
 
 ## The indexes
 
@@ -41,15 +46,15 @@ predicate in the statement text, which is a constant under any driver, so these 
 
 | Index | Table | What it is for | Under server-side binding | If the driver changes |
 |---|---|---|---|---|
-| `ix_llm_invocations_status_open` | `llm_invocations` | The reaper's scan of invocations still `pending` or `running` | **Affected** if the status is sent as a parameter | Write the two statuses as literals in the statement (`literal_column`), the reaper's two `status ==` statements are affected the same way |
-| `ix_llm_invocations_rca_incident` | `llm_invocations` | The latest RCA narrative for an incident (`kind`, `status` and `request ->> 'incident_id'`) | **Affected**: the kind, the status and the JSON key are all parameters | Compile the closed-vocabulary `kind` and `status`, and the JSON key, as literals |
-| `ix_runs_results_unrolled` | `runs` | Succeeded runs not yet counted in the result summary. No query reads it yet: the readers arrive with the summary's sweep | **Affected** wherever `status` is a parameter | Every reader must write `'succeeded'` as a literal |
+| `ix_llm_invocations_status_open` | `llm_invocations` | The reaper's scan of invocations still `pending` or `running` | Reached: the reaper writes each status as a literal | None |
+| `ix_llm_invocations_rca_incident` | `llm_invocations` | The latest RCA narrative for an incident (`kind`, `status` and `request ->> 'incident_id'`) | Reached: the kind, the status and the JSON key are literals | None |
+| `ix_runs_results_unrolled` | `runs` | Succeeded runs not yet counted in the result summary: the summary's sweep and its reads of runs not yet counted | Reached: every reader writes `'succeeded'` as a literal | None |
 | `ix_runs_triggered_by` | `runs` | The lookup of runs by orchestration marker | Reached | None |
 | `ix_notifications_user_unread` | `notifications` | A user's unread notifications, newest first | Reached | None |
-| `ix_results_unpurged_created` | `results` | The retention sweep of failing-row samples | **Affected**: the type name `'null'` is a parameter | Compile it as a literal |
-| `ix_results_unpurged_observed` | `results` | The retention sweep of list-shaped observed values | **Affected**: the JSON key and the type name are parameters | Compile both as literals |
-| `ix_results_unpurged_unparsed` | `results` | The retention sweep of unparsed monitor values | **Affected**: the `?` operand is a parameter | Compile the key as a literal |
-| `ix_pipeline_runs_marker` | `pipeline_runs` | The marker a pipeline run triggers suite runs by | **Affected**: the `:` separators are parameters, so the expression no longer matches the index | Compile the separators as literals (`literal_column`) |
+| `ix_results_unpurged_created` | `results` | The retention sweep of failing-row samples | Reached: the type name is a literal | None |
+| `ix_results_unpurged_observed` | `results` | The retention sweep of list-shaped observed values | Reached: the JSON key and the type name are literals | None |
+| `ix_results_unpurged_unparsed` | `results` | The retention sweep of unparsed monitor values | Reached: the key is a literal | None |
+| `ix_pipeline_runs_marker` | `pipeline_runs` | The marker a pipeline run triggers suite runs by | Reached: the separators are literals | None |
 | `uq_users_email_lower` | `users` | One account per address, and the sign-in lookup by `lower(email)` | Reached | None |
 | `uq_workspace_members_email_lower` | `workspace_members` | One membership per address | Constraint | None |
 | `uq_asset_column_classifications_cell` | `asset_column_classifications` | One classification per asset, column and source | Constraint | None |
@@ -64,14 +69,18 @@ predicate in the statement text, which is a constant under any driver, so these 
 ## Adding an index like these
 
 A new partial or expression index needs a row above. The completeness test fails until it has
-one, and for an index an app query should reach, add a case to the generic-plan list in
-`tests/db/test_index_binding_audit.py` with the statement as the app sends it. Where a
-predicate compares a column with a constant, write that constant as a literal in the query as
-well, and the index works under either driver.
+one. For an index an app query should reach, add the statement's builder to the list of app
+statements in `tests/db/test_index_binding_audit.py`. Where a predicate compares a column with
+a constant, write the constant with `sql_constant`, and the index works under either driver.
+
+Write a JSON access in the query the way the index writes it. On PostgreSQL 14 and later
+SQLAlchemy renders `column["key"]` as a subscript (`column['key']`), which is a different
+expression from `column -> 'key'`: an index on one is never used by a query written with the
+other. Use `column.op("->", return_type=JSONB)(sql_constant("key"))` to match a `->` index, and
+`.astext` for `->>`.
 
 ## Swapping the driver
 
-Run the audit tests: the shared guard fails first and names this page. Then, for each index
-marked affected, make the change in its last column, and change the driver in
-`backend/requirements.txt` and the shared guard together. The generic-plan list then says which
-queries still miss.
+Run the audit tests: the shared guard fails first and names this page. Change the driver in
+`backend/requirements.txt` and the shared guard together. The app-statement test then says
+whether any query misses its index under the new driver.

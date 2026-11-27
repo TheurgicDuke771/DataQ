@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
+from backend.app.db.literals import sql_constant
 from backend.app.db.models import Incident, LlmInvocation
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import check_service, incident_service, llm_service
@@ -544,9 +545,9 @@ def narrative_lookup_statement(incident_id: uuid.UUID) -> Select[tuple[LlmInvoca
     return (
         select(LlmInvocation)
         .where(
-            LlmInvocation.kind == RCA_KIND,
-            LlmInvocation.status == "succeeded",
-            LlmInvocation.request["incident_id"].astext == str(incident_id),
+            LlmInvocation.kind == sql_constant(RCA_KIND),
+            LlmInvocation.status == sql_constant("succeeded"),
+            LlmInvocation.request[sql_constant("incident_id")].astext == str(incident_id),
         )
         .order_by(LlmInvocation.created_at.desc(), LlmInvocation.id.desc())
         .limit(1)
