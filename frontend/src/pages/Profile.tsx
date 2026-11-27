@@ -3,8 +3,12 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import type { WorkspaceRole } from '../api/admin';
-import type { MeResponse } from '../api/me';
-import { listSuites, type Suite } from '../api/suites';
+import {
+  fetchAccessSummary,
+  type AccessSummary,
+  type MeResponse,
+  type OwnedSuite,
+} from '../api/me';
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
 import { useSaveDisplayName } from '../auth/useSaveDisplayName';
@@ -51,12 +55,12 @@ export function Profile() {
   return <ProfileBody me={me.data} />;
 }
 
-/** Mounted only once `/me` has resolved, so the suites fetch never fires for a failed sign-in. */
+/** Mounted only once `/me` has resolved, so the access fetch never fires for a failed sign-in. */
 function ProfileBody({ me }: { me: MeResponse }) {
   const saveDisplayName = useSaveDisplayName();
   const { message } = App.useApp();
   const [savingName, setSavingName] = useState(false);
-  const suites = useAsyncData((signal) => listSuites(undefined, signal));
+  const access = useAsyncData((signal) => fetchAccessSummary(signal));
 
   // `role` is already the EFFECTIVE role — the server resolves a break-glass allowlist admin
   // to `admin` here (api/me.ts), so nothing is re-derived client-side.
@@ -124,24 +128,24 @@ function ProfileBody({ me }: { me: MeResponse }) {
         <Flex vertical gap={12}>
           <Typography.Text>{ROLE_SUMMARIES[role]}</Typography.Text>
           <AsyncBody
-            state={suites.state}
+            state={access.state}
             loadingText="Counting your suites…"
             errorTitle="Could not load your suite access"
-            onRetry={suites.reload}
+            onRetry={access.reload}
           >
-            {(all) => <AccessSummary suites={all} role={role} />}
+            {(summary) => <AccessCounts summary={summary} role={role} />}
           </AsyncBody>
         </Flex>
       </Card>
 
       <Card title={<CardHeading>Suites you own</CardHeading>} size="small">
         <AsyncBody
-          state={suites.state}
+          state={access.state}
           loadingText="Loading your suites…"
           errorTitle="Could not load your suites"
-          onRetry={suites.reload}
+          onRetry={access.reload}
         >
-          {(all) => <OwnedSuites suites={all.filter((s) => s.my_permission === 'owner')} />}
+          {(summary) => <OwnedSuites suites={summary.owned} />}
         </AsyncBody>
       </Card>
 
@@ -167,23 +171,20 @@ const ACCESS_LEVELS = [
 ] as const;
 
 /**
- * A workspace admin's list is every suite in the workspace, each non-owned one stamped `admin`
- * whether or not anyone shared it (ADR 0033) — the payload cannot tell a share from the role,
- * so per-share counts would be false for them. They get the two numbers that are true.
+ * A workspace admin holds every suite they did not create at `admin` whether or not anyone shared
+ * it (ADR 0033), so per-share counts would be false for them. They get the two numbers that are
+ * true.
  */
-function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole }) {
-  const counts = new Map<string, number>();
-  for (const s of suites) {
-    if (s.my_permission) counts.set(s.my_permission, (counts.get(s.my_permission) ?? 0) + 1);
-  }
-  const owned = counts.get('owner') ?? 0;
+function AccessCounts({ summary, role }: { summary: AccessSummary; role: WorkspaceRole }) {
+  const counts = summary.counts_by_level;
+  const owned = counts.owner;
   if (role === 'admin') {
     return (
       <Flex vertical gap={8}>
         <Descriptions column={1} size="small" aria-label="Suites by access level">
           <Descriptions.Item label="Owned by you">{owned}</Descriptions.Item>
           <Descriptions.Item label="All other suites in the workspace">
-            {suites.length - owned}
+            {summary.total_visible - owned}
           </Descriptions.Item>
         </Descriptions>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -199,7 +200,7 @@ function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole 
       <Descriptions column={1} size="small" aria-label="Suites by access level">
         {ACCESS_LEVELS.map(([level, label]) => (
           <Descriptions.Item key={level} label={label}>
-            {counts.get(level) ?? 0}
+            {counts[level]}
           </Descriptions.Item>
         ))}
       </Descriptions>
@@ -211,7 +212,7 @@ function AccessSummary({ suites, role }: { suites: Suite[]; role: WorkspaceRole 
   );
 }
 
-function OwnedSuites({ suites }: { suites: Suite[] }) {
+function OwnedSuites({ suites }: { suites: OwnedSuite[] }) {
   if (suites.length === 0) {
     return (
       <Typography.Text type="secondary">
