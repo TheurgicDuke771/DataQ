@@ -42,7 +42,7 @@ per theme. Dark surfaces are keyed `route:/…@dark`, and each scan asserts `dat
 dark scan that silently rendered light cannot pass. Add a route to `App.tsx` and it belongs here
 too. (The sign-in screen has no dev-bypass equivalent — `e2e-otp/a11y.spec.ts` covers it; its card
 is white in both themes.) Each scan waits for the page to finish loading (`scripts/a11y/settle.ts`)
-— a scan that lands mid-load sees fewer violations and the ratchet cannot tell. Only
+— a scan that lands mid-load sees fewer violations and the ratchet cannot tell. It also asserts each route's own loaded content first (a seeded row, a seeded card, a field only a fetched record fills), because a page that holds still on a fallback or a failed-fetch state passes `settle` too; a route that fetches nothing is marked `STATIC` in the spec. Only
 `serious`/`critical` violations are kept. It **ratchets** against the committed
 `frontend/a11y-baseline.json` (shared with the Vitest component lane in
 `tests/a11y/components.a11y.test.tsx` via `frontend/scripts/a11y/ratchet.ts`) rather than requiring

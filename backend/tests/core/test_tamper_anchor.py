@@ -127,12 +127,20 @@ def test_webhook_publish_survives_a_connection_error() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_caches() -> Iterator[None]:
+def _reset_caches(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The tests put their secrets in `KV_SECRET_*` variables, which only the env secret store
+    reads. The store is built from the process settings, so a runner whose `.env.app` selects
+    another (OpenBao on the local stack) would read its real vault instead (#2551)."""
+    from backend.app.core.secrets import reset_secret_store_cache
+
+    monkeypatch.setenv("SECRET_STORE", "env")
     get_settings.cache_clear()
     reset_tamper_anchor_cache()
+    reset_secret_store_cache()
     yield
     get_settings.cache_clear()
     reset_tamper_anchor_cache()
+    reset_secret_store_cache()
 
 
 def test_get_tamper_anchor_defaults_to_noop(monkeypatch: pytest.MonkeyPatch) -> None:

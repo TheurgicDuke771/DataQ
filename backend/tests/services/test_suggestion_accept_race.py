@@ -65,6 +65,7 @@ def committed(_db_engine: Any) -> Any:
         s.commit()
 
 
+@pytest.mark.commits_for_real
 def test_concurrent_accepts_create_one_check(
     _db_engine: Any, committed: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

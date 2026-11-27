@@ -624,9 +624,8 @@ def test_n_consecutive_partial_cycles_fire_the_backstop_exactly_once_past_the_th
         assert sf_connection.lineage_last_authoritative_refresh_at == pruned_at, cycle
 
     # Age the marker past the threshold: the suspension has now outlived its window.
-    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(
-        hours=hours + 1
-    )
+    aged = datetime.now(UTC) - timedelta(hours=hours + 1)
+    sf_connection.lineage_last_authoritative_refresh_at = aged
     db_session.commit()
 
     outcome = _refresh(db_session, sf_connection, _partial(("A", "B")))
@@ -635,7 +634,10 @@ def test_n_consecutive_partial_cycles_fire_the_backstop_exactly_once_past_the_th
     assert outcome.prune_suspended is False
     assert outcome.live_edges == 1  # (C,D) finally removed
     forced_at = sf_connection.lineage_last_authoritative_refresh_at
-    assert forced_at is not None and forced_at > datetime.now(UTC) - timedelta(minutes=5)
+    # Re-stamped: the marker moved from past the threshold to inside the window. Compared with
+    # the aged marker, not with a wall-clock window around "now" (#2608), which a slow refresh
+    # under load can exceed.
+    assert forced_at is not None and forced_at > aged + timedelta(hours=hours)
 
     # And it re-stamped, so the NEXT partial pull suspends again rather than the backstop
     # degrading into "prune on every partial pull" (which would discard the whole trade).
