@@ -29,7 +29,6 @@ from backend.app.datasources import flatfile, generic_sql
 from backend.app.datasources.base import FLAT_FILE_TYPES
 from backend.app.datasources.generic_sql import SqlEngineSpec
 from backend.app.datasources.registry import (
-    authenticates_without_secret,
     missing_credential,
     resolve_flatfile_secret,
 )
@@ -186,10 +185,7 @@ def browse_catalog(
         raise BrowseInputInvalidError("schema requires a catalog", detail={"field": "schema"})
     catalog = _identifier(catalog, "catalog")
     schema = _identifier(schema, "schema")
-    # An Iceberg catalog may authenticate by its own catalog secret or not at all.
-    if connection.type != "iceberg" and not authenticates_without_secret(
-        connection.type, connection.config
-    ):
+    if missing_credential(connection.type, connection.config, connection.secret_ref):
         _require_credential(connection)
     level: Literal["catalog", "schema", "table"]
     if schema_rooted:

@@ -15,6 +15,7 @@ from azure.core.exceptions import (
 from backend.app.db.models import Connection, User
 from backend.app.services import credential_health
 from backend.app.services.failure_classifier import is_auth_failure
+from backend.tests.support.credential_configs import CREDENTIAL_CONFIGS, NO_CREDENTIAL_CONFIGS
 
 
 def _connection(
@@ -38,41 +39,6 @@ def _connection(
     db_session.add(conn)
     db_session.commit()
     return conn
-
-
-# One REAL config per auth mode whose adapter needs no credential, each run through the adapter's
-# own validation below so none is a hand-made stand-in for what the adapter would accept.
-NO_CREDENTIAL_CONFIGS = [
-    ("gcs", {"bucket": "public-bucket", "auth_type": "anonymous"}),
-    (
-        "trino",
-        {"host": "trino.example.com", "catalog": "hive", "user": "dq", "auth_type": "none"},
-    ),
-    (
-        "trino",
-        {
-            "host": "trino.example.com",
-            "catalog": "hive",
-            "user": "dq",
-            "auth_type": "none",
-            "sslmode": "disable",
-        },
-    ),
-    ("iceberg", {"catalog_type": "rest", "catalog_uri": "https://catalog.example.com"}),
-]
-
-# Same adapters, but the auth mode DOES need a credential.
-CREDENTIAL_CONFIGS = [
-    ("gcs", {"bucket": "private-bucket", "auth_type": "service_account_key"}),
-    (
-        "trino",
-        {"host": "trino.example.com", "catalog": "hive", "user": "dq", "auth_type": "password"},
-    ),
-    (
-        "trino",
-        {"host": "trino.example.com", "catalog": "hive", "user": "dq", "auth_type": "jwt"},
-    ),
-]
 
 
 # Real driver vocabulary. Every string below is the shape the named driver actually
