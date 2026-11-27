@@ -229,6 +229,7 @@ def committed(_db_engine: Any) -> Iterator[_Fixture]:
         fixture.close()
 
 
+@pytest.mark.commits_for_real
 def test_the_committed_pass_is_visible_on_another_connection(committed: _Fixture) -> None:
     """The positive control for the test below: without it, an all-rollback bug
     would make the failure assertions pass for the wrong reason.
@@ -307,6 +308,7 @@ def test_a_failure_after_the_transfers_takes_them_back_too(
     assert observed["offboard_events"] == 0
 
 
+@pytest.mark.commits_for_real
 def test_every_audit_event_of_the_pass_is_chained(committed: _Fixture) -> None:
     """A flush between `record_entity_change` and commit moved the api_key.revoke
     events out of `session.new`, so the before_commit chain hook never hashed

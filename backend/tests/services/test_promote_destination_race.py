@@ -74,6 +74,7 @@ def committed(_db_engine: Any) -> Any:
         s.commit()
 
 
+@pytest.mark.commits_for_real
 def test_a_clear_racing_a_promote_cannot_delete_the_moved_secret(
     _db_engine: Any, committed: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

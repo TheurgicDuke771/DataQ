@@ -152,6 +152,13 @@ def create_celery_app() -> Celery:
                 "task": "reap_stuck_runs",
                 "schedule": 600.0,  # 10 minutes
             },
+            # Result-status summary sweep (#2010): adds succeeded runs the summary does not hold
+            # (history after an upgrade, seeded runs, a failed add). Readers are exact without
+            # it; it is what makes them fast.
+            "roll-up-results": {
+                "task": "roll_up_results",
+                "schedule": 300.0,  # 5 minutes
+            },
             # llm_invocations reaper (#1644): mirrors reap-stuck-runs.
             "reap-stuck-llm-invocations": {
                 "task": "reap_stuck_llm_invocations",
