@@ -300,8 +300,9 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             echo "logopts=--no-merges ${PR_BASE}..${PR_HEAD}" >> "$GITHUB_OUTPUT"
           elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            # new branch / no parent on record — scan just the tip commit
-            echo "logopts=-1" >> "$GITHUB_OUTPUT"
+            # New branch, schedule or manual run: no parent on record, so scan just the tip commit.
+            # `-1` alone is not a range; git rev-list needs the commit beside it.
+            echo "logopts=-1 ${PUSH_AFTER}" >> "$GITHUB_OUTPUT"
           else
             echo "logopts=--no-merges ${PUSH_BEFORE}..${PUSH_AFTER}" >> "$GITHUB_OUTPUT"
           fi
@@ -423,7 +424,8 @@ jobs:
   frontend-e2e:
     name: Frontend — browser E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 minutes for Chromium; the weekly lane also runs Firefox and WebKit in this job.
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 60 || 25 }}
     # Full-stack browser smoke (#128): real API + seeded demo data + dev-bypass, driven through the
     # React UI.
     services:
