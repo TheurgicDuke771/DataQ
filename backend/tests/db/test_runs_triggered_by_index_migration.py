@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from backend.app.db.models import Connection, Run, Suite, User
 from backend.app.orchestration import markers
+from backend.tests.support.index_plans import drop_rival_indexes
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -127,6 +128,7 @@ def test_marker_to_runs_lookup_uses_the_index(db_session: Any) -> None:
     _seed_runs(db_session)
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _INDEX)
     statement = markers.runs_for_markers_statement(
         {"airflow:nightly_etl:manual__1", "adf:pl_load:abc-123"}
     )
@@ -143,6 +145,7 @@ def test_pipeline_run_marker_lookup_still_uses_the_expression_index(db_session: 
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _PIPELINE_INDEX)
     marker = "airflow:nightly_etl:manual__1"
     statement = markers.pipeline_runs_for_marker_statement(marker)
     plan = _plan(connection, statement)
