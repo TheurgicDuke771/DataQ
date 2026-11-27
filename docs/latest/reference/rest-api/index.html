@@ -2912,6 +2912,11 @@ in production — this page is the reference.)</p>
 <td>The current user + <code>role</code> (<code>admin</code> / <code>member</code> / <code>viewer</code>) + <code>is_workspace_admin</code>; PATCH updates <code>display_name</code>.</td>
 </tr>
 <tr>
+<td>GET</td>
+<td><code>/me/access-summary</code></td>
+<td>The caller's suite access, counted server-side: <code>total_visible</code>, <code>counts_by_level</code> (<code>owner</code> / <code>admin</code> / <code>edit</code> / <code>view</code>) and the suites they <code>owned</code>. For a workspace admin every suite they did not create counts as <code>admin</code>, shared or not.</td>
+</tr>
+<tr>
 <td>POST</td>
 <td><code>/me/api-keys</code></td>
 <td>Mint a PAT (plaintext returned <strong>once</strong>).</td>

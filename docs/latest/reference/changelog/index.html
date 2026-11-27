@@ -3185,6 +3185,11 @@ section below.</p>
   Databricks warehouse or workspace setting. A Snowflake warehouse's own limit still applies as
   well. If a warehouse refuses the setting, DataQ logs <code>query_limit_not_applied</code> and runs the
   query without a limit rather than failing it.</li>
+<li><strong>The Profile page no longer loads every suite to show two cards.</strong> "Your access" and "Suites you
+  own" were computed in the browser from the full suite list, so a workspace admin's Profile pulled
+  every suite in the workspace with its target and description. They now read one small request,
+  <code>GET /api/v1/me/access-summary</code>, which returns the counts per access level and the suites the
+  caller owns. The figures are unchanged.</li>
 <li><strong>A slow query on a SQL datasource is now cancelled instead of running without limit.</strong> Every
   query DataQ sends PostgreSQL, Redshift, MySQL/MariaDB, Trino, SQL Server, Athena or BigQuery
   carries a wall-clock limit, <code>DATASOURCE_QUERY_TIMEOUT_S</code> (default 1800 seconds), applied
