@@ -80,6 +80,11 @@ class IcebergConfig(BaseModel):
     # (same idiom as the `*_WEBHOOK_SECRET_NAME` settings).
     catalog_secret_name: str | None = None
 
+    def requires_secret(self) -> bool:
+        """The stored secret is sent only as ``secret_property``. A catalog password is a
+        separate secret, named by ``catalog_secret_name``."""
+        return bool(self.secret_property)
+
     @model_validator(mode="after")
     def _uri_present(self) -> IcebergConfig:
         if self.catalog_type in _URI_REQUIRED and not self.catalog_uri:

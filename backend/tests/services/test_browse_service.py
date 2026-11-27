@@ -323,6 +323,25 @@ def test_iceberg_lists_top_level_namespaces_then_their_tables(
     assert fake_iceberg.listed == ["retail"]
 
 
+@pytest.mark.parametrize(
+    "extra", [{}, {"catalog_secret_name": "catalog-pw"}], ids=["no-credential", "catalog-password"]
+)
+def test_an_iceberg_catalog_that_sends_no_stored_secret_browses_without_one(
+    fake_iceberg: _FakeIcebergCatalog, extra: dict[str, Any]
+) -> None:
+    listing = _catalog(_conn("iceberg", {**_ICE_CONFIG, **extra}, secret_ref=None))
+    assert listing.level == "schema"
+
+
+def test_an_iceberg_catalog_that_sends_the_stored_secret_needs_one(
+    fake_iceberg: _FakeIcebergCatalog,
+) -> None:
+    conn = _conn("iceberg", {**_ICE_CONFIG, "secret_property": "token"}, secret_ref=None)
+    with pytest.raises(BrowseInputInvalidError):
+        _catalog(conn)
+    assert fake_iceberg.listed == []
+
+
 def test_an_iceberg_catalog_failure_is_502_without_the_driver_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

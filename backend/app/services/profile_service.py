@@ -624,11 +624,7 @@ def resolve_profiler(
             f"column introspection is not supported for {connection.type!r} connections in v1",
             detail={"type": connection.type, "supported": sorted(_PROFILERS)},
         )
-    # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3 adapters) — a local
-    # warehouse or vended-credentials REST catalog has no secret.
-    if not isinstance(profiler, _IcebergProfiler) and missing_credential(
-        connection.type, connection.config, connection.secret_ref
-    ):
+    if missing_credential(connection.type, connection.config, connection.secret_ref):
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}
         )
