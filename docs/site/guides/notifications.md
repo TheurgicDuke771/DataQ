@@ -106,7 +106,7 @@ to scope a feed by.
 
 ## Per-suite configuration
 
-Open a suite → **Notifications** panel:
+Open a suite → **Alerting** panel:
 
 - **Send alerts for this suite** — on/off.
 - **Alert threshold** — `On fail / critical` · `On warn and worse` (default) · `Always

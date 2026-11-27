@@ -5,7 +5,7 @@
 # (and its orphan-secret sweep) never sees it. Reuses the compose Postgres
 # (:5432), Redis (:6379, db 3) and OpenBao (:8200).
 #
-#   scripts/docs/capture-stack.sh start    # migrate + seed + api :8001 + vite :3001
+#   scripts/docs/capture-stack.sh start    # migrate + seed + warehouse :55433 + api :8001 + worker + vite :3001
 #   scripts/docs/capture-stack.sh capture  # run the e2e-docs Playwright project
 #   scripts/docs/capture-stack.sh stop     # stop the processes (data kept)
 #   scripts/docs/capture-stack.sh destroy  # stop + drop the database + the KV mount
@@ -17,6 +17,8 @@ API_PORT="${DOCS_API_PORT:-8001}"
 WEB_PORT="${DOCS_WEB_PORT:-3001}"
 DB_NAME="${DOCS_DB_NAME:-dataq_docs}"
 KV_MOUNT="${DOCS_KV_MOUNT:-docs-capture}"
+WH_PORT="${DOCS_WAREHOUSE_PORT:-55433}"
+WH_CONTAINER="${DOCS_WAREHOUSE_CONTAINER:-dataq-docs-warehouse}"
 COMPOSE=(docker compose -f "$ROOT/docker-compose.yml")
 
 _env() {
@@ -68,6 +70,11 @@ start() {
     curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null && break; sleep 1
   done
   curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null || _abort "api did not come up" "$RUN/api.log"
+  # A worker on the stack's own queue (Redis db 3): the LLM captures (SQL generation, check
+  # suggestions) dispatch to it and poll until it finishes. The compose worker listens elsewhere.
+  (cd "$ROOT" && nohup conda run -n dataq --no-capture-output \
+      celery -A backend.app.worker.celery_app worker -Q celery,llm --concurrency 2 --loglevel=INFO \
+      >"$RUN/worker.log" 2>&1 </dev/null & echo $! >"$RUN/worker.pid")
   # The seed carries no llm_settings row; the LLM captures need a saved, enabled
   # OpenAI-compatible config so a fresh stack regenerates the same images. The
   # key is a placeholder (Ollama ignores it). The API tests the provider on save, so
@@ -77,29 +84,21 @@ start() {
     "http://127.0.0.1:${API_PORT}/api/v1/admin/llm" \
     -d "{\"provider\":\"openai_compatible\",\"model\":\"${DOCS_LLM_MODEL:-qwen2.5:14b}\",\"base_url\":\"${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}\",\"api_key\":\"docs-capture-placeholder\",\"structured_output\":\"prompt_json\",\"enabled\":true}" \
     || echo "warning: LLM provider config not saved (no server answering at ${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}?) — continuing without the LLM captures"
-  # Optional: a real Snowflake reader connection + suite, for the SQL-generation and
-  # suggest-checks captures (both need to introspect a live table — a fake config
-  # errors on every call). Skipped when DOCS_SNOWFLAKE_ACCOUNT is unset, so the base
-  # capture set still works with no warehouse credentials at hand; export it (plus
-  # DOCS_SNOWFLAKE_USER/_SECRET, the rest default to the harness reader's shape —
-  # DATAQ_DB.RETAIL, warehouse DATAQ_WH, role DATAQ_READER) before `start` to enable
-  # them. `DOCS_SNOWFLAKE_SECRET` is read from the environment only — never logged,
-  # never written to a file here.
-  if [ -n "${DOCS_SNOWFLAKE_ACCOUNT:-}" ]; then
-    conn_id="$(curl -sf -X POST -H 'Content-Type: application/json' \
-      "http://127.0.0.1:${API_PORT}/api/v1/connections" \
-      -d "{\"name\":\"snowflake-docs-reader\",\"type\":\"snowflake\",\"env\":\"dev\",\"config\":{\"account\":\"${DOCS_SNOWFLAKE_ACCOUNT}\",\"user\":\"${DOCS_SNOWFLAKE_USER:?export DOCS_SNOWFLAKE_USER to enable the live-warehouse captures}\",\"database\":\"${DOCS_SNOWFLAKE_DATABASE:-DATAQ_DB}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\",\"warehouse\":\"${DOCS_SNOWFLAKE_WAREHOUSE:-DATAQ_WH}\",\"role\":\"${DOCS_SNOWFLAKE_ROLE:-DATAQ_READER}\",\"auth_type\":\"password\"},\"secret\":\"${DOCS_SNOWFLAKE_SECRET:?export DOCS_SNOWFLAKE_SECRET to enable the live-warehouse captures}\"}" \
-      | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))')" \
-      || _abort "could not create the docs Snowflake connection"
-    if [ -z "$conn_id" ]; then
-      _abort "docs Snowflake connection created but the response carried no id — aborting rather than silently skipping the live-warehouse captures"
-    fi
-    curl -sf -o /dev/null -X POST -H 'Content-Type: application/json' \
-      "http://127.0.0.1:${API_PORT}/api/v1/suites" \
-      -d "{\"name\":\"Retail orders (reader)\",\"connection_id\":\"$conn_id\",\"target\":{\"table\":\"${DOCS_SNOWFLAKE_TABLE:-ORDERS_HEADER}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\"}}" \
-      || _abort "could not create the docs Snowflake suite"
-    echo "live-warehouse captures enabled (connection $conn_id)"
-  fi
+  # The SQL-generation and suggest-checks captures introspect a live table, so the stack runs
+  # its own small PostgreSQL warehouse (the compose `demo` profile's image and shop dataset,
+  # on loopback only) and connects DataQ to it the way `seed_demo` does for an evaluator.
+  docker rm -f "$WH_CONTAINER" >/dev/null 2>&1 || true
+  docker run -d --name "$WH_CONTAINER" -p "127.0.0.1:${WH_PORT}:5432" \
+      -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=demo -e POSTGRES_DB=shop \
+      postgres:16-alpine >/dev/null || _abort "could not start the docs warehouse"
+  for _ in $(seq 1 30); do
+    docker exec "$WH_CONTAINER" pg_isready -U demo -d shop >/dev/null 2>&1 && break; sleep 1
+  done
+  docker exec "$WH_CONTAINER" pg_isready -U demo -d shop >/dev/null 2>&1 \
+    || _abort "the docs warehouse did not come up"
+  (cd "$ROOT" && DEMO_WAREHOUSE_HOST=127.0.0.1 DEMO_WAREHOUSE_PORT="$WH_PORT" \
+      conda run -n dataq --no-capture-output python -m backend.scripts.seed_demo >"$RUN/seed_demo.log" 2>&1) \
+    || _abort "could not seed the docs warehouse" "$RUN/seed_demo.log"
   (cd "$ROOT/frontend" && VITE_API_PROXY_TARGET="http://127.0.0.1:${API_PORT}" VITE_AUTH_DEV_BYPASS=true \
       nohup pnpm dev --host 127.0.0.1 --port "$WEB_PORT" --strictPort >"$RUN/web.log" 2>&1 </dev/null & echo $! >"$RUN/web.pid")
   # Vite must be the process answering: with the port already taken it exits, and
@@ -119,7 +118,7 @@ capture() {
 }
 
 stop() {
-  for p in api web; do
+  for p in api web worker; do
     if [ -f "$RUN/$p.pid" ]; then
       pid="$(cat "$RUN/$p.pid")"
       pkill -TERM -P "$pid" 2>/dev/null || true
@@ -131,6 +130,7 @@ stop() {
   # process; Vite runs as node …/vite.js --host … --port N).
   pkill -f "uvicorn backend.app.main:app --host 127.0.0.1 --port ${API_PORT}" 2>/dev/null || true
   pkill -f "vite.js --host 127.0.0.1 --port ${WEB_PORT}" 2>/dev/null || true
+  pkill -f "celery -A backend.app.worker.celery_app worker -Q celery,llm --concurrency 2" 2>/dev/null || true
   echo "stopped"
 }
 
@@ -139,6 +139,7 @@ destroy() {
   stop
   _psql "drop database if exists ${DB_NAME}" >/dev/null && echo "dropped ${DB_NAME}"
   _bao DELETE "sys/mounts/${KV_MOUNT}" >/dev/null 2>&1 && echo "removed KV mount ${KV_MOUNT}" || true
+  docker rm -f "$WH_CONTAINER" >/dev/null 2>&1 && echo "removed ${WH_CONTAINER}" || true
   rm -f "$RUN/.role-tokens.json"
 }
 

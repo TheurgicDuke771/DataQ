@@ -9,6 +9,7 @@ the developer's compose stack is untouched. Never in CI.
 scripts/docs/capture-stack.sh start     # migrate + seed + api + vite
 scripts/docs/capture-stack.sh capture   # = E2E_DOCS=1 playwright test --project docs-capture
 scripts/docs/capture-stack.sh stop
+scripts/docs/shrink-screenshots.sh     # palette-encode any screenshot over the 350 KB docs limit
 ```
 
 Videos: `videos.spec.ts` records ≤20 s clips at 1× (test title = file name);
@@ -29,10 +30,10 @@ real lifecycle engine.
 
 The SQL-generation and check-suggestion captures (`sql-generate-result`, `suggest-checks`,
 the `generate-sql`/`suggest-checks` clips) need a **live** SQL connection — both features
-introspect the target table for real, so a fake config errors on every call. `start` creates
-one, opt-in, when `DOCS_SNOWFLAKE_ACCOUNT` is set (plus `DOCS_SNOWFLAKE_USER` and
-`DOCS_SNOWFLAKE_SECRET` — no defaults, deliberately, so no identifier is committed to this
-file; the rest default to `DATAQ_DB.RETAIL.ORDERS_HEADER`,
-warehouse `DATAQ_WH`, role `DATAQ_READER`). Without them, `start` aborts rather than
-silently skipping the live-warehouse captures; leave all three unset to run the base set
-with no warehouse credentials at hand.
+introspect the target table for real, so a fake config errors on every call. `start` runs the
+stack's own small PostgreSQL warehouse for them: a `postgres:16-alpine` container
+(`dataq-docs-warehouse`, loopback port `55433`, override with `DOCS_WAREHOUSE_PORT`) filled by
+`backend/scripts/seed_demo.py` with the compose `demo` profile's shop dataset, which also
+creates the **Demo warehouse (PostgreSQL)** connection and the **Shop orders (demo)** and
+**Shop customers (demo)** suites the captures open. `destroy` removes the container. No
+warehouse credential is involved: the container trusts loopback connections only. Both features run as background jobs, so `start` also runs a Celery worker on the stack's own queue.

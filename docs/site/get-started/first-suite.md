@@ -19,7 +19,7 @@ panel offers the next step you are allowed to take, is the same for everyone in 
 workspace, and goes away once all four are done. Once suites have run the dashboard looks
 like this:
 
-![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](../assets/screenshots/dashboard.png){ .screenshot }
+![The monitoring dashboard: asset health with the assets that need attention, and data quality by dimension across the workspace, with Accuracy and Integrity not covered](../assets/screenshots/dashboard.png){ .screenshot }
 
 ## 1. Connect a datasource
 
@@ -129,7 +129,7 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 The short version is below; the full walk-through with screenshots is
 [Your first alert](first-alert.md).
 
-1. On the suite, open **Notifications** and link a channel — Teams, Slack, email or a
+1. On the suite, open **Alerting** and link a channel — Teams, Slack, email or a
    webhook, defined by an Admin — and pick
    a threshold (the default **warn-and-worse** is a good start).
 
