@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import Update, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core import usage_telemetry
@@ -34,6 +34,7 @@ from backend.app.core.secrets import (
     SecretStore,
     SecretStoreUnavailableError,
 )
+from backend.app.db.literals import sql_constant
 from backend.app.db.models import (
     LLM_PROVIDERS,
     LLM_STRUCTURED_OUTPUT_MODES,
@@ -708,6 +709,24 @@ _RUNNING_REAP_REASON = (
 )
 
 
+def reap_statement(status: str, *, cutoff: datetime, moment: datetime) -> Update:
+    """Fail the invocations stranded in ``status`` (``pending`` since before ``cutoff`` by
+    ``created_at``, ``running`` by ``started_at``). The status is a literal in the SQL, so
+    ``ix_llm_invocations_status_open``'s predicate is provable under any driver."""
+    if status == "pending":
+        stranded, reason = LlmInvocation.created_at < cutoff, _PENDING_REAP_REASON
+    elif status == "running":
+        stranded, reason = LlmInvocation.started_at < cutoff, _RUNNING_REAP_REASON
+    else:
+        raise ValueError(f"not an open status: {status!r}")
+    return (
+        update(LlmInvocation)
+        .where(LlmInvocation.status == sql_constant(status), stranded)
+        .values(status="failed", error=reason, finished_at=moment)
+        .returning(LlmInvocation.id)
+    )
+
+
 def reap_stuck_invocations(
     session: Session,
     *,
@@ -729,21 +748,11 @@ def reap_stuck_invocations(
     reaped_ids: list[uuid.UUID] = []
     if pending_threshold_minutes > 0:
         cutoff = moment - timedelta(minutes=pending_threshold_minutes)
-        result = session.execute(
-            update(LlmInvocation)
-            .where(LlmInvocation.status == "pending", LlmInvocation.created_at < cutoff)
-            .values(status="failed", error=_PENDING_REAP_REASON, finished_at=moment)
-            .returning(LlmInvocation.id)
-        )
+        result = session.execute(reap_statement("pending", cutoff=cutoff, moment=moment))
         reaped_ids.extend(result.scalars().all())
     if running_threshold_minutes > 0:
         cutoff = moment - timedelta(minutes=running_threshold_minutes)
-        result = session.execute(
-            update(LlmInvocation)
-            .where(LlmInvocation.status == "running", LlmInvocation.started_at < cutoff)
-            .values(status="failed", error=_RUNNING_REAP_REASON, finished_at=moment)
-            .returning(LlmInvocation.id)
-        )
+        result = session.execute(reap_statement("running", cutoff=cutoff, moment=moment))
         reaped_ids.extend(result.scalars().all())
     if not reaped_ids:
         return []

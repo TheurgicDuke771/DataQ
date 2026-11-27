@@ -9,14 +9,21 @@ plan a server-binding driver would get, where every parameter is unknown.
 from __future__ import annotations
 
 import re
+import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Column, text
+from sqlalchemy import Column, null, text
+from sqlalchemy.dialects.postgresql.psycopg import PGDialect_psycopg
 
 from backend.app.db.models import Base
+from backend.app.orchestration import markers
+from backend.app.services import llm_rca, llm_service, result_rollup, run_service
 from backend.tests.support.driver_guard import AUDIT, assert_client_side_binding
+from backend.tests.support.index_plans import drop_rival_indexes
 
 _AUDIT = Path(__file__).resolve().parents[3] / AUDIT
 #: A column ordering (`created_at DESC`) is not an expression.
@@ -186,3 +193,73 @@ def test_the_audit_verdict_is_what_a_generic_plan_does(
     ) is reaches, (
         f"{index}: the audit says a generic plan {'reaches' if reaches else 'misses'} it:\n{plan}"
     )
+
+
+_CUTOFF = datetime(2026, 1, 1, tzinfo=UTC)
+_MARKER = "adf:pipeline:run-1"
+
+# (index, the statement as the app builds it). Each is compiled by the server-binding driver's
+# own dialect, so the generic plan is of the text a driver swap would send, not of a copy.
+_APP_STATEMENTS: list[tuple[str, Callable[[], Any]]] = [
+    ("ix_llm_invocations_rca_incident", lambda: llm_rca.narrative_lookup_statement(uuid.uuid4())),
+    (
+        "ix_llm_invocations_status_open",
+        lambda: llm_service.reap_statement("pending", cutoff=_CUTOFF, moment=_CUTOFF),
+    ),
+    (
+        "ix_llm_invocations_status_open",
+        lambda: llm_service.reap_statement("running", cutoff=_CUTOFF, moment=_CUTOFF),
+    ),
+    ("ix_pipeline_runs_marker", lambda: markers.pipeline_runs_for_marker_statement(_MARKER)),
+    ("ix_pipeline_runs_marker", lambda: markers.ambiguous_markers_statement({_MARKER})),
+    ("ix_runs_triggered_by", lambda: markers.runs_for_markers_statement([_MARKER])),
+    (
+        "ix_results_unpurged_created",
+        lambda: run_service.purge_statement(
+            cutoff=_CUTOFF,
+            extra_where=run_service.sample_failures_guard(),
+            values={"sample_failures": null(), "sample_failures_purged_at": _CUTOFF},
+            chunk_size=500,
+        ),
+    ),
+    (
+        "ix_results_unpurged_observed",
+        lambda: run_service.purge_statement(
+            cutoff=_CUTOFF,
+            extra_where=run_service.observed_list_guard(),
+            values={"observed_value": null()},
+            chunk_size=500,
+        ),
+    ),
+    (
+        "ix_results_unpurged_unparsed",
+        lambda: run_service.purge_statement(
+            cutoff=_CUTOFF,
+            extra_where=run_service.observed_unparsed_guard(),
+            values={"observed_value": null()},
+            chunk_size=500,
+        ),
+    ),
+    ("ix_runs_results_unrolled", lambda: result_rollup.unrolled_runs_statement(10)),
+    ("ix_runs_results_unrolled", lambda: result_rollup._ADD_PENDING),
+    ("ix_runs_results_unrolled", lambda: result_rollup._PENDING_OVER),
+    ("ix_runs_results_unrolled", lambda: result_rollup._PENDING),
+]
+
+
+@pytest.mark.parametrize(
+    ("index", "build"),
+    _APP_STATEMENTS,
+    ids=[f"{index}-{n}" for n, (index, _b) in enumerate(_APP_STATEMENTS)],
+)
+def test_the_statement_the_app_builds_reaches_its_index_under_server_binding(
+    db_session: Any, index: str, build: Callable[[], Any]
+) -> None:
+    connection = db_session.connection()
+    dialect = PGDialect_psycopg(paramstyle="numeric_dollar")  # type: ignore[no-untyped-call]
+    dialect.server_version_info = connection.dialect.server_version_info
+    sql = str(build().compile(dialect=dialect, compile_kwargs={"render_postcompile": True}))
+    drop_rival_indexes(connection, index)
+    connection.execute(text("SET LOCAL enable_seqscan = off"))
+    plan = "\n".join(row[0] for row in connection.exec_driver_sql(f"EXPLAIN (GENERIC_PLAN) {sql}"))
+    assert index in plan, f"{index} is missed under server-side binding:\n{sql}\n{plan}"
