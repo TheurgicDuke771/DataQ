@@ -527,3 +527,58 @@ def test_total_count_header_respects_filters(client: TestClient, world: dict[str
     assert resp.headers["x-total-count"] == "1"
     resp = client.get("/api/v1/incidents")
     assert resp.headers["x-total-count"] == "2"
+
+
+# ───────────────────── cursor paging (#1987) ─────────────────────
+
+
+def test_incidents_page_by_cursor_to_the_same_rows_as_offset(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    db = client_db(client)
+    for _ in range(4):
+        _incident(db, world["suite"])
+    _as(world["owner"])
+    everything = [i["id"] for i in client.get("/api/v1/incidents?limit=100").json()]
+    assert len(everything) == 5
+
+    seen: list[str] = []
+    cursor = None
+    while True:
+        url = "/api/v1/incidents?limit=2" + (f"&cursor={cursor}" if cursor else "")
+        resp = client.get(url)
+        assert resp.status_code == 200
+        seen += [i["id"] for i in resp.json()]
+        cursor = resp.headers.get("X-Next-Cursor")
+        if cursor is None:
+            break
+
+    assert seen == everything and len(set(seen)) == 5
+
+
+def test_an_incident_bumped_past_the_cursor_is_missed_but_none_repeats(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """`last_seen_at` moves when an incident breaches again, which puts it at the front of the
+    list. A client mid-way through pages by cursor never sees a row twice, and can miss the
+    incident that jumped ahead of its cursor: the caveat the endpoint documents."""
+    db = client_db(client)
+    for _ in range(3):
+        _incident(db, world["suite"])
+    _as(world["owner"])
+    order = [i["id"] for i in client.get("/api/v1/incidents?limit=100").json()]
+    first = client.get("/api/v1/incidents?limit=2")
+    cursor = first.headers["X-Next-Cursor"]
+    # The incident that would have been on page 2 is breached again, so it moves to the front.
+    from backend.app.db.models import Incident
+
+    bumped = db.get(Incident, uuid.UUID(order[-1]))
+    assert bumped is not None
+    bumped.last_seen_at = datetime.now(UTC) + timedelta(minutes=5)
+    db.commit()
+
+    second = client.get(f"/api/v1/incidents?limit=100&cursor={cursor}")
+
+    after_cursor = [i["id"] for i in second.json()]
+    assert order[-1] not in after_cursor  # missed: it is now ahead of the cursor
+    assert not set(after_cursor) & {i["id"] for i in first.json()}  # nothing repeats

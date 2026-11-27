@@ -1816,3 +1816,39 @@ Memory is still linear in the number of rows, at about 0.6 KB each instead of ab
 no schema change was needed (a recursive walk would have wanted an index on `row_hash`, which
 every audit write would then maintain).
 
+## v1.3 — paging by cursor
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs, and 120,000 pipeline runs and incidents.
+
+The v1.2 ordering indexes removed the sort from `/runs`, `/pipeline_runs` and `/incidents`, but
+`OFFSET` still makes the database walk and discard every skipped index entry, so a deep page
+costs in proportion to its offset. A cursor names the last row a client saw by the list's total
+order (timestamp, then id), and the next page is `(timestamp, id) < cursor` on the same index:
+one descent at any depth.
+
+| Page of 50, p50 | By `offset` | By cursor |
+|---|---|---|
+| `/runs`, first page | 0.7 ms | 0.8 ms |
+| `/runs`, 10,000 deep | 3.1 ms | 1.1 ms |
+| `/runs`, 90,000 deep | 15.7 ms | 0.9 ms |
+| `/runs`, 500,000 deep | 79.0 ms | 1.1 ms |
+| `/pipeline_runs`, 90,000 deep | 8.9 ms | 1.1 ms |
+| `/incidents`, 90,000 deep | 10.9 ms | 1.4 ms |
+
+Both ways returned identical rows at every depth measured. Each list fetches one row past the
+page to know whether there is a next page, so a list of exactly `limit` rows is one page.
+`X-Total-Count` is the first page's: the count is its own cost (22 ms at 1M runs in the table
+above), so a page asked for by cursor does not repeat it, and the cursor's saving holds end to
+end. A request whose cursor is malformed, or sent with an `offset`, is refused before anything
+is counted.
+
+Offset paging stays: the app's numbered pages need it, and its first pages are as cheap as a
+cursor's. The decision for the three lists is hybrid, and for `/incidents` it carries a stated
+caveat: its sort key, `last_seen_at`, moves, so a reader paging by cursor can miss an incident
+that jumps ahead of the cursor and never sees one twice, which is better than paging by
+`offset`, where the same move shifts every row behind it.
+
+Two things a cursor can miss, both stated where it is documented. A row takes its timestamp
+when its transaction starts, so a row that commits after a cursor has passed its timestamp is
+not returned to that reader. And an incident's `last_seen_at` moves, as above.

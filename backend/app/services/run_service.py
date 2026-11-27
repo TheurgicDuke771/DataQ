@@ -59,6 +59,7 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.services import (
+    paging,
     privacy_settings_service,
     result_rollup,
     run_dispatch,
@@ -655,10 +656,13 @@ def list_runs(
     include_all: bool = False,
     since_hours: float | None = None,
     until_hours: float | None = None,
+    after: paging.Position | None = None,
 ) -> list[Run]:
     """Runs for suites the user can access, newest first (`created_at` desc,
     `id` desc tie-break — the same total-order paging shape `/pipeline_runs`
     and `/incidents` use, since `created_at` alone ties within one transaction).
+
+    ``after`` starts the page after that position instead of at ``offset`` (#1987).
 
     ``since_hours``/``until_hours`` are relative offsets from now ("N hours
     ago"), not absolute timestamps — a caller (LLM or otherwise) states a
@@ -681,6 +685,8 @@ def list_runs(
         .limit(limit)
         .offset(offset)
     )
+    if after is not None:
+        stmt = stmt.where(paging.after(Run.created_at, Run.id, after))
     return list(session.scalars(stmt))
 
 
