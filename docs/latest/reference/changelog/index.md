@@ -307,6 +307,13 @@ section below.
 - **The task queue runs on Celery 5.7 and redis-py 7.4.** Celery 5.7 needs a newer Redis client
   than the 5.x line DataQ pinned, so the two move together. Nothing changes for the API, the
   worker or the scheduler: every Redis client still fails fast on its own short timeouts.
+- **The Azure OpenTofu stack stands up on an empty subscription.** By default it now creates the
+  resource group, the Container Apps environment and a PostgreSQL Flexible Server with the app's
+  database, as the AWS stack does. To attach to existing ones instead (a free or trial
+  subscription capped at one environment and one server), set `create_shared_resources = false`.
+  **An existing deployment must set it before its next plan**, or the plan tries to create what
+  is already there. The environment's name is now `container_app_environment_name`
+  (default `dataq-cae`).
 - **Snowflake and Unity Catalog queries now carry the datasource query limit too.** Every session
   DataQ opens on either engine sets `DATASOURCE_QUERY_TIMEOUT_S` through the engine's own setting:
   `STATEMENT_TIMEOUT_IN_SECONDS` on Snowflake and `STATEMENT_TIMEOUT` on Databricks SQL. A

@@ -2578,6 +2578,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-11-27-the-stack-creates-its-shared-resources-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-11-27) — the stack creates its shared resources by default
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2876,6 +2887,23 @@ otherwise prompts on stdin and hangs invisibly when stdout is redirected.
 <li><strong>Fold state encryption into the same change.</strong> Rejected: it mixes a
   provably-zero-diff swap with a state-rewriting change and burns the rollback path.</li>
 </ul>
+<h2 id="amendment-2026-11-27-the-stack-creates-its-shared-resources-by-default">Amendment (2026-11-27) — the stack creates its shared resources by default<a class="headerlink" href="#amendment-2026-11-27-the-stack-creates-its-shared-resources-by-default" title="Permanent link">¶</a></h2>
+<ul>
+<li><strong>Status:</strong> Accepted</li>
+<li><strong>Date:</strong> 2026-11-27</li>
+<li><strong>Amends:</strong> "referenced, not created" for the resource group, the Container Apps environment
+  and the Postgres Flexible Server. Every other decision above stands.</li>
+</ul>
+<p>The stack was built beside the project's own test estate, which owned those three, so it read
+them as data sources. A deployer on an empty subscription had to create them by hand first,
+unlike the AWS stack. The stack now creates them by default (<code>create_shared_resources = true</code>),
+with the environment's name a variable (<code>container_app_environment_name</code>, default <code>dataq-cae</code>).
+On a server it creates, the app's one role is the server's administrator and owns the <code>dataq</code>
+database, the model the AWS stack's RDS instance already uses; the single-role constraint is
+unchanged. The original reason, a free/trial subscription capped at one environment and one
+server that other workloads may share, is kept as the opt-in: <code>create_shared_resources = false</code>
+attaches to existing ones exactly as before. Both paths are planned in <code>tofu test</code> against
+mocked providers; a plan against a real subscription waits on a cloud test instance.</p>
 
 
 
