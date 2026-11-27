@@ -43,6 +43,7 @@ from backend.app.datasources.monitors import (
 from backend.app.datasources.query_timeout import is_query_timeout_message, query_timeout_message
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
+from backend.app.db.literals import sql_constant
 from backend.app.db.models import (
     CHECK_ORDER,
     COMPARISON_KIND,
@@ -2008,13 +2009,14 @@ def purge_statement(
     )
 
 
-# Each sweep's guard, written as its partial index's predicate is, so the planner can prove it.
+# Each sweep's guard, written as its partial index's predicate is (the constants as literals), so
+# the planner can prove it under any driver.
 def sample_failures_guard() -> list[Any]:
     """``ix_results_unpurged_created``."""
     return [
         Result.sample_failures_purged_at.is_(None),
         Result.sample_failures.isnot(None),
-        func.jsonb_typeof(Result.sample_failures) != "null",
+        func.jsonb_typeof(Result.sample_failures) != sql_constant("null"),
     ]
 
 
@@ -2022,13 +2024,13 @@ def observed_list_guard() -> list[Any]:
     """``ix_results_unpurged_observed``. The ``->`` operator, not ``observed_value["…"]``: on
     PostgreSQL 14+ SQLAlchemy renders that as a JSONB subscript, which never matches the
     index's ``->`` (#2751)."""
-    inner = Result.observed_value.op("->", return_type=JSONB)("observed_value")
-    return [func.jsonb_typeof(inner) == "array"]
+    inner = Result.observed_value.op("->", return_type=JSONB)(sql_constant("observed_value"))
+    return [func.jsonb_typeof(inner) == sql_constant("array")]
 
 
 def observed_unparsed_guard() -> list[Any]:
     """``ix_results_unpurged_unparsed``."""
-    return [Result.observed_value.has_key("unparsed_value")]
+    return [Result.observed_value.has_key(sql_constant("unparsed_value"))]
 
 
 def purge_expired_sample_failures(

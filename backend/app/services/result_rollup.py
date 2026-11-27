@@ -24,17 +24,31 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, func, or_, select, text, union_all
+from sqlalchemy import ColumnElement, Select, and_, func, or_, select, text, union_all
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.core.logging import get_logger
+from backend.app.db.literals import sql_constant
 from backend.app.db.models import Result, ResultStatusHourly, Run
 
 log = get_logger(__name__)
 
 #: The one run status whose results the table counts (`rollup.AGGREGATABLE_RUN_STATUSES`).
-#: A literal in the SQL below, so `ix_runs_results_unrolled`'s predicate is provable.
+#: Written as a literal in every statement below (`sql_constant` in the ORM ones), so
+#: `ix_runs_results_unrolled`'s predicate is provable under any driver.
 _SUCCEEDED = "succeeded"
+
+
+def unrolled_runs_statement(limit: int) -> Select[tuple[uuid.UUID]]:
+    """Succeeded runs not yet added, oldest id first: ``ix_runs_results_unrolled``."""
+    return (
+        select(Run.id)
+        .where(Run.status == sql_constant(_SUCCEEDED), Run.results_rolled_up_at.is_(None))
+        .order_by(Run.id)
+        .limit(limit)
+    )
+
+
 #: Runs the sweep adds per statement, and so per transaction.
 SWEEP_BATCH = 2000
 
@@ -148,12 +162,7 @@ def roll_up_pending(session: Session, *, limit: int | None = None) -> int:
             added = int(session.execute(_ADD_PENDING, {"limit": wanted}).scalar_one())
     except Exception:
         log.exception("result_rollup_batch_failed", limit=wanted)
-        ids = session.scalars(
-            select(Run.id)
-            .where(Run.status == _SUCCEEDED, Run.results_rolled_up_at.is_(None))
-            .order_by(Run.id)
-            .limit(wanted)
-        ).all()
+        ids = session.scalars(unrolled_runs_statement(wanted)).all()
         added = sum(roll_up_run(session, run_id) for run_id in ids)
     session.commit()
     return added
@@ -201,7 +210,7 @@ def _from_results(
             func.count().filter(created < since),
         )
         .join(Run, Result.run_id == Run.id)
-        .where(runs_visible, Run.status == _SUCCEEDED, created >= prev_since, *where)
+        .where(runs_visible, Run.status == sql_constant(_SUCCEEDED), created >= prev_since, *where)
         .group_by(Result.status)
     )
 

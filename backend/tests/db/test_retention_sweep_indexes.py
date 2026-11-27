@@ -46,7 +46,10 @@ def test_the_sweep_the_code_builds_reaches_its_index(
     statement = run_service.purge_statement(
         cutoff=_CUTOFF, extra_where=guard(), values=values, chunk_size=500
     )
-    compiled = statement.compile(dialect=connection.dialect)
+    # `render_postcompile` writes the `sql_constant` literals in, as execution does.
+    compiled = statement.compile(
+        dialect=connection.dialect, compile_kwargs={"render_postcompile": True}
+    )
     plan = "\n".join(
         row[0] for row in connection.exec_driver_sql(f"EXPLAIN {compiled}", compiled.params)
     )
