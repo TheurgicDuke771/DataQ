@@ -42,6 +42,9 @@ const docsBaseURL = process.env.E2E_DOCS_BASE_URL || 'http://127.0.0.1:3001';
 // every route of the seeded dev-bypass stack; `smoke` drives the built demo (dist-demo/) from a
 // static server that behaves like GitHub Pages, with no API at all. See e2e-demo/README.md.
 const demoLane = liveBaseURL ? undefined : process.env.E2E_DEMO;
+// The weekly cross-browser lane: the same dev-bypass specs on Firefox and WebKit. Off by default,
+// so `pnpm e2e` (and every PR) stays on Chromium alone.
+const crossBrowser = !liveBaseURL && process.env.E2E_CROSS_BROWSER === '1';
 const demoBase = process.env.DEMO_BASE || '/DataQ/demo/';
 const demoPort = process.env.E2E_DEMO_PORT || '4173';
 const demoSmokeURL = `http://127.0.0.1:${demoPort}${demoBase}`;
@@ -67,6 +70,12 @@ export default defineConfig({
     liveBaseURL
       ? { name: 'live-smoke', use: { ...devices['Desktop Chrome'] } }
       : { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    ...(crossBrowser
+      ? [
+          { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+          { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+        ]
+      : []),
     // Own testDir + baseURL, so the dev-bypass specs above are untouched by it.
     ...(docsEnabled
       ? [

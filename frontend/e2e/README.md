@@ -95,6 +95,22 @@ pip-installs the backend, runs migrations, seeds the demo data, launches
 (`VITE_API_PROXY_TARGET=http://localhost:8000`) and run the specs. No Azure /
 real datasource credentials are involved — dev-bypass only.
 
+### Firefox and WebKit, weekly
+
+Every PR runs the specs on Chromium only. Once a week (Mondays, 05:17 UTC) and on a
+**Run workflow** by hand, the same job also runs them on Firefox and WebKit, after Chromium
+and from a fresh seed per browser: the Chromium run offboards the fixture users the admin
+specs act on, and the seed re-mints them. Each browser's report is uploaded as
+`playwright-report-cross-browser`. Locally:
+
+```bash
+pnpm exec playwright install --with-deps firefox webkit
+E2E_CROSS_BROWSER=1 pnpm e2e --project=firefox   # or webkit; reseed between browsers
+```
+
+Without `E2E_CROSS_BROWSER=1` the two projects do not exist, so `pnpm e2e` stays on Chromium.
+A browser-specific exception in a spec names its reason and issue beside it.
+
 ## Live smoke (opt-in — never in CI)
 
 Read-only specs in `e2e-live/` run against the **deployed** app with **real

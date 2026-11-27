@@ -76,6 +76,7 @@ frontend/test-results/
 frontend/dist-demo/
 frontend/demo-fixtures.json
 frontend/playwright-report/
+frontend/playwright-report-*/
 frontend/playwright/.cache/
 # live-smoke captured OIDC session (bearer material -- never commit)
 frontend/e2e-live/.auth/
