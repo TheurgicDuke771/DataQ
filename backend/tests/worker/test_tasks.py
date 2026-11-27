@@ -76,8 +76,8 @@ class FakeSession:
         self.rollbacks += 1
         self.added.clear()
 
-    def refresh(self, obj: object) -> None:  # no-op reload (status unchanged here)
-        pass
+    def refresh(self, obj: object, *, with_for_update: bool = False) -> None:
+        pass  # no-op reload, also the locked re-read `still_non_terminal` makes
 
     def close(self) -> None:
         self.closed = True

@@ -240,9 +240,55 @@ def _db_engine() -> "Iterator[object]":
         )
 
     Base.metadata.create_all(engine)
+    global _SHARED_ENGINE
+    _SHARED_ENGINE = engine
     yield engine
+    _SHARED_ENGINE = None
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+#: The session's engine while it is up, for the leak guard below.
+_SHARED_ENGINE: object | None = None
+#: Tables whose committed rows leak into every later test: the audit chain is one shared head, so
+#: a leftover row (or a head whose event a later test deleted) breaks every test that verifies it.
+_LEAK_GUARDED_TABLES = ("audit_events", "audit_chain_state", "audit_chain_checkpoints")
+
+
+@pytest.fixture(autouse=True)
+def _no_committed_audit_state(request: pytest.FixtureRequest) -> "Iterator[None]":
+    """Fail the test that commits audit rows outside `db_session`'s savepoint (#2623).
+
+    A session opened through `get_db`/`get_session`, or a `TestClient` call with no `get_db`
+    override, commits to the shared test database, and nothing rolls that back: the rows then
+    break whichever chain-verifying test runs next, and only in a full-suite run. The leaker is
+    named here instead, and the rows are removed so one leaker does not fail the tests after it.
+    A test that commits on purpose is marked `commits_for_real`: its rows are still removed
+    here, but it is not a failure.
+    """
+    yield
+    engine = _SHARED_ENGINE
+    if engine is None:
+        return
+    from sqlalchemy import text
+
+    probe = " UNION ALL ".join(
+        f"SELECT '{table}' AS name, count(*) AS n FROM {table}" for table in _LEAK_GUARDED_TABLES
+    )
+    with engine.begin() as conn:  # type: ignore[attr-defined]
+        # A leaker that still holds a row lock must fail here, not hang the run.
+        conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+        left = {name: n for name, n in conn.execute(text(probe)) if n}
+        if left:
+            for table in _LEAK_GUARDED_TABLES:
+                conn.execute(text(f"DELETE FROM {table}"))
+    if left and request.node.get_closest_marker("commits_for_real") is None:
+        pytest.fail(
+            f"{request.node.nodeid} left committed rows behind ({left}); they survive into later "
+            "tests. Use the `db_session` fixture (override `get_db` with it) or delete what the "
+            "test committed in its own teardown.",
+            pytrace=False,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -948,7 +948,7 @@
     },
     {
       "metric": "dashboard_summary_statements",
-      "value": 6.0,
+      "value": 7.0,
       "unit": "queries",
       "gate": "strict",
       "tier": "100k runs / 100k results",
@@ -1458,7 +1458,7 @@
     },
     {
       "metric": "dashboard_summary_statements",
-      "value": 6.0,
+      "value": 7.0,
       "unit": "queries",
       "gate": "strict",
       "tier": "10k runs / 10k results",
@@ -1968,7 +1968,7 @@
     },
     {
       "metric": "dashboard_summary_statements",
-      "value": 6.0,
+      "value": 7.0,
       "unit": "queries",
       "gate": "strict",
       "tier": "1m runs / 1m results",
