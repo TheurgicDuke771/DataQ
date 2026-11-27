@@ -15,10 +15,15 @@ from azure.core.exceptions import (
 from backend.app.db.models import Connection, User
 from backend.app.services import credential_health
 from backend.app.services.failure_classifier import is_auth_failure
+from backend.tests.support.credential_configs import CREDENTIAL_CONFIGS, NO_CREDENTIAL_CONFIGS
 
 
 def _connection(
-    db_session: Any, *, conn_type: str = "snowflake", secret_ref: str | None = "c-x"
+    db_session: Any,
+    *,
+    conn_type: str = "snowflake",
+    secret_ref: str | None = "c-x",
+    config: dict[str, Any] | None = None,
 ) -> Connection:
     user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@ex")
     db_session.add(user)
@@ -27,7 +32,7 @@ def _connection(
         name=f"conn-{uuid.uuid4().hex[:8]}",
         type=conn_type,
         env="dev",
-        config={},
+        config=config if config is not None else {},
         secret_ref=secret_ref,
         created_by=user.id,
     )
@@ -273,6 +278,153 @@ class TestStatusDerivation:
         db_session.refresh(conn)
         assert conn.last_auth_success_at is not None
         assert credential_health.credential_status(conn) == "failing"
+
+
+class TestNotApplicable:
+    """A connection that authenticates with no credential has none to observe (never stored)."""
+
+    @pytest.mark.parametrize(("conn_type", "config"), NO_CREDENTIAL_CONFIGS)
+    def test_a_credential_less_auth_mode_is_not_applicable(
+        self, db_session: Any, conn_type: str, config: dict[str, Any]
+    ) -> None:
+        from backend.app.datasources.registry import get_connection_adapter
+
+        # The adapter accepts the config, so this is a real mode and not a stand-in.
+        get_connection_adapter(conn_type).validate_config(dict(config))
+        conn = _connection(db_session, conn_type=conn_type, secret_ref=None, config=config)
+
+        assert credential_health.credential_status(conn) == "not_applicable"
+
+    @pytest.mark.parametrize(("conn_type", "config"), NO_CREDENTIAL_CONFIGS)
+    def test_it_is_derived_and_never_stored(
+        self, db_session: Any, conn_type: str, config: dict[str, Any]
+    ) -> None:
+        conn = _connection(db_session, conn_type=conn_type, secret_ref=None, config=config)
+        with credential_health.credential_use(db_session, conn):
+            pass
+        db_session.refresh(conn)
+
+        # The seam still records nothing for a connection with no credential: the status is
+        # read off the auth mode, so the stored health columns stay untouched.
+        assert conn.last_auth_success_at is None
+        assert conn.last_auth_failure_at is None
+        assert conn.consecutive_auth_failures == 0
+        assert credential_health.credential_status(conn) == "not_applicable"
+
+    @pytest.mark.parametrize(("conn_type", "config"), CREDENTIAL_CONFIGS)
+    def test_a_mode_that_needs_a_credential_still_reads_unknown_until_used(
+        self, db_session: Any, conn_type: str, config: dict[str, Any]
+    ) -> None:
+        from backend.app.datasources.registry import get_connection_adapter
+
+        get_connection_adapter(conn_type).validate_config(dict(config))
+        conn = _connection(db_session, conn_type=conn_type, secret_ref="c-x", config=config)
+        assert credential_health.credential_status(conn) == "unknown"
+
+        credential_health.record_credential_success(db_session, connection_id=conn.id)
+        db_session.refresh(conn)
+        assert credential_health.credential_status(conn) == "healthy"
+
+        credential_health.record_credential_failure(
+            db_session, connection_id=conn.id, exc=RuntimeError("401 Unauthorized")
+        )
+        db_session.refresh(conn)
+        assert credential_health.credential_status(conn) == "failing"
+
+    def test_a_mode_that_needs_a_credential_but_has_none_stored_is_not_excused(
+        self, db_session: Any
+    ) -> None:
+        # Missing, not unnecessary: the auth mode asks for a secret, so not "not applicable".
+        conn = _connection(
+            db_session,
+            conn_type="trino",
+            secret_ref=None,
+            config={"host": "trino.example.com", "catalog": "hive", "user": "dq"},
+        )
+        assert credential_health.credential_status(conn) == "unknown"
+
+    def test_a_type_that_never_declares_an_optional_secret_is_not_excused(
+        self, db_session: Any
+    ) -> None:
+        conn = _connection(db_session, conn_type="snowflake", secret_ref=None, config={})
+        assert credential_health.credential_status(conn) == "unknown"
+
+    def test_a_config_that_no_longer_validates_is_unknown_not_excused(
+        self, db_session: Any
+    ) -> None:
+        conn = _connection(
+            db_session, conn_type="gcs", secret_ref=None, config={"auth_type": "anonymous"}
+        )
+        assert credential_health.credential_status(conn) == "unknown"
+
+    @pytest.mark.parametrize(
+        "extra",
+        [{"catalog_secret_name": "catalog-pw"}, {"secret_property": "s3.secret-access-key"}],
+    )
+    def test_an_iceberg_catalog_with_a_credential_held_elsewhere_is_not_excused(
+        self, db_session: Any, extra: dict[str, Any]
+    ) -> None:
+        """No `secret_ref`, but the config names a catalog password or a storage credential:
+        one is expected, so "no credential needed" would be wrong."""
+        config = {"catalog_type": "rest", "catalog_uri": "https://catalog.example.com", **extra}
+        from backend.app.datasources.registry import get_connection_adapter
+
+        get_connection_adapter("iceberg").validate_config(dict(config))
+        conn = _connection(db_session, conn_type="iceberg", secret_ref=None, config=config)
+        assert credential_health.credential_status(conn) == "unknown"
+
+    def test_a_connection_switched_to_a_credential_less_mode_keeps_its_old_secret_unused(
+        self, db_session: Any
+    ) -> None:
+        """The edit flow leaves the stored secret in place when the new config sends none.
+        The mode decides: an unused secret is not a credential in use."""
+        conn = _connection(
+            db_session,
+            conn_type="trino",
+            secret_ref="c-old-password",
+            config={
+                "host": "trino.example.com",
+                "catalog": "hive",
+                "user": "dq",
+                "auth_type": "none",
+            },
+        )
+        assert credential_health.credential_status(conn) == "not_applicable"
+
+    def test_failure_counters_from_a_credential_that_is_gone_are_not_reported(
+        self, db_session: Any
+    ) -> None:
+        """A key was rejected three times, then the connection was switched to anonymous: the
+        status is not_applicable, and so are the numbers beside it."""
+        conn = _connection(
+            db_session,
+            conn_type="gcs",
+            secret_ref=None,
+            config={"bucket": "public-bucket", "auth_type": "anonymous"},
+        )
+        conn.consecutive_auth_failures = 3
+        conn.last_auth_error = "credential rejected"
+
+        assert credential_health.credential_status(conn) == "not_applicable"
+        assert credential_health.observed_failures(conn) == (0, None)
+
+    def test_failure_counters_are_reported_for_a_connection_that_has_a_credential(
+        self, db_session: Any
+    ) -> None:
+        conn = _connection(db_session, conn_type="snowflake", secret_ref="c-x", config={})
+        conn.consecutive_auth_failures = 3
+        conn.last_auth_error = "credential rejected"
+        assert credential_health.observed_failures(conn) == (3, "credential rejected")
+
+    def test_an_orchestration_connection_is_never_not_applicable(self, db_session: Any) -> None:
+        # dbt declares an optional secret too, but orchestration health is the poll signal.
+        conn = _connection(
+            db_session,
+            conn_type="dbt",
+            secret_ref=None,
+            config={"artifacts_uri": "file:///tmp/target"},
+        )
+        assert credential_health.credential_status(conn) == "unknown"
 
 
 class TestRecording:

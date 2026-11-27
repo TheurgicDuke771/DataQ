@@ -193,14 +193,16 @@ export const ENV_COLORS: Record<ConnectionEnv, string> = {
 /**
  * A datasource connection's stored-credential health.
  *
- * `status: 'unknown'` — never `'healthy'` — means the credential has not been used since
- * the signal shipped, so nothing has been observed about it. `'failing'` means the
- * datasource rejected it; `last_error` is then the classified, secret-free reason. Only
- * credential REJECTIONS move this: a missing grant, an unreachable host and a bad table
- * name all leave it untouched.
+ * `status: 'unknown'` — never `'healthy'` — means a stored credential has not been used
+ * since the signal shipped, so nothing has been observed about it. `'failing'` means the
+ * datasource rejected it; `last_error` is then the classified, secret-free reason.
+ * `'not_applicable'` means the connection authenticates with no credential (an anonymous
+ * bucket, Trino `auth_type: none`), so there is nothing to observe: not a fault, and not
+ * `'unknown'`. Only credential REJECTIONS move the others: a missing grant, an unreachable
+ * host and a bad table name all leave it untouched.
  */
 export interface CredentialHealth {
-  status: 'healthy' | 'failing' | 'unknown';
+  status: 'healthy' | 'failing' | 'unknown' | 'not_applicable';
   consecutive_auth_failures: number;
   last_auth_failure_at?: string | null;
   last_auth_success_at?: string | null;
@@ -303,7 +305,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   redshift: 'Amazon Redshift',
   bigquery: 'Google BigQuery',
   adf: 'Azure Data Factory',
-  airflow: 'Airflow',
+  airflow: 'Apache Airflow',
   dbt: 'dbt',
 };
 

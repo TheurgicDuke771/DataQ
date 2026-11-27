@@ -169,6 +169,46 @@ def test_an_auth_refusal_carries_the_servers_code() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("status", "answer", "kind", "code", "message"),
+    [
+        (
+            404,
+            httpx.Response(404, text="<html>not found</html>"),
+            "DataQError",
+            "http_404",
+            "<html",
+        ),
+        (429, httpx.Response(429), "RateLimitedError", "http_429", ""),
+        (
+            401,
+            httpx.Response(401, json={"detail": "bad token"}),
+            "AuthError",
+            "http_401",
+            "bad token",
+        ),
+        (
+            403,
+            httpx.Response(403, json={"error": {"code": "forbidden", "message": "no"}}),
+            "AuthError",
+            "forbidden",
+            "no",
+        ),
+    ],
+)
+def test_an_error_that_is_not_the_envelope_is_still_a_typed_error(
+    status: int, answer: httpx.Response, kind: str, code: str, message: str
+) -> None:
+    """The generated code parses every declared error status as the envelope: a proxy's page, an
+    empty body or FastAPI's ``detail`` must not crash it before the typed error is raised."""
+    import dataq_client
+
+    with pytest.raises(getattr(dataq_client, kind)) as exc:
+        _client(_Server(answer)).trigger_run(SUITE)
+    assert (exc.value.status_code, exc.value.code) == (status, code)
+    assert message in exc.value.message
+
+
 def test_an_unparseable_success_is_an_error_not_a_crash() -> None:
     from dataq_client import DataQError
 
@@ -543,3 +583,88 @@ def test_resolve_incident_sends_a_stated_resolution_and_omits_an_unstated_one() 
     assert stated == {"resolution": "false_positive"}
     # Not stated is not sent, so the server records none — never a default.
     assert unstated == {"note": "done"}
+
+
+REPORT = uuid.UUID("33333333-3333-3333-3333-333333333333")
+
+
+def _download(headers: dict[str, str], body: bytes = b"a,b\n1,2\n") -> Any:
+    server = _Server(httpx.Response(200, content=body, headers=headers))
+    file = _client(server).download_comparison_report(RUN, REPORT, fmt="xlsx")
+    request = server.requests[0]
+    assert request.url.path == f"/api/v1/runs/{RUN}/results/{REPORT}/comparison_report"
+    assert request.url.params["fmt"] == "xlsx"
+    assert file.payload.read() == body
+    return file
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected"),
+    [
+        ('attachment; filename="comparison-x.csv"', "comparison-x.csv"),
+        ("attachment; filename=comparison-x.csv", "comparison-x.csv"),
+        ("attachment; filename*=UTF-8''comparison%20%C3%A9.csv", "comparison \u00e9.csv"),
+        (
+            "attachment; filename=\"fallback.csv\"; filename*=UTF-8''real.csv",
+            "real.csv",
+        ),
+        ('attachment; filename="../../x"', "x"),
+        ('attachment; filename="..\\..\\x.csv"', "x.csv"),
+        ("attachment; filename*=UTF-8''%2E%2E%2Fetc%2Fpasswd", "passwd"),
+        ('attachment; filename="/etc/"', None),
+        ('attachment; filename=".."', None),
+        ("attachment", None),
+    ],
+)
+def test_a_download_takes_its_file_name_from_content_disposition(
+    disposition: str, expected: str | None
+) -> None:
+    file = _download({"content-disposition": disposition, "content-type": "text/csv"})
+    assert file.file_name == expected
+
+
+def test_a_download_without_content_disposition_has_no_file_name() -> None:
+    file = _download({"content-type": "text/csv"})
+    assert file.file_name is None
+
+
+def test_a_download_media_type_drops_its_parameters() -> None:
+    assert _download({"content-type": "text/csv; charset=utf-8"}).mime_type == "text/csv"
+    xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert _download({"content-type": xlsx}).mime_type == xlsx
+
+
+def test_a_download_failure_raises_like_every_other_call() -> None:
+    server = _Server(_json(403, {"error": {"code": "forbidden", "message": "no"}}))
+    with pytest.raises(AuthError):
+        _client(server).download_comparison_report(RUN, REPORT)
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected"),
+    [
+        ('attachment; filename="a\x00b.csv"', "ab.csv"),
+        ('attachment; filename="a\r\nb.csv"', "ab.csv"),
+        ('attachment; filename="C:evil.csv"', "evil.csv"),
+        ('attachment; filename="C:\\\\x\\\\y.csv"', "y.csv"),
+        ('attachment; filename="x.csv:stream"', "stream"),
+        ('attachment; filename="\x00"', None),
+    ],
+)
+def test_a_download_file_name_is_never_a_path_or_a_control_sequence(
+    disposition: str, expected: str | None
+) -> None:
+    """Header values httpx would refuse to build a response from, so the parser is called
+    directly: a name with a control character, a Windows drive or a stream name."""
+    from dataq_client.client import _download_file_name
+
+    assert _download_file_name({"content-disposition": disposition}) == expected
+
+
+def test_download_headers_are_read_whatever_their_case() -> None:
+    """A plain dict of headers is case-sensitive, and a media type is not."""
+    from dataq_client.client import _download_file_name, _download_media_type
+
+    headers = {"Content-Disposition": 'attachment; filename="x.csv"', "Content-Type": "TEXT/CSV"}
+    assert _download_file_name(headers) == "x.csv"
+    assert _download_media_type(headers) == "text/csv"

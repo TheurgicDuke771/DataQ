@@ -41,6 +41,23 @@ in production — this page is the reference.)
   requests per API key, unauthenticated per client-IP **prefix** (IPv4 /24, IPv6 /64 by default — machines on one allocation share a budget). Over the limit returns `429` with
   `code: "rate_limited"`, `detail.retry_after_seconds` (1–60), and a matching `Retry-After`
   header (plus `X-RateLimit-Limit` / `X-RateLimit-Remaining`). Back off for that many seconds.
+- **Paging:** the lists of runs (`/runs`), pipeline runs (`/pipeline_runs`) and incidents
+  (`/incidents`) page by `limit` and `offset`, and report the whole list in `X-Total-Count`.
+  A large `offset` costs in proportion to itself, since the database walks and discards every
+  skipped row. For deep or programmatic paging, send the **`X-Next-Cursor`** header of a
+  response as `cursor` on the next request (instead of `offset`; both together is a `422`
+  with `code: "cursor_with_offset"`). The header is present while there are more rows and
+  absent on the last page. Every page then costs the same however deep it is: about 1 ms at
+  500,000 runs, against about 80 ms for the same page by `offset`. Take `X-Total-Count` from the
+  first page: a page asked for by cursor does not carry it, so it is not counted again. A cursor is opaque, belongs
+  to the list it came from, and does not carry your filters, so send the same ones with each
+  page. A malformed or foreign cursor is a `422` with `code: "invalid_cursor"`. A row takes its
+  timestamp when its transaction starts, so a row that commits after your cursor has passed its
+  timestamp can be missed. Incidents sort
+  by `last_seen_at`, which moves when an incident breaches again: while you page, an incident
+  that jumps ahead of your cursor can be missed, and none is returned twice (by `offset`, a
+  move shifts every row behind it, so rows repeat as well as go missing). The MCP tools keep
+  their `limit`/`offset` and `since_hours`/`until_hours` windows.
 - **IDs** are UUIDs. Timestamps are ISO-8601 UTC.
 
 ## Endpoints
@@ -50,6 +67,7 @@ in production — this page is the reference.)
 | Method | Path | What |
 |---|---|---|
 | GET / PATCH | `/me` | The current user + `role` (`admin` / `member` / `viewer`) + `is_workspace_admin`; PATCH updates `display_name`. |
+| GET | `/me/access-summary` | The caller's suite access, counted server-side: `total_visible`, `counts_by_level` (`owner` / `admin` / `edit` / `view`) and the suites they `owned`. For a workspace admin every suite they did not create counts as `admin`, shared or not. |
 | POST | `/me/api-keys` | Mint a PAT (plaintext returned **once**). |
 | GET | `/me/api-keys` | List your keys (metadata only, never the token). |
 | DELETE | `/me/api-keys/{id}` | Revoke a key. |
@@ -101,12 +119,16 @@ backslash, leading `/`, or an empty/`.`/`..` segment is refused with `422 browse
 a listing failure is `502 browse_failed` with a classified, secret-free `detail.reason`.
 
 **Credential health.** Each datasource connection in `GET /connections` carries a
-`credential_health` object — `status` (`healthy` / `failing` / `unknown`),
+`credential_health` object — `status` (`healthy` / `failing` / `unknown` / `not_applicable`),
 `consecutive_auth_failures`, `last_auth_success_at`, `last_auth_failure_at` and a classified
 `last_error`. It is derived from real use (runs, dry-runs, profiles and
 `POST /connections/{id}/test`), never a periodic probe, and only a credential **rejection**
 moves it: a missing grant, an unreachable host and a bad table name leave it untouched.
-`unknown` means the credential has not been used yet and is never reported as `healthy`.
+`unknown` means a stored credential has not been used yet and is never reported as `healthy`.
+`not_applicable` means the connection authenticates with no credential (GCS `auth_type:
+anonymous`, Trino `auth_type: none`, an Iceberg catalog with no secret): there is nothing to
+observe, so it is neither a fault nor `unknown`. It is derived from the auth mode on each read,
+never stored.
 Orchestration connections carry `null` here — theirs is the poll health above.
 `GET /admin/health` returns the same shape for every datasource connection at once, worst
 status first.
@@ -180,7 +202,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
 | GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
-| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
+| GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / drop a monitor baseline (schema drift, PII drift, anomaly); the following runs rebuild it. |
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
 | POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
 | POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |

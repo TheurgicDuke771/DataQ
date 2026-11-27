@@ -1371,7 +1371,7 @@ def test_list_runs_labels_what_triggered_each_run(db_session: Any, monkeypatch: 
         f"mcp:{other.id}": "MCP — grace@acme.io",
         f"manual:{gone}": "Manual",
         "schedule:abc": "Schedule",
-        "airflow:etl:daily:run-1": "Airflow — etl:daily:run-1",
+        "airflow:etl:daily:run-1": "Apache Airflow — etl:daily:run-1",
         "something-else": None,
         None: None,
     }
@@ -1860,6 +1860,56 @@ def test_list_connections_reports_unknown_health_as_null_not_healthy(
     # lifetime" OR "never looked", and only this field tells them apart (#1024).
     assert conn["credential_expires_at"] is None
     assert conn["credential_expiry_checked_at"] is None
+
+
+def test_list_connections_reports_credential_health_not_applicable_as_data(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A connection that authenticates with no credential reads `not_applicable`, distinct from
+    `unknown` (a credential that exists and has never been used)."""
+    user = _user(db_session)
+    configs = {
+        "gcs": {"bucket": "public-bucket", "auth_type": "anonymous"},
+        "trino": {"host": "t.example.com", "catalog": "hive", "user": "dq", "auth_type": "none"},
+        "iceberg": {"catalog_type": "rest", "catalog_uri": "https://catalog.example.com"},
+    }
+    ids = {}
+    for conn_type, config in configs.items():
+        conn = Connection(
+            name=f"na-{conn_type}-{uuid.uuid4().hex[:6]}",
+            type=conn_type,
+            env="dev",
+            config=config,
+            secret_ref=None,
+            created_by=user.id,
+        )
+        db_session.add(conn)
+        db_session.flush()
+        ids[conn_type] = str(conn.id)
+    # A credential-requiring connection that nothing has used, and one with no secret stored
+    # whose auth mode asks for one: both stay `unknown`.
+    unused = _suite(db_session, user).connection_id
+    missing = Connection(
+        name=f"missing-{uuid.uuid4().hex[:6]}",
+        type="trino",
+        env="dev",
+        config={"host": "t.example.com", "catalog": "hive", "user": "dq", "auth_type": "password"},
+        secret_ref=None,
+        created_by=user.id,
+    )
+    db_session.add(missing)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    by_id = {c["id"]: c for c in server.list_connections()}
+
+    for conn_type, conn_id in ids.items():
+        row = by_id[conn_id]
+        assert row["has_secret"] is False, conn_type
+        assert row["credential_health"]["status"] == "not_applicable", conn_type
+        assert row["credential_health"]["last_auth_success_at"] is None
+    assert by_id[str(unused)]["credential_health"]["status"] == "unknown"
+    assert by_id[str(missing.id)]["credential_health"]["status"] == "unknown"
 
 
 def test_list_connections_surfaces_a_failing_datasource(db_session: Any, monkeypatch: Any) -> None:

@@ -1711,3 +1711,144 @@ broker waits on a cloud test instance.
   logged as they happen, the decision lasting the tick, and staying serial on a fast
   broker or a CPU-bound publish.
 
+## v1.3 — the latest run of each suite
+
+> Measured **2026-11-16** on the development machine: PostgreSQL 16, a scratch
+> database seeded to 1,000,000 runs across 10 suites.
+
+The dashboard's per-suite performance, the asset view, connection scores, contract
+status and three MCP tools all start from "the newest run of each suite". That was a
+`SELECT DISTINCT ON (suite_id) … ORDER BY suite_id, created_at DESC, id DESC`.
+Postgres has no skip scan, so it walked **every run of every suite in scope** to keep
+one row per suite. The cost followed the workspace's whole history.
+
+It is now one index descent per suite: for each suite in scope, a correlated
+`ORDER BY created_at DESC, id DESC LIMIT 1` finds the newest run's id on the existing
+`(suite_id, created_at DESC, id DESC)` index, and the run is read by primary key. The
+cost follows the number of suites. No index was added.
+
+| At 1,000,000 runs, p50 of 15 | Before | After |
+|---|---|---|
+| Latest run of each suite (statement alone, full rows) | 293 ms | 1.7 ms |
+| Dashboard per-suite performance (`_suite_performance`) | 103 ms | 3.5 ms |
+
+The plan reads 10 suites, 10 index-only descents of one row each, and 10 primary-key
+reads: 73 buffers in all.
+
+**Same answers.** On the 1M database both forms returned the same ten runs and the same
+performance rows. The tests compare the new statement with the old one over suites
+whose runs share timestamps (so the `id` tie-break decides), a suite with no run, a
+scope passed as a list and as a subquery, and a point in the past. A plan test fails
+if the statement goes back to reading every run.
+
+## v1.3 — the result-status histogram, pre-counted
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs and 1,000,000 results.
+
+The dashboard summary's single largest statement counts every result row in two windows
+(`results JOIN runs`), and the v1.2 section above showed that no index or rewrite removes
+that cost. It is now read from `result_status_hourly`: result counts per suite, UTC hour and
+status, over succeeded runs.
+
+- **Always exact.** The table summarises `results`; it is never a second source. A run's
+  results are added in the transaction that marks it `succeeded`. A run that is not in the
+  table (history from before the upgrade, a failed add) is counted from `results` by the
+  reader, so a number is never stale. A beat task, every five minutes, adds such runs in
+  batches.
+- **Hourly.** A window starts at a moment, not at midnight, so the two part-buckets at its
+  edges are counted from `results` through a btree on `created_at` (21 MB at 1M rows; a
+  block-range index would be tiny but needs rows stored in time order, which a transaction's
+  start time does not guarantee). With daily buckets those two edge days still cost about
+  80 ms.
+- **Falls back, never guesses.** While more than 200 succeeded runs are missing from the
+  table (just after the upgrade, before the sweep has caught up) the reader counts from
+  `results` alone, as before the table.
+- **Deleting a check** subtracts its results first, because deleting a check deletes them,
+  after locking the runs and buckets it touches in the order every writer takes them, so it
+  waits for a sweep that has claimed one of those runs instead of missing its counts.
+  Deleting a suite removes its rows with it.
+- **A succeeded run stays succeeded.** The table counts a run's results once it has succeeded,
+  so cancelling a run, the stuck-run reaper and the worker-lost path now re-read the run
+  under a row lock first: a worker that finished it a moment earlier is not overwritten from a
+  stale copy.
+- **A run that cannot be added does not stop the rest.** The sweep adds a batch in one
+  statement; if that fails it adds the runs one by one, so one bad run is logged and the
+  others still go in.
+
+| At 1,000,000 results, p50 of 15 | Before | After |
+|---|---|---|
+| The histogram statement alone, 7-day window | 128 ms | 8.5 ms |
+| The histogram statement alone, 30-day window | 128 ms | 10 ms |
+| `dashboard_summary`, 7-day window | 361 ms | 261 ms |
+| `dashboard_summary`, 30-day window | 484 ms | 385 ms |
+
+The summary is 7 statements, up from 6: the added one lists the runs not yet in the table.
+What remains is the run count and duration pass, the run trend and the per-suite scores,
+each linear in the window's runs; the histogram was the largest single piece, not all of it.
+
+**Backfill.** On this database the sweep added 1,000,000 results (200,000 runs) in 14 to
+20 seconds, in batches of 2,000 runs.
+
+**Same answers.** At fixed window bounds, the table's read and the old statement returned
+identical histograms for 7 and 30 days. The tests compare the summary with the per-window
+reference with the table empty, partly filled and full, and over results placed on each side
+of both window edges.
+
+## v1.3 — verifying the audit chain
+
+> Measured **2026-11-17** on the development machine: a real hash chain of 100,000 audit rows
+> with payloads of about 1 KB each, in the perf harness's PostgreSQL 16 scratch database.
+
+`GET /admin/audit-events/verify` and the daily `verify_audit_chain` task walk the hash chain
+back from its head. The walk used to load every hashed row, payload and all, before it started,
+so its memory grew with the whole history. It now keeps, for every row, only its hash, id and
+previous hash (enough to know which row follows which), and loads the full rows 500 at a time in
+the order the walk wants them, letting each go once it is checked.
+
+| 100,000 rows | Before | After |
+|---|---|---|
+| Peak Python memory | 460 MiB | 61 MiB |
+| Wall time | 32 s | 37 s |
+
+The wall time is the hashing, which is unchanged; the extra 5 s is the 200 batched reads.
+Memory is still linear in the number of rows, at about 0.6 KB each instead of about 4.6 KB, and
+no schema change was needed (a recursive walk would have wanted an index on `row_hash`, which
+every audit write would then maintain).
+
+## v1.3 — paging by cursor
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs, and 120,000 pipeline runs and incidents.
+
+The v1.2 ordering indexes removed the sort from `/runs`, `/pipeline_runs` and `/incidents`, but
+`OFFSET` still makes the database walk and discard every skipped index entry, so a deep page
+costs in proportion to its offset. A cursor names the last row a client saw by the list's total
+order (timestamp, then id), and the next page is `(timestamp, id) < cursor` on the same index:
+one descent at any depth.
+
+| Page of 50, p50 | By `offset` | By cursor |
+|---|---|---|
+| `/runs`, first page | 0.7 ms | 0.8 ms |
+| `/runs`, 10,000 deep | 3.1 ms | 1.1 ms |
+| `/runs`, 90,000 deep | 15.7 ms | 0.9 ms |
+| `/runs`, 500,000 deep | 79.0 ms | 1.1 ms |
+| `/pipeline_runs`, 90,000 deep | 8.9 ms | 1.1 ms |
+| `/incidents`, 90,000 deep | 10.9 ms | 1.4 ms |
+
+Both ways returned identical rows at every depth measured. Each list fetches one row past the
+page to know whether there is a next page, so a list of exactly `limit` rows is one page.
+`X-Total-Count` is the first page's: the count is its own cost (22 ms at 1M runs in the table
+above), so a page asked for by cursor does not repeat it, and the cursor's saving holds end to
+end. A request whose cursor is malformed, or sent with an `offset`, is refused before anything
+is counted.
+
+Offset paging stays: the app's numbered pages need it, and its first pages are as cheap as a
+cursor's. The decision for the three lists is hybrid, and for `/incidents` it carries a stated
+caveat: its sort key, `last_seen_at`, moves, so a reader paging by cursor can miss an incident
+that jumps ahead of the cursor and never sees one twice, which is better than paging by
+`offset`, where the same move shifts every row behind it.
+
+Two things a cursor can miss, both stated where it is documented. A row takes its timestamp
+when its transaction starts, so a row that commits after a cursor has passed its timestamp is
+not returned to that reader. And an incident's `last_seen_at` moves, as above.

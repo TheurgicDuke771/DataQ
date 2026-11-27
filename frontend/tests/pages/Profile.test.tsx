@@ -4,8 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MeResponse } from '../../src/api/me';
-import { listSuites, type Suite } from '../../src/api/suites';
+import { fetchAccessSummary, type AccessSummary, type MeResponse } from '../../src/api/me';
 import { authMethodLabel } from '../../src/auth/config';
 import { MeContext } from '../../src/auth/meContext';
 import { useSaveDisplayName } from '../../src/auth/useSaveDisplayName';
@@ -22,29 +21,18 @@ vi.mock('../../src/api/apiKeys', () => ({
   PAT_MAX_EXPIRY_DAYS: 365,
 }));
 
-// The access summary + owned-suites list read the caller-scoped suite list.
-vi.mock('../../src/api/suites', () => ({ listSuites: vi.fn() }));
-const mockListSuites = vi.mocked(listSuites);
+// The access summary + owned-suites list read one server-side summary (`GET /me/access-summary`).
+vi.mock('../../src/api/me', () => ({ fetchAccessSummary: vi.fn() }));
+const mockSummary = vi.mocked(fetchAccessSummary);
 
-function suite(id: string, name: string, my_permission: Suite['my_permission']): Suite {
-  return {
-    id,
-    name,
-    description: id === 's-owned-2' ? 'Nightly orders checks' : null,
-    connection_id: 'c-1',
-    target: null,
-    created_by: 'u-1',
-    my_permission,
-  };
-}
-
-const SUITES: Suite[] = [
-  suite('s-owned-2', 'Zulu orders', 'owner'),
-  suite('s-owned-1', 'Alpha customers', 'owner'),
-  suite('s-edit', 'Shared edit', 'edit'),
-  suite('s-view-1', 'Shared view 1', 'view'),
-  suite('s-view-2', 'Shared view 2', 'view'),
-];
+const SUMMARY: AccessSummary = {
+  total_visible: 5,
+  counts_by_level: { owner: 2, admin: 0, edit: 1, view: 2 },
+  owned: [
+    { id: 's-owned-1', name: 'Alpha customers', description: null },
+    { id: 's-owned-2', name: 'Zulu orders', description: 'Nightly orders checks' },
+  ],
+};
 
 // The name-edit affordance (#1139) goes through the shared save hook; stubbed here so this file can
 // assert the interaction without a real PATCH.
@@ -67,8 +55,8 @@ const me: AsyncState<MeResponse> = {
 beforeEach(() => {
   saveDisplayName.mockReset();
   vi.mocked(useSaveDisplayName).mockReturnValue(saveDisplayName);
-  mockListSuites.mockReset();
-  mockListSuites.mockResolvedValue(SUITES);
+  mockSummary.mockReset();
+  mockSummary.mockResolvedValue(SUMMARY);
 });
 
 function renderProfile(state: AsyncState<MeResponse>) {
@@ -138,18 +126,23 @@ describe('Profile', () => {
     });
 
     it('explains an empty owned list instead of showing nothing', async () => {
-      mockListSuites.mockResolvedValue(SUITES.filter((s) => s.my_permission !== 'owner'));
+      mockSummary.mockResolvedValue({
+        total_visible: 3,
+        counts_by_level: { owner: 0, admin: 0, edit: 1, view: 2 },
+        owned: [],
+      });
       renderProfile(me);
       expect(await screen.findByText(/You don't own any suites/)).toBeInTheDocument();
       expect(screen.queryByRole('list', { name: 'Suites you own' })).toBeNull();
     });
 
     it('never shows an admin per-share counts, since every suite reads as admin for them', async () => {
-      // GET /suites stamps every non-owned suite `admin` for a workspace admin (ADR 0033), so a
+      // The server counts every non-owned suite as `admin` for a workspace admin (ADR 0033), so a
       // "Shared with you as admin" row would count suites nobody shared.
-      mockListSuites.mockResolvedValue(
-        SUITES.map((s) => (s.my_permission === 'owner' ? s : { ...s, my_permission: 'admin' })),
-      );
+      mockSummary.mockResolvedValue({
+        ...SUMMARY,
+        counts_by_level: { owner: 2, admin: 3, edit: 0, view: 0 },
+      });
       renderProfile({ ...me, data: { ...me.data, role: 'admin', is_workspace_admin: true } });
       const summary = await screen.findByLabelText('Suites by access level');
       const row = (label: string) =>
@@ -162,13 +155,13 @@ describe('Profile', () => {
       ).toBeInTheDocument();
     });
 
-    it('does not fetch suites until /me has resolved', () => {
+    it('does not fetch the summary until /me has resolved', () => {
       renderProfile({ status: 'loading' });
-      expect(mockListSuites).not.toHaveBeenCalled();
+      expect(mockSummary).not.toHaveBeenCalled();
     });
 
-    it('shows the failure with a retry when the suite list cannot load', async () => {
-      mockListSuites.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(SUITES);
+    it('shows the failure with a retry when the summary cannot load', async () => {
+      mockSummary.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(SUMMARY);
       renderProfile(me);
       expect(await screen.findByText('Could not load your suites')).toBeInTheDocument();
       expect(screen.getByText('Could not load your suite access')).toBeInTheDocument();

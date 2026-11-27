@@ -6,7 +6,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.http_validation_error import HTTPValidationError
+from ...models.error_response import ErrorResponse
 from ...models.incident_read import IncidentRead
 from ...types import UNSET, Response, Unset
 
@@ -18,6 +18,7 @@ def _get_kwargs(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
+    cursor: None | str | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -51,6 +52,13 @@ def _get_kwargs(
 
     params["offset"] = offset
 
+    json_cursor: None | str | Unset
+    if isinstance(cursor, Unset):
+        json_cursor = UNSET
+    else:
+        json_cursor = cursor
+    params["cursor"] = json_cursor
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
@@ -64,7 +72,7 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | list[IncidentRead] | None:
+) -> ErrorResponse | list[IncidentRead] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -75,10 +83,35 @@ def _parse_response(
 
         return response_200
 
+    if response.status_code == 401:
+        response_401 = ErrorResponse.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = ErrorResponse.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 404:
+        response_404 = ErrorResponse.from_dict(response.json())
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
+
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = ErrorResponse.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 429:
+        response_429 = ErrorResponse.from_dict(response.json())
+
+        return response_429
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -88,7 +121,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | list[IncidentRead]]:
+) -> Response[ErrorResponse | list[IncidentRead]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -105,7 +138,8 @@ def sync_detailed(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[IncidentRead]]:
+    cursor: None | str | Unset = UNSET,
+) -> Response[ErrorResponse | list[IncidentRead]]:
     """List visible incidents
 
     Args:
@@ -114,13 +148,17 @@ def sync_detailed(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[IncidentRead]]
+        Response[ErrorResponse | list[IncidentRead]]
     """
 
     kwargs = _get_kwargs(
@@ -129,6 +167,7 @@ def sync_detailed(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = client.get_httpx_client().request(
@@ -146,7 +185,8 @@ def sync(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[IncidentRead] | None:
+    cursor: None | str | Unset = UNSET,
+) -> ErrorResponse | list[IncidentRead] | None:
     """List visible incidents
 
     Args:
@@ -155,13 +195,17 @@ def sync(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[IncidentRead]
+        ErrorResponse | list[IncidentRead]
     """
 
     return sync_detailed(
@@ -171,6 +215,7 @@ def sync(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     ).parsed
 
 
@@ -182,7 +227,8 @@ async def asyncio_detailed(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[IncidentRead]]:
+    cursor: None | str | Unset = UNSET,
+) -> Response[ErrorResponse | list[IncidentRead]]:
     """List visible incidents
 
     Args:
@@ -191,13 +237,17 @@ async def asyncio_detailed(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[IncidentRead]]
+        Response[ErrorResponse | list[IncidentRead]]
     """
 
     kwargs = _get_kwargs(
@@ -206,6 +256,7 @@ async def asyncio_detailed(
         state=state,
         limit=limit,
         offset=offset,
+        cursor=cursor,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -221,7 +272,8 @@ async def asyncio(
     state: None | str | Unset = UNSET,
     limit: int | Unset = 100,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[IncidentRead] | None:
+    cursor: None | str | Unset = UNSET,
+) -> ErrorResponse | list[IncidentRead] | None:
     """List visible incidents
 
     Args:
@@ -230,13 +282,17 @@ async def asyncio(
         state (None | str | Unset): Filter by lifecycle status
         limit (int | Unset):  Default: 100.
         offset (int | Unset):  Default: 0.
+        cursor (None | str | Unset): Start the page after the incident this cursor names (the
+            `X-Next-Cursor` header of the previous page). Costs the same at any depth. Opaque; send it
+            instead of `offset`, never with it (422). Incidents sort by `last_seen_at`, which moves:
+            an incident bumped past the cursor while you page can be missed, none repeats.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[IncidentRead]
+        ErrorResponse | list[IncidentRead]
     """
 
     return (
@@ -247,5 +303,6 @@ async def asyncio(
             state=state,
             limit=limit,
             offset=offset,
+            cursor=cursor,
         )
     ).parsed

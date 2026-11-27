@@ -57,7 +57,7 @@ export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
   Databases: 'Run checks directly against tables in an operational (OLTP) database.',
   'Cloud Storage': 'Run checks on flat files (CSV / Parquet / JSON) in object storage.',
   Orchestration:
-    'Optional — connect Azure Data Factory, Airflow or dbt to watch their pipeline / job runs and trigger suites on completion.',
+    'Optional — connect Azure Data Factory, Apache Airflow or dbt to watch their pipeline / job runs and trigger suites on completion.',
 };
 
 export interface SourceGroup {

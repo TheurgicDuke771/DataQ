@@ -538,13 +538,17 @@ export interface QueueDepth {
 }
 
 /** One datasource connection's stored-credential health. `unknown` = nothing observed since
- *  the signal shipped; only credential REJECTIONS move it off that. */
+ *  the signal shipped; only credential REJECTIONS move it off that. `not_applicable` = the
+ *  connection authenticates with no credential, so there is nothing to observe (not a fault,
+ *  and not `unknown`). */
+export type CredentialHealthStatus = 'healthy' | 'failing' | 'unknown' | 'not_applicable';
+
 export interface CredentialHealth {
   connection_id: string;
   name: string;
   type: string;
   env: string;
-  status: 'healthy' | 'failing' | 'unknown';
+  status: CredentialHealthStatus;
   consecutive_auth_failures: number;
   last_auth_failure_at: string | null;
   last_auth_success_at: string | null;

@@ -131,11 +131,12 @@ doing it with a credential you don't know is not.
 ### Credential health
 
 A datasource connection reports whether its stored credential is still being **accepted**,
-so an expired or revoked one is visible without anyone pressing Test. It has three states:
+so an expired or revoked one is visible without anyone pressing Test. It has four states:
 
 | State | Meaning |
 |---|---|
-| **Unknown** | The credential has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **Unknown** | A credential is stored but has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **No credential needed** (`not_applicable`) | The connection authenticates with no credential — a GCS bucket with `auth_type: anonymous`, Trino with `auth_type: none`, an Iceberg catalog with neither a `secret_property` nor a catalog password — so there is nothing to observe. This is not a fault and not the same as Unknown. |
 | **Healthy** | The datasource accepted the credential the last time DataQ used it. |
 | **Failing** | The datasource **rejected** the credential. The connection also shows how many consecutive rejections it has had, and a classified reason — never raw driver text, which can carry a token or DSN fragment. |
 
@@ -1324,7 +1325,11 @@ each run's **z-score** through the usual warn / fail / critical thresholds. Opti
 just for being smaller than Monday.
 
 Below its `min_points` of history the check reports **skip**, never a fabricated
-pass — a baseline that hasn't seen enough runs has no opinion. The per-check
+pass — a baseline that hasn't seen enough runs has no opinion. If the history has
+learned something it should not have, such as a bad load or a backfill, an editor can
+**Re-baseline** the check from the suite page: the stored history is dropped, the check
+reports skip until `min_points` runs have built it up again, and a weekday pattern is
+relearned. Attached seasonal periods are kept. The per-check
 **trend view** overlays the learned baseline band on the metric history so you can
 see what "normal" currently means. SQL datasources only: the anomaly executor takes
 its own measurement over a live SQL connection, which the natively-computed Iceberg

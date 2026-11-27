@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=84.0.0"]
+requires = ["setuptools>=84.2.1"]
 build-backend = "setuptools.backends.legacy:build"
 
 # ── Black ────────────────────────────────────────────────────────────────────
@@ -127,6 +127,7 @@ addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "real_dispatch: opt out of the autouse run_dispatch stub (test dispatch_run itself)",
     "real_adapter_test: keep the real adapter probes under the reachable_stores fixture (#1927)",
+    "commits_for_real: the test commits outside db_session on purpose; its audit rows are removed afterwards without failing it (#2623)",
 ]
 # Silence UPSTREAM deprecations we can't fix here — scoped by message so a new warning
 # from our own code still surfaces. All resolve on a dependency upgrade; none are DataQ

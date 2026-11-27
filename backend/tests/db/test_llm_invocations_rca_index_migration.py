@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import text
 
 from backend.app.services import llm_rca
+from backend.tests.support.driver_guard import assert_client_side_binding
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -114,10 +115,7 @@ def test_the_index_depends_on_client_side_parameter_binding(db_session: Any) -> 
     into a failing test (#1979).
     """
     connection = db_session.connection()
-    assert connection.dialect.driver == "psycopg2", (
-        "the RCA index only applies under client-side parameter binding; "
-        f"driver is {connection.dialect.driver!r} — see this test's docstring"
-    )
+    assert_client_side_binding(connection)
     connection.execute(text("SET LOCAL enable_seqscan = off"))
     generic = "\n".join(
         row[0]

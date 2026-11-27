@@ -173,6 +173,25 @@ describe('AdminOverview needs-attention feed', () => {
     expect(screen.getByText('Not monitored')).toBeInTheDocument();
   });
 
+  it('does not raise or count a credential that needs none', async () => {
+    mocked.getAdminHealth.mockResolvedValue({
+      ...HEALTHY,
+      credentials: [
+        {
+          ...HEALTHY.credentials[0],
+          name: 'gcs-public',
+          status: 'not_applicable',
+          last_auth_success_at: null,
+        },
+      ],
+    });
+    renderSubPage(<AdminOverview />);
+
+    expect(await screen.findByText(/Nothing needs attention/)).toBeInTheDocument();
+    expect(screen.queryByText(/never observed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Stored credential rejected/)).not.toBeInTheDocument();
+  });
+
   it('treats a health-endpoint error as unknown, not as an all-clear', async () => {
     mocked.getAdminHealth.mockRejectedValue(new Error('health exploded'));
     renderSubPage(<AdminOverview />);

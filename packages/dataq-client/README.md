@@ -85,7 +85,9 @@ response (429) is raised as `RateLimitedError`, never retried in a tight loop.
 ## The whole API
 
 `DataQClient` covers the CI and notebook workflows: run, wait, the pipeline gate, export,
-import, validate and apply, and acknowledging or resolving an incident. Everything else in the REST API is in the generated
+import, validate and apply, acknowledging or resolving an incident, and downloading a
+comparison report (`download_comparison_report` returns a `File` with the server's `file_name`
+and `mime_type` set). Everything else in the REST API is in the generated
 layer, typed from DataQ's OpenAPI spec:
 
 ```python

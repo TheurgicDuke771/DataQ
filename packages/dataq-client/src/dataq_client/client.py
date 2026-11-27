@@ -10,12 +10,20 @@ import json
 import os
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from email.message import Message
+from email.utils import collapse_rfc2231_value
+from io import BytesIO
 from typing import Any
 
 from dataq_client.generated.api.incidents import acknowledge_incident, resolve_incident
-from dataq_client.generated.api.runs import get_run, get_run_progress, pipeline_gate
+from dataq_client.generated.api.runs import (
+    download_comparison_report,
+    get_run,
+    get_run_progress,
+    pipeline_gate,
+)
 from dataq_client.generated.api.suites import (
     apply_suite_document,
     export_suite,
@@ -33,7 +41,7 @@ from dataq_client.generated.models.incident_resolve_request import IncidentResol
 from dataq_client.generated.models.suite_apply_request import SuiteApplyRequest
 from dataq_client.generated.models.suite_import_request import SuiteImportRequest
 from dataq_client.generated.models.suite_validate_request import SuiteValidateRequest
-from dataq_client.generated.types import Response
+from dataq_client.generated.types import File, Response
 
 #: The server's run lifecycle; a run in one of the last three will not change again.
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
@@ -124,13 +132,12 @@ class RunOutcome:
         return self.status in TERMINAL_RUN_STATUSES
 
 
-def _error_from(response: Any) -> DataQError:
-    """``response`` is a generated ``Response`` or a raw ``httpx.Response``: both carry
-    ``status_code`` and ``content``."""
-    status = int(response.status_code)
-    code, message = f"http_{status}", response.content.decode("utf-8", "replace")[:500]
+def _describe(status: int, content: bytes) -> tuple[str, str]:
+    """The ``(code, message)`` of an error body: the DataQ envelope, FastAPI's ``detail``, or
+    whatever else the answer was (a proxy's HTML page, an empty body)."""
+    code, message = f"http_{status}", content.decode("utf-8", "replace")[:500]
     try:
-        body = json.loads(response.content)
+        body = json.loads(content)
     except ValueError:
         body = None
     if isinstance(body, dict) and isinstance(body.get("error"), dict):
@@ -138,12 +145,43 @@ def _error_from(response: Any) -> DataQError:
         message = str(body["error"].get("message") or message)
     elif isinstance(body, dict) and "detail" in body:
         message = str(body["detail"])[:500]
+    return code, message
+
+
+def _error_from(response: Any) -> DataQError:
+    """``response`` is a generated ``Response`` or a raw ``httpx.Response``: both carry
+    ``status_code`` and ``content``."""
+    status = int(response.status_code)
+    code, message = _describe(status, response.content)
     kind: type[DataQError] = DataQError
     if status in (401, 403):
         kind = AuthError
     elif status == 429:
         kind = RateLimitedError
     return kind(status, code, message)
+
+
+def _as_envelope(response: Any) -> None:
+    """An httpx response hook: an error answer that is not the DataQ envelope (a proxy's HTML
+    404, an empty 429, FastAPI's ``{"detail": ...}``) is rewritten into it.
+
+    The generated code parses every declared error status as the envelope and would raise on
+    anything else before :func:`_error_from` ran; with the rewrite it always gets one.
+    """
+    if response.status_code < 400:
+        return
+    response.read()
+    try:
+        body = json.loads(response.content)
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        return
+    code, message = _describe(int(response.status_code), response.content)
+    # httpx has no public way to replace a read body.
+    response._content = json.dumps({"error": {"code": code, "message": message}}).encode()
+    response.headers["content-type"] = "application/json"
+    response.headers.pop("content-encoding", None)
 
 
 def _ok(response: Response[Any]) -> Any:
@@ -157,6 +195,61 @@ def _ok(response: Response[Any]) -> Any:
             "the server answered with a status this client version does not expect",
         )
     return response.parsed
+
+
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    """A header by name, whatever its letter case; a plain dict is not case-insensitive."""
+    for key, value in headers.items():
+        if key.lower() == name:
+            return value
+    return None
+
+
+def _download_file_name(headers: Mapping[str, str]) -> str | None:
+    """The file name a ``Content-Disposition`` header offers, as a bare name or ``None``.
+
+    Handles a quoted name, an unquoted one and the RFC 5987 ``filename*=UTF-8''...`` form (which
+    wins when both are present). The server's value is never trusted as a path: control
+    characters are removed, and everything up to the last ``/``, ``\\`` or ``:`` (a directory,
+    a Windows drive or a stream name) is dropped, so a caller joining it onto a folder cannot be
+    steered outside it.
+    """
+    value = _header(headers, "content-disposition")
+    if not value:
+        return None
+    message = Message()
+    message["content-disposition"] = value
+    # ``filename*`` (RFC 5987) surfaces as a tuple and is preferred over a plain ``filename``,
+    # which ``Message.get_filename`` would otherwise return first.
+    values = [
+        v for k, v in message.get_params(header="content-disposition") or [] if k == "filename"
+    ]
+    values.sort(key=lambda v: not isinstance(v, tuple))
+    name = collapse_rfc2231_value(values[0]) if values else None
+    if not name:
+        return None
+    printable = "".join(c for c in name if c.isprintable())
+    base = printable.replace("\\", "/").replace(":", "/").rsplit("/", 1)[-1].strip()
+    return None if base in ("", ".", "..") else base
+
+
+def _download_media_type(headers: Mapping[str, str]) -> str | None:
+    """``Content-Type`` in lower case without its parameters (``; charset=utf-8``), or ``None``."""
+    value = _header(headers, "content-type")
+    media_type = value.split(";", 1)[0].strip().lower() if value else ""
+    return media_type or None
+
+
+def _downloaded_file(response: Response[Any]) -> File:
+    """A download's body as a generated ``File`` that also carries the server's file name and
+    media type, which the generated parser leaves unset. One parser for every download."""
+    if not 200 <= int(response.status_code) < 300:
+        raise _error_from(response)
+    return File(
+        payload=BytesIO(response.content),
+        file_name=_download_file_name(response.headers),
+        mime_type=_download_media_type(response.headers),
+    )
 
 
 def _document_field(document: dict[str, Any] | str) -> dict[str, Any]:
@@ -184,6 +277,14 @@ def _outcome(run: Any) -> RunOutcome:
         checks_errored=sum(1 for result in results if result.status == "error"),
         failure_reason=run.failure_reason if isinstance(run.failure_reason, str) else None,
     )
+
+
+def _with_envelope_hook(httpx_args: dict[str, Any] | None) -> dict[str, Any]:
+    args = dict(httpx_args or {})
+    hooks = dict(args.get("event_hooks") or {})
+    hooks["response"] = [_as_envelope, *hooks.get("response", [])]
+    args["event_hooks"] = hooks
+    return args
 
 
 class DataQClient:
@@ -214,7 +315,7 @@ class DataQClient:
             base_url=base_url.rstrip("/"),
             token=pat,
             timeout=httpx.Timeout(timeout),
-            httpx_args=httpx_args or {},
+            httpx_args=_with_envelope_hook(httpx_args),
         )
 
     def __enter__(self) -> DataQClient:
@@ -327,6 +428,21 @@ class DataQClient:
         if not 200 <= response.status_code < 300:
             raise _error_from(response)
         return response.text
+
+    def download_comparison_report(
+        self, run_id: uuid.UUID | str, result_id: uuid.UUID | str, *, fmt: str = "csv"
+    ) -> File:
+        """A comparison result's report (``fmt`` is ``csv`` or ``xlsx``), derived by the server.
+
+        Unlike the generated call, the returned ``File`` has ``file_name`` (the server's
+        ``comparison-<id>.<fmt>``, never a path) and ``mime_type`` set from the response headers;
+        either is ``None`` if the server sent none.
+        """
+        return _downloaded_file(
+            download_comparison_report.sync_detailed(
+                uuid.UUID(str(run_id)), uuid.UUID(str(result_id)), client=self.api, fmt=fmt
+            )
+        )
 
     def import_suite(self, document: dict[str, Any] | str, connection_id: uuid.UUID | str) -> Any:
         """Create a new suite from a document, bound to ``connection_id``. ``document`` is

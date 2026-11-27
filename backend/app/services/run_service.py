@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any, Literal, NamedTuple, cast, get_args
 
 from sqlalchemy import delete, func, null, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -58,7 +59,13 @@ from backend.app.db.models import (
     Run,
     worst_severity,
 )
-from backend.app.services import privacy_settings_service, run_dispatch, suite_service
+from backend.app.services import (
+    paging,
+    privacy_settings_service,
+    result_rollup,
+    run_dispatch,
+    suite_service,
+)
 from backend.app.services.classification_vocab import (
     DETECTED,
     copy_tags,
@@ -520,6 +527,10 @@ def _mark_succeeded(session: Session, run: Run) -> bool:
         .values(status="succeeded", finished_at=finished, failure_reason=None, **recorded)
     )
     won = cast("CursorResult[Any]", result).rowcount == 1
+    if won:
+        # With the status, in one transaction: the run is never visible as succeeded with its
+        # results counted neither from the summary nor, as an un-added run, from `results`.
+        result_rollup.roll_up_run(session, run.id)
     session.commit()
     if not won:
         return False
@@ -571,6 +582,8 @@ def skip_run(session: Session, *, run: Run, checks: list[Check], reason: str) ->
     run.finished_at = _now()
     for name, value in recorded_outcome_values(session, run.id).items():
         setattr(run, name, value)
+    session.flush()
+    result_rollup.roll_up_run(session, run.id)
     session.commit()
     log.info("run_skipped", run_id=str(run.id), reason=reason, n_checks=len(checks))
     return run
@@ -644,10 +657,13 @@ def list_runs(
     include_all: bool = False,
     since_hours: float | None = None,
     until_hours: float | None = None,
+    after: paging.Position | None = None,
 ) -> list[Run]:
     """Runs for suites the user can access, newest first (`created_at` desc,
     `id` desc tie-break — the same total-order paging shape `/pipeline_runs`
     and `/incidents` use, since `created_at` alone ties within one transaction).
+
+    ``after`` starts the page after that position instead of at ``offset`` (#1987).
 
     ``since_hours``/``until_hours`` are relative offsets from now ("N hours
     ago"), not absolute timestamps — a caller (LLM or otherwise) states a
@@ -670,6 +686,8 @@ def list_runs(
         .limit(limit)
         .offset(offset)
     )
+    if after is not None:
+        stmt = stmt.where(paging.after(Run.created_at, Run.id, after))
     return list(session.scalars(stmt))
 
 
@@ -789,9 +807,25 @@ def results_final(run: Run) -> bool:
     return run.status in _TERMINAL_STATUSES
 
 
+def still_non_terminal(session: Session, run: Run) -> bool:
+    """Re-read ``run`` under a row lock and say whether it is still non-terminal.
+
+    Every transition out of a non-terminal status goes through this first: the caller's copy
+    of the run can be stale (a worker may have committed ``succeeded`` since it was loaded), and
+    flushing a status from a stale copy would take a succeeded run out of ``succeeded`` — after
+    its results were counted in `result_status_hourly`, which would then count a run no reader
+    does. The lock also makes a concurrent worker's ``succeeded`` wait for this commit.
+    """
+    session.refresh(run, with_for_update=True)
+    return run.status in _NON_TERMINAL_STATUSES
+
+
 def cancel_run(session: Session, run: Run) -> bool:
     """Transition a non-terminal run to ``cancelled``; return whether it changed."""
     if run.status in _TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     run.status = "cancelled"
     run.finished_at = _now()
@@ -1946,21 +1980,55 @@ def _purge_column(
     the two purges stay mechanically identical).
     """
 
-    def _build_statement() -> Any:
-        candidate_chunk = (
-            select(Result.id)
-            .where(Result.created_at < cutoff, *extra_where)
-            .order_by(Result.created_at)
-            .limit(chunk_size)
-        )
-        return (
-            update(Result)
-            .where(Result.id.in_(candidate_chunk), Result.created_at < cutoff, *extra_where)
-            .values(**values)
-            .execution_options(synchronize_session=False)
-        )
+    return chunked_dml(
+        session,
+        lambda: purge_statement(
+            cutoff=cutoff, extra_where=extra_where, values=values, chunk_size=chunk_size
+        ),
+        chunk_size=chunk_size,
+        on_batch=on_batch,
+    )
 
-    return chunked_dml(session, _build_statement, chunk_size=chunk_size, on_batch=on_batch)
+
+def purge_statement(
+    *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any], chunk_size: int
+) -> Any:
+    """One chunk of a retention sweep: the oldest ``chunk_size`` matching results, updated."""
+    candidate_chunk = (
+        select(Result.id)
+        .where(Result.created_at < cutoff, *extra_where)
+        .order_by(Result.created_at)
+        .limit(chunk_size)
+    )
+    return (
+        update(Result)
+        .where(Result.id.in_(candidate_chunk), Result.created_at < cutoff, *extra_where)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
+# Each sweep's guard, written as its partial index's predicate is, so the planner can prove it.
+def sample_failures_guard() -> list[Any]:
+    """``ix_results_unpurged_created``."""
+    return [
+        Result.sample_failures_purged_at.is_(None),
+        Result.sample_failures.isnot(None),
+        func.jsonb_typeof(Result.sample_failures) != "null",
+    ]
+
+
+def observed_list_guard() -> list[Any]:
+    """``ix_results_unpurged_observed``. The ``->`` operator, not ``observed_value["…"]``: on
+    PostgreSQL 14+ SQLAlchemy renders that as a JSONB subscript, which never matches the
+    index's ``->`` (#2751)."""
+    inner = Result.observed_value.op("->", return_type=JSONB)("observed_value")
+    return [func.jsonb_typeof(inner) == "array"]
+
+
+def observed_unparsed_guard() -> list[Any]:
+    """``ix_results_unpurged_unparsed``."""
+    return [Result.observed_value.has_key("unparsed_value")]
 
 
 def purge_expired_sample_failures(
@@ -2008,26 +2076,20 @@ def purge_expired_sample_failures(
         )
 
     try:
-        sample_typeof = func.jsonb_typeof(Result.sample_failures)
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[
-                Result.sample_failures_purged_at.is_(None),
-                Result.sample_failures.isnot(None),
-                sample_typeof != "null",
-            ],
+            extra_where=sample_failures_guard(),
             values={"sample_failures": null(), "sample_failures_purged_at": moment},
             chunk_size=chunk_size,
             on_batch=_on_sample_batch,
         )
 
         # #1253: observed_value's sibling half of the same PII-minimisation gap.
-        observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[observed_inner_typeof == "array"],
+            extra_where=observed_list_guard(),
             values={"observed_value": null()},
             chunk_size=chunk_size,
             on_batch=_on_observed_batch,
@@ -2039,7 +2101,7 @@ def purge_expired_sample_failures(
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[Result.observed_value.has_key("unparsed_value")],
+            extra_where=observed_unparsed_guard(),
             values={"observed_value": null()},
             chunk_size=chunk_size,
             on_batch=_on_unparsed_batch,
@@ -2059,11 +2121,15 @@ def reap_stuck_runs(
     moment = now or _now()
     cutoff = moment - timedelta(minutes=threshold_minutes)
     reference = func.coalesce(Run.started_at, Run.created_at)
-    stuck = list(
+    candidates = list(
         session.scalars(
             select(Run).where(Run.status.in_(_NON_TERMINAL_STATUSES), reference < cutoff)
         )
     )
+    # Each one re-read under a lock: a run a worker finished since is not stuck.
+    stuck = [run for run in candidates if still_non_terminal(session, run)]
+    if candidates and not stuck:
+        session.commit()  # nothing pending; releases the row locks the re-reads took
     reaped_ids = [str(run.id) for run in stuck]  # capture before commit expires attrs
     # Hygiene (#318): aggregates already ignore these, but the run's own detail page
     # would otherwise show a half-populated set.
@@ -2099,6 +2165,9 @@ def fail_run_worker_lost(
     """Drive a single run to ``failed`` after its worker process died (#755)."""
     run = session.get(Run, run_id)
     if run is None or run.status not in _NON_TERMINAL_STATUSES:
+        return False
+    if not still_non_terminal(session, run):
+        session.commit()  # nothing pending; releases the row lock the re-read took
         return False
     moment = now or _now()
     was_running = run.status == "running"
