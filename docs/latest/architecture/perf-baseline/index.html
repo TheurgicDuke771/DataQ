@@ -2474,6 +2474,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v13-the-result-status-histogram-pre-counted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — the result-status histogram, pre-counted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#v13-verifying-the-audit-chain" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3925,6 +3936,17 @@
     <span class="md-ellipsis">
       
         v1.3 — the latest run of each suite
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v13-the-result-status-histogram-pre-counted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.3 — the result-status histogram, pre-counted
       
     </span>
   </a>
@@ -7424,6 +7446,81 @@ performance rows. The tests compare the new statement with the old one over suit
 whose runs share timestamps (so the <code>id</code> tie-break decides), a suite with no run, a
 scope passed as a list and as a subquery, and a point in the past. A plan test fails
 if the statement goes back to reading every run.</p>
+<h2 id="v13-the-result-status-histogram-pre-counted">v1.3 — the result-status histogram, pre-counted<a class="headerlink" href="#v13-the-result-status-histogram-pre-counted" title="Permanent link">¶</a></h2>
+<blockquote>
+<p>Measured <strong>2026-11-17</strong> on the development machine: PostgreSQL 16, the perf harness's
+scratch database at 1,000,000 runs and 1,000,000 results.</p>
+</blockquote>
+<p>The dashboard summary's single largest statement counts every result row in two windows
+(<code>results JOIN runs</code>), and the v1.2 section above showed that no index or rewrite removes
+that cost. It is now read from <code>result_status_hourly</code>: result counts per suite, UTC hour and
+status, over succeeded runs.</p>
+<ul>
+<li><strong>Always exact.</strong> The table summarises <code>results</code>; it is never a second source. A run's
+  results are added in the transaction that marks it <code>succeeded</code>. A run that is not in the
+  table (history from before the upgrade, a failed add) is counted from <code>results</code> by the
+  reader, so a number is never stale. A beat task, every five minutes, adds such runs in
+  batches.</li>
+<li><strong>Hourly.</strong> A window starts at a moment, not at midnight, so the two part-buckets at its
+  edges are counted from <code>results</code> through a btree on <code>created_at</code> (21 MB at 1M rows; a
+  block-range index would be tiny but needs rows stored in time order, which a transaction's
+  start time does not guarantee). With daily buckets those two edge days still cost about
+  80 ms.</li>
+<li><strong>Falls back, never guesses.</strong> While more than 200 succeeded runs are missing from the
+  table (just after the upgrade, before the sweep has caught up) the reader counts from
+  <code>results</code> alone, as before the table.</li>
+<li><strong>Deleting a check</strong> subtracts its results first, because deleting a check deletes them,
+  after locking the runs and buckets it touches in the order every writer takes them, so it
+  waits for a sweep that has claimed one of those runs instead of missing its counts.
+  Deleting a suite removes its rows with it.</li>
+<li><strong>A succeeded run stays succeeded.</strong> The table counts a run's results once it has succeeded,
+  so cancelling a run, the stuck-run reaper and the worker-lost path now re-read the run
+  under a row lock first: a worker that finished it a moment earlier is not overwritten from a
+  stale copy.</li>
+<li><strong>A run that cannot be added does not stop the rest.</strong> The sweep adds a batch in one
+  statement; if that fails it adds the runs one by one, so one bad run is logged and the
+  others still go in.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>At 1,000,000 results, p50 of 15</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The histogram statement alone, 7-day window</td>
+<td>128 ms</td>
+<td>8.5 ms</td>
+</tr>
+<tr>
+<td>The histogram statement alone, 30-day window</td>
+<td>128 ms</td>
+<td>10 ms</td>
+</tr>
+<tr>
+<td><code>dashboard_summary</code>, 7-day window</td>
+<td>361 ms</td>
+<td>261 ms</td>
+</tr>
+<tr>
+<td><code>dashboard_summary</code>, 30-day window</td>
+<td>484 ms</td>
+<td>385 ms</td>
+</tr>
+</tbody>
+</table>
+<p>The summary is 7 statements, up from 6: the added one lists the runs not yet in the table.
+What remains is the run count and duration pass, the run trend and the per-suite scores,
+each linear in the window's runs; the histogram was the largest single piece, not all of it.</p>
+<p><strong>Backfill.</strong> On this database the sweep added 1,000,000 results (200,000 runs) in 14 to
+20 seconds, in batches of 2,000 runs.</p>
+<p><strong>Same answers.</strong> At fixed window bounds, the table's read and the old statement returned
+identical histograms for 7 and 30 days. The tests compare the summary with the per-window
+reference with the table empty, partly filled and full, and over results placed on each side
+of both window edges.</p>
 <h2 id="v13-verifying-the-audit-chain">v1.3 — verifying the audit chain<a class="headerlink" href="#v13-verifying-the-audit-chain" title="Permanent link">¶</a></h2>
 <blockquote>
 <p>Measured <strong>2026-11-17</strong> on the development machine: a real hash chain of 100,000 audit rows

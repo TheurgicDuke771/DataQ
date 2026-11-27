@@ -5943,6 +5943,7 @@ section below.
   suite's latest run no longer reads every run the workspace has recorded. At one million
   runs the dashboard's per-suite performance went from about 100 ms to under 4 ms. The asset
   view, connection scores and contract status use the same lookup and gain too.
+- **The dashboard's result-status figures load faster on a long run history.** Result counts are now kept per suite, hour and status and read from there instead of being counted from every result on each load. At one million results the dashboard summary went from about 360 ms to 260 ms for a 7-day window, and the figures are exactly the same. A new background task runs every five minutes and adds existing history; until it has, those runs are counted the old way, so no number is ever behind.
 - **Charts can be understood with a screen reader.** The run-trend and metric charts are announced by name instead of by their axis labels, and the dashboard's Quality Trends chart offers its numbers as a table.
 - **Run progress is announced to screen readers.** While a suite runs, a screen reader hears when it is queued, how far it has got in quarters, and how it ended, without being interrupted on every update.
 - **Row buttons say which row they act on.** A screen reader now hears "Edit", "Delete", "Snooze", "Remove", "Revoke", "Acknowledge" and similar row actions together with the check, member, incident or setting they belong to.
@@ -11555,6 +11556,60 @@ performance rows. The tests compare the new statement with the old one over suit
 whose runs share timestamps (so the `id` tie-break decides), a suite with no run, a
 scope passed as a list and as a subquery, and a point in the past. A plan test fails
 if the statement goes back to reading every run.
+
+## v1.3 — the result-status histogram, pre-counted
+
+> Measured **2026-11-17** on the development machine: PostgreSQL 16, the perf harness's
+> scratch database at 1,000,000 runs and 1,000,000 results.
+
+The dashboard summary's single largest statement counts every result row in two windows
+(`results JOIN runs`), and the v1.2 section above showed that no index or rewrite removes
+that cost. It is now read from `result_status_hourly`: result counts per suite, UTC hour and
+status, over succeeded runs.
+
+- **Always exact.** The table summarises `results`; it is never a second source. A run's
+  results are added in the transaction that marks it `succeeded`. A run that is not in the
+  table (history from before the upgrade, a failed add) is counted from `results` by the
+  reader, so a number is never stale. A beat task, every five minutes, adds such runs in
+  batches.
+- **Hourly.** A window starts at a moment, not at midnight, so the two part-buckets at its
+  edges are counted from `results` through a btree on `created_at` (21 MB at 1M rows; a
+  block-range index would be tiny but needs rows stored in time order, which a transaction's
+  start time does not guarantee). With daily buckets those two edge days still cost about
+  80 ms.
+- **Falls back, never guesses.** While more than 200 succeeded runs are missing from the
+  table (just after the upgrade, before the sweep has caught up) the reader counts from
+  `results` alone, as before the table.
+- **Deleting a check** subtracts its results first, because deleting a check deletes them,
+  after locking the runs and buckets it touches in the order every writer takes them, so it
+  waits for a sweep that has claimed one of those runs instead of missing its counts.
+  Deleting a suite removes its rows with it.
+- **A succeeded run stays succeeded.** The table counts a run's results once it has succeeded,
+  so cancelling a run, the stuck-run reaper and the worker-lost path now re-read the run
+  under a row lock first: a worker that finished it a moment earlier is not overwritten from a
+  stale copy.
+- **A run that cannot be added does not stop the rest.** The sweep adds a batch in one
+  statement; if that fails it adds the runs one by one, so one bad run is logged and the
+  others still go in.
+
+| At 1,000,000 results, p50 of 15 | Before | After |
+|---|---|---|
+| The histogram statement alone, 7-day window | 128 ms | 8.5 ms |
+| The histogram statement alone, 30-day window | 128 ms | 10 ms |
+| `dashboard_summary`, 7-day window | 361 ms | 261 ms |
+| `dashboard_summary`, 30-day window | 484 ms | 385 ms |
+
+The summary is 7 statements, up from 6: the added one lists the runs not yet in the table.
+What remains is the run count and duration pass, the run trend and the per-suite scores,
+each linear in the window's runs; the histogram was the largest single piece, not all of it.
+
+**Backfill.** On this database the sweep added 1,000,000 results (200,000 runs) in 14 to
+20 seconds, in batches of 2,000 runs.
+
+**Same answers.** At fixed window bounds, the table's read and the old statement returned
+identical histograms for 7 and 30 days. The tests compare the summary with the per-window
+reference with the table empty, partly filled and full, and over results placed on each side
+of both window edges.
 
 ## v1.3 — verifying the audit chain
 

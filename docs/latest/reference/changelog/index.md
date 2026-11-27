@@ -344,6 +344,7 @@ section below.
   suite's latest run no longer reads every run the workspace has recorded. At one million
   runs the dashboard's per-suite performance went from about 100 ms to under 4 ms. The asset
   view, connection scores and contract status use the same lookup and gain too.
+- **The dashboard's result-status figures load faster on a long run history.** Result counts are now kept per suite, hour and status and read from there instead of being counted from every result on each load. At one million results the dashboard summary went from about 360 ms to 260 ms for a 7-day window, and the figures are exactly the same. A new background task runs every five minutes and adds existing history; until it has, those runs are counted the old way, so no number is ever behind.
 - **Charts can be understood with a screen reader.** The run-trend and metric charts are announced by name instead of by their axis labels, and the dashboard's Quality Trends chart offers its numbers as a table.
 - **Run progress is announced to screen readers.** While a suite runs, a screen reader hears when it is queued, how far it has got in quarters, and how it ended, without being interrupted on every update.
 - **Row buttons say which row they act on.** A screen reader now hears "Edit", "Delete", "Snooze", "Remove", "Revoke", "Acknowledge" and similar row actions together with the check, member, incident or setting they belong to.
