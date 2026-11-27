@@ -1852,4 +1852,3 @@ that jumps ahead of the cursor and never sees one twice, which is better than pa
 Two things a cursor can miss, both stated where it is documented. A row takes its timestamp
 when its transaction starts, so a row that commits after a cursor has passed its timestamp is
 not returned to that reader. And an incident's `last_seen_at` moves, as above.
-
