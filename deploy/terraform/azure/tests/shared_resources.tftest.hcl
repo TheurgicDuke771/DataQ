@@ -104,9 +104,9 @@ mock_provider "time" {}
 mock_provider "null" {}
 
 variables {
-  image_tag                   = "v1.3.0"
-  frontend_image_tag          = "v1.3.0"
-  azure_location              = "westus2"
+  image_tag          = "v1.3.0"
+  frontend_image_tag = "v1.3.0"
+  azure_location     = "westus2"
 }
 
 run "an_empty_subscription_gets_all_three_created" {
