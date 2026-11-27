@@ -369,6 +369,12 @@ section below.
 
 ### Fixed
 
+- **Iceberg connections answer "does this need a stored secret?" the same way everywhere.** The
+  stored secret counts as needed only when `secret_property` names where it goes. Browsing and
+  profiling a catalog that sets `secret_property` but stores no secret now stop with a clear
+  error instead of failing later. A secret left behind on a catalog that no longer sends it
+  reads as **No credential needed**, like Trino and GCS. A catalog password alone still counts
+  as a credential to watch.
 - **A comparison check's SQL queries are saved again.** What you typed into the source query or the target's SQL projection never reached the form, so a comparison in SQL mode could not be saved and the projection was dropped.
 - **Suites created by importing a data contract are linked to their table.** They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run `python -m backend.scripts.backfill_suite_assets` once to link suites imported earlier.
 - **Alerts name a run's trigger the way the runs table does.** A run started by another suite, by an AI client over MCP, or by the connection probe showed the raw prefix (`suite`, `mcp`, `probe`) after "Triggered by" in Slack, Teams and email alerts; it now reads `Suite`, `MCP` or `Probe`. Apache Airflow is also spelled the same way everywhere (run labels, alerts, connection and trigger screens) instead of "Airflow" in some places and "Apache Airflow" in others.

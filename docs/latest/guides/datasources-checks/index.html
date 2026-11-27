@@ -3660,7 +3660,7 @@ so an expired or revoked one is visible without anyone pressing Test. It has fou
 </tr>
 <tr>
 <td><strong>No credential needed</strong> (<code>not_applicable</code>)</td>
-<td>The connection authenticates with no credential — a GCS bucket with <code>auth_type: anonymous</code>, Trino with <code>auth_type: none</code>, an Iceberg catalog with no secret — so there is nothing to observe. This is not a fault and not the same as Unknown.</td>
+<td>The connection authenticates with no credential — a GCS bucket with <code>auth_type: anonymous</code>, Trino with <code>auth_type: none</code>, an Iceberg catalog with neither a <code>secret_property</code> nor a catalog password — so there is nothing to observe. This is not a fault and not the same as Unknown.</td>
 </tr>
 <tr>
 <td><strong>Healthy</strong></td>
