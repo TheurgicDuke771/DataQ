@@ -5973,6 +5973,10 @@ section below.
 
 ### Fixed
 
+- **The retention sweep of list-shaped observed values uses its index.** The daily sweep that
+  scrubs old list-shaped `observed_value`s was compiled in a form PostgreSQL could not match to the
+  index built for it, so every chunk scanned the whole `results` table. It now reads only the
+  expired rows.
 - **Iceberg connections answer "does this need a stored secret?" the same way everywhere.** The
   stored secret counts as needed only when `secret_property` names where it goes. Browsing and
   profiling a catalog that sets `secret_property` but stores no secret now stop with a clear

@@ -3248,6 +3248,10 @@ section below.</p>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>The retention sweep of list-shaped observed values uses its index.</strong> The daily sweep that
+  scrubs old list-shaped <code>observed_value</code>s was compiled in a form PostgreSQL could not match to the
+  index built for it, so every chunk scanned the whole <code>results</code> table. It now reads only the
+  expired rows.</li>
 <li><strong>Iceberg connections answer "does this need a stored secret?" the same way everywhere.</strong> The
   stored secret counts as needed only when <code>secret_property</code> names where it goes. Browsing and
   profiling a catalog that sets <code>secret_property</code> but stores no secret now stop with a clear
