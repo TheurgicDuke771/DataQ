@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any, Literal, NamedTuple, cast, get_args
 
 from sqlalchemy import delete, func, null, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -1979,21 +1980,55 @@ def _purge_column(
     the two purges stay mechanically identical).
     """
 
-    def _build_statement() -> Any:
-        candidate_chunk = (
-            select(Result.id)
-            .where(Result.created_at < cutoff, *extra_where)
-            .order_by(Result.created_at)
-            .limit(chunk_size)
-        )
-        return (
-            update(Result)
-            .where(Result.id.in_(candidate_chunk), Result.created_at < cutoff, *extra_where)
-            .values(**values)
-            .execution_options(synchronize_session=False)
-        )
+    return chunked_dml(
+        session,
+        lambda: purge_statement(
+            cutoff=cutoff, extra_where=extra_where, values=values, chunk_size=chunk_size
+        ),
+        chunk_size=chunk_size,
+        on_batch=on_batch,
+    )
 
-    return chunked_dml(session, _build_statement, chunk_size=chunk_size, on_batch=on_batch)
+
+def purge_statement(
+    *, cutoff: datetime, extra_where: Sequence[Any], values: dict[str, Any], chunk_size: int
+) -> Any:
+    """One chunk of a retention sweep: the oldest ``chunk_size`` matching results, updated."""
+    candidate_chunk = (
+        select(Result.id)
+        .where(Result.created_at < cutoff, *extra_where)
+        .order_by(Result.created_at)
+        .limit(chunk_size)
+    )
+    return (
+        update(Result)
+        .where(Result.id.in_(candidate_chunk), Result.created_at < cutoff, *extra_where)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
+# Each sweep's guard, written as its partial index's predicate is, so the planner can prove it.
+def sample_failures_guard() -> list[Any]:
+    """``ix_results_unpurged_created``."""
+    return [
+        Result.sample_failures_purged_at.is_(None),
+        Result.sample_failures.isnot(None),
+        func.jsonb_typeof(Result.sample_failures) != "null",
+    ]
+
+
+def observed_list_guard() -> list[Any]:
+    """``ix_results_unpurged_observed``. The ``->`` operator, not ``observed_value["…"]``: on
+    PostgreSQL 14+ SQLAlchemy renders that as a JSONB subscript, which never matches the
+    index's ``->`` (#2751)."""
+    inner = Result.observed_value.op("->", return_type=JSONB)("observed_value")
+    return [func.jsonb_typeof(inner) == "array"]
+
+
+def observed_unparsed_guard() -> list[Any]:
+    """``ix_results_unpurged_unparsed``."""
+    return [Result.observed_value.has_key("unparsed_value")]
 
 
 def purge_expired_sample_failures(
@@ -2041,26 +2076,20 @@ def purge_expired_sample_failures(
         )
 
     try:
-        sample_typeof = func.jsonb_typeof(Result.sample_failures)
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[
-                Result.sample_failures_purged_at.is_(None),
-                Result.sample_failures.isnot(None),
-                sample_typeof != "null",
-            ],
+            extra_where=sample_failures_guard(),
             values={"sample_failures": null(), "sample_failures_purged_at": moment},
             chunk_size=chunk_size,
             on_batch=_on_sample_batch,
         )
 
         # #1253: observed_value's sibling half of the same PII-minimisation gap.
-        observed_inner_typeof = func.jsonb_typeof(Result.observed_value["observed_value"])
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[observed_inner_typeof == "array"],
+            extra_where=observed_list_guard(),
             values={"observed_value": null()},
             chunk_size=chunk_size,
             on_batch=_on_observed_batch,
@@ -2072,7 +2101,7 @@ def purge_expired_sample_failures(
         _purge_column(
             session,
             cutoff=cutoff,
-            extra_where=[Result.observed_value.has_key("unparsed_value")],
+            extra_where=observed_unparsed_guard(),
             values={"observed_value": null()},
             chunk_size=chunk_size,
             on_batch=_on_unparsed_batch,
