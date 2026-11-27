@@ -2666,9 +2666,12 @@ a generic plan in which every parameter is unknown. Against such a plan some par
 become unprovable. The query still returns the right rows by another route, which is why nothing
 turns red. This page records, index by index, which queries that would affect, so swapping the
 driver is a decision and not an accident.</p>
-<p><strong>Today nothing is affected:</strong> the driver is pinned (<code>psycopg2-binary</code> in
-<code>backend/requirements.txt</code>), and one shared test guard (<code>tests/support/driver_guard.py</code>) fails
-every test that depends on this the moment the driver changes, with a message that points here.</p>
+<p><strong>Nothing is affected under either driver.</strong> Where an index compares a column with a constant
+(a status, a kind, a JSON key, a separator), the app writes that constant into the SQL as a
+literal (<code>sql_constant</code> in <code>backend/app/db/literals.py</code>), not as a bind parameter. The driver is
+still pinned (<code>psycopg2-binary</code> in <code>backend/requirements.txt</code>), and one shared test guard
+(<code>tests/support/driver_guard.py</code>) fails every test that depends on client-side binding the
+moment the driver changes, with a message that points here.</p>
 <h2 id="what-defeats-a-partial-index-and-what-does-not">What defeats a partial index, and what does not<a class="headerlink" href="#what-defeats-a-partial-index-and-what-does-not" title="Permanent link">¶</a></h2>
 <p>Checked with <code>EXPLAIN (GENERIC_PLAN)</code> (PostgreSQL 16 and later), which plans a statement as a
 server-binding driver would send it:</p>
@@ -2708,7 +2711,9 @@ server-binding driver would send it:</p>
 </table>
 <p>The first row is the one that matters. A test per row of this table runs the generic plan and
 holds the verdict (<code>tests/db/test_index_binding_audit.py</code>), so the table cannot drift from what
-the planner does.</p>
+the planner does. A second test in the same file plans <strong>the statements the app builds</strong>, each
+compiled by the server-binding driver's own SQLAlchemy dialect, and requires every one to reach
+its index. A hand-written copy of a query proves only that the copy matches.</p>
 <h2 id="the-indexes">The indexes<a class="headerlink" href="#the-indexes" title="Permanent link">¶</a></h2>
 <p>A unique partial index is a <strong>constraint</strong>, not an access path: <code>INSERT … ON CONFLICT</code> names its
 predicate in the statement text, which is a constant under any driver, so these are unaffected.</p>
@@ -2727,22 +2732,22 @@ predicate in the statement text, which is a constant under any driver, so these 
 <td><code>ix_llm_invocations_status_open</code></td>
 <td><code>llm_invocations</code></td>
 <td>The reaper's scan of invocations still <code>pending</code> or <code>running</code></td>
-<td><strong>Affected</strong> if the status is sent as a parameter</td>
-<td>Write the two statuses as literals in the statement (<code>literal_column</code>), the reaper's two <code>status ==</code> statements are affected the same way</td>
+<td>Reached: the reaper writes each status as a literal</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_llm_invocations_rca_incident</code></td>
 <td><code>llm_invocations</code></td>
 <td>The latest RCA narrative for an incident (<code>kind</code>, <code>status</code> and <code>request -&gt;&gt; 'incident_id'</code>)</td>
-<td><strong>Affected</strong>: the kind, the status and the JSON key are all parameters</td>
-<td>Compile the closed-vocabulary <code>kind</code> and <code>status</code>, and the JSON key, as literals</td>
+<td>Reached: the kind, the status and the JSON key are literals</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_runs_results_unrolled</code></td>
 <td><code>runs</code></td>
-<td>Succeeded runs not yet counted in the result summary. No query reads it yet: the readers arrive with the summary's sweep</td>
-<td><strong>Affected</strong> wherever <code>status</code> is a parameter</td>
-<td>Every reader must write <code>'succeeded'</code> as a literal</td>
+<td>Succeeded runs not yet counted in the result summary: the summary's sweep and its reads of runs not yet counted</td>
+<td>Reached: every reader writes <code>'succeeded'</code> as a literal</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_runs_triggered_by</code></td>
@@ -2762,29 +2767,29 @@ predicate in the statement text, which is a constant under any driver, so these 
 <td><code>ix_results_unpurged_created</code></td>
 <td><code>results</code></td>
 <td>The retention sweep of failing-row samples</td>
-<td><strong>Affected</strong>: the type name <code>'null'</code> is a parameter</td>
-<td>Compile it as a literal</td>
+<td>Reached: the type name is a literal</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_results_unpurged_observed</code></td>
 <td><code>results</code></td>
 <td>The retention sweep of list-shaped observed values</td>
-<td><strong>Affected</strong>: the JSON key and the type name are parameters</td>
-<td>Compile both as literals</td>
+<td>Reached: the JSON key and the type name are literals</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_results_unpurged_unparsed</code></td>
 <td><code>results</code></td>
 <td>The retention sweep of unparsed monitor values</td>
-<td><strong>Affected</strong>: the <code>?</code> operand is a parameter</td>
-<td>Compile the key as a literal</td>
+<td>Reached: the key is a literal</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>ix_pipeline_runs_marker</code></td>
 <td><code>pipeline_runs</code></td>
 <td>The marker a pipeline run triggers suite runs by</td>
-<td><strong>Affected</strong>: the <code>:</code> separators are parameters, so the expression no longer matches the index</td>
-<td>Compile the separators as literals (<code>literal_column</code>)</td>
+<td>Reached: the separators are literals</td>
+<td>None</td>
 </tr>
 <tr>
 <td><code>uq_users_email_lower</code></td>
@@ -2860,15 +2865,18 @@ predicate in the statement text, which is a constant under any driver, so these 
 </table>
 <h2 id="adding-an-index-like-these">Adding an index like these<a class="headerlink" href="#adding-an-index-like-these" title="Permanent link">¶</a></h2>
 <p>A new partial or expression index needs a row above. The completeness test fails until it has
-one, and for an index an app query should reach, add a case to the generic-plan list in
-<code>tests/db/test_index_binding_audit.py</code> with the statement as the app sends it. Where a
-predicate compares a column with a constant, write that constant as a literal in the query as
-well, and the index works under either driver.</p>
+one. For an index an app query should reach, add the statement's builder to the list of app
+statements in <code>tests/db/test_index_binding_audit.py</code>. Where a predicate compares a column with
+a constant, write the constant with <code>sql_constant</code>, and the index works under either driver.</p>
+<p>Write a JSON access in the query the way the index writes it. On PostgreSQL 14 and later
+SQLAlchemy renders <code>column["key"]</code> as a subscript (<code>column['key']</code>), which is a different
+expression from <code>column -&gt; 'key'</code>: an index on one is never used by a query written with the
+other. Use <code>column.op("-&gt;", return_type=JSONB)(sql_constant("key"))</code> to match a <code>-&gt;</code> index, and
+<code>.astext</code> for <code>-&gt;&gt;</code>.</p>
 <h2 id="swapping-the-driver">Swapping the driver<a class="headerlink" href="#swapping-the-driver" title="Permanent link">¶</a></h2>
-<p>Run the audit tests: the shared guard fails first and names this page. Then, for each index
-marked affected, make the change in its last column, and change the driver in
-<code>backend/requirements.txt</code> and the shared guard together. The generic-plan list then says which
-queries still miss.</p>
+<p>Run the audit tests: the shared guard fails first and names this page. Change the driver in
+<code>backend/requirements.txt</code> and the shared guard together. The app-statement test then says
+whether any query misses its index under the new driver.</p>
 
 
 
