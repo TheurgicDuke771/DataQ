@@ -121,7 +121,7 @@ ten-minute poll still records the pipeline run.
 
 **No alert arrived for a failing run.**
 
-- Check the suite's **Notifications** threshold — the default is warn-and-worse; `fail-only`
+- Check the suite's **Alerting** threshold — the default is warn-and-worse; `fail-only`
   suppresses warns.
 - **Dedup** is intentional: you're alerted on the first breach (and on escalation), not on
   every run. A red suite that's "quiet" is usually dedup working — the **Results** page is the

@@ -2874,7 +2874,7 @@ card:</p>
 <strong>closed vocabulary of check types</strong> — a subset of the check editor's catalog: column-level
 value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
 types — and gets back candidate checks, each with a name, a rationale and a full config:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suggest-checks.png" data-desc-position="bottom"><img alt="The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining" class="screenshot" src="../../assets/screenshots/suggest-checks.png"></a></p>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suggest-checks.png" data-desc-position="bottom"><img alt="The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining; the values of a column classified as sensitive show as redacted" class="screenshot" src="../../assets/screenshots/suggest-checks.png"></a></p>
 <p>A <strong>freshness</strong> suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
 column profile. Every candidate goes through the same validator <code>create_check</code> uses — a

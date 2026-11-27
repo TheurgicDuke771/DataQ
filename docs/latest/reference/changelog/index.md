@@ -310,6 +310,9 @@ section below.
 - **Browser tests also run on Firefox and WebKit, once a week.** Pull requests still test on
   Chromium. Every Monday, and on demand, CI runs the same end-to-end specs on Firefox and
   WebKit too, each from a fresh seed, and uploads a report per browser.
+- **The documentation and landing-page screenshots and clips show the current app.** They were
+  re-captured for the v1.3 interface, including a suite's **Alerting** panel (formerly
+  Notifications) with its channel picker. The guides now use that panel's current name.
 - **The Azure OpenTofu stack stands up on an empty subscription.** By default it now creates the
   resource group, the Container Apps environment and a PostgreSQL Flexible Server with the app's
   database, as the AWS stack does. To attach to existing ones instead (a free or trial

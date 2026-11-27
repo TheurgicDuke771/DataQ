@@ -3,7 +3,7 @@
 A suite you have to remember to run is a suite that stops running. Pick one of the two ways
 to automate it — and prefer the first when an orchestrator loads the table.
 
-![A suite's Triggers and Schedules panels, side by side](../assets/screenshots/suite-schedules.png){ .screenshot }
+![A suite's Triggers panel above its Schedules panel, both still empty](../assets/screenshots/suite-schedules.png){ .screenshot }
 
 *Triggers run the suite when a pipeline succeeds; Schedules run it on a cron.*
 

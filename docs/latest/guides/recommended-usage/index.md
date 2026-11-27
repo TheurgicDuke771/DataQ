@@ -82,7 +82,7 @@ to be safe". See [Prefer triggers over schedules](best-practices.md#prefer-trigg
 ## 6. Configure alerting
 
 **Do:** an Admin defines the channels once (Teams / Slack / email / webhook) under
-**Admin → Settings → Notification channels**; then Suite → **Notifications** → link channels and
+**Admin → Settings → Notification channels**; then Suite → **Alerting** → link channels and
 pick the threshold. Linked channels add to any workspace-wide default destination; they do not
 replace it. Channel webhook URLs are kept in the secret store (**Admin → Integrations**
 holds the inbound ones).
