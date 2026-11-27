@@ -677,11 +677,15 @@ def test_the_reconcile_task_warns_with_the_drift_and_is_scheduled(
         result_rollup, "reconcile", lambda s: _real_reconcile(s, now=NOW)  # fixed clock
     )
 
-    with capture_logs() as logs:
-        assert tasks.reconcile_result_rollup() == 1
-        assert tasks.reconcile_result_rollup() == 0
+    # The task's logger is cached once built, so `capture_logs` would see nothing from it.
+    said: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        tasks.log, "warning", lambda event, **kw: said.append({"event": event, **kw})
+    )
+    assert tasks.reconcile_result_rollup() == 1
+    assert tasks.reconcile_result_rollup() == 0
 
-    warnings = [e for e in logs if e["event"] == "result_rollup_drift_repaired"]
+    warnings = [e for e in said if e["event"] == "result_rollup_drift_repaired"]
     assert len(warnings) == 1
     assert warnings[0]["buckets"] == 1 and warnings[0]["results_off"] == 3
     assert warnings[0]["drift"] == [
