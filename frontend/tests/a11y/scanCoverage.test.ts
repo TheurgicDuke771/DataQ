@@ -20,9 +20,12 @@ function declaredRoutes(): string[] {
 function scannedSurfaces(): Set<string> {
   const spec = read('e2e/a11y.spec.ts');
   const literal = [...spec.matchAll(/'route:([^'$]+)'/g)].map((m) => m[1]);
-  // The admin sub-pages are scanned from one loop over a literal array.
-  const loop = /for \(const sub of \[([^\]]+)\]\)/.exec(spec);
-  const subs = loop ? [...loop[1].matchAll(/'([^']+)'/g)].map((m) => `/admin/${m[1]}`) : [];
+  // The admin sub-pages are scanned from one loop over the keys of `adminLoaded`, each key a
+  // sub-page with the content that proves it loaded.
+  const block = /const adminLoaded[^\n]*= \{([\s\S]*?)\n {4}\};/.exec(spec);
+  const subs = block
+    ? [...block[1].matchAll(/^ {6}(\w+): \(page\)/gm)].map((m) => `/admin/${m[1]}`)
+    : [];
   return new Set([...literal, ...subs]);
 }
 

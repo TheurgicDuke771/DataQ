@@ -203,7 +203,16 @@ def seed(rows: int, *, echo: Callable[[str], None] = print) -> None:
                 text(_RESULTS_SQL),
                 {"per_run": RESULTS_PER_RUN, "run_count": rows // RESULTS_PER_RUN},
             )
+            # The result summary (#2010) counted the rows just replaced: start it again.
+            session.execute(text("DELETE FROM result_status_hourly"))
+            session.execute(
+                text(
+                    "UPDATE runs SET results_rolled_up_at = NULL "
+                    "WHERE results_rolled_up_at IS NOT NULL"
+                )
+            )
             session.commit()
+        _roll_up_results(session, echo=echo)
         have_incidents = session.scalar(text("SELECT count(*) FROM incidents")) or 0
         want_incidents = min(rows, 120_000)
         if have_incidents < want_incidents:
@@ -225,6 +234,24 @@ def seed(rows: int, *, echo: Callable[[str], None] = print) -> None:
             session.commit()
     _vacuum_analyze()
     echo("vacuum analyze done")
+
+
+def _roll_up_results(session: Session, *, echo: Callable[[str], None]) -> None:
+    """Fill the result summary as the beat sweep does, so a read is measured in the state a
+    deployment settles into, not in the fall-back it takes while history is being added."""
+    from backend.app.services import result_rollup
+
+    pending = session.scalar(
+        text(
+            "SELECT count(*) FROM runs "
+            "WHERE status = 'succeeded' AND results_rolled_up_at IS NULL"
+        )
+    )
+    if not pending:
+        return
+    echo(f"adding {pending} succeeded runs to the result summary")
+    while result_rollup.roll_up_pending(session):
+        pass  # each call returns how many runs it added
 
 
 def create_database(*, echo: Callable[[str], None] = print) -> None:
