@@ -568,3 +568,193 @@ def test_a_check_delete_waits_for_a_sweep_that_has_claimed_its_run() -> None:
                 )
             )
         assert held == 0
+
+
+# ── reconcile (#2725) ────────────────────────────────────────────────────────────────────────
+
+
+def _rolled_up(db: Any, *, hours_ago: list[int]) -> Suite:
+    """A suite with one added run per hour given, two results each."""
+    suite = _suite(db, "recon")
+    for hours in hours_ago:
+        _run(db, suite, NOW - timedelta(hours=hours), ["pass", "fail"])
+    db.commit()
+    while result_rollup.roll_up_pending(db):
+        pass
+    assert _table(db) == _table_from_results(db)
+    return suite
+
+
+def _bucket(db: Any, suite: Suite, hours_ago: int, status: str) -> ResultStatusHourly:
+    hour = (NOW - timedelta(hours=hours_ago)).replace(minute=0, second=0, microsecond=0)
+    row: ResultStatusHourly | None = db.get(ResultStatusHourly, (suite.id, hour, status))
+    assert row is not None
+    return row
+
+
+def test_reconcile_with_nothing_wrong_changes_nothing(db_session: Any) -> None:
+    _rolled_up(db_session, hours_ago=[1, 5])
+    assert result_rollup.reconcile(db_session, now=NOW) == []
+    assert _table(db_session) == _table_from_results(db_session)
+
+
+def test_reconcile_repairs_a_corrupted_bucket(db_session: Any) -> None:
+    suite = _rolled_up(db_session, hours_ago=[1, 5])
+    _bucket(db_session, suite, 1, "pass").n += 5
+    db_session.commit()
+
+    repaired = result_rollup.reconcile(db_session, now=NOW)
+
+    assert [(d.status, d.held, d.counted) for d in repaired] == [("pass", 6, 1)]
+    assert _table(db_session) == _table_from_results(db_session)
+
+
+def test_reconcile_counts_a_result_added_behind_the_tables_back(db_session: Any) -> None:
+    suite = _rolled_up(db_session, hours_ago=[1])
+    run = db_session.scalars(select(Run).where(Run.suite_id == suite.id)).one()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=_check(db_session, suite).id,
+            status="warn",
+            created_at=run.created_at,
+        )
+    )
+    db_session.commit()
+
+    repaired = result_rollup.reconcile(db_session, now=NOW)
+
+    assert [(d.status, d.held, d.counted) for d in repaired] == [("warn", 0, 1)]
+    assert _table(db_session) == _table_from_results(db_session)
+
+
+def test_reconcile_restores_a_deleted_bucket_and_zeroes_a_stray_one(db_session: Any) -> None:
+    suite = _rolled_up(db_session, hours_ago=[2])
+    db_session.delete(_bucket(db_session, suite, 2, "fail"))
+    hour = (NOW - timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
+    db_session.add(ResultStatusHourly(suite_id=suite.id, hour=hour, status="error", n=4))
+    db_session.commit()
+
+    repaired = result_rollup.reconcile(db_session, now=NOW)
+
+    assert sorted((d.status, d.held, d.counted) for d in repaired) == [
+        ("error", 4, 0),
+        ("fail", 0, 1),
+    ]
+    assert _table(db_session) == _table_from_results(db_session)
+
+
+def test_reconcile_leaves_hours_before_its_span_unless_asked_for_all(db_session: Any) -> None:
+    suite = _rolled_up(db_session, hours_ago=[1, 72])
+    _bucket(db_session, suite, 72, "pass").n += 2
+    db_session.commit()
+
+    assert result_rollup.reconcile(db_session, hours=48, now=NOW) == []
+    assert _table(db_session) != _table_from_results(db_session)
+
+    repaired = result_rollup.reconcile(db_session, hours=None, now=NOW)
+    assert [(d.status, d.held, d.counted) for d in repaired] == [("pass", 3, 1)]
+    assert _table(db_session) == _table_from_results(db_session)
+
+
+def test_reconcile_ignores_runs_not_added_yet(db_session: Any) -> None:
+    """A succeeded run the sweep has not added is the reader's to count, not drift."""
+    suite = _rolled_up(db_session, hours_ago=[1])
+    _run(db_session, suite, NOW - timedelta(hours=1), ["pass"])
+    db_session.commit()
+    assert result_rollup.reconcile(db_session, now=NOW) == []
+
+
+def test_the_reconcile_task_warns_with_the_drift_and_is_scheduled(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = _rolled_up(db_session, hours_ago=[1])
+    _bucket(db_session, suite, 1, "fail").n += 3
+    db_session.commit()
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(
+        result_rollup, "reconcile", lambda s: _real_reconcile(s, now=NOW)  # fixed clock
+    )
+
+    with capture_logs() as logs:
+        assert tasks.reconcile_result_rollup() == 1
+        assert tasks.reconcile_result_rollup() == 0
+
+    warnings = [e for e in logs if e["event"] == "result_rollup_drift_repaired"]
+    assert len(warnings) == 1
+    assert warnings[0]["buckets"] == 1 and warnings[0]["results_off"] == 3
+    assert warnings[0]["drift"] == [
+        {
+            "suite_id": str(suite.id),
+            "hour": _bucket(db_session, suite, 1, "fail").hour.isoformat(),
+            "status": "fail",
+            "held": 4,
+            "counted": 1,
+        }
+    ]
+    entry = celery_app.conf.beat_schedule["reconcile-result-rollup"]
+    assert entry["task"] == "reconcile_result_rollup"
+
+
+_real_reconcile = result_rollup.reconcile
+
+
+def test_a_reconcile_waits_for_a_run_being_added_and_keeps_its_counts() -> None:
+    """Two real connections. A drifted bucket is found while a run that adds to that same
+    bucket has not committed. The reconcile must wait for it, then count it: setting the
+    bucket from what it read before the run committed would lose the run's results."""
+    with scratch_engine("dataq_result_rollup_reconcile_race") as engine:
+        maker = sessionmaker(bind=engine)
+        with maker() as setup:
+            suite = _suite(setup, "race")
+            _run(setup, suite, NOW - timedelta(hours=1), ["pass"])
+            setup.commit()
+            result_rollup.roll_up_pending(setup)
+            hour = (NOW - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+            setup.execute(
+                text(
+                    "UPDATE result_status_hourly SET n = n + 5 "
+                    "WHERE suite_id = :s AND hour = :h AND status = 'pass'"
+                ),
+                {"s": suite.id, "h": hour},
+            )
+            late = _run(setup, suite, NOW - timedelta(hours=1), ["pass", "pass"])
+            setup.commit()
+            suite_id, late_id = suite.id, late.id
+            del suite, late
+
+        finishing = maker()
+        finishing.execute(result_rollup._ADD_ONE, {"run_id": late_id})  # added, not committed
+        done = threading.Event()
+        errors: list[Exception] = []
+        repaired: list[result_rollup.Drift] = []
+
+        def reconcile() -> None:
+            try:
+                with maker() as session:
+                    repaired.extend(result_rollup.reconcile(session, now=NOW))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                done.set()
+
+        worker = threading.Thread(target=reconcile, daemon=True)
+        worker.start()
+        try:
+            assert not done.wait(1.5), "the reconcile did not wait for the run being added"
+            finishing.commit()
+            assert done.wait(15), "the reconcile never finished"
+        finally:
+            finishing.rollback()
+            finishing.close()
+            worker.join(5)
+        assert not errors, errors
+        assert [(d.held, d.counted) for d in repaired] == [(8, 3)]
+        with maker() as check_session:
+            held = check_session.scalar(
+                select(ResultStatusHourly.n).where(
+                    ResultStatusHourly.suite_id == suite_id, ResultStatusHourly.status == "pass"
+                )
+            )
+        assert held == 3

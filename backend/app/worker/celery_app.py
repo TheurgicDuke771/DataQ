@@ -159,6 +159,12 @@ def create_celery_app() -> Celery:
                 "task": "roll_up_results",
                 "schedule": 300.0,  # 5 minutes
             },
+            # Its reconcile (#2725): recounts the last two days from `results` and repairs drift
+            # no writer accounts for, logging `result_rollup_drift_repaired` when it finds any.
+            "reconcile-result-rollup": {
+                "task": "reconcile_result_rollup",
+                "schedule": crontab(hour="2", minute="23"),  # daily, 02:23 UTC
+            },
             # llm_invocations reaper (#1644): mirrors reap-stuck-runs.
             "reap-stuck-llm-invocations": {
                 "task": "reap_stuck_llm_invocations",
