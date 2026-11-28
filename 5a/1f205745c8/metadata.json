@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "5a1f205745c8",
+  "strategy": "manual-commit",
+  "branch": "test/issue-1610-suite-document-twins",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_suite_document_twins.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5a/1f205745c8/0/metadata.json",
+      "transcript": "/5a/1f205745c8/0/full.jsonl",
+      "compact_transcript": "/5a/1f205745c8/0/transcript.jsonl",
+      "content_hash": "/5a/1f205745c8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 6544,
+    "cache_read_tokens": 1787247,
+    "output_tokens": 3381,
+    "api_call_count": 5
+  },
+  "redaction": {
+    "replacements": 19,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 6,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
