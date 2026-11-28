@@ -3265,6 +3265,10 @@ section below.</p>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>A column-profile anomaly's incident card now says which column changed.</strong> The evidence card's
+  <code>kind_detail</code> showed <code>mean</code> and <code>stddev</code> as null for every anomaly check on <code>column_profile</code>,
+  which has no single mean or standard deviation. It now carries <code>z_score</code> and <code>deviations</code>: the
+  highest-scoring column and metric series, each with its value, mean and z-score, and how much of the table was profiled.</li>
 <li><strong>A results-rollup sweep batch could claim more runs than its batch size.</strong> When the database's
   statistics said <code>runs</code> was nearly empty, the planner could re-run the batch's <code>LIMIT</code> once per
   row, so one sweep could take the whole backlog in a single transaction. The counts were always
