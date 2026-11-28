@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "dataq-client"
 # Tracks the DataQ server version it is generated from; the release workflow refuses a tag that
 # does not match.
-version = "1.2.0"
+version = "1.3.0"
 description = "Python client and CLI for the DataQ REST API"
 readme = "README.md"
 license = "MIT"

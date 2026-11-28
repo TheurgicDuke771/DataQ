@@ -95,7 +95,7 @@ at runtime over the server's allow-Azure-services firewall rule.
 cd deploy/terraform/azure
 tofu init
 # image_tag / frontend_image_tag have no default. On a FIRST apply, pass a release tag:
-IMG=v1.2.0 FE=v1.2.0
+IMG=v1.3.0 FE=v1.3.0
 # On a LATER apply, pass what the deployment runs now, so any app the apply creates
 # (e.g. dataq-app-beat, #1811) starts on the live image rather than an older one:
 #   IMG=$(az containerapp show -n dataq-app-worker -g dataq-rg --query 'properties.template.containers[0].image' -o tsv); IMG=${IMG##*:}
