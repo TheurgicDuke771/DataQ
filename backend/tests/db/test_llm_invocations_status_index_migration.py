@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import text
 
 from backend.app.db.models import LLM_INVOCATION_OPEN_STATUSES, LLM_INVOCATION_STATUSES
+from backend.tests.support.index_plans import drop_rival_indexes
 from backend.tests.support.migrations import load_migration, migration_ops
 
 _MIGRATION = "4a5f1e4d5daa_add_llm_invocations_status_open_index.py"
@@ -72,6 +73,7 @@ def test_reaper_equality_predicates_can_use_the_index(db_session: Any) -> None:
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _INDEX, unique=True)
     for status, age_column in (("pending", "created_at"), ("running", "started_at")):
         plan = "\n".join(
             row[0]

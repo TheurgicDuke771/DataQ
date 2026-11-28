@@ -16,6 +16,7 @@ from sqlalchemy import func, select, text
 from backend.app.db.models import Connection, Incident, Run, Share, Suite, User
 from backend.app.services import incident_service, suite_service
 from backend.app.services import run_service as run_svc
+from backend.tests.support.index_plans import drop_rival_indexes
 
 
 def _user(db_session: Any, *, role: str = "member") -> User:
@@ -115,6 +116,7 @@ def test_runs_list_plan_has_no_row_wise_suite_join(db_session: Any) -> None:
     """The page shares the predicate with its total, so the list must not regress either."""
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, "ix_runs_created_id", unique=True)
     connection.execute(text("SET LOCAL enable_sort = off"))
     statement = (
         select(Run)

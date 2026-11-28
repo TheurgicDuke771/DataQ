@@ -26,7 +26,7 @@ pydantic==2.13.5
 pydantic-settings==2.16.1
 # redis-py ships its own types (py.typed); the old types-redis stubs described 4.x.
 redis==7.4.1
-sqlalchemy[mypy]==2.0.57
+sqlalchemy==2.0.57
 structlog==26.1.0
 types-jsonschema==4.26.0.20261006
 types-openpyxl==3.1.5.20260827
