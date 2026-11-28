@@ -6,13 +6,10 @@ import uuid
 from typing import Any
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.db.base import Base
-from backend.tests.support.migrations import load_migration, table_exists
+from backend.tests.support.migrations import load_migration, migration_ops, table_exists
 
 _FILE = "c41f7a2d9e10_add_result_status_hourly.py"
 _INDEXES = ("ix_runs_results_unrolled", "ix_results_created_at")
@@ -46,16 +43,14 @@ def _down(db: Any) -> None:
     module = load_migration(_FILE)
     for name, _rest in module._INDEXES:
         db.execute(text(f"DROP INDEX IF EXISTS {name}"))
-    ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
-    with Operations.context(ctx):
+    with migration_ops(db.connection()):
         module._drop_table_and_column()
     db.expire_all()
 
 
 def _up(db: Any) -> None:
     module = load_migration(_FILE)
-    ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
-    with Operations.context(ctx):
+    with migration_ops(db.connection()):
         module._create_table_and_column()
     for name, rest in module._INDEXES:
         db.execute(text(f"CREATE INDEX IF NOT EXISTS {name} {rest}"))
