@@ -23,7 +23,7 @@ httpx==0.28.1                     # the backend's outbound HTTP client — Teams
 # ── Task queue ──
 celery[redis]==5.7.0
 redis==7.4.1
-croniter==6.2.4                   # cron-expression parsing for suite run schedules (A7)
+croniter==7.0.0                   # cron-expression parsing for suite run schedules (A7)
 
 # ── Database ──
 sqlalchemy==2.0.57
