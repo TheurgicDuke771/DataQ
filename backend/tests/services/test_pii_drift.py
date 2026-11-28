@@ -602,8 +602,12 @@ def test_kind_detail_reads_the_keys_this_executor_writes(
 
     fake = _Fake(monkeypatch, _profile(contact=_EMAILS, status=_PLAIN))
     baseline = _executor(graph)(graph["check"])
-    assert_layer_reads_what("pii_drift", baseline.observed_value)
+    assert_layer_reads_what(
+        "pii_drift", baseline.observed_value, absent_by_design=frozenset({"new_columns"})
+    )
 
     fake.columns = _profile(contact=_EMAILS, status=_PLAIN, notes=_EMAILS)
     drifted = _executor(graph)(graph["check"])
-    assert_layer_reads_what("pii_drift", drifted.observed_value)
+    assert_layer_reads_what(
+        "pii_drift", drifted.observed_value, absent_by_design=frozenset({"baseline_captured"})
+    )
