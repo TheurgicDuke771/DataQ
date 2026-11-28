@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from backend.app.api.v1 import suites
 
-TWINS = [
+TWINS: list[tuple[type[BaseModel], type[BaseModel]]] = [
     (suites.SourceConnectionRef, suites.SourceConnectionRefIn),
     (suites.CheckDocument, suites.CheckDocumentIn),
     (suites.SuiteDocument, suites.SuiteDocumentIn),
