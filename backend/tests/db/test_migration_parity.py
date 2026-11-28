@@ -189,6 +189,50 @@ def _null_polarities(sql: str) -> set[tuple[str, bool]]:
     return out
 
 
+# The other polarity flips no literal moves with (#1605): `IN` <-> `NOT IN`, `LIKE` <-> `NOT LIKE`,
+# `IS [NOT] DISTINCT FROM`, `SIMILAR TO`. Postgres rewrites each on read-back: `NOT IN (...)` ->
+# `<> ALL (...)`, a one-value `NOT IN` -> `<>`, `NOT LIKE` -> `!~~`, `NOT (s IN (...))` ->
+# `NOT ((s)::text = ANY (...))`, `a IS NOT DISTINCT FROM b` -> `NOT (a IS DISTINCT FROM b)`,
+# `NOT SIMILAR TO` -> `!~ similar_to_escape(...)`. The positive forms don't line up across the two
+# sides (a one-value `IN` comes back as `=`), so the negations are compared, as (column, family)
+# pairs so a negation that moves from one column to another is seen too. Not covered: `NOT
+# BETWEEN`, which comes back as two comparisons; no predicate uses it.
+_COLUMN = r"\(?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?(?:::[a-zA-Z_ ]+?(?:\[\])?)?\s*"
+_NEGATED_OPERATOR = re.compile(
+    _COLUMN + r"(?P<op>NOT\s+IN\s*\(|<>|!=|NOT\s+I?LIKE\b|!~~\*?|IS\s+NOT\s+DISTINCT\s+FROM\b"
+    r"|NOT\s+SIMILAR\s+TO\b|!~\s+similar_to_escape)",
+    re.IGNORECASE,
+)
+_NOT_WRAPPED = re.compile(
+    r"\bNOT\s*\(\s*"
+    + _COLUMN
+    + r"(?P<op>=\s*ANY\b|IN\s*\(|=|~~\*?|I?LIKE\b|IS\s+DISTINCT\s+FROM\b|SIMILAR\s+TO\b"
+    r"|~\s+similar_to_escape)",
+    re.IGNORECASE,
+)
+
+
+def _family(op: str) -> str:
+    op = " ".join(op.upper().split())
+    if "DISTINCT" in op:
+        return "IS NOT DISTINCT FROM"
+    if "SIMILAR" in op or op.startswith(("!~ ", "~ ")):
+        return "NOT SIMILAR TO"
+    if "LIKE" in op or "~~" in op:
+        return "NOT LIKE"
+    return "NOT IN / <>"
+
+
+def _negations(sql: str) -> dict[tuple[str, str], int]:
+    """How many negated operators `sql` applies, per (column, family)."""
+    counts: dict[tuple[str, str], int] = {}
+    for pattern in (_NEGATED_OPERATOR, _NOT_WRAPPED):
+        for match in pattern.finditer(sql):
+            key = (match.group(1).lower(), _family(match.group("op")))
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def _model_predicates() -> dict[str, str]:
     """`{object name: SQL text}` for every named CHECK and partial index in the model."""
     # `models` is imported for its side effect — defining the classes is what puts their tables on
@@ -230,8 +274,9 @@ def _live_predicates(conn: Any) -> dict[str, str]:
 
 
 def test_vocabularies_in_predicates_match_between_model_and_database(migrated_url: str) -> None:
-    """Every literal and every IS [NOT] NULL clause a CHECK or partial-index predicate carries must
-    match on both sides — literal-set alone is blind to a bare polarity flip (#1326).
+    """Every literal, every IS [NOT] NULL clause and every negated operator a CHECK or
+    partial-index predicate carries must match on both sides — literal-set alone is blind to a
+    bare polarity flip (#1326, #1605).
     """
     engine = create_engine(migrated_url)
     try:
@@ -251,6 +296,12 @@ def test_vocabularies_in_predicates_match_between_model_and_database(migrated_ur
                 f"{name}: model has {sorted(expected)}, database has {sorted(actual)}"
                 f" (missing from the database: {sorted(expected - actual)};"
                 f" extra: {sorted(actual - expected)})"
+            )
+        expected_negations, actual_negations = _negations(model_sql), _negations(live[name])
+        if expected_negations != actual_negations:
+            drift.append(
+                f"{name}: model has negations {expected_negations}, database has "
+                f"{actual_negations}"
             )
         expected_nulls, actual_nulls = _null_polarities(model_sql), _null_polarities(live[name])
         if expected_nulls != actual_nulls:
@@ -305,3 +356,58 @@ def test_null_polarities_unwraps_an_outer_not() -> None:
     """
     assert _null_polarities("NOT (col IS NULL)") == {("col", True)}
     assert _null_polarities("NOT (col IS NOT NULL)") == {("col", False)}
+
+
+_FORMS = [
+    "s NOT IN ('a', 'b')",
+    "NOT (s IN ('a', 'b'))",
+    "s NOT IN ('a')",
+    "n != ''",
+    "s NOT LIKE 'x%'",
+    "s NOT ILIKE 'x%'",
+    "NOT (s LIKE 'x%')",
+    "a IS NOT DISTINCT FROM b",
+    "s NOT SIMILAR TO 'x%'",
+]
+_FLIPS = [
+    ("s IN ('a', 'b')", "s NOT IN ('a', 'b')"),
+    ("s IN ('a')", "s NOT IN ('a')"),
+    ("s LIKE 'x%'", "s NOT LIKE 'x%'"),
+    ("a IS DISTINCT FROM b", "a IS NOT DISTINCT FROM b"),
+    ("s SIMILAR TO 'x%'", "s NOT SIMILAR TO 'x%'"),
+    # The negation moves from one column to another; both sides carry one.
+    ("n <> 'a' AND s IN ('b', 'c')", "n = 'a' AND s NOT IN ('b', 'c')"),
+]
+
+
+def _as_postgres_returns_it(db_session: Any, predicate: str) -> str:
+    """The predicate as Postgres stores and returns it: a real CHECK on a scratch table."""
+    connection = db_session.connection()
+    connection.execute(
+        text("CREATE TEMP TABLE IF NOT EXISTS neg_t (s varchar(20), a int, b int, n text)")
+    )
+    connection.execute(text("ALTER TABLE neg_t DROP CONSTRAINT IF EXISTS neg_c"))
+    connection.execute(text(f"ALTER TABLE neg_t ADD CONSTRAINT neg_c CHECK ({predicate})"))
+    return str(
+        connection.execute(
+            text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'neg_c'")
+        ).scalar_one()
+    )
+
+
+@pytest.mark.parametrize("model_sql", _FORMS)
+def test_negations_read_the_same_from_the_model_and_the_database(
+    db_session: Any, model_sql: str
+) -> None:
+    live = _as_postgres_returns_it(db_session, model_sql)
+    assert _negations(model_sql) == _negations(live) != {}, live
+
+
+@pytest.mark.parametrize(("model_sql", "migrated_sql"), _FLIPS)
+def test_a_negation_flip_breaks_equality(
+    db_session: Any, model_sql: str, migrated_sql: str
+) -> None:
+    """Each pair keeps every literal, so `_literals()` alone passes it."""
+    live = _as_postgres_returns_it(db_session, migrated_sql)
+    assert _literals(model_sql) == _literals(live), live
+    assert _negations(model_sql) != _negations(live), live
