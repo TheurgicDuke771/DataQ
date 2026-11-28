@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "8ff7c7e2cbc7",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-2275-drop-sqlalchemy-mypy-plugin",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/dependabot.yml",
+    "backend/requirements-typecheck.txt",
+    "pyproject.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8f/f7c7e2cbc7/0/metadata.json",
+      "transcript": "/8f/f7c7e2cbc7/0/full.jsonl",
+      "compact_transcript": "/8f/f7c7e2cbc7/0/transcript.jsonl",
+      "content_hash": "/8f/f7c7e2cbc7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 15717,
+    "cache_read_tokens": 2674234,
+    "output_tokens": 7114,
+    "api_call_count": 12,
+    "subagent_tokens": {
+      "input_tokens": 28,
+      "cache_creation_tokens": 73385,
+      "cache_read_tokens": 1057312,
+      "output_tokens": 6057,
+      "api_call_count": 14
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 2,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
