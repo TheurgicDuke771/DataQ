@@ -72,8 +72,9 @@ def _run(
     *,
     status: str = "succeeded",
     check: Check | None = None,
+    run_id: uuid.UUID | None = None,
 ) -> Run:
-    run = Run(suite_id=suite.id, status=status, created_at=at)
+    run = Run(id=run_id, suite_id=suite.id, status=status, created_at=at)
     db.add(run)
     db.flush()
     for result_status in statuses:
@@ -762,3 +763,33 @@ def test_a_reconcile_waits_for_a_run_being_added_and_keeps_its_counts() -> None:
                 )
             )
         assert held == 3
+
+
+def test_a_sweep_batch_never_claims_more_than_its_limit_whatever_the_plan(
+    db_session: Any,
+) -> None:
+    """#2753: with `runs` believed empty, the planner made the claim's `LIMIT … SKIP LOCKED`
+    subquery the rescanned inner side of a semi join. Each rescan skipped the rows already
+    claimed and took the next ones, so a batch claimed past its limit. Inserted in id order,
+    the old statement took the whole backlog in one batch."""
+    db_session.execute(text("ANALYZE runs"))
+    suite = _suite(db_session)
+    for hours, run_id in enumerate(sorted(uuid.uuid4() for _ in range(6))):
+        _run(db_session, suite, NOW - timedelta(hours=hours), ["pass"], run_id=run_id)
+    db_session.commit()
+    off = (
+        "enable_hashjoin",
+        "enable_mergejoin",
+        "enable_hashagg",
+        "enable_material",
+        "enable_sort",
+    )
+    for setting in off:
+        db_session.execute(text(f"SET {setting} = off"))
+    try:
+        claimed = [result_rollup.roll_up_pending(db_session, limit=2) for _ in range(4)]
+    finally:
+        db_session.execute(text("RESET ALL"))
+
+    assert claimed == [2, 2, 2, 0]
+    assert sum(_table(db_session).values()) == 6
