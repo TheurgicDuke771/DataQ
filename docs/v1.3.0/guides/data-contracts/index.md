@@ -1,0 +1,164 @@
+# Data contracts (ODCS)
+
+A data contract is a team's written promise about a dataset: its columns, the quality rules it
+keeps and how fresh it stays. DataQ reads contracts in the
+[Open Data Contract Standard](https://bitol-io.github.io/open-data-contract-standard/) (ODCS) v3
+and turns them into ordinary suites and checks that run, alert and score like any other. This is
+the **consumer** side: DataQ checks data that has already landed against the contract. It does not
+enforce anything inside the producer's pipeline.
+
+## Import a contract
+
+In the app, open **Contracts** in the sidebar and choose **Import contract**: pick the connection
+the data lives on and paste the document or choose the file. Over the API, send the ODCS document, as YAML text or JSON, with the connection the data lives on:
+
+```bash
+curl -X POST "$DATAQ/api/v1/contracts/import" \
+  -H "Authorization: Bearer $DATAQ_TOKEN" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg yaml "$(cat orders.odcs.yaml)" --arg conn "$CONNECTION_ID" \
+        '{connection_id: $conn, document_yaml: $yaml}')"
+```
+
+DataQ validates the document against the ODCS JSON Schema for its `apiVersion` (v3.0.0 to
+v3.2.0; a newer v3 minor is accepted with a warning; v2 and v4 are refused), stores it exactly as
+sent, and creates **one suite per schema object**, targeted at the object's `physicalName`
+(`schema.table`, `catalog.schema.table` on Unity Catalog, a path on object stores). The response
+lists the suites it created, any object whose name did not resolve to a table on that connection
+(its suite exists but cannot run until you set a target), and every clause it could not enforce.
+
+Importing requires the Member role. Each version of a contract is stored once; importing the same
+`id` and `version` again is refused unless you send `replace: true`.
+
+## What becomes a check
+
+| In the contract | In DataQ |
+|---|---|
+| `required: true` | not-null check |
+| `unique: true`, a single `primaryKey` | uniqueness check |
+| several `primaryKey` properties | compound uniqueness |
+| `logicalTypeOptions` minimum / maximum (exclusive too), length, pattern | range, length and regex checks |
+| `enum` / `invalidValues` with `validValues` or `pattern` | value-set or regex check |
+| `nullValues`, `missingValues`, `duplicateValues` | not-null, not-in-set, uniqueness checks; a `percent` bound becomes the fail threshold |
+| `rowCount` | a volume monitor; a one-sided bound stays one-sided |
+| the object's property list | a schema-drift check whose baseline is the declared columns |
+| `type: sql` rules | a custom SQL check that fails when the query's result breaks the operator, or is empty |
+| `type: custom` with `engine: great-expectations` | that expectation, if DataQ allows it |
+| `slaProperties` `latency` on a timestamp column | a freshness monitor |
+| `classification` of `confidential`, `restricted`, `pii`, `sensitive` or `secret` | the column joins the suite's PII columns, so failing samples mask it |
+| `severity` `info` / `warning` / `error` / `critical` | warn / warn / fail / critical; no severity means fail |
+| `dimension` | DataQ's dimension (`conformity` reads as validity; `coverage` stays unclassified) |
+
+A schedule for an object's suite comes from a `dataq.schedule` cron in the object's
+`customProperties`, and `dataq.maxAgeHours` (with `dataq.freshnessColumn`) adds a freshness
+ceiling.
+
+### Not enforced
+
+Everything else is kept on the contract as **not enforced**, with the reason, and never silently
+dropped. That includes `frequency` (a refresh cadence is not a staleness limit; state the limit as
+`latency`), `retention` and the other service-level properties, `text` rules, rules for another
+engine such as Soda, a `rows` bound on `nullValues`, `multipleOf`, and any check DataQ's own
+validators refuse for that datasource.
+
+## A new version
+
+Import the new version with `suite_ids` set to the suites the old version created. DataQ re-points
+them and reconciles their checks: clauses that are new get a check, a check nobody has edited since
+the import is updated to the new clause, a check whose clause disappeared is **switched off** (not
+deleted, so its history stays), and checks people added to the suite themselves are left alone.
+Without `suite_ids`, the new version creates fresh suites.
+
+## Compliance
+
+A contract's page in the app shows the same rollup, with a warning when a suite's latest run has
+not finished or some suites are hidden from you, and a **Download ODCS** button. Over the API,
+`GET /api/v1/contracts/{id}` carries a `compliance` block: for every clause a check enforces, the
+state that check reached in its suite's latest run — `pass`, `warn`, `fail`, `critical`,
+`unverified` (the check errored or was skipped), `not_run` (that run has no result for it),
+`disabled`, or `missing` (the suite has no check for the clause at all, because it was deleted
+or the suite was linked by hand) — and a `drifted` flag when someone has edited the check since the import, so it may
+no longer say what the clause says. Each suite reports its latest run and `results_final`, which
+is false while that run is still going: the states are partial until then. The clauses DataQ
+does not enforce are counted as `not_enforced`.
+
+When a contract-derived check opens an incident, the incident's evidence names the contract and
+the clause it broke, and alerts lead with it.
+
+## Link a suite by hand
+
+To attach a suite you already have to a contract's schema object, send
+`PATCH /api/v1/suites/{id}` with `{"contract": {"contract_id": "…", "contract_object": "orders"}}`,
+or `{"contract": null}` to detach it. Linking adds no checks; importing the contract does.
+
+## Export
+
+`GET /api/v1/contracts/{id}/export` returns the contract as an ODCS document (JSON, or YAML with
+`?format=yaml`): the stored document plus `dataq.*` custom properties naming the check behind each
+rule, and every check people added to the suites as a `type: custom, engine: dataq` rule.
+Importing the export recreates every check.
+
+**Values of a sensitive column are withheld.** A contract can list a column's values. When
+that column is classified as sensitive, including after the contract was imported (a suite's
+column policy, a warehouse tag, fail-closed mode or the PII classifier), the export shows
+`<redacted>` in place of each value. This is the one place the export differs from the document
+you imported, and it applies to every reader, whichever suites they can see.
+
+What is withheld:
+
+- a property's `enum` and `examples`, on the property and on anything nested in it (object
+  fields, array `items`, `map` keys and values). An `enum` is reduced to a single `<redacted>`
+  entry, because its entries must be unique;
+- a property's pattern and bounds: `logicalTypeOptions.pattern`, `minimum`, `maximum`,
+  `exclusiveMinimum` and `exclusiveMaximum`. A pattern becomes `<redacted>`; a numeric bound is
+  removed, because the standard types it as a number, and the property says it was;
+- every argument of a library rule (`validValues`, `missingValues`, `pattern` and anything
+  beside them) except the list of columns a duplicate check names, and the older `validValues`
+  key;
+- a custom rule on the Great Expectations or DataQ engine: every value in its implementation
+  (`value_set`, `regex`, `min_value` and any other key that can hold the column's values),
+  keeping only its options such as the column name, `mostly` and the result format; and the
+  whole implementation of a custom rule on any other engine, or one DataQ cannot parse.
+
+What is **not** withheld, even over a sensitive column:
+
+- SQL text: a SQL rule's query, and custom SQL inside a custom rule;
+- a rule's comparison operand (`mustBe`, `mustBeBetween` and the like). On a library rule it
+  is a count of the metric, not a value of the column. On a SQL rule it is compared with the
+  query's result, and the standard requires it;
+- a type's shape options: lengths, `format`, `multipleOf`;
+- custom-property values, descriptions, names, the literals of an enum `physicalType`, and
+  other free text.
+
+Review those before sharing an export. An object that a new version both renames and moves to another table
+is a new object: classifications made for the old one do not follow it.
+
+**Who decides.** A column's sensitivity is judged for the schema object, not for one imported
+version: every suite linked to any version of the contract for that object is asked, and so are
+the table's warehouse tags and every other suite on the same table, plus the `classification`
+the document gives its properties. If nothing stands behind an object — no suite of any version
+and no table whose classifications DataQ has read — DataQ cannot tell, and withholds all of its value lists with the reason
+`sensitivity_unknown`.
+
+**The export says what it withheld.** The property or rule carries a `dataq.valuesWithheld`
+custom property with the column, the reason and how many values each field held. The document
+carries `dataq.redactedColumns`, a list of every such object and column, and
+`dataq.sensitivityUnknownObjects`, the objects DataQ could not judge. The MCP `export_contract`
+tool returns the same as `redacted_columns`, `redaction_reasons` and
+`sensitivity_unknown_objects`, plus `not_withheld`. The stored contract and its checks keep the
+real values, and the checks run on them.
+
+An export with withheld values cannot be imported (`422 value_set_redacted`): it would replace
+the real values with `<redacted>`. Import the producer's own document instead.
+
+## Who sees a contract
+
+You see a contract when you can view at least one of its suites; the response counts the linked
+suites you cannot see without naming them. Workspace admins also see contracts with no linked
+suite. Deleting a contract needs edit on all of its suites, and only unlinks them: no suite, check
+or result is deleted.
+
+## Contracts and comparison checks
+
+A [comparison check](datasources-checks.md) reconciles two datasets against each other. A contract
+describes one dataset against a written promise. They answer different questions and can be used
+together.

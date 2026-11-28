@@ -1,0 +1,282 @@
+# ADR 0048 — Per-period metrics, yearly seasonality and seasonal periods on the anomaly monitor
+
+- **Status:** Accepted (2026-10-13)
+- **Date:** 2026-10-13
+- **Deciders:** @TheurgicDuke771
+- **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds, `metric_value`), [0016](0016-severity-derivation-semantics.md) (severity bands), [0041](0041-history-audit-strategy.md) (audit), [0047](0047-automated-coverage-loop.md) (automatic baselines, which this does not extend).
+
+## Context
+
+The anomaly monitor is the one place in DataQ with a learned baseline: every other monitor
+kind (freshness, volume, aggregate, schema drift) compares against a fixed threshold or the
+previous run. It scores a run against the check's own recent history: the last `window` runs,
+or the last `window` runs on the same weekday. It keeps `window` observations, seven times
+that with weekday seasonality: weeks or months of history, never years. And it watches three
+things, all whole-table: the row count, the age of the newest timestamp, and the column
+profile.
+
+That is the wrong shape for data with a yearly rhythm. A sales table has sale periods. Its
+whole-table row count only grows, so it says nothing about them. And if DataQ watched sales
+per day instead, the last few weeks would be the wrong comparison twice over: every recurring
+peak would look like an anomaly, and a peak that should have arrived and did not (a load that
+failed during the sale) would look normal.
+
+Two things are missing: a metric that is a value *per period*, and a baseline that knows what
+this time of year usually looks like.
+
+## Decision
+
+1. **Two per-period metrics on the anomaly kind.** `period_row_count` counts the rows whose
+   date falls in a period; `period_sum` sums a numeric column over them. The check names a
+   `date_column`, a `period` (`day` or `week`) and, for the sum, a `value_column`.
+
+   - **Buckets** are calendar dates of the column as the warehouse returns it (the column
+     cast to a date). A column with no time zone is taken at face value. A zone-aware
+     timestamp is bucketed in the warehouse session's zone, which DataQ does not set; the
+     editor says so.
+   - **Which periods are complete** is decided in the check's `timezone` (an IANA name,
+     default UTC), and a period is judged only once it has been closed for `settle_hours`
+     (default 6), so a suite scheduled just after midnight does not judge yesterday before
+     the nightly load has landed.
+   - **One point per period, written once.** The verdict is about the most recent settled
+     period. A second run before the next period settles measures it again for the result
+     but does not add or change a stored point. Rows that arrive after a period was judged
+     are not reflected in its point; that is the price of a point meaning "what the table
+     held when DataQ judged it".
+
+   These are authored checks on SQL datasources.
+
+2. **History is seeded once, then accumulated.** On the run that finds no baseline, one
+   grouped query reads up to three years of periods from the table's own rows. Every period
+   before the one being judged is stored marked `backfilled`; the judged one, and every one
+   after it, is `observed`. The mark never changes. The two are kept apart because they are
+   different evidence: an observed point is what the table held when DataQ looked, and a
+   backfilled point is what the table says today about the past, which a restatement or a
+   purge can have changed. Each result reports how many of the points it was scored against
+   were backfilled.
+
+   Seeding is one scan of the table. It can be switched off on the check (`backfill: false`)
+   for a warehouse that bills per query or a table whose old rows are archived; the check then
+   starts empty and waits. Dropping a check's baseline seeds it again.
+
+3. **Yearly seasonality is a seasonal index over the rolling baseline.** With `yearly: true`:
+
+   - The *level* at a period is the median of the `window` periods before it.
+   - The *index* for a period is what the matching period in an earlier year was, divided by
+     the level then. With more than one earlier year the index is their median.
+   - *Matching.* A day is matched to the same weekday nearest the same calendar date in the
+     earlier year (52 weeks back, then 104, and so on, corrected to the nearest such
+     weekday); a week to the week containing that date. There is no "week 53" case. A peak
+     tied to a fixed date (25 December) or to a moving one (a sale) does not line up this
+     way, and needs a declared period (decision 4).
+   - *Scoring.* The expected value is the level now times the index. The run is scored on
+     how far it is from that **in proportion to it**, against how far each prior period was
+     from what was expected of it. A sale that ran at 2.4 times its surrounding weeks last
+     year is expected at 2.4 times now, so arriving near 2.4 times is normal and arriving
+     flat is not; and a sale day five times an ordinary day has five times the room.
+
+     > **Amended 2026-10-14.** As first written the distance was taken in the metric's own
+     > units, so a peak had only an ordinary day's room and a sale that repeated within the
+     > range of earlier years still alerted. It is proportional now. With two or more
+     > earlier years, how much they disagreed about the size of the peak is added to the
+     > spread, and the result shows each year's ratio: two years with a sale and one without
+     > make a loose comparison, and the check says so instead of pretending to precision.
+     > Where the expected value is zero (the shop was closed that day last year) there is no
+     > proportion to take, and the distance is taken as it stands.
+
+   - *When it does not apply.* The index is used only where it means something: the level
+     then was above zero and neither it nor the matched value is negative. Otherwise, and
+     for a period with no earlier year to match, the index is 1, which is exactly today's
+     behaviour, and the result says the yearly comparison was not applied and why (no
+     earlier year, a zero level, a negative sum).
+
+   Every number in that chain is in the result: the level, the index, the years it came from
+   and the expected value. Nothing is skipped for want of a year: the check is useful from
+   the day it has `min_points`, and becomes seasonal when the history allows.
+
+4. **Yearly seasonality is a property of the anomaly kind, not of one metric.** It is
+   offered on every metric that is one number per run: the two per-period metrics, the
+   whole-table row count and the freshness age. For the whole-table metrics a "period" is a
+   calendar day, the stored point for a day is the last run's value that day, and history
+   can only accumulate: there is nothing to seed a past row count from. Weekday seasonality
+   stays as it is and combines with it. The column profile does not get it: it is hundreds
+   of series per check, and three years of each is not a baseline, it is a warehouse.
+
+   > **Amended 2026-10-14.** The first build tried "one stored point a day, the day's last
+   > run" for the whole-table metrics, and it was wrong: a check that runs hourly was scored
+   > against the previous days' last readings (a freshness age of one hour against priors of
+   > twenty-one), and switching the setting on or off threw history away. A whole-table
+   > metric needs its run-by-run points kept as they are, with a separate one-a-day series
+   > for the yearly index beside them. That is its own phase; until it ships, `yearly` is
+   > accepted on the per-period metrics only.
+
+   > **Amended 2026-10-20 (phase 7).** As built for `row_count` and `freshness_age_hours`:
+   >
+   > - **Two series.** The run-by-run points are kept and trimmed exactly as without `yearly`,
+   >   and the run is scored against them. Beside them, under `daily` in the same baseline row,
+   >   one point per calendar day in the check's `timezone` (an IANA name, default UTC, accepted
+   >   on these metrics only with `yearly` on). Switching `yearly` off stops adding days and
+   >   deletes nothing; switching it on carries on from both series.
+   > - **A day's value is the median of its runs** (the day in progress keeps up to 288 run
+   >   values to take it from; a closed day keeps only its median and run count). Not the last
+   >   run: its hour decides what it says (a freshness age is one at 03:00 and twenty-one at
+   >   23:00), and a day checked hourly would not mean the same as a day checked once. Not the
+   >   mean: one failed run would move it. The day in progress is not history until it closes.
+   > - **Scoring.** The index for today is taken from the daily series exactly as for a
+   >   per-period metric (decision 3: matched day, level the median of the window of days before
+   >   it, years' median). The run is then scored against its usual run-by-run priors, each
+   >   first divided by its own day's index: their mean is the `level`, `expected` is the level
+   >   times today's index, and the spread is their standard deviation times the index, widened
+   >   by the years' disagreement as in decision 3. So the third day of a sale is not judged
+   >   against the sale's first two days as a new normal, and an hourly check is never judged
+   >   against other days' single values. The result marks it `yearly.basis: runs` and reports
+   >   `daily` (`days`, `first`, `timezone`).
+   > - **Not applied** for the reasons of decision 3; `no_earlier_year` is what a whole-table
+   >   check reports until a year of days has accumulated, since nothing can be seeded.
+   > - **Declared periods** attach as on a per-period metric. Runs on a day inside an attached
+   >   period are left out of the run-by-run priors, and the first-year rule compares the value
+   >   with the level of the priors left. Detection (decision 5) does not read the daily series:
+   >   a whole-table check reports `not_a_per_period_metric`.
+   > - **Retention.** The daily series keeps three years of days plus the window (seven times
+   >   the window with weekday seasonality), by date; the run-by-run points keep what they kept.
+   > - **A prior day with no index** (no earlier year matched, or a zero level then) is divided
+   >   by 1, which is decision 3's rule that the index is 1 where it does not apply; a prior
+   >   whose day's index is 0 is left out, since it says nothing about scale. With weekday
+   >   seasonality, priors are picked by their weekday in the check's zone, as the days are.
+   > - **Changing the time zone** keeps the stored days as they were bucketed (a day near
+   >   midnight may be matched one day off until the history turns over), and for the hours
+   >   after moving the zone west, a run dated before the newest stored day adds nothing to
+   >   the series. The result reports the zone in use.
+
+   Automatic coverage (ADR 0047) gets it through the setting it already has: the baseline
+   shape gains a `yearly` switch, default off, which applies to the automatic row-count and
+   freshness baselines. The per-period metrics are **not** added to automatic coverage: an
+   automatic baseline assumes nothing about a table, and choosing which column is the
+   business date and which is the amount is a claim a person makes. Automatic coverage may
+   later *suggest* one for review.
+
+5. **Seasonal periods are declared by people and detected from history. Only declared ones
+   change a verdict.**
+
+   - **Declared.** A workspace calendar of named periods, each either recurring (a month and
+     day range, every year) or dated (explicit start and end, for a sale that moves). Admins
+     manage it; changes are audited. It is workspace-wide because a sale period is a fact
+     about the business. A check names the calendar entries that apply to it, and none do by
+     default, so adding an entry changes no check until someone attaches it.
+   - **What a declared period does.** A day inside it is matched to the same offset within
+     that period's previous occurrence, which is what makes a moving sale or a fixed date
+     line up. Periods inside it are left out of the level, so the weeks after a sale are not
+     judged against the sale. And when the period has no earlier occurrence in the history,
+     the check is told a rise is expected and cannot say how large: a value **above** what
+     the rolling baseline expects is reported as within the declared period and not banded,
+     while a value **below** it is judged as usual. A load that fails during a first-year
+     sale still alerts.
+   > **Amended 2026-10-19 (phase 4).** Three decisions the build had to make. (1) *A dated
+   > entry's previous occurrence.* A dated entry is one-off by itself; the schema makes
+   > "occurrences of one period" explicit with a `series` on dated entries, matched
+   > case-insensitively, and a check attaches each year's entry it wants compared. A dated
+   > entry with no earlier entry of its series among the check's attachments is a first
+   > year. (2) *29 February.* A recurring bound may be 29 February; in a year without one it
+   > is 28 February. The same offset into a previous occurrence that was shorter (a leap-year
+   > sale that ran a day longer) has no match in that occurrence and the next earlier one is
+   > tried. (3) *Attachments live in the check's config* (`seasonal_periods`, a list of ids)
+   > rather than a join table, because every surface that carries a check's definition —
+   > `check_versions`, export/import, apply, the audit snapshot and a dry run that has no
+   > check row — is config-shaped. Deleting an entry a check still names is refused by the
+   > service, naming the checks, under a row lock the attaching save shares. A calendar
+   > entry applies only with `yearly` on, since lining a day up with an earlier occurrence
+   > is the yearly comparison; attaching one without it is refused rather than ignored.
+   > Each result on an attached check reports what it would have scored with no calendar.
+
+   - **Detected.** Read from a check's own history when someone asks: a run of periods at or
+     above 1.5 times the level. Seen at the same time in two or more years it is *recurring*;
+     in one year, *seen once*. Detected periods are shown on the check's trend so a person
+     can see why a verdict came out as it did, and an admin can promote one to the calendar.
+     Until then a detected period is a description: it is not stored and it changes no
+     score. The seasonal index already carries a recurring peak into the expected value
+     without it.
+   > **Amended 2026-10-20 (phase 5).** The thresholds and the promote flow, as built. (1) *The
+   > level* is taken as scoring takes it, over the same `window` periods before (by weekday
+   > with `seasonality`, attached declared periods left out): their median with `yearly`
+   > on, their mean without, since that is what a check without `yearly` is scored against; a period is looked at only once
+   > `min_points` periods precede it. A peak outlasting about half the window's prior
+   > periods (same-weekday ones with `seasonality`) lifts that median with it, so its tail is not detected; an attached entry covering it is what fixes
+   > that, as it does for scoring. (2) *A run* is consecutive qualifying periods: at least
+   > two days, since one day is a spike rather than a period, or one week. A day with no
+   > point ends a run; no gap is bridged. (3) *The same time* in two years means the runs,
+   > laid on one year, come within seven days of each other, so a sale that moves by up to a
+   > week still matches. Two runs in one season (a sale split by an ordinary day, or one that
+   > crosses the new year) are one year, not two. (4) *What is returned*: each period's
+   > occurrences per year with their peak ratio and how many of their points were backfilled,
+   > the month/day span a recurring one covers, the attached entries that overlap it, and how
+   > much history stood behind the answer; when there was nothing to look at, the reason (not
+   > a per-period metric, no history, too little history). It is computed on request from the
+   > stored points, a separate read from the trend's baseline read so the trend view asks for
+   > it only on a per-period check. (5) *Promoting* is an admin action that re-reads the
+   > history and names the period by the start of its most recent occurrence, so a period the
+   > history no longer shows is refused rather than invented, and one an existing entry
+   > already covers is refused naming that entry, so a season is declared once. A recurring period becomes a
+   > recurring entry over that span, one seen once a dated entry. Attaching it to the check is
+   > optional and done in the same transaction, so a check that cannot take it (no `yearly`)
+   > leaves no entry behind. The entry is audited as created, with what it was promoted from.
+
+6. **Retention.** A check with `yearly` on, or on a per-period metric, keeps three years of
+   periods plus its window (about 1,100 daily points). Other anomaly checks keep what they
+   keep today. A whole-table check keeps those years in its one-a-day series only (decision
+   4, amended 2026-10-20).
+
+## Phases
+
+1. Per-period metrics: measurement, validation, one point per settled period.
+2. Seeding from the table and three-year retention.
+3. Yearly seasonality in scoring, for the per-period metrics.
+4. The declared calendar (schema first, on its own), and attaching entries to a check.
+5. Detected periods and the read surfaces (REST, MCP).
+6. Check editor, trend view and calendar UI; user docs.
+7. Yearly seasonality for the whole-table metrics (a one-a-day series beside the run-by-run
+   points), then the `yearly` switch in the automatic-coverage baseline shape, with an
+   amendment to ADR 0047.
+
+## Consequences
+
+- A recurring peak stops paging people, and a missing one starts to.
+- The first yearly verdict needs a year of history. Seeding supplies it for a per-period
+  metric where the table still holds its past. Everywhere else the check waits a year, and
+  says so on every result until then.
+- One earlier year cannot tell a recurring sale from a one-off. The index uses it anyway,
+  because one year is better than none, and the result names how many years stand behind it.
+- A backfilled baseline trusts the table's history. Marking the points is what keeps that
+  visible.
+- Three years of daily points is a larger baseline row than any check has had. It is one JSONB
+  value per check and is read once per run. Switching `yearly` on for automatic coverage
+  multiplies that by every covered table, which is why it is off by default there.
+- Late rows do not revise a judged period. A table that fills in slowly needs a longer
+  `settle_hours`, not a re-read.
+
+## Considered and rejected
+
+- **A report of when the sales are**, for analysts to plan from: that is business analysis,
+  and a BI tool is the place for it. DataQ shows the periods it detected because they explain
+  its verdicts, not as a product of their own.
+- **Accumulating only:** no yearly verdict for a year, and two before a period can be called
+  recurring, on tables that already hold the history.
+- **Backfilling only:** nothing would record what the table held when each run looked, so a
+  later restatement would silently rewrite the baseline.
+- **Re-reading recent periods on every run** to pick up late rows: it rewrites observed
+  points after they were judged, which is the same objection.
+- **Yearly seasonality on the per-period metrics alone:** a snapshot table that is replaced
+  every night has a row count with seasons too, and the automatic baselines would never get
+  it.
+- **Comparing only against the same period in earlier years:** two or three points give no
+  spread to score against. The index keeps the recent window as the source of spread.
+- **Matching by ISO week number:** some years have a week 53 and the earlier year does not.
+- **Skipping every verdict inside a declared period with no history:** it would hide a failed
+  load during a sale, which is the incident this exists to catch.
+- **Letting a detected period change the baseline before a person confirms it:** an
+  unreviewed guess would move verdicts with nothing in the result to say so.
+- **A calendar entry that applies to every check automatically:** one admin entry would
+  change the verdicts of checks on tables the sale never touches.
+- **A forecasting library** (seasonal decomposition or similar): a new dependency whose
+  verdict cannot be explained from the numbers in the result.
+- **Declared periods typed into each check:** the same sale would be entered again for every
+  table it touches. A check attaches entries; it does not define them.

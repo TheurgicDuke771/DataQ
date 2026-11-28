@@ -1,0 +1,364 @@
+# Features
+
+Everything DataQ offers, by area. This is the readable tour — for the terse
+what-runs-where lookup see the [feature matrix](../reference/feature-matrix.md), and for how to turn
+each feature on the recommended way see [Recommended usage](recommended-usage.md).
+
+DataQ is a single-tenant **data-quality control plane**: it connects quality checks to the
+pipelines that load the data, the assets it lands in, the incidents a failure opens and the AI
+agents your team works with. It runs checks against your data stores, records every result,
+surfaces health on a dashboard, alerts the right people, and reacts to your pipelines — all
+behind sign-in, with an AI-assistant surface. The workflow is **detect → explain → impact →
+gate → remediate**; today that makes it a data-quality platform with an emerging
+observability layer, not a full observability suite.
+
+## Datasources
+
+Stores you write checks **against** (see [Datasources & checks](datasources-checks.md)):
+
+- **Snowflake** (DEV / QA / UAT) — key-pair or password auth.
+- **Unity Catalog (Databricks)** — three-level `catalog.schema.table`.
+- **ADLS Gen2** and **AWS S3 (or any S3-compatible store)** — flat files, a single object or a **batch** pattern
+  (`orders_*.csv`, latest-or-specific) in **CSV**, **Parquet** or **JSON** (JSON Lines or an
+  array of flat objects).
+- **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
+  engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
+  credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
+- **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
+  and Fabric SQL), **Amazon Athena**, **Amazon Redshift** and **Google BigQuery** — the generic SQL engines
+  (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
+- **Google Cloud Storage** — flat files, the same shapes as ADLS Gen2 and S3, with a
+  service-account key or anonymous access and an optional emulator endpoint. Verified
+  against the `fake-gcs-server` emulator so far ([notes](datasources-checks.md#google-cloud-storage)).
+- **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
+  principal, not a separate type.
+
+## Checks & authoring
+
+A check is one data-quality rule, authored in the UI. Eight kinds ship (`check.kind`): GX
+**expectations** (including custom SQL), and the **freshness / volume / aggregate /
+schema-drift / anomaly / PII-drift / comparison** monitor kinds:
+
+- **DQ dimension** — every check is classified by the quality aspect it measures
+  (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).
+  It is filled in for you from the check type and stays editable; it powers the asset
+  **scorecard** below. See [Datasources & checks](datasources-checks.md#dq-dimension-adr-0038).
+
+- **GX expectations** — column- and table-shape rules (not-null, unique, in-set, row
+  count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
+  connection, six column metrics (null count/percent, duplicate count, unique count, blank
+  count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
+  category in the check editor, selected per check. The same category runs **custom DMFs**
+  your team created in Snowflake, over columns of the suite's table.
+  On a Unity Catalog connection, a **Databricks DQX** category runs DQX row rules as a
+  serverless job in your own workspace (ADR 0036).
+- **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
+  Read-only, single-statement (enforced). SQL datasources only.
+- **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
+  flat file you can leave the timestamp column blank, and it measures when the **file
+  last landed** instead — which catches a producer that stopped sending files, something
+  a timestamp inside the data cannot see.
+- **Volume monitor** — row count within an expected range (did the load land whole?).
+  Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
+  Redshift / BigQuery), Apache Iceberg (computed natively via a
+  `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
+- **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
+  stored baseline (did the shape change under you?). Also runs on **every** datasource —
+  introspection is per-store (SQL `information_schema`, a Parquet footer / CSV header
+  sample / a JSON file's first block for flat files, Iceberg table metadata), never a
+  full data scan.
+- **Anomaly monitor** — a rolling z-score baseline over a check's `metric_value` history,
+  with optional seasonality (weekday-aware); flags a value that is abnormal *for this
+  dataset* rather than one crossing a fixed threshold. Skips on cold start instead of
+  false-alerting, and the trend view overlays the learned baseline.
+- **Comparison check** — cross-dataset reconciliation (ADR 0015): diff the suite's
+  dataset against a baseline on **any other connection** (cross-type and cross-env both
+  work), joined on key columns, producing matched / mismatched / additional-per-side
+  buckets with a mismatch-% metric and an on-demand CSV/XLSX report — for migration /
+  replication / promotion validation.
+- **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
+  any datasource — the baseline you set thresholds from.
+- **Dry-run preview** — run one check against live data **without persisting**, on every
+  datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
+- **Severity thresholds** — band a check into **warn / fail / critical** from the observed
+  unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
+- **Check version history** — every edit is versioned and viewable per check, and any version
+  can be restored. The suite's owner or an admin can **redact** an old version whose config
+  held something it should not have (a literal pasted into custom SQL, say): the row stays,
+  its config is emptied except the tested column, and it can no longer be restored. Connections have the same history,
+  redactable by a workspace admin.
+
+## Suites
+
+A **suite** is a named set of checks bound to one connection + target
+([Datasources & checks](datasources-checks.md)):
+
+- **Run target** — one table (SQL) or one file/batch (flat file) per suite.
+- **Sharing** — per-suite **view / edit** grants (suite-level is the access model; no
+  folder scopes). See [access & auth](#access-auth).
+- **Export / import** — move a suite's definition between environments (author on DEV,
+  import against PROD) instead of re-clicking checks.
+- **Tags** — workspace-shared labels on suites, assets, connections and checks; the Suites
+  and Assets lists filter by them (all of the chosen tags). See [Tags](#tags).
+
+## Data contracts
+
+Import an [ODCS v3](https://bitol-io.github.io/open-data-contract-standard/) data contract under
+**Contracts** in the sidebar: its enforceable rules become ordinary checks in a suite per schema
+object, and the rules DataQ does not enforce are listed as such. Each clause then reports its
+compliance from the latest run, a check edited since the import is flagged as drifted, and an
+incident a contract check opens names the clause it broke. The contract exports back as ODCS,
+with the checks added since. See [Data contracts](data-contracts.md).
+
+## Tags
+
+A **tag** is a short workspace-shared label — `finance`, `team:core-data`, `tier-1` — that
+can sit on a suite, an asset, a connection or a check. The vocabulary is one list for the
+whole workspace; assigning a tag to something you can edit is enough to create it, and a name
+is stored lower-case, trimmed and single-spaced, so `Finance` and `finance` are one tag.
+
+- **Where they show.** As chips on the Suites, Assets and Connections lists and on a suite's
+  check rows; the Suites and Assets lists have a **Tags (all of)** filter, which keeps only the
+  rows carrying every chosen tag (the API's repeatable `tag=` query parameter, AND semantics).
+- **Who can assign.** The same people who can edit the thing: a suite's or check's tags need
+  edit on the suite, a connection's or an asset's tags need the workspace Admin role. Everyone
+  who can see an entity sees its tags; nobody can list a suite's tags they could not open.
+- **A tag pins an asset.** The orphan-asset sweep never removes an asset that carries a tag,
+  even when no suite, run or lineage edge references it any more — a label is a decision
+  someone made, and the Assets list is where it is kept.
+- **Deleting.** Deleting a suite, asset, connection or check drops its assignments with it.
+  Deleting a tag (Admin, `DELETE /tags/{id}`) detaches it everywhere at once; `GET /tags`
+  lists the vocabulary with a usage count per entity kind, so an unused tag is easy to find.
+- **Not a classification.** Tags are user labels. A column's PII classification comes from the
+  column policy and from warehouse-native tags ([data protection](#data-protection)), never
+  from a DataQ tag.
+
+## Running checks
+
+Four ways a suite runs (all the same authz — [feature matrix](../reference/feature-matrix.md#ways-a-suite-runs)):
+
+- **Run now** — with **live per-check progress** and **cancel**.
+- **Cron schedule** — 5-field cron + IANA timezone, DST-aware, no backfill
+  ([Scheduling](scheduling.md)).
+- **Pipeline trigger** — runs automatically when a bound ADF / Airflow / dbt run **succeeds**
+  ([Orchestration](orchestration.md)).
+- **API / MCP** — `POST /suites/{id}/run`, or the `trigger_suite_run` MCP tool.
+
+## Finding things — global search (⌘K / Ctrl K)
+
+- **One search box for the whole workspace.** Press **⌘K** (macOS) or **Ctrl K**, or use the
+  **Search** button in the header, from any page. Type part of a name and the palette lists
+  matching **suites, checks, connections and runs** as you type; a run is listed under its
+  suite's name with its status and start time, and a run's id prefix also matches.
+- **Keyboard first.** ↑/↓ move through the results, **Enter** opens the highlighted one,
+  **Esc** closes and puts focus back where it was. Prefix matches rank first; a group with
+  more matches than it shows says so — keep typing to narrow it.
+- **Your access, nothing more.** Results follow the same rules as the lists: a suite that is
+  not shared with you is absent, and so are its checks and runs; a check you may only view
+  opens on its suite rather than in the editor. Connections are listed for everyone, and open
+  on their own page only for a workspace admin.
+- **For API clients and assistants**, the same read is `GET /api/v1/search?q=…`
+  ([API reference](../reference/rest-api.md)).
+
+## Results, dashboard & history
+
+- **Monitoring dashboard** — **leads with asset-level health** (how many assets are
+  monitored, need attention, or have a run in flight — click through to an asset or the
+  full [Assets](../reference/feature-matrix.md#assets-lineage-datasources) view), then a
+  severity-weighted **health score**, pass rate, run counts, average duration, per-day
+  trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
+  the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
+- **Warehouse inventory sync** (ADR 0040) — a per-connection toggle, on by default
+  (Snowflake / Unity Catalog / the generic SQL engines), that enumerates every table the
+  connection can see into the asset view daily, so a table with no suite, run,
+  or lineage signal is **visible as unmonitored** instead of invisible. Synced
+  tables age out automatically once dropped from the warehouse. Unity Catalog
+  needs `SELECT` on `system.information_schema` for the connection's principal.
+- **Asset DQ scorecard** — per-dimension coverage and score on the asset page: which
+  quality dimensions have checks, how they scored on the latest run, and — the part
+  worth acting on — which dimensions have **no checks at all**. Three states are kept
+  distinct on purpose: a score, "no signal" (checks exist but none evaluated), and
+  "not covered" (no checks) — an asset nobody watches never shows a green tick. The
+  numbers are workspace-wide, so two people looking at one asset see one verdict.
+- **Asset browse** — two lenses over the same assets: a **By source** drill-down
+  (datasource → database/catalog → schema → table, with env + health on each leaf) and a
+  flat, searchable **All assets** table (real server-side paging, 50 rows/page). Both open
+  the asset detail (health across suites, lineage, incidents). A workspace bigger than the
+  tree view can comfortably render (2000 assets) shows an explicit "showing N of M" note
+  rather than a silently partial tree — switch to **All assets** to page through the rest.
+- **Datasources read as names, not connection strings** — an asset is *identified* by its
+  OpenLineage namespace (the physical location, so DataQ's identifiers join byte-for-byte
+  with dbt/Spark emissions), but it is *displayed* as a human label: `Snowflake · ACCT`,
+  `ADLS · account/container`, `iceberg_catalog`. The raw namespace stays one hover away
+  (and is what the copy button copies). Note the label is deliberately **not** the
+  connection name: several connections can point at one datasource instance and all
+  resolve to the same namespace — which is exactly what makes the same table reached two
+  ways a single asset.
+- **Lineage graph** — an asset's provenance and blast radius render as one
+  left-to-right graph (upstream → this asset → downstream), one column per hop, with
+  clickable nodes. Depth ≥2 comes from the blast-radius BFS, which also returns the
+  real edges — so a two-hop consumer is drawn hanging off the node it actually
+  descends from, not off the asset it never touches.
+- **Two health axes on an asset** — *Connection health* ("could DataQ reach and execute
+  against the datasource?" — a failed run, or a check the datasource threw on) and
+  *Data-quality health* (the severity-weighted verdict of its suites). They are derived
+  and shown separately, so a datasource DataQ cannot connect to never masquerades as a
+  data failure — and a run that evaluated nothing reads **No data**, never a green
+  "passing". Operational `error`/`skip` results feed only the connection axis. Both are
+  read off the runs already recorded — there is no connection-probe polling loop.
+- **Results page** — every run with its per-check outcomes; drill into a run for
+  observed-vs-expected values and **redacted failing-row samples**. Each result is labelled
+  with the check **as it was at that run** — expectation type, engine and DQ dimension from the
+  check's version history at the result's own timestamp, never its current row — on the run
+  page, in the printed report and in the CSV/JSON exports. A check with no version history
+  falls back to its current values, marked **(current)** so they are not mistaken for history.
+- **Run comparison** — from a run, **Compare with…** any other run of the same suite
+  (the earlier one becomes the base) to see what changed between them: each check's
+  status on both sides and whether it **regressed**, **improved**, stayed the same, or
+  moved through `skip`/`error` (neither better nor worse — it was not evaluated); the
+  metric delta, absolute and as a percentage of a non-zero base; and checks present on
+  only one side (**added** / **removed**). Each side shows the check **as it was at that
+  run** — its name, type, engine and dimension then, not now — so a check renamed or
+  re-engined in between is labelled on both sides rather than silently relabelled.
+  Observed values are redacted exactly as on the run page; a run that has not finished is
+  flagged as not final, since its side of the diff is still partial. Also available to API
+  clients as `GET /api/v1/runs/{run_id}/compare/{other_run_id}`.
+- **Severity + operational statuses** — warn / fail / critical for data outcomes, plus
+  `error` (evaluation threw) and `skip` (precondition unmet) kept distinct from failures.
+- **Failure reasons** — a run that fails to execute shows a redaction-safe reason
+  (config / connectivity / permission), not a bare "failed".
+- **Metric trend view** — a per-check history chart of `metric_value` over time, with
+  threshold bands and (for `anomaly` checks) a rolling z-score baseline overlay; the
+  numeric history is kept for trend/baseline even after samples are purged by the
+  retention sweep.
+- **PDF report export** — a one-click, zero-dependency PDF of a run's results, for sharing
+  outside the app.
+- **Usable on a phone** — the whole app, not just the dashboard. On a narrow viewport the
+  sidebar becomes an overlay drawer (it never squeezes the page), tables scroll inside
+  their own container rather than the page, the lineage graph scrolls inside its card, and
+  the panels that grant access or edit a suite reflow so their controls stay on screen.
+
+## Orchestration (monitor + trigger only)
+
+DataQ **observes** pipelines and triggers suites on success — it never runs them, and these
+are **not** datasources ([Orchestration](orchestration.md)):
+
+- **Azure Data Factory** — Azure Monitor alert → webhook (+ 10-min poll).
+- **Apache Airflow** — DAG callback → HMAC webhook (+ 10-min poll).
+- **dbt** — post-build callback → HMAC webhook (+ 10-min `run_results.json` artifact poll).
+
+All three sit behind one provider interface; **trigger bindings** map
+`(provider, pipeline/DAG/job, env) → suite`.
+- **Another suite** — a suite can also run when **another suite passes** (no check at fail or
+  critical): the same binding with `provider = suite` and the upstream suite as the key. One
+  hop at a time, loops refused, chains capped at five — DataQ is still not an orchestrator
+  ([Run a suite after another suite](orchestration.md#run-a-suite-after-another-suite)).
+A pipeline stage can also **gate** on DataQ (ADR 0046): `POST /api/v1/orchestration/gate`
+starts its bound suites for this run and waits for the verdict, or only reads it — DataQ
+answers, your DAG decides ([Gate a pipeline on DataQ](orchestration.md#gate-a-pipeline-on-dataq)).
+
+## Alerting
+
+Delivered when a run breaches its threshold ([Notifications & alerting](notifications.md)):
+
+- **Channels** — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
+  admin and linked per suite, with deep links + expected-vs-observed context.
+- **In-app feed** — a bell in the header with an unread count; every alert also lands in the
+  feed of each user who can see the suite, with read-acks and links to the run and incident.
+- **Threshold** — per suite: fail-only / warn-and-worse (default) / always.
+- **Severity routing** — urgency scales with severity; critical escalates.
+- **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
+- **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Disable a check** — switch a check off from its row or its editor. It keeps its
+  results, version history and baseline, and runs leave it out until you switch it back
+  on: no result, no alert, no incident. A disabled check shows a **Disabled** badge and
+  stops counting toward dimension coverage. Snooze mutes alerts while the check keeps
+  running; disable stops the check running.
+- **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
+  snooze, unsnooze, disable, enable or delete them together, or **Set thresholds** to
+  give them all the same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  none are, and the ones at fault are named. A bulk delete removes each check's results
+  and history, as a single delete does. A past run keeps the outcome it recorded when it
+  finished (checks passed, worst severity), and its page says how many of its results were
+  removed with deleted checks. Thresholds can only be set on checks of one kind
+  at a time, because a threshold is compared with the number that kind of check measures.
+- **Per-suite config** — channels + threshold + recipients set per suite.
+- **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
+  (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and
+  firing the suites bound to them. After 3 consecutive failures it alerts — once on the way
+  down, once on recovery — with the classified reason.
+
+## Data protection
+
+- **Column-aware redaction** — failing-row samples are the one place results can carry PII;
+  a suite **column policy** (auto-derived by the classifier or set by hand) keeps
+  non-sensitive breaches debuggable while PII columns stay masked.
+- **PII-minimising retention** — samples are purged after the retention window; the
+  aggregatable metric history survives.
+
+## Access & auth
+
+- **Two sign-in modes** — **email OTP** (a one-time code, no Identity Provider
+  required — the local/eval default, ADR 0032) and **OIDC SSO**
+  (provider-neutral, Azure AD and AWS Cognito both validated in prod). Exactly one is active per deployment.
+- **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
+  authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).
+- **Suite sharing** — per-suite view / edit grants, capped by workspace role (below).
+- **Profile** — your identity (the display name is editable), your effective role in plain
+  words, your suites counted by access level, the suites you own as links, and your
+  [API keys](api-keys.md). A Viewer sees the same page read-only.
+- **Workspace roles — Admin / Member / Viewer** — a stored, in-app-managed role per user
+  (ADR 0033), not just an env allowlist. Admin has workspace-wide visibility over every
+  suite/result/schedule and is the only role that can create, edit, delete, re-auth, or
+  test a **connection** — connections are shared infrastructure holding credentials, so
+  Members consume them but don't manage them. Member can create/own suites and receive
+  `edit` shares; Viewer is capped at `view` everywhere, including on any share. Roles are
+  managed under [`/admin/members`](admin.md) by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
+  bootstrap/break-glass allowlist for a fresh or locked-out workspace.
+
+## AI-assisted authoring and root-cause analysis
+
+An optional, off-by-default LLM integration (bring-your-own Anthropic or OpenAI-compatible
+provider + credential, admin-configured) powers three features: **NL→SQL generation** for
+the custom-SQL check editor, **curated check suggestions** driven by a live column profile
+constrained to a vetted expectation vocabulary, and a **root-cause narrative** for a failed
+check — ranked hypotheses citing real evidence-card layers, plus what the evidence snapshot
+could *not* see. SQL generation sends column names and counts; check suggestions add masked profile
+statistics, including each non-sensitive column's most frequent values; the RCA narrative additionally sends the triggering check's own
+observed value, routed through the same column-policy/warehouse-tag redaction floor every
+results surface applies. Raw sample rows never leave the deployment on any path. See
+[AI features](ai-features.md) for a walkthrough with real output, and
+[Security & data handling](../security/overview.md) for the full transfer-vector accounting.
+
+## AI assistants (MCP)
+
+A curated **59-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+results, checks, runs, connections, schedules, trigger bindings, notification config and the
+reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
+checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
+update / delete), import a suite and set its run target, read and restore a check's version
+history, read and set a suite's column policy, browse **assets** (the tables DataQ monitors,
+with health and lineage) and **incidents** (what is broken right now, with the evidence —
+acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
+a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
+connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
+UI. The 59 split three ways: **35 read-only, 18 that change state**, and **6 that persist
+nothing but open a live datasource connection with stored credentials** and so are gated like
+writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
+
+## Observability
+
+Structured JSON logs with `request_id` correlation (FastAPI → Celery → GX), PII redaction at
+the logger, and **OpenTelemetry** traces + logs — exported to Azure Application Insights
+and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
+
+## Deployment & portability
+
+Ships reference OpenTofu stacks for **both Azure Container Apps and AWS ECS Fargate** —
+two independent deployments of the same images (API + worker + frontend; the frontend is
+the sole public surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+store, observability export, and the orchestration providers are each swappable behind a
+provider-agnostic interface, which is what let AWS ship as a second target with zero app
+code differing between clouds ([Architecture](../architecture/overview.md), [deployment
+parity](../operate/deployment-parity.md)).

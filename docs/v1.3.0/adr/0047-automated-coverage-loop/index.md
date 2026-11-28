@@ -1,0 +1,229 @@
+# ADR 0047 — Automated coverage: system-owned suites over the asset inventory
+
+- **Status:** Accepted (2026-09-30)
+- **Date:** 2026-09-29
+- **Deciders:** @TheurgicDuke771
+- **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds), [0027](0027-suite-permission-model-workspace-admin.md) (suite permissions), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (assets, incidents), [0037](0037-workspace-visible-asset-identity.md) (workspace-true asset health), [0038](0038-dq-dimension-classification.md) (dimensions), [0040](0040-warehouse-inventory-sync-table-enumeration-seam.md) (inventory sync), [0042](0042-llm-provider-seam.md) (LLM suggestions).
+
+## Context
+
+DataQ runs what a human authors. A table nobody wrote a check for is not monitored, and a
+change nobody predicted (a volume drop, a column that starts arriving empty, a cardinality
+collapse, a load that stops) passes unseen. Inventory sync (ADR 0040) already lists every
+table a warehouse connection can see, so DataQ knows what it is *not* watching; the anomaly
+and aggregate monitor kinds already do the maths. What is missing is the loop
+that turns the inventory into running monitors without a person per table.
+
+The two halves differ in how much trust they need. A rolling baseline on a table's row count
+asserts nothing about what the data *should* be; it only reports change. A rule such as
+"`email` is never null" or "`status` is one of these four values" is a claim about the data,
+and a wrong claim is a false alert on every run.
+
+## Decision
+
+1. **Coverage is a connection capability, switched on per connection.** A new
+   `auto_coverage` config field (default off) beside `inventory_sync`, offered only on
+   connection types with table enumeration (the ADR 0040 seam: Snowflake, Unity Catalog and
+   the engine-generic SQL types). Every table the connection's inventory lists is covered,
+   except assets marked `auto_coverage_excluded`. Switching it off pauses the connection's
+   automatic suites (their schedules are disabled); it deletes nothing.
+
+2. **Automatic monitors are ordinary suites, owned by the system.** One suite per covered
+   asset, `suites.origin = 'auto'` (a new column, `'user'` for everything else; one automatic
+   suite per asset, enforced by a partial unique index). It holds ordinary checks of existing
+   kinds and runs through the same runner, results, incidents, severity routing, notifications,
+   UI and MCP as any suite. There is no second result path. The suites have **no human owner**
+   (`created_by` is NULL, and their creation is a machine write kept out of the audit log,
+   ADR 0041 §2.1). Visibility follows ADR 0027: workspace admins see all of them and can share
+   them like any suite, and the asset's health rollup stays workspace-true (ADR 0037), so every
+   member sees the verdict. *(Amended 2026-09-30: the first draft named the admin who switched
+   coverage on as owner; an owner who never created the suite made no sense for a system-owned
+   one.)*
+
+3. **Universal baselines start without approval.** Each automatic suite gets, where the table
+   allows:
+   - **volume**: an anomaly check on the row count, weekday seasonality on;
+   - **freshness**: an anomaly check on the age of the newest value in a timestamp column the
+     profiler identifies as a load or event time (by type and name); with none, the suite
+     records the gap instead of guessing;
+   - **schema shape**: a schema-drift check;
+   - **column profile**: one anomaly check whose metric is new, `column_profile`, measuring
+     every column's null percentage and distinct count in one pushdown query and baselining
+     each series separately in the check's `monitor_baselines` row. Its result names the
+     columns that moved; its `metric_value` is the largest deviation. One check per table, not
+     two per column, so a 200-column table is one query and one row, not 400 checks.
+
+   Every one of them assumes nothing about correct values: they report change against the
+   table's own history, and skip until the history exists, as the anomaly kind already does on a cold start.
+
+4. **Rules that assert something wait for a person.** Profiling and, when an LLM is
+   configured, the LLM check suggester propose rules for the covered table (not-null where a column
+   has never been null, unique on an identifier, accepted values on a low-cardinality column,
+   ranges). They land in a review queue, `check_suggestions` (source `profile` or `llm`,
+   status `pending`, `accepted`, `rejected`). Accepting creates the check in the automatic
+   suite; rejecting is remembered and the same rule is not proposed again.
+
+   > **Amended 2026-10-04.** The reconciler proposes profile rules on its own. LLM
+   > suggestions are made **on demand only**: a person runs *Suggest checks* on an automatic
+   > suite and the validated suggestions the queue can hold are saved to it (freshness rules and
+   > value sets over a sensitive column are not). The reconciler never
+   > calls the model.
+
+5. **Full severity.** Automatic checks warn, fail and go critical like authored ones and alert
+   through the suite's notification settings, which default to the workspace channel.
+   Defaults: anomaly checks warn at 3 standard deviations, fail at 4, critical at 6; a schema
+   change fails. Admins tune them per connection, and a person can edit any check.
+
+   > **Amended 2026-10-13.** Per-connection tuning was never built, and the anomaly defaults
+   > become settings (a schema change failing is not one: it has no number to tune). They resolve
+   > through one hierarchy: **asset override → workspace setting → built-in default**.
+   >
+   > - **What is set.** *Sensitivity* is the three deviation thresholds, held **per baseline**
+   >   (volume, freshness, column profile), because the column profile takes the largest
+   >   deviation over many series and is the one most likely to need loosening on its own.
+   >   *Baseline shape* is the window, minimum points and weekday seasonality, shared by the three.
+   > - **Where.** The workspace setting is one row, `coverage_settings` (an absent row means the
+   >   built-in defaults); the asset override is `assets.auto_coverage_config`. Both hold the same
+   >   document and both are Admin-only and audited. There is no per-connection level: the
+   >   connection decides *whether* its tables are covered and pays the warehouse cost, which is
+   >   why the switch lives there, but sensitivity costs nothing and is a property of the table.
+   > - **Whole groups only.** A level sets a baseline's three thresholds together, or the three
+   >   shape values together, or leaves the group to the level below. Each group is validated
+   >   where it is saved, so no merge across levels can produce an unordered threshold set or a
+   >   minimum above its window, and a workspace change cannot invalidate an asset override.
+   >
+   > An automatic anomaly check **inherits at run time**: each run resolves its thresholds and
+   > shape through the hierarchy, so a workspace change reaches every covered table on its next
+   > run, and the result records the values it was scored against.
+   >
+   > - **The stored values stay.** An inheriting check keeps its threshold columns and window
+   >   keys populated with the values in effect when it was created, so it remains a valid
+   >   anomaly check for export and for any reader of the table. They are not what it runs on:
+   >   one resolver serves the run path, dry-run and every read surface (REST and MCP), which
+   >   return the effective values and say that they are inherited and from which level.
+   > - **The flag.** A check says which it is in its config, `inherit_coverage_settings`. It is
+   >   server-owned: `true` on every check the reconciler creates from now on, carried over
+   >   unchanged by an edit that does not touch these values, and refused on a check that is not
+   >   automatic. Editing any threshold, the window, the minimum points or seasonality sets it to
+   >   `false` and pins all of them at the values then in effect. "Editing" means sending a value
+   >   that differs from the one in effect, which is what every read surface shows. The read
+   >   surfaces do not return the flag (they report inheritance in a field of their own), so a
+   >   client that edits what it read and sends it back is making an ordinary edit. A sent flag
+   >   decides outright: `false` pins, and `true` makes the check inherit, in which case the
+   >   numbers sent beside it are a snapshot that no run uses. Restoring a version restores that
+   >   version's flag.
+   > - **Suite documents.** An inheriting check is exported with the flag and the values it
+   >   runs on. Applying a document follows the edit rule, and its plan reports no change for
+   >   numbers it would not apply. A check that cannot inherit (a new suite made by import, or
+   >   a person's suite a document is applied to) drops the flag and takes the numbers as its
+   >   own, so it alerts where the source did.
+   > - **Checks created before this amendment** have no flag. One inherits while its stored
+   >   values equal the values the reconciler wrote then (3 / 4 / 6; window 8, minimum 4,
+   >   seasonality on), which is the set nobody has tuned. That signature is fixed here, apart
+   >   from the built-in defaults, so changing a default later does not change which old checks
+   >   inherit.
+   > - **History.** An inheriting check always retains the seasonal horizon (seven times the
+   >   window), so switching seasonality off and on again loses nothing. Shortening the window
+   >   does trim older observations on the next run, and lengthening it afterwards means waiting
+   >   for them again; the settings surface says so before a shorter window is saved.
+
+   > **Amended 2026-10-20 (ADR 0048 phase 7).** The baseline shape gains **`yearly`**: compare
+   > with the same time in earlier years (ADR 0048 decision 4), **off by default**.
+   >
+   > - **What it reaches.** The row-count and freshness baselines. The column profile never
+   >   takes it, so it is not written into a profile check's config and a shape with it on is
+   >   still valid for the profile.
+   > - **It is part of the shape group.** Window, minimum points and seasonality must still be
+   >   set together; `yearly` may be left out, and left out it is off. So a level that sets the
+   >   shape without it switches yearly off for its tables even when the level below has it on:
+   >   the group is still set whole, and the rule needs no exception. A document stores it only
+   >   when on, so a document saved before it existed reads as it did.
+   > - **Inheritance and edits.** An inheriting row-count or freshness check runs on the
+   >   resolved `yearly` whatever its stored config says, so a stored `true` cannot outlive the
+   >   setting. Changing `yearly` on an inheriting check is an edit like the window: it pins. A
+   >   whole-table check takes declared calendar entries only with `yearly` on; when the setting
+   >   switches `yearly` off under an inheriting check that names some, they lie idle (the run
+   >   does not fail), as do the time zone keys.
+   > - **History.** A yearly whole-table baseline keeps a one-a-day series beside its run-by-run
+   >   points, three years of it, which is why it is off by default: across every covered table
+   >   that is the largest history DataQ stores. Days are UTC for automatic checks (there is no
+   >   time zone setting). Switching `yearly` off keeps both series; on again carries on from
+   >   them. It cannot be seeded, so a covered table's first yearly verdict is a year after the
+   >   switch, and each result says `no_earlier_year` until then.
+
+6. **The loop never overrides a person.** Checks carry `origin` (`user`, `auto`,
+   `suggestion`). The reconciler only adds a universal check that is missing and never edits
+   an existing one. A check a person deletes is recorded on the suite and not recreated. An
+   edited threshold stays edited.
+
+   > **Amended 2026-10-13.** Inheritance does not weaken this. The reconciler still writes
+   > nothing to an existing check; an inheriting check changes behaviour because an Admin changed
+   > a setting, which is a person's decision, and a check a person has edited stops inheriting.
+
+7. **The reconciler.** A daily beat task, after inventory sync, per covered connection:
+   creates missing automatic suites and checks, pauses the suites of tables that aged out of
+   the inventory, and refreshes the suggestion queue. Each automatic suite gets a daily
+   schedule at a minute derived from the asset id, so a large inventory does not fire at once.
+   `AUTO_COVERAGE_MAX_ASSETS` (default 500) caps the tables one connection covers, with loud
+   truncation like the inventory's own cap, because every covered table is a daily warehouse
+   query cost the customer pays.
+
+8. **False positives are measured, because an alarm that cries wolf gets switched off.**
+   Resolving an incident takes an optional `resolution` (`fixed`, `expected_change`,
+   `false_positive`); the rate of `false_positive` among automatic-suite incidents is shown
+   beside coverage. The coverage figure itself is the share of inventory assets watched by at
+   least one suite that ran in the last seven days, split into assets watched only
+   automatically and assets with authored checks.
+
+9. **Surfaces.** The connection form gains the switch (admin-only, like every connection
+   change); assets show whether they are covered and can be excluded; the review queue is a
+   page per connection; the dashboard shows coverage and the false-positive rate. MCP gets read
+   tools for coverage and the queue; accepting a suggestion over MCP follows the same `edit`
+   gate as creating a check.
+
+## Phases
+
+1. Schema (`suites.origin`, `checks.origin`, `assets.auto_coverage_excluded`,
+   `incidents.resolution`), the connection switch, the reconciler with volume, freshness and
+   schema-drift checks, and origin badges in the UI.
+2. The `column_profile` metric.
+3. The review queue: profile and LLM suggestions, accept and reject, in the UI and API.
+4. Coverage and false-positive figures on the dashboard, and the resolution choice on incidents.
+5. Sensitivity settings (the 2026-10-13 amendment): the `coverage_settings` row and the
+   asset override, run-time inheritance, the admin and asset surfaces, and the false-positive
+   rate broken down by baseline and by connection.
+
+## Consequences
+
+- Coverage stops depending on someone writing a check per table, which is the gap the
+  roadmap names first.
+- Each covered table costs a few warehouse queries a day. The cap, the per-asset exclusion and
+  the per-connection switch are the controls; the docs must state the cost plainly.
+- Full severity means a noisy baseline pages people. The false-positive rate is the signal to
+  tune, and it is visible from the first incident.
+- Automatic suites are real suites, so every existing surface shows them without new work, and
+  a person can take one over by editing it.
+
+## Considered and rejected
+
+- **Hidden baselines** (a separate engine with no visible checks): a second result path and a
+  second UI to explain what is watched.
+- **Approving every monitor:** coverage would again depend on someone clicking, which is the
+  gap this closes.
+- **Coverage per asset or workspace-wide:** per asset keeps it manual; workspace-wide takes the
+  warehouse-cost decision away from whoever owns each connection.
+  *(2026-10-13: this stands for the coverage switch. Sensitivity is set at exactly those two
+  levels, because it carries no warehouse cost.)*
+- **Applying a changed setting at check creation only** (decided 2026-10-13): simpler, and the
+  reconciler would stay the only writer, but a workspace change would never reach an existing
+  suite, leaving each check as the only knob.
+- **A hidden baseline with no check** for the zero-config case: already
+  rejected above as "hidden baselines"; the automatic suite is that system.
+- **The reconciler calling the LLM for every covered table** (decided 2026-10-04): an unattended
+  call per table sends each table's profile to the model provider and spends tokens with nobody
+  having asked, on a schedule the workspace cannot see. On demand keeps both the data flow and
+  the cost tied to a person's request.
+- **Starting automatic monitors at warn only:** considered to limit early noise; the
+  maintainer chose full severity, with the false-positive rate as the check on it.
+- **Two checks per column** for null rate and cardinality: a wide table would become hundreds
+  of checks and hundreds of queries.

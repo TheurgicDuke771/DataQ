@@ -1,0 +1,937 @@
+# Changelog
+
+Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
+the per-PR history lives in the repo's commit log and pull requests. Changes since the last
+release are recorded one small file per change in the repository's `changelog.d/` directory
+and listed under **Unreleased** when this site is built; a release gathers them into a dated
+section below.
+
+<!-- changelog.d:unreleased -->
+
+## Unreleased
+
+_No changes recorded since the last release._
+
+## v1.3.0 — 2026-11-28
+
+Rollback: previous images on this schema — yes · DB restore needed — no · downgrade target
+`49bd96efd9fc`
+
+### Security
+
+- **A failed check's expected values no longer leak a sensitive column's patterns when an extra option sits beside them.** Each value is now judged on its own, so an option such as how patterns combine can no longer dilute the check for personal data.
+- Alerts (webhook, Slack, email and Teams) no longer include the values of a sensitive column in a failed check's expected values. Run results and check reads now also withhold a DQX rule's allowed values and limits, and an aggregate monitor's warning and critical bounds, on such a column. Incident evidence stored earlier is cleaned up as well.
+- **Run results no longer show the accepted values of a sensitive column.** A result's expected value repeats the check's configuration. On a column classified as sensitive, its accepted values, patterns and value bounds now read as withheld in run results, the MCP run tools, incident evidence and the incident summary prompt, as they already did on the check itself.
+- **A contract export withholds the patterns and bounds of a sensitive column too.** Besides its listed values, the export now withholds a sensitive column's pattern and bounds, every argument of its rules, the patterns and bounds in a Great Expectations or DataQ rule, and the whole rule of any other engine. A numeric bound is removed rather than replaced, and the property says so. SQL text, a rule's comparison count and free text are still shown; the guide lists them.
+- **A check on a sensitive column hides its patterns and value bounds too.** The check editor, version history, suite export, API and MCP tools already hid the accepted values of a column classified as sensitive. They now also hide its value pairs, regular expressions and LIKE patterns, and the minimum and maximum of a values-in-range check or a min or max aggregate. Saving a check without touching those fields keeps the real values.
+- **A contract export no longer shows the listed values of a column marked sensitive.** A data
+  contract can list a column's values: a property's `enum` and `examples` (nested fields, array
+  items and map keys and values included), the list arguments of a rule such as `validValues` or
+  `missingValues`, and a custom rule's `value_set`, `value_pairs_set` or `regex_list`. When that
+  column is classified as sensitive after the contract was imported (a suite's column policy, a
+  warehouse tag, fail-closed mode or the PII classifier), the exported ODCS document now shows
+  `<redacted>` in their place, on the REST export and the MCP `export_contract` tool, for every
+  reader. Every suite of every version of the contract and the table's own tags are asked; a
+  schema object nothing stands behind is withheld with the reason `sensitivity_unknown`. The
+  document names what it withheld: `dataq.valuesWithheld` on the property or rule,
+  `dataq.redactedColumns` and `dataq.sensitivityUnknownObjects` on the document, and the MCP tool
+  also returns `redacted_columns`, `redaction_reasons`, `sensitivity_unknown_objects` and
+  `not_withheld`. Patterns, bounds, SQL text and custom-property values are not withheld. The
+  stored contract and its checks keep the real values. Importing a document that still holds
+  `<redacted>` in one of those places is refused (`422 value_set_redacted`), so an export can no
+  longer overwrite a contract's real values or switch off the checks they back.
+- **A table DataQ has never read classifications for no longer vouches for a contract object.** The contract export treated any known table as able to speak for an object, even one whose warehouse tags were never read. With no suite left on that object, its listed values were exported in full. Such an object is now reported as not judged and its value lists are withheld, as when no table is known at all.
+- **Redacting a check version now clears the value from the audit log too.** Before, a literal
+  pasted into a check (a token in custom SQL, a value in a value set) and then edited out could be
+  redacted from the version history but stayed in the audit events that recorded the edit. A
+  redaction now also scrubs every check event that carried the same config down to the tested
+  column. A workspace admin can scrub one check event directly, with a reason, from the audit log
+  (**Scrub config**, or `POST /api/v1/admin/audit-events/{id}/scrub`), for a deleted check or a
+  version redacted before this release.
+
+  This is the one exception to the append-only audit log, and the hash chain and its anchors still
+  verify:
+  - A scrubbed row keeps its hash.
+  - Each scrub is its own chained `audit_event.scrub` event, with the reason and the hashes, never
+    the value.
+  - `GET /admin/audit-events/verify` reports `scrubbed_count`.
+  - With an object-lock anchor, every scrub leaves a receipt in the store, and verification
+    reports a scrub event without one (`unanchored_scrub_count`).
+
+  A row that already fails verification is never scrubbed. New column `audit_events.scrubbed_at`,
+  from the previous migration.
+- **Dependency security updates.** `fastmcp` moves to 4.1.2 for GHSA-7xgj-8392-5q4r and GHSA-vqqp-x5qm-5qp4 (DataQ's own `/mcp` server gates every tool itself and never builds the affected client-side OAuth providers, so neither reached the product). `dompurify`, loaded only by the Monaco editor, moves to 3.4.17 for GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr and GHSA-c6gr-qvv4-5v3f.
+- **filelock upgraded past its 3.x advisory batch.** The backend image now ships filelock 4.2.8,
+  which fixes a set of local-attacker lock-file advisories, including one in the Unix file lock the
+  Snowflake connector takes around its OCSP-response and CRL caches. The Snowflake connector moves
+  to 4.8.1 (a patch release) to allow it; no configuration change is needed.
+- **Dependency security updates.** The CA bundle (`certifi`) moves to 2026.10.19 for PYSEC-2026-4320. `follow-redirects`, which only the Node build and test tooling loads through axios (the browser app uses the browser's own HTTP client), moves to 1.16.1 for GHSA-q3jh-wrc6-jgq8 and GHSA-8r9p-f939-6h3c.
+- **A run with a PII drift check no longer shows failing samples before that run's detections are
+  saved.** Such a run now publishes all its results together when it finishes, so a column the
+  run's profile detects for the first time is already masked when its samples can be read. The
+  run-progress view of these suites shows their checks completing together at the end.
+- **Stale or replayed Azure Monitor alerts no longer start a pipeline poll.** A fired alert older
+  than `ORCHESTRATION_ALERT_MAX_AGE_MINUTES` (default 60), dated in the future, or without a fired
+  time is acknowledged and ignored. The regular ten-minute poll still records the run.
+- **Dependency security updates.** `databricks-sql-connector` moves to 4.8.0, which allows
+  `oauthlib` 4, and `oauthlib` moves to 4.0.0 for two advisories: CVE-2026-49265 (also published
+  as PYSEC-2026-4114), a timing side channel in the PKCE check, and CVE-2026-49264, a JSONP
+  callback injection in the token-revocation endpoint. Both are in oauthlib's
+  authorization-server code, which DataQ never runs (it only acts as an OAuth client), so
+  neither reached the product. The connector's new geospatial and catalog-name-escaping
+  options are opt-in and off by default, so Unity Catalog connections behave as before.
+- **A min or max aggregate no longer exposes a sensitive cell through its metric.** An `aggregate`
+  check measuring min or max records one cell of its column as `metric_value`. On a column the
+  suite's column policy or the warehouse's tags mark sensitive, that value is now withheld on
+  every read surface (run results, run comparison, the per-check trend, incident evidence,
+  alerts, webhooks, the API and MCP): `metric_value` is null and the new `metric_value_redaction`
+  field names the rule that masked it. Stored incident evidence is masked when read; the
+  `redact_stale_incident_evidence` backfill also rewrites it on disk.
+
+### Added
+
+- **The dashboard's pre-counted result histogram checks itself every day.** The worker recounts
+  the last 48 hours from the results themselves at 02:23 UTC and repairs any hour whose count
+  drifted. A repair is logged as the `result_rollup_drift_repaired` warning, with how many counts
+  were wrong and by how much, so operators can alert on it.
+- **Anomaly checks on a value per day or week.** Two new anomaly metrics,
+  `period_row_count` and `period_sum`, watch the rows or the summed amount in each calendar
+  period of a date column, for tables whose whole-table row count only grows. A period is
+  judged once it is complete and has settled (`timezone`, `settle_hours`), and each period
+  gets one stored point. On its first run a check seeds up to three years of history from
+  the table's own rows (marked `backfilled`, apart from what later runs observe), so it
+  scores at once; `backfill: false` turns that off.
+- **Yearly seasonality for anomaly checks.** With `yearly` on, a per-period anomaly check
+  also compares with the same time in earlier years: a peak that came last year is expected
+  this year and gets room in proportion to its size, the days after it are not judged
+  against it, and a peak that fails to arrive is flagged. It applies once the history
+  reaches back a year, which seeding supplies at once, and each result says whether it was
+  applied and what was expected.
+- **A declared seasonal calendar for anomaly checks.** Workspace admins keep one calendar of named seasonal periods (recurring month-and-day ranges, or dated entries grouped into a series across years) in Admin → Calendar or through the REST API, audited like other admin changes. A per-period anomaly check with `yearly` on attaches the entries that apply to its table: a day inside one is compared with the same day of the period's previous occurrence, so a sale that moves or a fixed date lines up, and the days after it are not judged against it. In a period's first year a rise is reported as within the period rather than banded, while a drop still alerts. Every result says which entry applied and what the run would have scored without the calendar.
+- **Detected seasonal periods, and promoting one to the calendar.** A per-period anomaly check now reports the seasonal periods its own history shows: runs of at least two days (or one week) at 1.5 times the level the check is scored against, called recurring when they come at the same time in two or more years and seen once otherwise, with each year's dates, peak ratio and how much history stood behind them. A detected period is a description and changes no verdict. A workspace admin can promote one to the declared calendar (a recurring period as a month-and-day range, one seen once as a dated entry) and attach it to the check in the same step. AI assistants gain two read-only MCP tools, `list_seasonal_periods` and `get_detected_seasonal_periods`.
+- **Yearly seasonality on whole-table row count and freshness anomaly checks, and in automatic coverage.** `yearly: true` now works on `row_count` and `freshness_age_hours` anomaly checks. The check keeps a daily history (the median of each day's runs, in its `timezone`) beside its usual run-by-run one and uses it only to learn what this time of year looks like; each run is still scored against its recent runs, scaled by that. The daily history starts when the setting is switched on, so the first yearly verdict comes a year later and every result says why until then. Switching it off keeps both histories. Workspace admins can switch it on for the automatic row-count and freshness baselines under **Admin → Settings → Automatic coverage** or per table; it is off by default.
+- **Seasonal calendar and per-period trends in the app.** A new **Admin → Calendar** page lists, adds, edits and deletes the workspace's seasonal periods; deleting one a check still attaches is refused with those checks listed. In the check editor a per-period anomaly check picks its date and sum columns from the table's columns, its time zone from a list, and, with yearly seasonality on, the calendar entries that apply to it; turning yearly off warns that saving removes them. The check's trend draws, for each judged period, the band it was scored against and the expected value where the yearly comparison applied, marks seeded points, highlights attached calendar entries and outlines detected periods, and says why the yearly comparison did not apply where it did not. Admins can promote a detected period to the calendar from the trend. Run detail explains how each period was judged and whether the calendar changed the verdict.
+- **A Helm chart for your own Kubernetes cluster.** `deploy/helm/dataq/` installs the api, worker, scheduler and frontend from the published images, runs database migrations as a pre-install/pre-upgrade hook so a failed migration stops the roll, and reads every credential from a Secret you create — no value in the chart holds one. Sign-in mode, secret store, ingress, TLS to the api, PodDisruptionBudgets and a NetworkPolicy that admits only the frontend to the api are all values, checked by a schema at install time. Every pod runs non-root on a read-only root filesystem. See *Install on Kubernetes (Helm)*.
+- **Third-party notices and an SPDX SBOM ship with every image and release.** Both container images carry `/THIRD-PARTY-NOTICES.md` (the frontend also serves it at `/third-party-notices`), generated at build time from the exact dependency set installed, with full licence texts and Apache NOTICE content; a release tag attaches the notices plus a Syft SPDX SBOM per image to the GitHub Release. CI and the backend image build now fail on a strong-copyleft, source-available or unknown-licence dependency (`scripts/check-licenses.py`, with reviewed overrides in `scripts/licenses/overrides.toml`).
+- **Disable a check without deleting it.** A check can be switched off from its row on the
+  suite page, from its editor, or many at once with **Disable selected** and **Enable
+  selected**. A disabled check keeps its results, version history and baseline and is left
+  out of every run until it is switched back on: it records no result and raises no alert
+  or incident, and it stops counting toward dimension coverage. Until now the only ways to
+  stop a check were to delete it, which erases its history, or to snooze it, which still
+  runs it. Disabling does not close an incident already open on the check. In the API,
+  `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
+  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`, and
+  applying a file that does not mention `enabled` leaves each check's switch alone; over
+  MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
+  `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
+- **MCP `list_assets` and `get_asset` return the asset health score.** Each asset summary
+  carries `health_score`, the same workspace-wide figure the asset pages show: null when
+  nothing evaluated, which is not 0. `list_assets` accepts `sort="health_score"` to order the
+  whole workspace lowest score first before paging, with unscored assets last, and echoes the
+  `sort` it applied. The tool descriptions say what the score leaves out: suites whose latest
+  run did not complete, skipped and errored checks, and anything no check tests.
+- **MCP run tools say who or what started a run.** `list_runs` returns `triggered_by_label`
+  beside the stored `triggered_by` marker (`Manual — <name>`, `Schedule`,
+  `Apache Airflow — <pipeline and run>`), the same label the app shows, and `get_run_results`,
+  `get_suite_results` and `get_run_status` now carry both fields too. The label is null when
+  no trigger was recorded or the marker has a shape DataQ does not recognise, and an upstream
+  suite is named only when the caller can see it.
+- **A second audit tamper-anchor class: write-once objects.** `TAMPER_ANCHOR=object_lock`
+  writes each audit hash-chain head as its own immutable object — S3 Object Lock (AWS or any
+  S3-compatible store with lock enabled, such as MinIO) in COMPLIANCE or GOVERNANCE mode, or an
+  Azure immutable blob with a Locked or Unlocked policy and an optional legal hold — retained
+  for a configured number of days, with the credential read from the secret store and an
+  incomplete configuration refused at boot. Unlike the webhook, these anchors are read back:
+  `GET /admin/audit-events/verify` and the admin Compliance card now list the published heads
+  and report each as present in the chain, explained by a retention purge, missing (the
+  signature of a database restored to before it was published, or a rewritten chain) or not an
+  anchor at all; an unreachable store is reported as unavailable, never as "nothing
+  published". `GET /admin/deployment` now also lists the tamper anchor and OpenLineage
+  emission among the external-transfer vectors, on or off.
+- **Every masked sample column now says why.** Beside `redacted_columns`, run detail, the MCP
+  `get_run_results` / `get_suite_results` tools and the Teams, Slack, email and webhook alerts carry
+  `redaction_reasons` (same keys): `own_tag`, `inherited_tag` (through column lineage), `policy`,
+  `unclassified` (fail-closed mode), `detected` (the profiler), `classifier`, or `default_mask` — the
+  column was never classified, so masking is precautionary. The run page shows the reason beside
+  each masked column; the in-app notification feed links to it. What is masked is unchanged.
+- **Long lists can be paged by cursor.** `/runs`, `/pipeline_runs` and `/incidents` return an `X-Next-Cursor` header while there are more rows; send it back as `cursor` (instead of `offset`) for the next page. A page then costs about the same however deep it is, where a large `offset` costs in proportion to itself: 500,000 runs deep, 1.1 ms against 79 ms. The total (`X-Total-Count`) comes with the first page only, and offset paging is unchanged. Incidents sort by when they last breached, so an incident that breaches again while you page can be missed; none is returned twice.
+- **Data contracts in the Open Data Contract Standard.** Import an ODCS v3 document and DataQ
+  creates one suite per schema object with the checks its schema, quality rules and latency promise
+  describe; every clause it cannot enforce is listed with the reason, never dropped. A new version
+  reconciles the same suites without overwriting a person's edits, and the contract exports back to
+  ODCS with every check, including ones people added.
+- **A contract shows whether each clause is holding.** A contract's detail carries, per clause, what
+  its check found in the latest run, whether the check was edited since the import, and whether
+  that run has finished; an incident on a contract-derived check names the clause it broke, and
+  alerts lead with it. A suite can also be linked to a contract by hand.
+- **AI assistants can read data contracts.** Three read-only MCP tools list the contracts you can
+  see, report whether each clause is holding in its suite's latest run (saying when a run is still
+  going and when some suites are hidden from you), and export a contract as an ODCS document.
+  Importing a contract stays in the app and the REST API.
+- **A Contracts page.** The sidebar's Contracts page lists the data contracts DataQ enforces, one row
+  per version with the current one marked, and imports an ODCS document onto a connection. A
+  contract's page shows each clause's state in its suite's latest run, which clauses have no check
+  or are not enforced, which checks were edited since the import, and warns when a run has not
+  finished or some suites are hidden from you; it downloads the contract as ODCS. Suites enforcing a
+  contract show a link to it.
+- **MCP tools carry safety annotations.** Every tool on the MCP server now declares the MCP `readOnlyHint`, `destructiveHint` and `openWorldHint` annotations, matching the read-only, changes-state and live-probe split in the tool reference, so a client can tell which calls to confirm without reading the description. The live probes are marked as reaching outside DataQ and never as read-only.
+- **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
+  Teams or Slack webhook or recipient list from before channels existed now offers a
+  workspace admin **Promote to channel** on the suite's notification panel. It creates a
+  channel from the existing value, links it to the suite and removes the inline value; the
+  webhook URL is moved without being shown, so it works when nobody still has the URL. If
+  the deployment sets a workspace default for that destination, the suite alerts it as well
+  afterwards, and the app says so. In the API,
+  `POST /suites/{id}/notifications/promote`.
+- **Opt-in product-usage telemetry, off by default.** An operator can set `TELEMETRY_SINK`
+  (`file` for JSON lines on disk, or `otlp` for the existing OpenTelemetry exporters) and a
+  workspace admin can then opt in under Admin → Settings → Usage telemetry. DataQ records a
+  fixed list of events — such as a page viewed, a check created or a run completed — as an
+  OpenTelemetry counter and log events, with counts and fixed-vocabulary attributes only: never
+  a table or column name, SQL, suite name, email or credential. The full event list is shown on
+  the settings page, and the deployment-posture endpoint reports the setting whether it is on or
+  off. Nothing is ever sent to DataQ's authors.
+- **Backup, restore, upgrade and rollback runbook.** The docs site now has a
+  [Backup, restore & rollback](../operate/backup-restore-upgrade.md) page: what to back up
+  for each secret-store mode (the database, the OpenBao data and the CA for the prebuilt-image
+  stack, only the secret names for a managed vault), a `pg_dump` / `pg_restore` procedure with
+  a verification step, what a restore loses, and the rollback doctrine — a release whose
+  schema is compatible with the previous release's images rolls back with
+  `alembic downgrade <previous head>` and the previous images, with no restore. Every release
+  now carries a **Rollback** line saying whether that holds, and CI proves it on every change:
+  a database at the previous release's schema, seeded with that release's demo data, is
+  upgraded to the current head, downgraded back and upgraded again
+  (`python -m backend.scripts.upgrade_path`).
+- **Alerts now have an in-app home.** A bell in the header shows how many alerts you have not
+  read; its feed lists every run outcome the alerting layer published for a suite you can see,
+  newest first, each a link to the run and, when one is open, to the incident. Mark an entry
+  read, or all of them. Entries follow suite access (owner, people the suite is shared with,
+  workspace admins) and read state is yours alone; the same per-suite threshold, routing,
+  dedup and snooze rules apply as for Teams, Slack, email and webhooks. The feed is readable
+  over `GET /notifications`, `GET /notifications/unread_count`, `POST /notifications/{id}/read`
+  and `POST /notifications/read_all`. Entries are kept for `NOTIFICATIONS_RETENTION_DAYS`
+  (default 90). A run in which nothing breached but a check errored or was skipped now reads
+  *N of M checks could not be verified* on every channel — feed, Teams, Slack and email — where
+  it used to read as all passed.
+- **Run comparison.** From a run's page, **Compare with…** opens any other run of the same
+  suite diffed check by check: each check's status on both sides and whether it regressed,
+  improved, stayed the same or moved through `skip`/`error`; the metric delta, absolute and
+  as a percentage of a non-zero base; and the checks present on only one side. Each side is
+  rendered as the check was at that run — name, type, engine and dimension then, not now — so a
+  check renamed in between is labelled on both sides. Observed values are redacted exactly as
+  on the run page, and a run that has not finished is flagged as not final. API clients get the
+  same diff at `GET /api/v1/runs/{run_id}/compare/{other_run_id}`; a pair from different suites
+  is refused with `runs_not_comparable`.
+- **Google Cloud Storage is a datasource.** The third object store beside ADLS Gen2 and S3: the
+  same flat-file checks, batch patterns, browsing, profiler, sampling and arrival-time freshness
+  over a GCS bucket, authenticated with a service-account key file (read-only scope) or
+  anonymously for a public bucket, with an optional endpoint for an emulator or a GCS-compatible
+  store. Verified against `fake-gcs-server`; a real Google Cloud bucket has not yet been exercised.
+- **Google BigQuery is a datasource.** Checks, custom SQL, the freshness, volume, aggregate
+  (all but the median) and anomaly monitors, the profiler, schema drift, comparison reads,
+  browsing and the inventory sync run against a BigQuery project, authenticated with a
+  service-account key file. Every query DataQ runs carries the connection's maximum bytes billed
+  (10 GiB unless you set it), so a query that would bill more is refused before it runs and is not
+  charged; catalog reads use BigQuery's free metadata API. BigQuery has no read-only session: give
+  the service account only the BigQuery Data Viewer and Job User roles. Verified against the
+  `goccy/bigquery-emulator`; a real BigQuery project has not yet been exercised.
+- **A monitor that fires when a column starts carrying personal data nobody classified.** The
+  new **PII drift** check (`monitor:pii_drift`, kind `pii_drift`) profiles every column of its
+  suite's table on each run, keeps what looks like email addresses or encoded blobs as a
+  classification of the asset, and counts the columns that are new against its baseline and
+  that carry no warehouse tag, no classification inherited through lineage and no entry in the
+  suite's `pii_columns`, and that nobody dismissed. One such column fails the check by default
+  (thresholds editable); the first run only learns the current set and reports skip. The
+  baseline never moves on its own, so the check keeps failing until the column is classified,
+  dismissed or ignored (then the incident resolves) or the check is re-baselined. It runs on
+  every datasource the column profiler supports and costs one profile per run.
+  Re-baseline, dry-run (the raw detector view, nothing persisted) and the incident card's kind
+  detail (`new_columns`, names only) work as for schema drift; over MCP, `create_check` and
+  `dryrun_check` accept the kind.
+- **Columns that start carrying personal data are masked without anyone tagging them.** Every
+  profile of a suite's own table now runs the two value detectors that look at data rather
+  than names (email addresses, encoded blobs) and keeps what they find as a classification of
+  the asset, on every datasource, including the ones with no warehouse tag (PostgreSQL, MySQL,
+  Trino, SQL Server, files, Iceberg). A detected column is masked in failing samples, incident
+  evidence, alert cards and over MCP from the next profile on. The rung is additive only: a
+  warehouse tag, a column inherited as sensitive through lineage and a suite's `pii_columns`
+  all outrank it, a suite's `identifier_column` clears it, it never satisfies fail-closed
+  clearance, and it does not travel along lineage. A re-profile that no longer sees the values
+  changes nothing; only a workspace admin clears a detection, from the asset page's
+  **Detected personal data** panel (`PATCH /assets/{id}/classifications`), and the
+  dismissal is recorded in the audit log and survives a later re-detection. The asset detail
+  (`GET /assets/{id}`, MCP `get_asset`) lists the detections, dismissed ones included, each with
+  what it does now (masks, overridden by the column's own warehouse tag, or dismissed), and when a
+  full profile last looked, so an empty list is never mistaken for "never looked".
+- **Global search (⌘K / Ctrl K).** A search button in the header, or the shortcut from anywhere
+  in the app, opens a command palette that finds suites, checks, connections and runs by name
+  as you type, with the arrow keys to move, Enter to open and Escape to close. Results follow
+  your access: a suite you cannot see is absent, and so are its checks and runs. The same read
+  is available to API clients as `GET /api/v1/search`.
+- **Tune automatic coverage in one place.** The thresholds and history window of the
+  automatic row-count, freshness and column-profile checks are now settings, not fixed
+  numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**
+  (`PUT /admin/coverage`) and can override them for one table on its asset page
+  (`auto_coverage_config` on `PATCH /assets/{id}`); the nearest
+  level that sets a group wins, then the built-in default (warn 3, fail 4, critical 6
+  deviations; 8 same-weekday runs, 4 before scoring). Sensitivity is set per check, so the
+  column profile can be loosened without loosening the others. Automatic checks inherit the
+  settings on every run, so a change needs no check edited, and each result records what it
+  was scored against. Editing a threshold or the window on an automatic check gives it its
+  own values and stops it inheriting. Check responses show the values in effect and an
+  `inherited` field (`inherited_from` over MCP) naming the level they came from.
+- **See which automatic check cries wolf.** The Dashboard's coverage panel now splits the
+  false-positive rate by automatic check and by connection, each with the count behind it, so
+  a noisy column profile can be told apart from a noisy row count before any threshold is
+  changed. `GET /dashboard/coverage` and the MCP `get_coverage` figures carry the same
+  breakdown as `false_positives_by_baseline` and `false_positives_by_connection`.
+- **Tags on suites, assets, connections and checks.** A workspace-shared vocabulary of short
+  labels, assigned from each entity's edit form (or the asset page) by whoever can edit it, shown
+  as chips on the lists and check rows, and filterable on the Suites and Assets lists by "all
+  of" the chosen tags. Over the API: `tags` on the four read models, assignment through the
+  existing `PATCH` endpoints, a repeatable `tag=` filter on `GET /suites` and `GET /assets`, and
+  `GET /tags` / `DELETE /tags/{id}` for the vocabulary. Deleting an entity drops its
+  assignments; deleting a tag detaches it everywhere.
+- **A version in a connection's or check's history can be redacted.** A value pasted into a
+  config field by mistake and then edited out used to stay readable in the History drawer for as
+  long as the entity lived. A workspace admin can now redact one connection version, or every
+  version but the current one, and a suite's owner or an admin can redact a check version: the row
+  keeps its number, author and time, its stored config is emptied (a check version keeps the column
+  it tested), the drawer says who redacted it and when, and a redacted check version can no longer
+  be restored. The current version is refused — edit it first, then redact the old one. Each
+  redaction is an audit event naming the version numbers, never the values.
+- **A suite can run when another suite passes.** The Triggers panel gains *Another suite (on
+  success)*: pick the upstream suite and the downstream one runs whenever an upstream run
+  finishes with no check at fail or critical. It is the same trigger binding the orchestrators
+  use (`provider: "suite"`, the upstream suite's id as the key, env derived from it), fired by
+  the worker after the run's terminal commit, with self-binding and loops refused when you create
+  the binding and chains capped at five hops. The downstream run is labelled *Suite — <upstream>*
+  and the usage event's `trigger` vocabulary gains `suite`. ADR 0051.
+
+### Changed
+
+- **The task queue runs on Celery 5.7 and redis-py 7.4.** Celery 5.7 needs a newer Redis client
+  than the 5.x line DataQ pinned, so the two move together. Nothing changes for the API, the
+  worker or the scheduler: every Redis client still fails fast on its own short timeouts.
+- **Browser tests also run on Firefox and WebKit, once a week.** Pull requests still test on
+  Chromium. Every Monday, and on demand, CI runs the same end-to-end specs on Firefox and
+  WebKit too, each from a fresh seed, and uploads a report per browser.
+- **The documentation and landing-page screenshots and clips show the current app.** They were
+  re-captured for the v1.3 interface, including a suite's **Alerting** panel (formerly
+  Notifications) with its channel picker. The guides now use that panel's current name.
+- **The Azure OpenTofu stack stands up on an empty subscription.** By default it now creates the
+  resource group, the Container Apps environment and a PostgreSQL Flexible Server with the app's
+  database, as the AWS stack does. To attach to existing ones instead (a free or trial
+  subscription capped at one environment and one server), set `create_shared_resources = false`.
+  **An existing deployment must set it before its next plan**, or the plan tries to create what
+  is already there. The environment's name is now `container_app_environment_name`
+  (default `dataq-cae`).
+- **Snowflake and Unity Catalog queries now carry the datasource query limit too.** Every session
+  DataQ opens on either engine sets `DATASOURCE_QUERY_TIMEOUT_S` through the engine's own setting:
+  `STATEMENT_TIMEOUT_IN_SECONDS` on Snowflake and `STATEMENT_TIMEOUT` on Databricks SQL. A
+  slow query is cancelled, which stops the warehouse spending on it, and the check reports a
+  timeout. A lower limit already in place is kept: a Snowflake user or account setting, or a
+  Databricks warehouse or workspace setting. A Snowflake warehouse's own limit still applies as
+  well. If a warehouse refuses the setting, DataQ logs `query_limit_not_applied` and runs the
+  query without a limit rather than failing it.
+- **The Profile page no longer loads every suite to show two cards.** "Your access" and "Suites you
+  own" were computed in the browser from the full suite list, so a workspace admin's Profile pulled
+  every suite in the workspace with its target and description. They now read one small request,
+  `GET /api/v1/me/access-summary`, which returns the counts per access level and the suites the
+  caller owns. The figures are unchanged.
+- **A slow query on a SQL datasource is now cancelled instead of running without limit.** Every
+  query DataQ sends PostgreSQL, Redshift, MySQL/MariaDB, Trino, SQL Server, Athena or BigQuery
+  carries a wall-clock limit, `DATASOURCE_QUERY_TIMEOUT_S` (default 1800 seconds), applied
+  through the engine's own setting. Athena queries are cancelled on the service, so they stop
+  billing. A query past the limit fails its check or run with a message naming the setting, and
+  no longer holds a worker until the stuck-run reaper fails the run. A lower limit the
+  datasource already gives DataQ's user (a PostgreSQL role or database setting, a MySQL global or
+  MariaDB per-user limit, a Trino cluster limit) is kept; on Redshift a lower per-user
+  `statement_timeout` is not yet. On Trino the limit includes the time a query waits in a
+  resource-group queue.
+- **A connection that needs no credential now reports its credential health as `not_applicable`, not `unknown`.**
+  A GCS bucket with `auth_type: anonymous`, a Trino cluster with `auth_type: none` or an
+  Iceberg catalog with no secret has no credential to observe, so `credential_health.status`
+  in `GET /connections`, `GET /admin/health` and the `list_connections` MCP tool now says so
+  instead of reading `unknown` for ever. `unknown` keeps its meaning: a credential is stored
+  and nothing has used it yet. The value is worked out from the connection's auth mode on every
+  read and is never stored. The Connections page shows "No credential needed" in place of the
+  "no credential" warning for these connections and no longer shows an expiry badge for them,
+  and the admin health feed neither counts them as never observed nor raises them.
+- **Changelog entries are collected one file per change.** The **Unreleased** section of
+  this page is now assembled from small per-change files in the repository's `changelog.d/`
+  directory when the site is built, and a release gathers them into a dated section. The
+  list a reader sees is unchanged; what changed is that two pull requests can each record
+  an entry without conflicting with each other.
+- **SQL generation no longer sends every column of a very wide table.** The prompt lists at most 500 column names per table, keeping any column your description names, and profiles at most 100 of them, the named ones first; it tells the model how many columns were left out, so the model does not treat the list as the whole table.
+- **Suggesting a redaction policy for a file reads the credential once.** On an S3, ADLS Gen2 or Google Cloud Storage target, listing the columns and profiling the sample now share one secret read and one store client, where each step used to read the secret and connect again. The PII-drift monitor on a file gains the same saving.
+- **Scheduled runs are published to the broker concurrently when the broker is remote.**
+  When the round-trip to Redis is long enough to dominate, a batch of due schedules is
+  published from several threads instead of one message at a time. That is about 3.5× faster
+  at a 2.8 ms round-trip and 6.4× faster at 7 ms, so far more schedules fit in one minute's
+  tick. A broker on the same host is still published to serially, where that is faster.
+- **A detail page's browser tab names what it shows.** Once a suite, asset, check, connection or contract has loaded, the tab title and the screen-reader announcement name it (`orders · Suite · DataQ`) instead of only the kind of page, so open tabs and history entries can be told apart.
+- A page opened from inside the app now starts at the top, instead of at the scroll position of the page before it. Back and Forward return to where you left each page, including a list that is still loading its rows.
+- **Per-suite health loads faster on a workspace with a long run history.** Finding each
+  suite's latest run no longer reads every run the workspace has recorded. At one million
+  runs the dashboard's per-suite performance went from about 100 ms to under 4 ms. The asset
+  view, connection scores and contract status use the same lookup and gain too.
+- **The dashboard's result-status figures load faster on a long run history.** Result counts are now kept per suite, hour and status and read from there instead of being counted from every result on each load. At one million results the dashboard summary went from about 360 ms to 260 ms for a 7-day window, and the figures are exactly the same. A new background task runs every five minutes and adds existing history; until it has, those runs are counted the old way, so no number is ever behind.
+- **Charts can be understood with a screen reader.** The run-trend and metric charts are announced by name instead of by their axis labels, and the dashboard's Quality Trends chart offers its numbers as a table.
+- **Run progress is announced to screen readers.** While a suite runs, a screen reader hears when it is queued, how far it has got in quarters, and how it ended, without being interrupted on every update.
+- **Row buttons say which row they act on.** A screen reader now hears "Edit", "Delete", "Snooze", "Remove", "Revoke", "Acknowledge" and similar row actions together with the check, member, incident or setting they belong to.
+- **Links in running text are underlined.** A link inside a sentence, help text, alert, empty state, dialog or popover is now underlined, so it does not depend on colour alone to stand out.
+- **Dialogs work better from the keyboard.** A dialog now opens with focus in its first field instead of on its Close button, and returns focus to the button that opened it when it closes. A confirmation that deletes something now starts on Cancel, so pressing Enter as it opens no longer deletes. The "Snoozed until" badge's explanation can now be reached by keyboard.
+- **The SQL editor can be used by keyboard and screen reader.** It is announced by its field's name and reports the field's help, errors and required state. A note under it explains how to leave it with Tab, and that shortcut now works: press Ctrl+M first (Ctrl+Shift+M on a Mac), since Tab otherwise indents.
+- **The lineage graph can be explored with a screen reader.** Each linked asset is announced as a button with its side and distance (for example "upstream, 1 hop"), where before only a one-line summary of the graph was read.
+- **Confirmation popovers work from the keyboard.** Opening one now moves focus to its buttons, on Cancel when confirming would delete or remove something, and closing it returns focus to the button that opened it.
+- **Verifying the audit chain uses far less memory.** The admin "verify" check and its daily task no longer load every audit row at once: they keep each row's hash links and read the rows in batches as the chain is walked back from its head. With 100,000 audit events the peak fell from about 460 MiB to about 61 MiB, with the same result and about the same time.
+- **Profile and Workspace Settings carry real content where placeholders stood.** Profile
+  shows your effective role in plain words, your suites counted by access level and the suites
+  you own as links. Workspace Settings gains two read-only cards — **Sign-in access** (each
+  deployment allowlist with its values and whether this deployment's sign-in mode actually
+  reads it, plus the first-sign-in roles) and **Data retention** (each clock with its variable
+  and what the sweep removes) — over the new Admin-only `GET /admin/workspace-config`, and the
+  "no destructive actions" notice is replaced by a card pointing each destructive action at
+  where it lives.
+
+### Fixed
+
+- **A column-profile anomaly's incident card now says which column changed.** The evidence card's
+  `kind_detail` showed `mean` and `stddev` as null for every anomaly check on `column_profile`,
+  which has no single mean or standard deviation. It now carries `z_score` and `deviations`: the
+  highest-scoring column and metric series, each with its value, mean and z-score, and how much of the table was profiled.
+- **A results-rollup sweep batch could claim more runs than its batch size.** When the database's
+  statistics said `runs` was nearly empty, the planner could re-run the batch's `LIMIT` once per
+  row, so one sweep could take the whole backlog in a single transaction. The counts were always
+  right; the batch bound now holds whatever plan is chosen.
+- **The retention sweep of list-shaped observed values uses its index.** The daily sweep that
+  scrubs old list-shaped `observed_value`s was compiled in a form PostgreSQL could not match to the
+  index built for it, so every chunk scanned the whole `results` table. It now reads only the
+  expired rows.
+- **Iceberg connections answer "does this need a stored secret?" the same way everywhere.** The
+  stored secret counts as needed only when `secret_property` names where it goes. Browsing and
+  profiling a catalog that sets `secret_property` but stores no secret now stop with a clear
+  error instead of failing later. A secret left behind on a catalog that no longer sends it
+  reads as **No credential needed**, like Trino and GCS. A catalog password alone still counts
+  as a credential to watch.
+- **A comparison check's SQL queries are saved again.** What you typed into the source query or the target's SQL projection never reached the form, so a comparison in SQL mode could not be saved and the projection was dropped.
+- **Suites created by importing a data contract are linked to their table.** They were saved without the table's asset, so their runs opened no incidents, did not appear on the asset pages, and their reads got no masking from the table's warehouse tags. New imports link the asset; run `python -m backend.scripts.backfill_suite_assets` once to link suites imported earlier.
+- **Alerts name a run's trigger the way the runs table does.** A run started by another suite, by an AI client over MCP, or by the connection probe showed the raw prefix (`suite`, `mcp`, `probe`) after "Triggered by" in Slack, Teams and email alerts; it now reads `Suite`, `MCP` or `Probe`. Apache Airflow is also spelled the same way everywhere (run labels, alerts, connection and trigger screens) instead of "Airflow" in some places and "Apache Airflow" in others.
+- **Filtering the audit log by entity type now works for every type DataQ records.** Run, result,
+  contract, check-suggestion, data-subject-request, secret-sweep, inventory-sync and orchestration
+  events were refused with "unknown entity_type", although the log holds them. They can now be
+  filtered like any other type.
+- **A check's accepted values over a column marked sensitive are no longer shown.** When a
+  column a value-set check tests is classified as sensitive after the check was written (the
+  suite's column policy, a warehouse tag, fail-closed mode or the PII classifier), each value now
+  reads `<redacted>` on every check read: the check editor, version history, suite export, the
+  REST API and the MCP tools. `redacted_columns` names the column and `redaction_reasons` the rule
+  that decided. The check still runs with its real values. Saving a configuration that still holds
+  `<redacted>` is refused (`422 value_set_redacted`): leave the values untouched and the stored
+  ones are kept, or enter the full list to replace them. An export holding withheld values cannot
+  be imported.
+- **Saving coverage sensitivity keeps keyboard focus in the settings.** After saving a table's or
+  the workspace's sensitivity for automatic checks, focus could fall back to the top of the page
+  instead of staying in the settings block, depending on timing.
+- **Ids from the URL can no longer shape an API request path.** Every path segment the web app sends is now percent-encoded, a malformed `?incident=` link is ignored, and a detail page opened with a non-UUID id shows the not-found page without issuing a request.
+- **The Python client's comparison report download now returns the file name and media type.** `DataQClient.download_comparison_report` fills `file_name` from the server's `Content-Disposition` (`comparison-<id>.<fmt>`, with any directory part removed) and `mime_type` from `Content-Type`, so a caller can tell CSV from XLSX without reading the response headers.
+- **The API's OpenAPI document now describes its errors.** Every error the API returns is
+  `{"error": {"code", "message", "detail"}}`, but the document typed a validation failure as
+  FastAPI's own `HTTPValidationError` and declared no other error, so a client generated from it
+  parsed a 422 into an empty object and a 401, 403, 404, 409 or 429 into nothing. Every operation
+  now declares those six statuses with the DataQ error envelope (`ErrorResponse`), and the generated
+  Python client parses them into it.
+- **Keyboard and screen-reader fixes on the seasonal calendar, coverage, telemetry and privacy screens.**
+  Closing a calendar-entry or promote dialog now returns focus to the button that opened it; saving
+  automatic-coverage sensitivity, switching usage telemetry and dismissing a detected-PII column
+  keep focus where you were and announce the result; and per-row actions (promote, enable or
+  disable a check, dismiss or restore masking) are named for the row they act on.
+- **The comparison-report download is described correctly in the API reference.** It was documented as returning JSON, so the generated Python client failed on every download; the reference now lists its CSV and XLSX media types and the client returns the downloaded file.
+- **Run detail shows readable numbers.** The failing-rows percent and the Metric column are rounded to three significant figures (a value too small to show reads `<0.001`), with the exact value in the hover title and unchanged in exports.
+- **Metric trend charts no longer clip their y-axis labels.** Axis ticks are compact (`2.1K`, `0.06`) and the axis sizes itself to fit.
+- **Flat-file batches in different folders are no longer merged into one asset.** A batch
+  target's asset name (ADLS Gen2, S3, GCS) ignored the target's prefix, so two suites reading
+  `orders/` and `sales/` with similar file patterns shared one asset, mixing their scorecards,
+  lineage and incidents. The name now includes the prefix (`orders/`, `sales/`). The upgrade
+  re-keys existing assets: an asset used by a single folder is renamed in place and keeps its
+  history and settings; a merged asset is split, and each suite moves to its folder's asset with
+  the runs and incidents it recorded. Lineage edges and detected column classifications of a
+  split asset stay on the old one until the next lineage pull and profile.
+- **Anomaly checks can be re-baselined from the suite page.** The Re-baseline action was shown
+  only on schema drift and PII drift checks, so an anomaly check whose history had been skewed by a
+  bad load could not be reset without calling the API. It now appears on every check kind that keeps
+  a stored baseline, and the confirmation for an anomaly check says that the next runs report skip
+  until enough history has built up again and that any seasonality pattern is relearned.
+- **Dropdowns inside dialogs no longer open as a sliver.** Every dialog now fades in instead of
+  zooming, so a picker opened while its dialog is still appearing (Add member, Run now, the
+  channel editor, Reassign owner) opens at the field's full width instead of a fraction of it.
+- **The bulk "Set thresholds" dropdowns no longer open as a sliver.** Opening the Warn, Fail or
+  Critical picker while the dialog was still animating in produced a dropdown about 30px wide
+  with unreadable options; it now always opens at the picker's full width.
+- **Workspace settings tables now hold exactly one row.** The privacy, health-score, LLM and audit-chain
+  settings tables carry a database check that refuses a second row, as the coverage and telemetry
+  settings already did. The upgrade stops with the table named, instead of deleting anything, if a
+  deployment somehow holds a row with another id.
+- **MCP incident, history and snooze tools say when the check is switched off.**
+  `list_incidents`, `get_incident`, `ack_incident` and `resolve_incident` return
+  `check_enabled` for the incident's check: an incident left open on a disabled check can no
+  longer breach or auto-resolve, so it is stale rather than an active failure. `get_check_history`
+  returns it too, since a disabled check's history simply stops, and `snooze_check` returns it
+  because a snooze on a disabled check is recorded but mutes nothing while the check is off.
+- **A run that evaluated no check no longer reads as a pass.** A suite whose checks are all
+  disabled, or whose every check skipped, still runs and ends succeeded, but it verified nothing.
+  The pipeline gate now answers `error` for such a run, so the shipped gate snippets stop the
+  pipeline. The dashboard's *Assets watched* figure no longer counts it. Alert dedup looks past it,
+  so a repeated failure on either side is not re-sent as new. The runs tables show it as
+  *Nothing evaluated*.
+- **A refused promote no longer leaves a stale destination card.** When promoting a suite's inline
+  destination to a channel failed because another admin had already promoted or cleared it, the
+  dialog stayed open over a card that still offered the action. The dialog now closes and the
+  suite's notification settings reload beside the error.
+
+  **Promoting a suite's legacy webhook whose secret is gone is now refused.** Before, the promote
+  succeeded and created a channel that never delivered. DataQ now checks the secret store still
+  holds the webhook, without reading it, and refuses with `409 promote_secret_missing` when it
+  does not, or `503` when the secret store cannot be reached. Every secret store gains this check
+  (OpenBao verified; AWS Secrets Manager and Azure Key Vault not yet verified against a live
+  account).
+- **Admin guide: one Members section.** The guide had two sections headed Members, so its table of contents listed the tab twice and a link to it reached only the first half. Membership, roles and offboarding now sit under one heading.
+- **A suggested value set over a column classified as sensitive after it was proposed is no
+  longer readable or acceptable.** A suggested rule's value set was screened only when it was
+  proposed, so a column later marked sensitive (by the suite's column policy, a warehouse tag or
+  fail-closed mode) kept its raw values in the review queue. `GET /api/v1/suites/{id}/suggestions`,
+  the accept and reject responses, and MCP `list_suggested_rules` now re-check each value set
+  against today's classification: a sensitive one reads `<redacted>` per value, with
+  `redacted_columns` and `redaction_reasons` saying which column and rule decided (an AI-proposed
+  rule's name and rationale are replaced as well, as they may quote the values). Accepting such a
+  suggestion returns `409` with `error.code` `suggestion_values_sensitive`; reject it instead. The
+  suite page marks it **Values withheld** and disables **Accept**.
+- **A volume check can have only a minimum or only a maximum.** "At least N rows" no longer needs an
+  invented ceiling, and a refused volume check now names the key that is wrong or missing.
+- **The MCP `get_suite_performance` tool says which run it scored.** Its description read as
+  "the most recent run that completed"; the ranking scores each suite's latest run only if that
+  run completed, with no fallback to an earlier one, and now says so. Each row also carries
+  `run_id` and `run_finished_at`, so an assistant can tell a score from this morning from one
+  that is months old.
+- **Alerts name an orchestration provider the way the app does.** A Teams, Slack or email alert now says "Azure Data Factory" where it used to say "ADF", and pipeline-timing alerts and the incident evidence in an alert show the provider's name rather than its identifier (`adf`, `airflow`). The webhook payload is unchanged: `triggered_by` and the evidence still carry the identifier.
+- **Deleting a check no longer rewrites the history of past runs.** A run now records its outcome
+  (checks passed, worst severity) when it finishes, and the run page, runs list, recent-runs widget, PDF
+  report, REST API and MCP tools show that recorded outcome. When results have since been removed
+  with a deleted check, the run page and the report say how many, and the API and MCP tools return
+  the count as `results_removed`. Runs that finished before this release record the outcome they
+  had at the upgrade; a result already deleted before then cannot be recovered or counted.
+- **A flat-file target's chosen file format now applies to its runs.** The *File format* picked on
+  a suite's target was used only by the profiler and column listing; checks, monitors, schema
+  drift and memory admission still read the format from the file's extension, so a target like
+  `exports/orders.dat` set to CSV profiled fine and failed every run.
+- **Opening another run from a run's page shows that run.** Picking a run in the command palette
+  while a run detail page was open changed the address but kept showing the first run.
+- Printing a run, or saving it as a PDF, from the dark theme now prints like the light theme: dark text on white paper, badges included. Before, the report's text came out faint or near-invisible, because the browser drops the dark background when printing.
+- **Settings → Notifications no longer describes workspace-wide alert defaults as a future
+  feature.** The card says they are set by the deployment's configuration, names the variables,
+  links the notifications guide, and states that a suite alerts through them in addition to
+  its linked channels.
+- **A failed sign-in code request no longer counts against the address's limit.** When the code
+  could not be handed to the mail worker (for example during a short message-broker outage), the
+  attempt used to spend one of the address's requests for the window, so a member retrying could
+  be throttled without ever receiving an email. Such attempts are now taken back; the sign-in
+  response is unchanged either way.
+- **Run detail and report label each result with the check as it WAS, not as it is.** A check
+  re-pointed to another engine or re-classified to another DQ dimension after a run used to have
+  its old results shown with today's engine and dimension (the badges read the suite's current
+  check list). `GET /api/v1/runs/{id}` now carries a `check` block per result — name, kind, engine,
+  expectation type, dimension and column resolved from the check's version history at the result's
+  own timestamp — and the run page, the printed report and the CSV/JSON exports read it; the run
+  page gains a Dimension column. `resolved_from` says whether that came from a version snapshot or,
+  for a check with no version history, from its current row; the UI then marks the value
+  "(current)" instead of presenting it as history, on the run comparison page too. MCP
+  `get_run_results` / `get_suite_results` gain `dimension` and `check_resolved_from` per check (and
+  `get_run_results` no longer claims `engine` is the check's current engine; it has reported the
+  as-of engine for some time).
+
+## v1.2.0 — 2026-10-04
+
+### Breaking
+
+- **A connection that fails its own test is no longer saved.** Creating a connection, changing
+  its settings or credential, and re-authenticating it now run the connection's test first. If
+  the test fails, the request returns `422` with `error.code`
+  `connection_test_failed_on_save` and nothing is written — a re-authentication keeps the
+  stored credential instead of replacing it with one that does not work (before, it replaced
+  it and then reported the failure). The reason is the same safe message **Test** gives. An
+  Admin can still save on purpose, for a store the API cannot reach while you set it up or a
+  new dbt project with no `run_results.json` yet: **Create/Save/Rotate without testing** in the
+  UI, or `"skip_test": true` in the request body; the audit log records it. Saving an
+  **enabled** LLM provider (`PUT /admin/llm`) likewise runs its test first
+  (`llm_test_failed_on_save`); a disabled one is saved untested. API clients that create
+  connections with a config that fails its test must fix the config or send `skip_test`. See
+  [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
+  and [API compatibility](api-compatibility.md#recorded-exceptions).
+
+- **The prebuilt-image stack publishes only the UI, over HTTPS.** `docker-compose.ghcr.yml`
+  now runs the way a production deployment does: the UI on `:3000` is the only way in, it
+  serves HTTPS with a certificate from a CA the stack generates on first start (your browser
+  warns until you trust it — `scripts/local-ca.sh install` does that, and `uninstall`
+  reverses it; plain HTTP redirects), and the API is reached through it at
+  `https://localhost:3000/api` (MCP at `https://localhost:3000/mcp/`).
+  The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
+  catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
+  `/docs` is off. Point scripts that called `http://localhost:8000` at
+  `https://localhost:3000` and give them the CA certificate (see Getting started). Inside
+  the stack, Postgres, Redis, the mail catcher, the vault and the API are all reached
+  over TLS verified against the same CA, and Postgres refuses a client without it. The inbox
+  stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
+
+- **The prebuilt-image stack keeps its data in a directory.** `docker-compose.ghcr.yml`
+  stores the database, the sample warehouse and the vault under `./dataq-data`
+  (`DATAQ_DATA_DIR` moves it) instead of Docker volumes, and the vault is no longer
+  in-memory: stored credentials survive a restart. Data in the previous `ghcr_postgres_data`
+  volume is not migrated; the stack starts fresh in the new directory. To reset, run
+  `down -v` and delete the directory.
+
+- **A check's severity thresholds can be cleared.** Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. `PATCH
+  /suites/{id}/checks/{id}` now treats an explicit `null` for `warn_threshold`,
+  `fail_threshold` or `critical_threshold` as *clear it*; leaving the key out still keeps
+  the stored value. **A client that sent `null` for these to mean "unchanged" must omit
+  the key instead.** A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, `update_check` gains `clear_thresholds`.
+
+### Added
+
+- **An upgrade guide and a support policy.** [Upgrading](../operate/upgrading.md) covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.
+- **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
+  shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
+  offers the next step, says who can take it when you cannot, and goes away once all four are
+  done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
+  four steps as booleans.
+- **AI suggestions are kept for automatic suites.** Running **Suggest checks** on an
+  automatically covered suite now also saves the validated suggestions under **Suggested
+  rules**, marked **AI-suggested**, where they can be accepted or rejected later. A rule the
+  suite has already seen is not saved again. The invocation result gains `queued_for_review`.
+- **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
+  inventory watched in the last 7 days and the false-positive rate of automatic checks, with
+  the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are
+  read-only; accepting or rejecting a rule is still done in the app. `/mcp` now has 54 tools.
+- **Say what an incident turned out to be.** Resolving an incident can record whether it was
+  **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
+  incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
+  `resolution` and incidents return it; the MCP `resolve_incident` tool takes it too.
+- **Coverage and false-positive figures on the Dashboard.** A new panel shows what share of the
+  asset inventory was watched by a suite in the last 7 days, and what share of resolved
+  automatic-check incidents were marked false positives in the last 30, each with the counts
+  behind it. In the API, `GET /dashboard/coverage`.
+- **Apply a suite file onto an existing suite, and see drift.** `POST /suites/{id}/apply`
+  creates, updates and (with `prune`) deletes checks to match a JSON or YAML document,
+  matching checks by name; it is idempotent. With `dry_run` it changes nothing and reports
+  how the suite differs from the file. The `dataq` command gains `validate`, `drift` and
+  `apply`, and reads and writes YAML. See [Suite document](suite-document.md).
+- **Bulk snooze, unsnooze and delete for checks.** The suite page's check list has a
+  checkbox per check and **Select all**; the selected checks can be snoozed, unsnoozed or
+  deleted in one action. It is all-or-nothing, and each check gets the same audit event a
+  single action writes. In the API, `POST /suites/{id}/checks-bulk/snooze`,
+  `/checks-bulk/unsnooze` and `/checks-bulk/delete`.
+- **Bulk severity thresholds.** **Set thresholds** on the same selection gives every selected
+  check the same warn, fail or critical value; each tier can be set, cleared or left as it
+  is. Refused as a whole, naming the checks at fault, if the selection mixes check kinds
+  or any check cannot take the result. In the API, `POST /suites/{id}/checks-bulk/thresholds`.
+- **A data-quality score per connection.** Each connection card shows a **DQ score** across
+  every suite on that connection, from each suite's latest run if it completed. It is the same
+  for every member, and absent when nothing has evaluated. In the API, connections gain
+  `health_score`.
+- **Each quality dimension across the whole workspace.** The Dashboard has a new panel
+  with one row per dimension over every suite in the workspace, with the same coverage
+  rules as the asset scorecard: a dimension with no checks anywhere is listed as not
+  covered, and checks with no dimension are counted separately. In the API,
+  `GET /dashboard/dimensions`.
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
+- **An asset health score.** The asset page's scorecard now leads with one 0–100 number
+  for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
+  sort the whole workspace by it, lowest first. It counts every check that evaluated in
+  each suite's latest run, if it completed, including checks with no dimension. Beside it, the
+  asset page shows the change against the same score 7 days ago. In the API, assets gain
+  `health_score`, `GET /assets` gains `sort=health_score`, and `GET /assets/{id}` gains
+  `previous_health_score`, `health_score_delta` and `score_delta_days`. See
+  [Datasources & checks](../guides/datasources-checks.md#seeing-coverage-the-asset-scorecard).
+- **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
+  relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
+  the stack's vault, where it persists, and the API never holds it. The alert mailer's
+  `EMAIL_*` settings are now passed through as well, with `DATAQ_ALERT_SMTP_PASSWORD`. With
+  a relay configured and no password stored, the start-up step says so instead of storing a
+  random one. See Getting started.
+
+- **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
+  latest from `main`), then
+  `dataq run <suite> --wait` gates a CI step on a suite's result with a documented exit code
+  (0 ok · 1 warn · 2 fail · 3 run error · 4 client error). The Python API keeps a run's
+  lifecycle and its worst severity as separate fields, and exposes every REST endpoint through
+  a layer generated from the API's own specification. See
+  [Python client & CLI](../guides/python-client.md).
+- **API compatibility policy.** What stays stable across upgrades for the REST API, MCP tools,
+  the suite export document and the Python client, and how a breaking change is announced. See
+  [API compatibility](api-compatibility.md).
+- **Custom Snowflake DMFs as checks.** On a Snowflake connection, a **Custom DMF** check runs
+  a data metric function your team created, named `DATABASE.SCHEMA.FUNCTION`, over columns of
+  the suite's table. Its return value is banded by the check's thresholds. Testing the
+  connection lists the custom DMFs its role can use, and the editor suggests them. DMF checks
+  can now be dry-run from the editor too. See
+  [Datasources & checks](../guides/datasources-checks.md#snowflake-dmf-adr-0036).
+
+### Fixed
+
+- **An imported suite keeps its checks in the order of the file.** Checks created together (an
+  import, the demo data) were listed in an arbitrary, though stable, order. Checks now carry
+  their position, so lists, exports and run results follow the order they were written in.
+  Existing suites keep the order they show today. This release adds a database migration.
+- **Add check is no longer offered on a suite you can only view.** The button led to a form
+  whose save was refused.
+- **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the
+  printed report showed an internal identifier such as `manual:d7c88410-…`. They now show
+  the person's name or email (`Manual — Olivia Admin`), `Schedule`, or the orchestration
+  provider. In the API, `triggered_by` is unchanged and runs gain `triggered_by_label`.
+- **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
+  to open a form with the **Generate from a description** box. It now appears only when you
+  start from the **Generate from a description** card. Editing an existing custom SQL
+  check no longer shows it either.
+- **Check suggestions on a wide table stay within the model's limits.** The suggestion prompt
+  grew with every column, so a table with hundreds of columns could cost far more or fail at
+  the provider. Only the first 100 columns are now profiled and sent, long values are
+  shortened, and the drawer says when part of the table was not looked at. The invocation's
+  result gains `column_coverage` (`{profiled, total}`).
+
+- **A completed run with no results no longer says it did not complete.** A check's results
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.
+
+- **A batch-target preview no longer comes back empty just because signing in was slow.** The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.
+
+- **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
+  vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
+  small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and
+  reports `truncated` honestly instead of scanning until it can be sure; a batch pattern is
+  refused up front if it is too long or shaped for catastrophic regex backtracking (the
+  same check applies whether the pattern is being saved or previewed). The frontend cancels
+  a superseded preview request instead of merely ignoring its answer.
+
+### Added
+
+- **ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.** Pick *Service principal* and give the
+  tenant ID, client ID and client secret; point the account URL at
+  `https://onelake.blob.fabric.microsoft.com` with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against `<lakehouse>.Lakehouse/Files/`.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
+
+- **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
+  grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
+- **dbt artifacts on OneLake, or as a service principal.** A dbt connection can read its
+  ADLS artifacts as an Entra service principal, and from an ADLS-compatible endpoint such as
+  Fabric OneLake — see [Orchestration](../guides/orchestration.md).
+
+- **Amazon Redshift datasource.** Connect a provisioned Redshift cluster or a Serverless
+  workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,
+  the profiler, schema → table browsing and inventory sync. Sessions are read-only at the
+  server, and every TLS mode checks the certificate chain against Amazon's certificate
+  authorities — see [Datasources & checks](../guides/datasources-checks.md#amazon-redshift).
+
+- **Amazon Athena datasource.** Connect Athena by region and IAM access key — one data catalog
+  per connection, a Glue database as the schema — and run every SQL-capable check, custom SQL,
+  all monitors, the profiler, database → table browsing and inventory sync. Every check is a
+  billed Athena query. Athena has no read-only session, so give DataQ an IAM principal that can
+  only read — see [Datasources & checks](../guides/datasources-checks.md#amazon-athena).
+
+- **Trino datasource.** Connect any Trino (or Starburst) cluster — one catalog per connection
+  — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
+  with every SQL-capable check, all monitors, the profiler, schema → table browsing and
+  inventory sync. Password, JWT (its expiry is shown) or no authentication; TLS always verifies
+  the server, with an optional private CA bundle, and a credential is never sent in plaintext.
+  Trino has no read-only session, so give DataQ a Trino user with read-only access — see
+  [Datasources & checks](../guides/datasources-checks.md#trino).
+
+- **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
+  service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
+  freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
+  schema → table browsing for the run target, and inventory sync into the asset view. TLS is
+  `require` by default and every session is read-only at the server. It is the first engine on
+  a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
+  See [Datasources & checks](../guides/datasources-checks.md#postgresql).
+
+- **SQL Server / Azure SQL / Fabric datasource.** One `mssql` connection type for anything that
+  speaks SQL Server's TDS protocol — SQL Server, Azure SQL Database, Synapse, and Microsoft
+  Fabric SQL endpoints — with a SQL login or an Entra ID service principal. Every SQL-capable
+  check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
+  inventory sync. TLS is always on and always verified (certificate and hostname). The default
+  driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
+  you install yourself, and
+  DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
+  column-pair expectations are refused (Fabric does not support the temporary table GX builds
+  for them). Regex
+  expectations are not available on SQL Server. ADR
+  [0044](../adr/0044-mssql-tds-driver-and-entra-auth.md); see
+  [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
+### Security
+
+- **The custom-SQL guard now lexes each engine's own quoting.** A T-SQL `[bracket]` or a
+  Databricks `` `backtick` `` identifier containing a quote could make the read-only check
+  mistake a following statement for part of a string; the guard now reads those identifiers
+  as identifiers, rejects a nested block comment (engines disagree where one ends), and on
+  SQL Server also refuses `OPENQUERY`, `OPENROWSET`, `OPENDATASOURCE`, `BULK`, `DBCC` and
+  `WAITFOR`. A query whose engine is unknown must pass every engine's rules.
+
+- **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
+  every column that recorded column lineage shows is copied or derived from it is masked as well,
+  across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag
+  still wins, and nothing inherits `public`. `LINEAGE_CLASSIFICATION_PROPAGATION=false` turns it
+  off. See [security](../security/overview.md).
+
+- **Check suggestions know where a column comes from.** A suggested check on a column that
+  is copied unchanged from an upstream table now says so — "an equivalent check already runs
+  upstream" or "place it at the origin" — so one bad load fires one alert, not one per copy.
+  Derived columns get their provenance only; the advice never hides a suggestion. See
+  [AI features](../guides/ai-features.md).
+
+- **Trace one column through lineage.** The asset page's *Column lineage* card (and
+  `GET /assets/{id}/column-lineage`, MCP `trace_column_lineage`) follows a single column up to
+  where it originates and down to every column derived from it. Every lineage edge now says
+  why it has no column pairs when it has none (`column_coverage`: none recorded · unavailable ·
+  unknown · not captured), so an empty column trace is never presented as "unrelated".
+  Snowflake column pairs are now read from `ACCESS_HISTORY` even when `GET_LINEAGE` answers —
+  previously an Enterprise account recorded none. See
+  [orchestration & lineage](../guides/orchestration.md).
+
+- **Browse for a run target instead of typing it.** On a Unity Catalog suite, **Browse
+  catalog…** walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
+  S3 suite, **Browse files…** (single file) or **Browse folders…** (batch prefix) walks the
+  connection's container or bucket. Each level is one bounded listing (up to 200 names) and
+  says so when there are more; a name DataQ cannot target is shown but not pickable. Nothing
+  is saved until you save the suite, and the typed fields keep working exactly as before.
+  Needs the Member role, like testing a connection.
+
+- **Offboarding is one guided pass.** Admin → Members → **Offboard** hands a departing
+  member's suites to somebody else, revokes every API key and browser session they hold,
+  and withdraws their membership — in a single transaction, so a half-finished departure
+  is not a state the workspace can end up in. A preview says what will be touched before
+  anything is typed, the last Admin is refused, and the confirmation is the member's own
+  address typed out. Their authored history is kept. Where an environment allowlist would
+  still admit the address, the step is skipped and the variable named rather than a
+  withdrawal being reported that did not happen. See the
+  [admin control centre guide](../guides/admin.md).
+
+- **Health-score weights are a workspace setting.** Admin → Settings → Scoring changes the
+  penalty each severity tier carries (`warn` / `fail` / `critical`; defaults 0.5 / 1.0 / 2.0)
+  and every change is audited. Scores are computed on read, so a change recolours every score
+  at once, past and present — the audit log is where the step is explained. See the
+  [admin control centre guide](../guides/admin.md).
+
+- **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
+  turns it on without a restart; the environment variable stays the floor and cannot be
+  turned off from the app. `GET /admin/deployment` now says which of the two is in force.
+
+### Changed
+
+- ⚠️ **Suites alert through admin-configured channels only.** The per-suite Notifications
+  panel no longer takes a Teams or Slack webhook URL or a recipient list: it offers the
+  channels a workspace Admin created under Settings, and that is all. Existing inline
+  destinations keep delivering and are shown as a *Legacy inline destinations* card with a
+  Clear per entry. On the API, setting one is refused for every caller (the field is
+  named); clearing stays open to anyone with edit access.
+
+- ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
+  codes, and a mis-set or empty sign-in configuration now stops the API with a message
+  naming it instead of coming up open. Existing local setups: an `.env` with an empty
+  `DATAQ_SIGNIN_EMAIL=` no longer boots — set an address or re-run `setup.sh`, which
+  now re-asks.
+
+- **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
+  `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
+  the tab you are on is the URL, so any tab can be bookmarked, shared or
+  reloaded in place, and each page loads only its own data instead of one long
+  scroll fetching everything. The standalone workspace **Settings** page folds
+  in: `/settings` redirects to `/admin/settings`, and the sidebar carries a
+  single **Admin** entry instead of two links to the same area. Every admin
+  route is gated at the route, so a deep link (or a demoted user's bookmark)
+  gets the Forbidden page and fetches nothing. See the
+  [admin control centre guide](../guides/admin.md).
+
+### Added
+
+- **Admin → Integrations is an operations page.** Regenerate any provider's webhook secret
+  or signing key (shown once; the previous value keeps working for a short grace window),
+  see per-connection polling health with **Poll all now**, and turn warehouse inventory
+  sync on or off per connection with **Run now**.
+- **Admins can now operate the workspace, not just observe it.** **Admin → Members**
+  gains **Revoke** on any per-suite access grant — previously only a suite's own owner
+  could remove a share, so cleaning up after a departure meant first being granted access
+  to every suite. **Admin → Suites** gains **Transfer**, the offboarding primitive: a suite
+  moves to a new owner, who gets full control, while the previous owner keeps an editor
+  grant unless you clear the checkbox (workspace viewers cannot own a suite and are not
+  offered). It also gains **Delete** for any suite, behind a confirmation that states the
+  exact number of checks, runs, results, schedules and trigger bindings the cascade would
+  destroy and requires the suite's name to be typed. All three are audited with the
+  admin-override recorded, and the delete's event carries the counts. See the
+  [admin control centre guide](../guides/admin.md).
+
+- **Workspace membership is managed in the app.** **Admin → Members** gains an
+  **Add member** dialog (email plus an optional initial role) and per-row removal,
+  so admitting or removing somebody no longer means editing deployment config and
+  restarting. Removal takes effect on that person's **next request** for every
+  credential kind — an identity-provider sign-in, a live browser session, and every
+  API key they hold — which closes a gap where a departed member's API key kept
+  working indefinitely. Adding a member does not create an account at your identity
+  provider; that stays a prerequisite, and the dialog says so.
+
+    ⚠️ **Adding the first member turns enforcement on for the whole workspace.**
+    Until then nothing changes: who may sign in is decided entirely by your existing
+    allowlist settings. The first add also admits every existing user in the same
+    transaction, so nobody signed in is evicted — those rows are flagged under a
+    **review imported members** banner to confirm or remove, because a user record
+    proves somebody signed in once, not that they still belong. The allowlist
+    settings stay available as grant-only break-glass. See the
+    [admin control centre guide](../guides/admin.md).
+- **Admin → Overview is now a workspace-health page.** Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a **needs-attention**
+  feed and a **workspace-health** checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only **Run sweep**),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as **unknown** or **not monitored** with the reason, never as a zero, a green
+  tick, or a missing row. See the [admin control centre guide](../guides/admin.md).
+
+- **Four admin capabilities that had no UI now have one.** On **Admin → Compliance**:
+  audit-chain verification behind an explicit **Verify now** (it reads the whole hashed
+  set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
+  verify / not-verified as four distinct answers, plus the legacy-row count and whether an
+  external anchor exists; and the **data-subject rights** tools — GDPR Art 15/20 export
+  and Art 17 (CCPA delete) erasure over the samples DataQ has captured, with erasure gated
+  on retyping the subject value exactly and both actions producing an on-screen receipt.
+  On **Admin → Settings**, the email pre-flight result now stays on the card with the
+  failing transport stage and the request ID instead of passing by in a toast. On
+  **Admin → Integrations**, each webhook row states its auth mode, so it is obvious which
+  URLs are themselves credentials. See the
+  [admin control centre guide](../guides/admin.md) and the
+  [data-subject-rights runbook](../security/compliance/data-subject-rights-runbook.md).

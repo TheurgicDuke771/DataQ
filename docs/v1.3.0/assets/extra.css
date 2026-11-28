@@ -1,0 +1,93 @@
+/* Screenshots: framed, zoomable (glightbox), never wider than the column. */
+img.screenshot {
+  display: block;
+  margin: 1rem auto 0.25rem;
+  max-width: 100%;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+img.screenshot + p > em {
+  display: block;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0;
+}
+
+/* Short looping clips: same frame as screenshots. */
+video.clip {
+  display: block;
+  width: 100%;
+  margin: 1rem auto 0.25rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--md-default-bg-color);
+}
+video.clip + p > em {
+  display: block;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0;
+}
+
+/* Header action row: Markdown · Copy · Ask AI (docs/overrides/main.html). */
+.dq-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+}
+.dq-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.3rem;
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+  font: inherit;
+  list-style: none;
+}
+.dq-action svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: currentColor;
+}
+.dq-action:hover {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+.dq-ask {
+  position: relative;
+}
+.dq-ask .dq-action svg:last-child {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+.dq-ask__menu {
+  position: absolute;
+  right: 0;
+  z-index: 10;
+  min-width: 14rem;
+  margin-top: 0.3rem;
+  padding: 0.3rem 0;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.3rem;
+  background: var(--md-default-bg-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.dq-ask__menu a {
+  display: block;
+  padding: 0.35rem 0.8rem;
+  color: var(--md-default-fg-color);
+}
+.dq-ask__menu a:hover {
+  background: var(--md-default-fg-color--lightest);
+}
