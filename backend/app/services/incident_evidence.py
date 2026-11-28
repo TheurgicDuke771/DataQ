@@ -442,6 +442,14 @@ def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | 
             "type_changed": observed.get("type_changed", []),
             "baseline_captured": observed.get("baseline_captured", False),
         }
+    if check.kind == "anomaly" and observed.get("target_metric") == monitors.COLUMN_PROFILE_METRIC:
+        # A column-profile anomaly scores many series and has no single mean or stddev: what
+        # answers "what changed" is the worst deviations, each with its column and metric.
+        return {
+            "z_score": observed.get("z_score"),
+            "deviations": observed.get("deviations", []),
+            "insufficient_history": observed.get("insufficient_history", False),
+        }
     if check.kind == "anomaly":
         return {
             "z_score": observed.get("z_score"),

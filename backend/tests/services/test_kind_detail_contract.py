@@ -91,6 +91,17 @@ def _anomaly() -> None:
     assert_layer_reads_what(
         monitors.ANOMALY, payload, absent_by_design=frozenset({"insufficient_history"})
     )
+    # The column-profile scorer writes another shape (#2795).
+    key = anomaly.series_key("email", anomaly.NULL_PCT)
+    profile = anomaly.ColumnProfile(
+        row_count=100, series={key: 40.0}, columns_measured=1, columns_total=1
+    )
+    history = [(NOW - timedelta(days=4 - i), {key: v}) for i, v in enumerate([1.0, 1.2, 0.8, 1.0])]
+    profile_params = monitors.anomaly_params({"target_metric": "column_profile", "min_points": 3})
+    scored = anomaly.score_column_profile(profile, history, now=NOW, params=profile_params)
+    assert_layer_reads_what(
+        monitors.ANOMALY, scored, absent_by_design=frozenset({"insufficient_history"})
+    )
 
 
 def _aggregate() -> None:
