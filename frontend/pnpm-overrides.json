@@ -4,10 +4,6 @@
     "why": "security floor added in #971",
     "via": ["eslint", "typescript-eslint"]
   },
-  "brace-expansion@5": {
-    "why": "security floor added in #971",
-    "via": ["eslint", "typescript-eslint"]
-  },
   "browserslist": {
     "why": "GHSA-c83g-rgw3-j3cx, GHSA-73wf-gq98-2v4g (#1802)",
     "via": ["eslint-plugin-react-hooks"]
@@ -16,7 +12,6 @@
     "why": "security floor added in #276, raised in #1211 and #2532",
     "via": ["monaco-editor", "@monaco-editor/react"]
   },
-  "follow-redirects": { "why": "audit-gate floor added in #2508", "via": ["axios"] },
   "js-yaml": {
     "why": "security floor added in #276, raised in #1188",
     "via": ["eslint", "typescript-eslint"]
@@ -25,9 +20,12 @@
     "why": "GHSA-g3hv-75wg-m249, typescript-estree's minimatch 10.x (#2606)",
     "via": ["typescript-eslint"]
   },
-  "nanoid": { "why": "audit-gate floor added in #1188", "via": ["vite", "vitest"] },
-  "postcss": { "why": "audit-gate floor added in #1211", "via": ["vite", "vitest"] },
-  "source-map-js": { "why": "GHSA-68fv-2mgg-jv7q (#2411)", "via": ["vite", "vitest"] },
-  "undici": { "why": "GHSA-vmh5-mc38-953g (#291), raised since", "via": ["jsdom", "vitest"] },
-  "zod@4": { "why": "audit-gate floor added in #2532", "via": ["eslint-plugin-react-hooks"] }
+  "source-map-js": {
+    "why": "GHSA-68fv-2mgg-jv7q (#2411)",
+    "via": ["vite", "vitest"]
+  },
+  "zod@4": {
+    "why": "audit-gate floor added in #2532",
+    "via": ["eslint-plugin-react-hooks"]
+  }
 }
