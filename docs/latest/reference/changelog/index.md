@@ -10,6 +10,13 @@ section below.
 
 ## Unreleased
 
+_No changes recorded since the last release._
+
+## v1.3.0 — 2026-11-28
+
+Rollback: previous images on this schema — yes · DB restore needed — no · downgrade target
+`49bd96efd9fc`
+
 ### Security
 
 - **A failed check's expected values no longer leak a sensitive column's patterns when an extra option sits beside them.** Each value is now judged on its own, so an option such as how patterns combine can no longer dilute the check for personal data.

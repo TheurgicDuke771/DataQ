@@ -5139,7 +5139,7 @@ result: trigger a suite, wait for it, and fail the pipeline step if a check fail
 
 ```bash
 # A released version: the wheel attached to the DataQ release matching your server's version
-VERSION=1.2.0   # your DataQ server's version
+VERSION=1.3.0   # your DataQ server's version
 pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$VERSION/dataq_client-$VERSION-py3-none-any.whl"
 
 # The latest from main
@@ -5185,7 +5185,7 @@ A GitHub Actions step:
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
-    DATAQ_VERSION: 1.2.0   # your server's version
+    DATAQ_VERSION: 1.3.0   # your server's version
     SUITE_ID: 7c1e…
 ```
 
@@ -5615,6 +5615,13 @@ section below.
 <!-- changelog.d:unreleased -->
 
 ## Unreleased
+
+_No changes recorded since the last release._
+
+## v1.3.0 — 2026-11-28
+
+Rollback: previous images on this schema — yes · DB restore needed — no · downgrade target
+`49bd96efd9fc`
 
 ### Security
 

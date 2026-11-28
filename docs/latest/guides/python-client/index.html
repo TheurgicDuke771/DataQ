@@ -2694,7 +2694,7 @@
 pipelines, notebooks and schedulers. Its most common use is gating a deploy on a data-quality
 result: trigger a suite, wait for it, and fail the pipeline step if a check failed.</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># A released version: the wheel attached to the DataQ release matching your server's version</span>
-<span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.2.0<span class="w">   </span><span class="c1"># your DataQ server's version</span>
+<span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.3.0<span class="w">   </span><span class="c1"># your DataQ server's version</span>
 pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"https://github.com/TheurgicDuke771/DataQ/releases/download/v</span><span class="nv">$VERSION</span><span class="s2">/dataq_client-</span><span class="nv">$VERSION</span><span class="s2">-py3-none-any.whl"</span>
 
 <span class="c1"># The latest from main</span>
@@ -2753,7 +2753,7 @@ dataq<span class="w"> </span>run<span class="w"> </span>7c1e…-suite-id<span cl
 <span class="w">  </span><span class="nt">env</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">DATAQ_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DATAQ_URL }}</span>
 <span class="w">    </span><span class="nt">DATAQ_PAT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.DATAQ_PAT }}</span>
-<span class="w">    </span><span class="nt">DATAQ_VERSION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.2.0</span><span class="w">   </span><span class="c1"># your server's version</span>
+<span class="w">    </span><span class="nt">DATAQ_VERSION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.3.0</span><span class="w">   </span><span class="c1"># your server's version</span>
 <span class="w">    </span><span class="nt">SUITE_ID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7c1e…</span>
 </code></pre></div>
 <p>The token is read from <code>DATAQ_PAT</code> only, never from a command-line flag, where it would land in
