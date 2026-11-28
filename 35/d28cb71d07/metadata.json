@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "35d28cb71d07",
+  "strategy": "manual-commit",
+  "branch": "test/issue-2737-guard-every-table",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/conftest.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/d28cb71d07/0/metadata.json",
+      "transcript": "/35/d28cb71d07/0/full.jsonl",
+      "compact_transcript": "/35/d28cb71d07/0/transcript.jsonl",
+      "content_hash": "/35/d28cb71d07/0/content_hash.txt",
+      "prompt": "/35/d28cb71d07/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 581382,
+    "cache_read_tokens": 19811006,
+    "output_tokens": 25871,
+    "api_call_count": 39,
+    "subagent_tokens": {
+      "input_tokens": 50,
+      "cache_creation_tokens": 147199,
+      "cache_read_tokens": 1820048,
+      "output_tokens": 15510,
+      "api_call_count": 25
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 10,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
