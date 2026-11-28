@@ -80,7 +80,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('shows the catalog password field once catalog_type is set to sql', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(
       <AntApp>
         <ConnectionForm type="iceberg" onSaved={vi.fn()} onCancel={vi.fn()} />
@@ -93,7 +93,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('shows the catalog password field for catalog_type "hive" too', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(
       <AntApp>
         <ConnectionForm type="iceberg" onSaved={vi.fn()} onCancel={vi.fn()} />
@@ -105,7 +105,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('does not show the catalog password field for catalog_type "rest"', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(
       <AntApp>
         <ConnectionForm type="iceberg" onSaved={vi.fn()} onCancel={vi.fn()} />
@@ -117,7 +117,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('serializes added property rows into a config.properties dict on create', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(icebergConnection);
 
     render(
@@ -145,7 +145,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('supports two properties at once and removing one', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(icebergConnection);
 
     render(
@@ -182,7 +182,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('sends catalog_secret on create', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(icebergConnection);
 
     render(
@@ -205,7 +205,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('omits catalog_secret on create when the field is left blank', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(icebergConnection);
 
     render(
@@ -226,7 +226,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('sends catalog_secret in the draft Test Connection payload', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockDraftTest.mockResolvedValue({ ok: true });
 
     render(
@@ -249,7 +249,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('renders and sends the catalog password field in EDIT mode too (no separate reauth flow for it)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(icebergConnection);
 
     render(
@@ -275,7 +275,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   });
 
   it('does not rotate the catalog secret on save when left blank in edit mode', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(icebergConnection);
 
     render(
@@ -300,7 +300,7 @@ describe('ConnectionForm — Iceberg catalog fields (#1181)', () => {
   it('does not resubmit a stale catalog password typed before switching catalog_type away (preserve={false})', async () => {
     // Mirrors PassphraseField's own stale-value regression (#602): a conditionally-rendered antd
     // Form.Item defaults `preserve` to true.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(icebergConnection);
 
     render(
@@ -350,7 +350,7 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   it('hides the credential while editing anything that is not a destination', async () => {
     // The baseline the guard must not break — and the half a "does it appear?" test on its own
     // would pass just as happily against a form that always shows the field.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(snowflakeConnection);
 
     render(
@@ -378,7 +378,7 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   it('reveals the credential field and submits it once a destination field changes', async () => {
     // Edit mode normally omits the secret entirely (rotation is the Re-auth flow), so without this
     // a legitimate host migration hits a backend 422 naming a field the form never renders.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(snowflakeConnection);
 
     render(
@@ -407,7 +407,7 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   it('hides the credential again when the destination is typed back to its stored value', async () => {
     // The prompt is driven by a comparison against the STORED value, not by a "field was touched"
     // flag.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     render(
       <AntApp>
@@ -433,7 +433,7 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
   it('does not submit a credential typed before the destination was undone', async () => {
     // Locks the observable contract: undoing the host change must not rotate the stored credential
     // to something typed for a move that never happened.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(snowflakeConnection);
 
     render(
@@ -502,7 +502,7 @@ describe('ConnectionForm — inventory_sync toggle default (asset-first, 2026-09
   });
 
   it('resubmits inventory_sync=true on an untouched save so it matches what the toggle showed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(noInventoryKeyConnection);
 
     render(
@@ -546,7 +546,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
   }
 
   it('defaults to a SAS token and asks for tenant, client and client secret under a service principal', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(legacySas);
     render(
       <AntApp>
@@ -578,7 +578,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
 
   it('drops tenant and client ids typed under a service principal once SAS is re-selected', async () => {
     // The backend refuses them on a SAS connection rather than silently ignoring them.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue(legacySas);
     render(
       <AntApp>
@@ -602,7 +602,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
   });
 
   it('edits a legacy SAS row (no auth_type) without demanding the SAS again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(legacySas);
     render(
       <AntApp>
@@ -628,7 +628,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
   });
 
   it('asks for the client secret when a legacy SAS row is switched to a service principal', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(legacySas);
     render(
       <AntApp>
@@ -656,7 +656,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
   it('stops asking for the secret once the switch to a service principal is undone', async () => {
     // Ids typed under the abandoned mode must not linger as a "moved destination" — that would
     // force re-entering, and so overwriting, a SAS for an edit that moved nothing.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(legacySas);
     render(
       <AntApp>
@@ -688,7 +688,7 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
 
 describe('ConnectionForm — PostgreSQL', () => {
   it('offers the TLS mode as a closed choice and sends the one picked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'postgres' });
 
     render(
@@ -723,7 +723,7 @@ describe('ConnectionForm — PostgreSQL', () => {
 
 describe('ConnectionForm — MySQL / MariaDB', () => {
   it('needs no schema field and sends the TLS mode picked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mysql' });
 
     render(
@@ -766,7 +766,7 @@ describe('ConnectionForm — Trino', () => {
   };
 
   it('asks for the credential again when the auth type changes, but not for None', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockUpdate.mockResolvedValue(trinoConnection);
 
     render(
@@ -796,7 +796,7 @@ describe('ConnectionForm — Trino', () => {
   });
 
   it('asks for no secret when the cluster has no authentication', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'trino' });
 
     render(
@@ -830,7 +830,7 @@ describe('ConnectionForm — Trino', () => {
   });
 
   it('takes a password and a private CA bundle by default', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'trino' });
 
     render(
@@ -862,7 +862,7 @@ describe('ConnectionForm — Trino', () => {
 
 describe('ConnectionForm — SQL Server', () => {
   it('defaults to a SQL login on the shipped driver and sends only that mode’s fields', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
 
     render(
@@ -895,7 +895,7 @@ describe('ConnectionForm — SQL Server', () => {
   });
 
   it('a service principal swaps the user for tenant + client ids and a client secret', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
 
     render(
@@ -932,7 +932,7 @@ describe('ConnectionForm — SQL Server', () => {
 
 describe('ConnectionForm — Amazon Athena', () => {
   it('takes a region and an IAM key pair — no host, user or port', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'athena' });
 
     render(
@@ -968,7 +968,7 @@ describe('ConnectionForm — Amazon Athena', () => {
 
 describe('ConnectionForm — Amazon Redshift', () => {
   it('takes an endpoint, database and user; the password is the secret', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'redshift' });
 
     render(
@@ -1004,7 +1004,7 @@ describe('ConnectionForm — Amazon Redshift', () => {
 
 describe('ConnectionForm — Google Cloud Storage', () => {
   it('takes a bucket and a pasted service-account key file as the secret', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'gcs' });
     render(
       <AntApp>
@@ -1036,7 +1036,7 @@ describe('ConnectionForm — Google Cloud Storage', () => {
   });
 
   it('asks for no credential at all on an anonymous public bucket', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'gcs' });
     render(
       <AntApp>
@@ -1060,7 +1060,7 @@ describe('ConnectionForm — Google Cloud Storage', () => {
 
 describe('ConnectionForm — Google BigQuery', () => {
   it('takes a project, dataset, byte cap and a pasted key file; no host, port or user', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'bigquery' });
     render(
       <AntApp>
@@ -1101,7 +1101,7 @@ describe('ConnectionForm — Google BigQuery', () => {
 
 describe('ConnectionForm — dbt ADLS service principal', () => {
   it('reads OneLake artifacts as a service principal: tenant, client and a required secret', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'dbt' });
     render(
       <AntApp>
@@ -1179,7 +1179,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   }
 
   it('shows a failing save-time test on the form and does not report the connection as saved', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSaved = vi.fn();
     mockCreate.mockRejectedValue(
       apiError('connection_test_failed_on_save', 'connection test failed'),
@@ -1203,7 +1203,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   });
 
   it('creates without testing only when the Admin asks, sending skip_test', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSaved = vi.fn();
     mockCreate
       .mockRejectedValueOnce(apiError('connection_test_failed_on_save', 'connection test failed'))
@@ -1224,7 +1224,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   });
 
   it('clears the failure once a field changes, since it no longer describes what would be saved', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockRejectedValue(
       apiError('connection_test_failed_on_save', 'connection test failed'),
     );
@@ -1245,7 +1245,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   });
 
   it('leaves any other save error to the toast, with no skip offered', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockRejectedValue(apiError('connection_conflict', 'already exists'));
     render(
       <AntApp>
@@ -1263,7 +1263,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   });
 
   it('offers "Save without testing" on an edit whose test fails', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const onSaved = vi.fn();
     mockUpdate
       .mockRejectedValueOnce(apiError('connection_test_failed_on_save', 'connection test failed'))
@@ -1284,7 +1284,7 @@ describe('ConnectionForm — tested before save (#1927)', () => {
   });
 
   it('explains why a new dbt project fails its test', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockCreate.mockRejectedValue(
       apiError(
         'connection_test_failed_on_save',
