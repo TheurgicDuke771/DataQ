@@ -5,7 +5,7 @@
 > **Detect → Explain → Impact → Gate → Remediate:** checks run when a pipeline finishes, failures come with evidence and their downstream impact, a pipeline stage can wait for the verdict, and the owning team tracks the incident to resolution.
 
 - **📖 Docs:** <https://theurgicduke771.github.io/DataQ/docs/latest/>
-- **Status:** `v1.2.0` released 2026-10-04 — [changelog](CHANGELOG.md) · [tracker](docs/progress.md)
+- **Status:** `v1.3.0` released 2026-11-28 — [changelog](CHANGELOG.md) · [tracker](docs/progress.md)
 - **License:** MIT
 
 ![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](docs/site/assets/screenshots/dashboard.png)

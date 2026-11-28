@@ -3,7 +3,7 @@ name: dataq
 description: DataQ data quality monitoring — api, worker, beat, frontend and the migration job.
 type: application
 version: 0.1.0
-appVersion: "v1.2.0"
+appVersion: "v1.3.0"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/TheurgicDuke771/DataQ
 sources:

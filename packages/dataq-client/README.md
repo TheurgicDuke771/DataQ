@@ -6,7 +6,7 @@ Python or from a shell.
 
 ```bash
 # A released version: the wheel attached to the DataQ release matching your server's version
-VERSION=1.2.0   # your DataQ server's version
+VERSION=1.3.0   # your DataQ server's version
 pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$VERSION/dataq_client-$VERSION-py3-none-any.whl"
 
 # The latest from main
@@ -57,7 +57,7 @@ A CI gate is one step:
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
-    DATAQ_VERSION: 1.2.0   # your server's version
+    DATAQ_VERSION: 1.3.0   # your server's version
 ```
 
 ## Python

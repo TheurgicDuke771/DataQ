@@ -13,9 +13,45 @@ would act on. The step lives in the release checklist in
 
 ## [Unreleased]
 
-Changes since 1.2.0 collect as one fragment per change in [`changelog.d/`](changelog.d/) and show
+Changes since 1.3.0 collect as one fragment per change in [`changelog.d/`](changelog.d/) and show
 in the **Unreleased** section of the [docs changelog](docs/site/reference/changelog.md); this
-file gets the curated 1.3.0 entry when it is tagged.
+file gets the curated 1.4.0 entry when it is tagged.
+
+## [1.3.0] — 2026-11-28
+
+The roadmap-and-debt cycle (2026-10-05 → 2026-11-28): no net-new features beyond what was
+already planned or filed, then bug fixes and security, polish, and debt. The full user-facing
+entry lives on the docs site — [docs/site/reference/changelog.md](docs/site/reference/changelog.md)
+— and in the GitHub Release body; headlines:
+
+Rollback: previous images on this schema — yes · DB restore needed — no · downgrade target
+`49bd96efd9fc`
+
+### Added
+
+- **Google BigQuery and Google Cloud Storage datasources** (thirteen in all).
+- **Data contracts on ODCS v3** (ADR 0052): import, export, per-clause compliance and a
+  Contracts page; **suite-on-suite triggers** (ADR 0051); **tags**; **run comparison**; a
+  **notification centre**; a **command palette**.
+- **Coverage without authoring:** zero-config auto-baselines, profiler-side PII detection as a
+  classification source (ADR 0049) and the `pii_drift` monitor, enable/disable a check, and
+  per-period metrics with yearly seasonality on the anomaly monitor (ADR 0048).
+- **Operating DataQ:** a backup/restore runbook with an upgrade-path gate in CI, a Helm chart,
+  opt-in usage telemetry (default off, ADR 0050), third-party notices and an SPDX SBOM.
+
+### Changed
+
+- MCP tools carry their safety class as annotations and say what they can't see (54 → 59
+  tools); keyset paging on runs, pipeline runs and incidents; the dashboard and scheduler stay
+  flat at a million rows; every SQL engine has a per-query time limit.
+- The keyboard and screen-reader audits finished; the docs screenshots were re-captured.
+
+### Fixed
+
+- Deleting a check no longer rewrites the history of the runs it took part in; sensitive values
+  are masked on every read surface (aggregate min/max, suggested value sets, contract exports,
+  PII-drift samples); ADF webhooks enforce freshness; a results-rollup sweep batch could claim
+  past its batch size; a column-profile anomaly's incident card now names the deviating columns.
 
 ## [1.2.0] — 2026-10-04
 
