@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "b02aebb4c9c3",
+  "strategy": "manual-commit",
+  "branch": "test/issue-2739-planner-rival-indexes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_accessible_suite_filter_plan.py",
+    "backend/tests/db/test_index_plans_helper.py",
+    "backend/tests/db/test_list_paging_order_indexes_migration.py",
+    "backend/tests/db/test_llm_invocations_rca_index_migration.py",
+    "backend/tests/db/test_llm_invocations_status_index_migration.py",
+    "backend/tests/db/test_runs_triggered_by_index_migration.py",
+    "backend/tests/orchestration/test_markers.py",
+    "backend/tests/support/index_plans.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b0/2aebb4c9c3/0/metadata.json",
+      "transcript": "/b0/2aebb4c9c3/0/full.jsonl",
+      "compact_transcript": "/b0/2aebb4c9c3/0/transcript.jsonl",
+      "content_hash": "/b0/2aebb4c9c3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 17069,
+    "cache_read_tokens": 1884766,
+    "output_tokens": 9546,
+    "api_call_count": 12,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 67794,
+      "cache_read_tokens": 57678,
+      "output_tokens": 335,
+      "api_call_count": 2
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 2,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
