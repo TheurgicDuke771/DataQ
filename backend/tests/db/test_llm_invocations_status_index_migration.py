@@ -2,31 +2,15 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
 from backend.app.db.models import LLM_INVOCATION_OPEN_STATUSES, LLM_INVOCATION_STATUSES
+from backend.tests.support.migrations import load_migration, migration_ops
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "4a5f1e4d5daa_add_llm_invocations_status_open_index.py"
-)
+_MIGRATION = "4a5f1e4d5daa_add_llm_invocations_status_open_index.py"
 _INDEX = "ix_llm_invocations_status_open"
-
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_llm_status_index_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _indexdef(connection: Any) -> str | None:
@@ -53,7 +37,7 @@ def _assert_partial_on_open_statuses(indexdef: str | None) -> None:
 
 
 def test_revision_chain() -> None:
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "4a5f1e4d5daa"
     assert module.down_revision == "cadc40254699"
 
@@ -65,10 +49,9 @@ def test_create_all_builds_the_partial_index(db_session: Any) -> None:
 
 def test_up_down_up(db_session: Any) -> None:
     """down (drop) -> up (recreate) -> down, against live DDL from the `create_all` baseline."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         _assert_partial_on_open_statuses(_indexdef(connection))
         module.downgrade()
         assert _indexdef(connection) is None
