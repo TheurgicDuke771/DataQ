@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "60249ac0430f",
+  "strategy": "manual-commit",
+  "branch": "test/issue-1740-kind-detail-contract",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_kind_detail_contract.py",
+    "backend/tests/services/test_pii_drift.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/60/249ac0430f/0/metadata.json",
+      "transcript": "/60/249ac0430f/0/full.jsonl",
+      "compact_transcript": "/60/249ac0430f/0/transcript.jsonl",
+      "content_hash": "/60/249ac0430f/0/content_hash.txt",
+      "prompt": "/60/249ac0430f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 29146,
+    "cache_read_tokens": 8304004,
+    "output_tokens": 11635,
+    "api_call_count": 26,
+    "subagent_tokens": {
+      "input_tokens": 8,
+      "cache_creation_tokens": 130948,
+      "cache_read_tokens": 130310,
+      "output_tokens": 929,
+      "api_call_count": 4
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 2,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
