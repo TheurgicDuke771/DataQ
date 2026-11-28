@@ -10,12 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
-from backend.app.db.models import Base
-from backend.tests.support.migrations import load_migration
+from backend.tests.support.migrations import load_migration, migration_ops
 
 _FILE = "7a1c5d9e2b44_widen_trigger_providers_for_suite.py"
 
@@ -58,15 +55,14 @@ def test_downgrade_narrows_and_upgrade_widens_both_value_sets(db_session: Any) -
     assert "'suite'" in _provider_check(db)
     assert "suite:%" in _dedup_predicate(db)
 
-    ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
-    with Operations.context(ctx):
+    with migration_ops(db.connection()):
         module._set_provider_check(module._NO_SUITE)
     _rebuild_index(db, module, module._DEDUP_NO_SUITE)
     assert "'suite'" not in _provider_check(db)
     assert "suite:%" not in _dedup_predicate(db)
     assert "'dbt'" in _provider_check(db)  # the orchestration set is untouched either way
 
-    with Operations.context(ctx):
+    with migration_ops(db.connection()):
         module._set_provider_check(module._WITH_SUITE)
     _rebuild_index(db, module, module._DEDUP_WITH_SUITE)
     assert "'suite'" in _provider_check(db)

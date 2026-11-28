@@ -338,6 +338,9 @@ jobs:
       - name: Frontend UI text doesn't cite ADR/issue/PR numbers
         run: python scripts/check-frontend-no-ticket-refs.py
 
+      - name: Every pnpm override says why it exists
+        run: python scripts/check-pnpm-overrides.py
+
       - name: Changelog fragments are well-formed
         run: python scripts/changelog.py lint
 
@@ -733,11 +736,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: github/codeql-action/init@v4.39.4
+      - uses: github/codeql-action/init@v4.39.5
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
-      - uses: github/codeql-action/autobuild@v4.39.4
+      - uses: github/codeql-action/autobuild@v4.39.5
 
-      - uses: github/codeql-action/analyze@v4.39.4
+      - uses: github/codeql-action/analyze@v4.39.5

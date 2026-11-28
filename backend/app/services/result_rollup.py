@@ -61,7 +61,7 @@ SWEEP_BATCH = 2000
 # are upserted in key order: two transactions touching the same buckets lock them alike.
 # The data-modifying CTEs run to completion whether or not the final SELECT reads them.
 _ADD_SQL = """
-WITH claimed AS (
+WITH {pick}claimed AS (
     UPDATE runs SET results_rolled_up_at = now()
     WHERE {which}
     RETURNING id, suite_id
@@ -77,12 +77,17 @@ WITH claimed AS (
 SELECT (SELECT count(*) FROM claimed) AS runs
 """
 _ADD_ONE = text(
-    _ADD_SQL.format(which="id = :run_id AND status = 'succeeded' AND results_rolled_up_at IS NULL")
+    _ADD_SQL.format(
+        pick="", which="id = :run_id AND status = 'succeeded' AND results_rolled_up_at IS NULL"
+    )
 )
+# The batch is picked once, in its own CTE. As an `IN (subquery)` the planner may rescan it
+# per outer row, and each rescan skips the rows already claimed and takes more (#2753).
 _ADD_PENDING = text(
     _ADD_SQL.format(
-        which="id IN (SELECT id FROM runs WHERE status = 'succeeded' "
-        "AND results_rolled_up_at IS NULL ORDER BY id LIMIT :limit FOR UPDATE SKIP LOCKED)"
+        pick="picked AS MATERIALIZED (SELECT id FROM runs WHERE status = 'succeeded' "
+        "AND results_rolled_up_at IS NULL ORDER BY id LIMIT :limit FOR UPDATE SKIP LOCKED), ",
+        which="id IN (SELECT id FROM picked)",
     )
 )
 #: Above this many un-added runs a read counts from `results` alone (see `status_counts`).

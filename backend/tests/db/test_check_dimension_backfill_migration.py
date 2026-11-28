@@ -2,30 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
 import uuid
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
-
 from backend.app.db.models import Check, Connection, Suite, User
+from backend.tests.support.migrations import load_migration, migration_ops
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "a7b8c9d0e1f2_backfill_check_dimensions.py"
-)
-
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_backfill_dimensions_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+_MIGRATION = "a7b8c9d0e1f2_backfill_check_dimensions.py"
 
 
 def _seed(db: Any, specs: list[tuple[str, str, str, str | None]]) -> uuid.UUID:
@@ -65,10 +48,9 @@ def _dimensions(db: Any, suite_id: uuid.UUID) -> dict[str, str | None]:
 
 
 def _run(db: Any, direction: str) -> None:
-    migration = _load_migration()
+    migration = load_migration(_MIGRATION)
     connection = db.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         getattr(migration, direction)()
     db.expire_all()  # the UPDATE bypassed the ORM identity map
 
@@ -145,7 +127,7 @@ def test_the_frozen_map_matched_the_live_derivation_when_written(db_session: Any
     """
     from backend.app.services.check_dimension import derive_dimension
 
-    migration = _load_migration()
+    migration = load_migration(_MIGRATION)
     for etype, dimension in migration._BY_EXPECTATION_TYPE.items():
         assert derive_dimension(expectation_type=etype, kind="expectation") == dimension
     for kind, dimension in migration._BY_KIND.items():

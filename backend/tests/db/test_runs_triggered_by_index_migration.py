@@ -145,7 +145,7 @@ def test_pipeline_run_marker_lookup_still_uses_the_expression_index(db_session: 
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
-    drop_rival_indexes(connection, _PIPELINE_INDEX)
+    drop_rival_indexes(connection, _PIPELINE_INDEX, unique=True)
     marker = "airflow:nightly_etl:manual__1"
     statement = markers.pipeline_runs_for_marker_statement(marker)
     plan = _plan(connection, statement)

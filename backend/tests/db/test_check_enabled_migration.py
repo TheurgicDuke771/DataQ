@@ -2,32 +2,20 @@
 
 from __future__ import annotations
 
-import importlib.util
 import uuid
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
 from backend.app.db.models import Connection, Suite, User
+from backend.tests.support.migrations import run_migration
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "da99e8d41845_check_enabled.py"
-)
+_MIGRATION = "da99e8d41845_check_enabled.py"
 _TABLES = ("checks", "check_versions")
 
 
 def _run(db: Any, direction: str) -> None:
-    spec = importlib.util.spec_from_file_location("_check_enabled_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    ctx = MigrationContext.configure(db.connection())
-    with Operations.context(ctx):
-        getattr(module, direction)()
-    db.expire_all()
+    run_migration(db, _MIGRATION, direction)
 
 
 def _has_column(db: Any, table: str) -> bool:

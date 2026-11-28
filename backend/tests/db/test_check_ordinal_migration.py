@@ -2,33 +2,21 @@
 
 from __future__ import annotations
 
-import importlib.util
 import uuid
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
 from backend.app.db.models import Connection, Suite, User
+from backend.tests.support.migrations import run_migration
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "49bd96efd9fc_check_ordinal.py"
-)
+_MIGRATION = "49bd96efd9fc_check_ordinal.py"
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def _run(db: Any, direction: str) -> None:
-    spec = importlib.util.spec_from_file_location("_check_ordinal_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    ctx = MigrationContext.configure(db.connection())
-    with Operations.context(ctx):
-        getattr(module, direction)()
-    db.expire_all()
+    run_migration(db, _MIGRATION, direction)
 
 
 def _suite(db: Any) -> uuid.UUID:
