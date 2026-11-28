@@ -204,6 +204,30 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # The MySQL / MariaDB live battery (#2124). Root with no password, on loopback-only
+      # runner ports: the battery creates its own least-privileged users with random passwords.
+      mysql:
+        image: ghcr.io/theurgicduke771/ci-mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      mariadb:
+        image: ghcr.io/theurgicduke771/ci-mariadb:11.8
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+        ports:
+          - 3308:3306
+        options: >-
+          --health-cmd "mariadb-admin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -244,6 +268,7 @@ jobs:
           DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           REDIS_URL: redis://localhost:6379/0
           DATAQ_E2E: "1"
+          MYSQL_TEST_URLS: mysql+pymysql://root@127.0.0.1:3307,mysql+pymysql://root@127.0.0.1:3308
         # Four workers (the runner's cores), a database and a Redis index each (conftest.py). A
         # test file stays on one worker, so the probe databases and roles a file creates by
         # fixed name never meet another worker's.
