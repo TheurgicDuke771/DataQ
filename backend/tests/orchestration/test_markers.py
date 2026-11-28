@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from backend.app.db.models import Connection, PipelineRun, Run, Suite, User
 from backend.app.orchestration import markers
+from backend.tests.support.index_plans import drop_rival_indexes
 
 
 def _world(db_session: Any) -> tuple[Suite, Connection]:
@@ -113,6 +114,7 @@ def test_marker_lookups_use_the_expression_index(db_session: Any) -> None:
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, "ix_pipeline_runs_marker", unique=True)
     single = (
         "EXPLAIN SELECT id FROM pipeline_runs WHERE provider = 'dbt' AND "
         "(provider || ':' || pipeline_or_dag_id || ':' || provider_run_id) = 'dbt:a:b'"

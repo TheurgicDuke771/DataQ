@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from backend.app.services import llm_rca
 from backend.tests.support.driver_guard import assert_client_side_binding
+from backend.tests.support.index_plans import drop_rival_indexes
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -96,6 +97,7 @@ def test_narrative_lookup_uses_the_index(db_session: Any) -> None:
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _INDEX, unique=True)
     statement = llm_rca.narrative_lookup_statement(uuid.uuid4())
     compiled = statement.compile(bind=connection.engine, compile_kwargs={"literal_binds": True})
     plan = "\n".join(row[0] for row in connection.execute(text(f"EXPLAIN {compiled}")))
