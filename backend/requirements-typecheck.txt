@@ -23,7 +23,7 @@ fastmcp==4.2.6
 httpx==0.28.1
 psycopg2-binary==2.9.13
 pydantic==2.13.5
-pydantic-settings==2.16.1
+pydantic-settings==2.16.3
 # redis-py ships its own types (py.typed); the old types-redis stubs described 4.x.
 redis==7.4.1
 sqlalchemy==2.0.57
