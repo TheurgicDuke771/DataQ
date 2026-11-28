@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019A33QZAGAcToULiuTX6t7G",
+  "agent_id": "acd61cc03fde5de37",
+  "subagent_type": "docs-consistency-guard",
+  "task_description": "Audit the v1.3 close-out docs",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 58600,
+    "cache_read_tokens": 446303,
+    "output_tokens": 6004,
+    "api_call_count": 10
+  },
+  "started_at": "2026-11-28T17:54:02.254708+05:30",
+  "completed_at": "2026-11-28T17:56:14.278086+05:30"
+}

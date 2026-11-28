@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "6793a4bd9b3b",
+  "strategy": "manual-commit",
+  "branch": "docs/close-v1-3",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/67/93a4bd9b3b/0/metadata.json",
+      "transcript": "/67/93a4bd9b3b/0/full.jsonl",
+      "compact_transcript": "/67/93a4bd9b3b/0/transcript.jsonl",
+      "content_hash": "/67/93a4bd9b3b/0/content_hash.txt",
+      "prompt": "/67/93a4bd9b3b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 7425,
+    "cache_read_tokens": 5264638,
+    "output_tokens": 3878,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 58600,
+      "cache_read_tokens": 446303,
+      "output_tokens": 6004,
+      "api_call_count": 10
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 36,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 12,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
