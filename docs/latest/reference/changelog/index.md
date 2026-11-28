@@ -391,6 +391,10 @@ section below.
 
 ### Fixed
 
+- **A results-rollup sweep batch could claim more runs than its batch size.** When the database's
+  statistics said `runs` was nearly empty, the planner could re-run the batch's `LIMIT` once per
+  row, so one sweep could take the whole backlog in a single transaction. The counts were always
+  right; the batch bound now holds whatever plan is chosen.
 - **The retention sweep of list-shaped observed values uses its index.** The daily sweep that
   scrubs old list-shaped `observed_value`s was compiled in a form PostgreSQL could not match to the
   index built for it, so every chunk scanned the whole `results` table. It now reads only the
