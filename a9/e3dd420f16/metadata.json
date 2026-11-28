@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "a9e3dd420f16",
+  "strategy": "manual-commit",
+  "branch": "test/issue-2766-cross-browser-owner-picker",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/admin.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a9/e3dd420f16/0/metadata.json",
+      "transcript": "/a9/e3dd420f16/0/full.jsonl",
+      "compact_transcript": "/a9/e3dd420f16/0/transcript.jsonl",
+      "content_hash": "/a9/e3dd420f16/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 10790,
+    "cache_read_tokens": 4372003,
+    "output_tokens": 4861,
+    "api_call_count": 8
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 10,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
