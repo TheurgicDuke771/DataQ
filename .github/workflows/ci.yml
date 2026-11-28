@@ -207,8 +207,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The upgrade-path gate below needs the release tags and origin/main.
+          # The upgrade-path gate below needs the release tags and origin/main: every commit, but
+          # file contents only on demand (a blobless clone), which takes seconds, not a minute.
           fetch-depth: 0
+          filter: blob:none
 
       - uses: actions/setup-python@v7
         with:
@@ -242,7 +244,10 @@ jobs:
           DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
           REDIS_URL: redis://localhost:6379/0
           DATAQ_E2E: "1"
-        run: pytest backend/tests/
+        # Four workers (the runner's cores), a database and a Redis index each (conftest.py). A
+        # test file stays on one worker, so the probe databases and roles a file creates by
+        # fixed name never meet another worker's.
+        run: pytest backend/tests/ -n 4 --dist loadfile
 
       # The docs site's OpenAPI spec + MCP tool table are generated from the app; a change to
       # a route or a tool docstring must regenerate them (backend/scripts/export_docs_reference.py).
@@ -338,6 +343,9 @@ jobs:
       - name: Frontend UI text doesn't cite ADR/issue/PR numbers
         run: python scripts/check-frontend-no-ticket-refs.py
 
+      - name: Every pnpm override says why it exists
+        run: python scripts/check-pnpm-overrides.py
+
       - name: Changelog fragments are well-formed
         run: python scripts/changelog.py lint
 
@@ -428,7 +436,7 @@ jobs:
     timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 60 || 25 }}
     # Full-stack browser smoke (#128): real API + seeded demo data + dev-bypass, driven through the
     # React UI.
-    services:
+    services: &e2e-services
       postgres:
         image: ghcr.io/theurgicduke771/ci-postgres:16-alpine
         env:
@@ -454,7 +462,7 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
-    env:
+    env: &e2e-env
       DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_e2e
       REDIS_URL: redis://localhost:6379/0
       # api + seed must share the secret store so secrets the seed writes are readable by the api
@@ -472,17 +480,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - &e2e-setup-python
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
 
-      - name: Install backend
+      - &e2e-install-backend
+        name: Install backend
         run: |
           python -m pip install -U pip
           pip install -r backend/requirements-dev.txt
 
-      - name: Start OpenBao (secret store)
+      - &e2e-openbao
+        name: Start OpenBao (secret store)
         # A step rather than a `services:` container because the root token is generated per run —
         # service containers start before any step, so their env cannot come from $GITHUB_ENV.
         run: |
@@ -501,13 +512,15 @@ jobs:
           done
           echo "openbao did not come up"; docker logs openbao; exit 1
 
-      - name: Run migrations + seed demo data
+      - &e2e-seed
+        name: Run migrations + seed demo data
         # alembic.ini's script_location is relative to backend/ (compose parity).
         run: |
           (cd backend && alembic upgrade head)
           python -m backend.scripts.seed_dev
 
-      - name: Launch the API
+      - &e2e-api
+        name: Launch the API
         # Background uvicorn, then block until it serves before Playwright starts.
         run: |
           uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 &
@@ -519,23 +532,28 @@ jobs:
           done
           echo "api did not come up"; exit 1
 
-      - uses: pnpm/action-setup@v6.1.1
+      - &e2e-setup-pnpm
+        uses: pnpm/action-setup@v6.1.1
         with:
           version: 9
 
-      - uses: actions/setup-node@v7
+      - &e2e-setup-node
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
-      - name: Install frontend
+      - &e2e-install-frontend
+        name: Install frontend
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
+      - &e2e-install-browsers
+        name: Install Playwright browser
         working-directory: frontend
-        # Split the browser download from its OS deps (#704). The weekly lane adds Firefox and WebKit.
+        # Split the browser download from its OS deps (#704). The weekly lane adds Firefox and WebKit
+        # to the E2E job; the demo job (which shares this step) only ever drives Chromium.
         env:
-          BROWSERS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'chromium firefox webkit' || 'chromium' }}
+          BROWSERS: ${{ github.job == 'frontend-e2e' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'chromium firefox webkit' || 'chromium' }}
         run: |
           pnpm exec playwright install $BROWSERS
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
@@ -552,27 +570,6 @@ jobs:
             echo "playwright install-deps attempt $attempt failed; retrying in 5s…"; sleep 5
           done
           [ -n "${ok:-}" ] || { echo "playwright install-deps failed after 3 attempts"; exit 1; }
-
-      # ── Static demo (#2419) ────────────────────────────────────────────── Recorded BEFORE the
-      # E2E specs, which write to the seeded workspace. Never committed: every run records the
-      # API responses behind each route, builds the demo and drives the built files with no API,
-      # so a change that breaks the published demo fails here.
-      - name: Static demo — record, build, smoke
-        working-directory: frontend
-        env:
-          VITE_API_PROXY_TARGET: http://localhost:8000
-        run: |
-          pnpm demo:capture
-          pnpm demo:build
-          pnpm demo:smoke
-
-      - name: Upload the static demo
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-site
-          path: frontend/dist-demo/
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Playwright E2E
         working-directory: frontend
@@ -645,12 +642,52 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
+  frontend-demo:
+    name: Frontend — static demo (record, build, smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The published demo (#2419), recorded from a seeded stack of its own so it runs beside the
+    # browser E2E job instead of before its specs. Same stack as that job: the anchors below.
+    services: *e2e-services
+    env: *e2e-env
+    steps:
+      - uses: actions/checkout@v7
+      - *e2e-setup-python
+      - *e2e-install-backend
+      - *e2e-openbao
+      - *e2e-seed
+      - *e2e-api
+      - *e2e-setup-pnpm
+      - *e2e-setup-node
+      - *e2e-install-frontend
+      - *e2e-install-browsers
+
+      # ── Static demo (#2419) ────────────────────────────────────────────── Never committed:
+      # every run records the API responses behind each route, builds the demo and drives the
+      # built files with no API, so a change that breaks the published demo fails here.
+      - name: Static demo — record, build, smoke
+        working-directory: frontend
+        env:
+          VITE_API_PROXY_TARGET: http://localhost:8000
+        run: |
+          pnpm demo:capture
+          pnpm demo:build
+          pnpm demo:smoke
+
+      - name: Upload the static demo
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-site
+          path: frontend/dist-demo/
+          if-no-files-found: error
+          retention-days: 7
+
   publish-demo:
     name: Publish the static demo
-    # Every push to main republishes the demo that frontend-e2e just recorded and built (#2419).
+    # Every push to main republishes the demo that frontend-demo just recorded and built (#2419).
     # The build is kept as the single commit of the `demo-site` branch — force-pushed, so it
     # never accumulates history — and docs.yml, the one Pages deployer, puts it at /demo/.
-    needs: frontend-e2e
+    needs: frontend-demo
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -733,11 +770,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: github/codeql-action/init@v4.39.4
+      - uses: github/codeql-action/init@v4.39.5
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
-      - uses: github/codeql-action/autobuild@v4.39.4
+      - uses: github/codeql-action/autobuild@v4.39.5
 
-      - uses: github/codeql-action/analyze@v4.39.4
+      - uses: github/codeql-action/analyze@v4.39.5

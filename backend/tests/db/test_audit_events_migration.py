@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import inspect, text
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "ecda713656ac_add_audit_events.py"
-)
+from backend.tests.support.migrations import load_migration, migration_ops
 
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_audit_events_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+_MIGRATION = "ecda713656ac_add_audit_events.py"
 
 
 def _has_table(connection: Any) -> bool:
@@ -34,17 +19,16 @@ def test_revision_chain() -> None:
     """The chain, asserted explicitly — a duplicated or misparented revision id
     has bitten this repo twice, and alembic only notices at deploy time.
     """
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "ecda713656ac"
     assert module.down_revision == "f58b4bff54f7"
 
 
 def test_down_up_down(db_session: Any) -> None:
     """`create_all` already made the table, so the cycle starts with a drop."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert _has_table(connection)  # baseline from create_all
 
         module.downgrade()
@@ -63,10 +47,9 @@ def test_down_up_down(db_session: Any) -> None:
 
 def test_entity_id_has_no_foreign_key_and_actor_user_id_sets_null(db_session: Any) -> None:
     """The no-FK-on-`entity_id` decision, asserted from the migrated schema."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         module.downgrade()
         module.upgrade()
 
@@ -98,7 +81,7 @@ def test_the_revoke_block_actually_revokes(db_session: Any) -> None:
 
     assert {"UPDATE", "DELETE"} <= privileges(), "precondition: the probe role starts with both"
 
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     revoke_sql = module.revoke_statement(role)
     connection.execute(text(revoke_sql))
 
