@@ -13,6 +13,11 @@ os.environ.setdefault("AUTH_DEV_BYPASS", "true")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 # #1532: legacy UC tests exercise the frame lane; pushdown tests opt in.
 os.environ.setdefault("UC_SQL_PUSHDOWN", "false")
+# #2671: no test reads the developer's AWS files; a profile named for them would not exist.
+os.environ["AWS_CONFIG_FILE"] = os.devnull
+os.environ["AWS_SHARED_CREDENTIALS_FILE"] = os.devnull
+os.environ.pop("AWS_PROFILE", None)
+os.environ.pop("AWS_DEFAULT_PROFILE", None)
 
 # ── Test-DB resolution — also BEFORE any backend.app.* import (#1130) ───────── This has to run
 # here, ahead of the `pytest` / `backend.app.*` imports below.
