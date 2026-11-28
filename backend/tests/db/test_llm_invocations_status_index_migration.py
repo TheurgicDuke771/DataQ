@@ -11,6 +11,7 @@ from alembic.operations import Operations
 from sqlalchemy import text
 
 from backend.app.db.models import LLM_INVOCATION_OPEN_STATUSES, LLM_INVOCATION_STATUSES
+from backend.tests.support.index_plans import drop_rival_indexes
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -89,6 +90,7 @@ def test_reaper_equality_predicates_can_use_the_index(db_session: Any) -> None:
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _INDEX, unique=True)
     for status, age_column in (("pending", "created_at"), ("running", "started_at")):
         plan = "\n".join(
             row[0]

@@ -12,6 +12,7 @@ from sqlalchemy import func, select, text
 from backend.app.db.models import Incident, PipelineRun, Run
 from backend.app.services import incident_service, orchestration_service
 from backend.app.services import run_service as run_svc
+from backend.tests.support.index_plans import drop_rival_indexes
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -150,6 +151,7 @@ def test_runs_list_uses_the_index(db_session: Any) -> None:
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _RUNS_INDEX, unique=True)
     connection.execute(text("SET LOCAL enable_sort = off"))
     plan = _plan(connection, _runs_list_statement())
     assert _RUNS_INDEX in plan, f"the /runs page did not use {_RUNS_INDEX}:\n{plan}"
@@ -158,6 +160,7 @@ def test_runs_list_uses_the_index(db_session: Any) -> None:
 def test_pipeline_runs_list_uses_the_index(db_session: Any) -> None:
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _PIPELINE_INDEX, unique=True)
     plan = _plan(connection, _pipeline_runs_list_statement())
     assert (
         _PIPELINE_INDEX in plan
@@ -167,6 +170,7 @@ def test_pipeline_runs_list_uses_the_index(db_session: Any) -> None:
 def test_incidents_list_uses_the_index(db_session: Any) -> None:
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
+    drop_rival_indexes(connection, _INCIDENTS_INDEX, unique=True)
     connection.execute(text("SET LOCAL enable_sort = off"))
     plan = _plan(connection, _incidents_list_statement())
     assert _INCIDENTS_INDEX in plan, f"the /incidents page did not use {_INCIDENTS_INDEX}:\n{plan}"
