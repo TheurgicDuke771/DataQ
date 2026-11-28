@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import inspect
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "f0a1b2c3d4e5_add_asset_description.py"
-)
+from backend.tests.support.migrations import load_migration, migration_ops
 
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_asset_description_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+_MIGRATION = "f0a1b2c3d4e5_add_asset_description.py"
 
 
 def _has_description(connection: Any) -> bool:
@@ -31,17 +16,16 @@ def _has_description(connection: Any) -> bool:
 
 
 def test_revision_chain() -> None:
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "f0a1b2c3d4e5"
     assert module.down_revision == "a1c2e3d4f5b6"
 
 
 def test_up_down_up(db_session: Any) -> None:
     """down (drop) → up (add) → down (drop) against the live `assets` table."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert _has_description(connection)  # baseline from create_all
         module.downgrade()
         assert not _has_description(connection)

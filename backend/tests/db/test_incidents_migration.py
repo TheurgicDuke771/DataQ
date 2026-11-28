@@ -2,27 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import inspect
 
-from backend.tests.support.migrations import load_migration
+from backend.tests.support.migrations import load_migration, migration_ops
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "c4e5a6b7d8f9_add_incidents.py"
-)
-
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_incidents_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+_MIGRATION = "c4e5a6b7d8f9_add_incidents.py"
 
 
 def _has_incidents(connection: Any) -> bool:
@@ -42,7 +28,7 @@ def _has_active_index(connection: Any) -> bool:
 
 
 def test_revision_chain() -> None:
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "c4e5a6b7d8f9"
     assert module.down_revision == "f0a1b2c3d4e5"
 
@@ -54,11 +40,10 @@ def test_up_down_up(db_session: Any) -> None:
     `notifications.incident_id` (#1687) references `incidents`, so — as a real downgrade
     chain would — that later revision is stepped down first and back up at the end.
     """
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     notifications = load_migration("c38847820d74_add_notifications_feed.py")
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert _has_incidents(connection)  # baseline from create_all
         assert _has_active_index(connection)
         assert _has_auto_resolve(connection)

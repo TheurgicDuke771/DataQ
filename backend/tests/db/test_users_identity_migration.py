@@ -2,32 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
 import uuid
-from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import inspect, text
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "7d25617cfaf0_users_nullable_aad_unique_lower_email.py"
-)
+from backend.tests.support.migrations import load_migration, migration_ops
+
+_MIGRATION = "7d25617cfaf0_users_nullable_aad_unique_lower_email.py"
 
 _INDEX = "uq_users_email_lower"
-
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_users_identity_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _aad_nullable(connection: Any) -> bool:
@@ -48,14 +33,14 @@ def _has_lower_email_index(connection: Any) -> bool:
 
 
 def test_revision_chain() -> None:
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "7d25617cfaf0"
     assert module.down_revision == "70a054d4c469"  # the head this was cut from
 
 
 def test_docstring_carries_the_mandatory_duplicate_email_audit() -> None:
     """The pre-deploy audit lives in the migration, where whoever deploys it looks."""
-    doc = _load_migration().__doc__ or ""
+    doc = load_migration(_MIGRATION).__doc__ or ""
     assert "GROUP BY 1" in doc and "HAVING count(*) > 1" in doc
     assert "lower(email)" in doc
     assert "0032" in doc  # ADR pointer (decision 6)
@@ -63,10 +48,9 @@ def test_docstring_carries_the_mandatory_duplicate_email_audit() -> None:
 
 def test_up_down_up(db_session: Any) -> None:
     """down (restore NOT NULL, drop index) → up → asserted at each step."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert _aad_nullable(connection)  # baseline from create_all
         assert _has_lower_email_index(connection)
         module.downgrade()
@@ -83,10 +67,9 @@ def test_upgrade_aborts_when_duplicate_case_insensitive_emails_exist(db_session:
 
     from backend.app.db.models import User
 
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         module.downgrade()  # back to the pre-#735 schema, where the duplicates are legal
         oid = uuid.uuid4().hex[:8]
         db_session.add_all(
@@ -108,10 +91,9 @@ def test_downgrade_refuses_instead_of_deleting_otp_users(db_session: Any) -> Non
     db_session.add(User(aad_object_id=None, email=f"otp-{uuid.uuid4().hex[:8]}@example.com"))
     db_session.flush()
 
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         with pytest.raises(RuntimeError, match="NULL aad_object_id"):
             module.downgrade()
         # …and the refusal is a clean no-op: nothing was dropped or re-tightened.
@@ -121,10 +103,9 @@ def test_downgrade_refuses_instead_of_deleting_otp_users(db_session: Any) -> Non
 
 def test_downgrade_succeeds_once_no_null_aad_users_remain(db_session: Any) -> None:
     """The other half of the rollback plan: with the OTP rows resolved, down works."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert (
             connection.execute(
                 text("SELECT count(*) FROM users WHERE aad_object_id IS NULL")
