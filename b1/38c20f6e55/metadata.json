@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "b138c20f6e55",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-2509-pnpm-override-record",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/scripts/test_check_pnpm_overrides.py",
+    "scripts/check-pnpm-overrides.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b1/38c20f6e55/0/metadata.json",
+      "transcript": "/b1/38c20f6e55/0/full.jsonl",
+      "compact_transcript": "/b1/38c20f6e55/0/transcript.jsonl",
+      "content_hash": "/b1/38c20f6e55/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 39739,
+    "cache_read_tokens": 11782119,
+    "output_tokens": 23092,
+    "api_call_count": 29,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 87999,
+      "cache_read_tokens": 868648,
+      "output_tokens": 12530,
+      "api_call_count": 12
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 33,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 10,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
