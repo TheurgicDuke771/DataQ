@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "d0fabfae9915",
+  "strategy": "manual-commit",
+  "branch": "chore/frontend-deps-and-stale-overrides",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/pnpm-overrides.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/fabfae9915/0/metadata.json",
+      "transcript": "/d0/fabfae9915/0/full.jsonl",
+      "compact_transcript": "/d0/fabfae9915/0/transcript.jsonl",
+      "content_hash": "/d0/fabfae9915/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 8479,
+    "cache_read_tokens": 5685274,
+    "output_tokens": 4734,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 51272,
+      "cache_read_tokens": 72602,
+      "output_tokens": 255,
+      "api_call_count": 2
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 10,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
