@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "247a4a4cb56c",
+  "strategy": "manual-commit",
+  "branch": "test/issue-1605-parity-negations",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_migration_parity.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/24/7a4a4cb56c/0/metadata.json",
+      "transcript": "/24/7a4a4cb56c/0/full.jsonl",
+      "compact_transcript": "/24/7a4a4cb56c/0/transcript.jsonl",
+      "content_hash": "/24/7a4a4cb56c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 17743,
+    "cache_read_tokens": 5315197,
+    "output_tokens": 11517,
+    "api_call_count": 14
+  },
+  "redaction": {
+    "replacements": 19,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 6,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
