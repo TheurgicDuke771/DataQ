@@ -74,7 +74,10 @@ def _per_worker_database(url: str | None) -> str | None:
             if not exists:
                 conn.execute(text(f'CREATE DATABASE "{name}"'))
     except Exception:  # pragma: no cover - environment-dependent
-        pass  # Postgres down / no perms — _db_engine's connect below skips cleanly.
+        # A test database named explicitly (CI) that can't be split per worker must fail the run:
+        # skipping every DB test on the worker would stay green. A local default skips cleanly.
+        if _EXPLICIT_TEST_DATABASE:
+            raise
     finally:
         admin.dispose()
     return base.set(database=name).render_as_string(hide_password=False)
@@ -89,10 +92,14 @@ def _per_worker_redis(url: str | None) -> str | None:
 
     parts = urlsplit(url)
     base = int(parts.path.lstrip("/") or 0)
-    index = (base + int(XDIST_WORKER.removeprefix("gw")) + 1) % 16
+    index = base + int(XDIST_WORKER.removeprefix("gw")) + 1
+    # Redis has 16 databases, and /15 belongs to tests that flush it by fixed number.
+    if index >= 15:
+        raise RuntimeError(f"too many xdist workers for per-worker Redis databases ({index})")
     return urlunsplit(parts._replace(path=f"/{index}"))
 
 
+_EXPLICIT_TEST_DATABASE = bool(os.environ.get("TEST_DATABASE_URL"))
 _BASE_TEST_DATABASE_URL = _resolve_test_database_url()
 TEST_DATABASE_URL = _per_worker_database(_BASE_TEST_DATABASE_URL)
 # If we defaulted to the local compose Postgres, export it so per-test skipif guards that read
@@ -109,8 +116,11 @@ if TEST_DATABASE_URL:
 if TEST_DATABASE_URL and os.environ.get("DATABASE_URL") in (None, "", _BASE_TEST_DATABASE_URL):
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
-if XDIST_WORKER and os.environ.get("REDIS_URL"):
-    os.environ["REDIS_URL"] = _per_worker_redis(os.environ["REDIS_URL"]) or ""
+if XDIST_WORKER:
+    # The app's own default when nothing names one, so a local `-n` run splits it as well.
+    os.environ["REDIS_URL"] = (
+        _per_worker_redis(os.environ.get("REDIS_URL") or "redis://localhost:6379/0") or ""
+    )
 
 import structlog  # noqa: E402
 
@@ -283,7 +293,10 @@ def _ensure_local_test_database() -> None:
                 conn.execute(text("CREATE DATABASE dataq_test"))
         admin.dispose()
     except Exception:  # pragma: no cover - environment-dependent
-        pass  # Postgres down / no perms — _db_engine's connect below skips cleanly.
+        # A test database named explicitly (CI) that can't be split per worker must fail the run:
+        # skipping every DB test on the worker would stay green. A local default skips cleanly.
+        if _EXPLICIT_TEST_DATABASE:
+            raise
 
 
 @pytest.fixture(scope="session")

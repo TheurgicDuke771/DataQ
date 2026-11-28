@@ -547,9 +547,10 @@ jobs:
       - &e2e-install-browsers
         name: Install Playwright browser
         working-directory: frontend
-        # Split the browser download from its OS deps (#704). The weekly lane adds Firefox and WebKit.
+        # Split the browser download from its OS deps (#704). The weekly lane adds Firefox and WebKit
+        # to the E2E job; the demo job (which shares this step) only ever drives Chromium.
         env:
-          BROWSERS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'chromium firefox webkit' || 'chromium' }}
+          BROWSERS: ${{ github.job == 'frontend-e2e' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'chromium firefox webkit' || 'chromium' }}
         run: |
           pnpm exec playwright install $BROWSERS
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true

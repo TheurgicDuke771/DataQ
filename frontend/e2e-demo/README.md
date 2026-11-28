@@ -3,7 +3,7 @@
 The read-only demo published at `/demo/` on the GitHub Pages site (#2419) is the real
 frontend, built with `VITE_DEMO=true` so the API client answers from recorded responses
 instead of a backend. Nothing here is committed output: CI records, builds and smoke-tests
-it on every run of the `frontend-e2e` job, and a push to `main` publishes the result.
+it on every run of the `frontend-demo` job, and a push to `main` publishes the result.
 
 | Step   | Command             | What it does                                                                                                                                                                                     |
 | ------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
