@@ -2,34 +2,20 @@
 
 from __future__ import annotations
 
-import importlib.util
 import uuid
-from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "543b75689c8c_coverage_settings.py"
-)
+from backend.tests.support.migrations import run_migration
+
+_MIGRATION = "543b75689c8c_coverage_settings.py"
 
 
 def _run(db: Any, direction: str) -> None:
-    spec = importlib.util.spec_from_file_location("_coverage_settings_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    ctx = MigrationContext.configure(db.connection())
-    with Operations.context(ctx):
-        getattr(module, direction)()
-    db.expire_all()
+    run_migration(db, _MIGRATION, direction)
 
 
 def _present(db: Any) -> tuple[bool, bool]:
@@ -110,3 +96,20 @@ def test_downgrade_removes_both_and_upgrade_puts_them_back(db_session: Any) -> N
 
     assert gone == (False, False)
     assert _present(db_session) == (True, True)
+
+
+def test_upgrade_builds_the_constraint_names_production_gets(db_session: Any) -> None:
+    """The migration passes short names; the naming convention prefixes them, in production and
+    here (#2462). Run without the env's metadata, the table got bare `singleton`."""
+    _run(db_session, "downgrade")
+    _run(db_session, "upgrade")
+
+    names = set(
+        db_session.scalars(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'coverage_settings'::regclass AND contype = 'c'"
+            )
+        )
+    )
+    assert names == {"ck_coverage_settings_singleton", "ck_coverage_settings_config_is_object"}

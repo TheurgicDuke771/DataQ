@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import inspect, text
 
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "alembic"
-    / "versions"
-    / "1a2b3c4d5e6f_lineage_edges_nullable_connection.py"
-)
+from backend.tests.support.migrations import load_migration, migration_ops
 
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_lineage_nullable_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+_MIGRATION = "1a2b3c4d5e6f_lineage_edges_nullable_connection.py"
 
 
 def _connection_id_nullable(connection: Any) -> bool:
@@ -45,17 +30,16 @@ def _has_partial_index(connection: Any) -> bool:
 
 
 def test_revision_chain() -> None:
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     assert module.revision == "1a2b3c4d5e6f"
     assert module.down_revision == "c4e5a6b7d8f9"  # chained onto the #775 incidents head
 
 
 def test_up_down_up(db_session: Any) -> None:
     """down (restore NOT NULL) → up (relax + index) → down, against live DDL."""
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         assert _connection_id_nullable(connection)  # baseline from create_all
         module.downgrade()
         assert not _connection_id_nullable(connection)
@@ -83,10 +67,9 @@ def test_downgrade_deletes_null_connection_rows(db_session: Any) -> None:
     )
     db_session.flush()
 
-    module = _load_migration()
+    module = load_migration(_MIGRATION)
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    with Operations.context(ctx):
+    with migration_ops(connection):
         module.downgrade()
         remaining = connection.execute(
             text("SELECT count(*) FROM lineage_edges WHERE source = 'marquez'")

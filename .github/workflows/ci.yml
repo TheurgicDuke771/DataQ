@@ -368,6 +368,9 @@ jobs:
       - name: Frontend UI text doesn't cite ADR/issue/PR numbers
         run: python scripts/check-frontend-no-ticket-refs.py
 
+      - name: Every pnpm override says why it exists
+        run: python scripts/check-pnpm-overrides.py
+
       - name: Changelog fragments are well-formed
         run: python scripts/changelog.py lint
 

@@ -24,6 +24,12 @@ updates:
         update-types:
           - version-update:semver-minor
           - version-update:semver-major
+      # snowflake-sqlalchemy 1.11.x requires snowflake-connector-python<5, and its 2.x line, which
+      # takes connector 5, changes how VARIANT values come back. The pair moves together, live-
+      # verified against Snowflake, in #2275 — delete this entry there.
+      - dependency-name: snowflake-connector-python
+        update-types:
+          - version-update:semver-major
     groups:
       # The OTel SDK and its instrumentations pin each other exactly (sdk 1.N needs
       # semantic-conventions 0.Nb0, which instrumentation 0.Nb0 also pins), so a lone bump is
