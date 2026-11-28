@@ -102,6 +102,16 @@ def _anomaly() -> None:
     assert_layer_reads_what(
         monitors.ANOMALY, scored, absent_by_design=frozenset({"insufficient_history"})
     )
+    # The first runs, before any series has enough history.
+    cold = anomaly.score_column_profile(profile, history[:1], now=NOW, params=profile_params)
+    assert_layer_reads_what(
+        monitors.ANOMALY, cold, absent_by_design=frozenset({"z_score", "deviations"})
+    )
+    detail = _kind_detail_layer(
+        SimpleNamespace(kind=monitors.ANOMALY),  # type: ignore[arg-type]
+        SimpleNamespace(observed_value=cold),  # type: ignore[arg-type]
+    )
+    assert detail is not None and detail["insufficient_history"] is True
 
 
 def _aggregate() -> None:

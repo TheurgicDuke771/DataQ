@@ -4905,7 +4905,10 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
     anomaly (a `column_profile` anomaly carries `deviations` instead of a mean and
-    stddev: the worst column/metric series, each with its value, mean and z-score),
+    stddev: the highest-scoring column/metric series, each with its value, mean and
+    z-score, ranked rather than filtered by the check's thresholds, plus
+    `columns_measured`/`columns_total`/`distinct_unavailable`/`series_scored`, which say how
+    much of the table was profiled; an unmeasured column is not a clean one),
     `new_columns`/`columns_detected`/`columns_unclassified`/
     `baseline_captured` for pii_drift (column names only, never a value;
     `columns_detected` is what the detectors flagged in that run's profile,
