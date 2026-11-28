@@ -1568,9 +1568,14 @@ def test_approle_does_not_retry_a_403_on_a_freshly_minted_token() -> None:
 
 
 def test_approle_403_relogin_is_compare_and_swap_under_concurrency() -> None:
-    """N threads whose CACHED token is revoked together must not each log in."""
+    """N threads whose CACHED token is revoked together must not each log in.
+
+    Only the cached token is refused; the one a re-login mints works. Refusing every token
+    instead made the count depend on scheduling: a thread that starts after the first re-login
+    sends the new token, is refused, and rightly replaces it, so a slow runner logged in more.
+    """
     logins = 0
-    revoked = False
+    revoked: set[str] = set()
     lock = threading.Lock()
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1582,14 +1587,14 @@ def test_approle_403_relogin_is_compare_and_swap_under_concurrency() -> None:
             return httpx.Response(
                 200, json={"auth": {"client_token": f"t{issued}", "lease_duration": 3600}}
             )
-        if revoked:
+        if request.headers.get("X-Vault-Token") in revoked:
             return httpx.Response(403, json={"errors": ["permission denied"]})
         return httpx.Response(200, json={"data": {"data": {"value": "v"}}})
 
     store = _approle_store(handler)
     store.get("warm")  # caches t1 — now every thread below takes the non-fresh path
     assert logins == 1
-    revoked = True
+    revoked.add("t1")
 
     threads = [threading.Thread(target=_ignore_unavailable(store)) for _ in range(8)]
     barrier = threading.Barrier(len(threads))
@@ -1598,8 +1603,9 @@ def test_approle_403_relogin_is_compare_and_swap_under_concurrency() -> None:
         t.start()
     for t in threads:
         t.join()
-    # 1 warm-up login + a small constant. Unconditional clearing gives one per thread.
-    assert logins <= 3, f"login stampede: {logins} logins for {len(threads)} threads"
+    # The warm-up login and exactly one re-login, however the threads interleave. Clearing the
+    # token unconditionally would let each thread that sent t1 discard its peer's fresh token.
+    assert logins == 2, f"login stampede: {logins} logins for {len(threads)} threads"
 
 
 def _ignore_unavailable(store: OpenBaoSecretStore) -> Callable[[], None]:
