@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>bsgscdb63</task-id>
+<tool-use-id>toolu_017Zvd4uFaWPcZJwaDkaXCxM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8b83cc0-a8fa-4ad8-8284-2deb9d1429b6/tasks/bsgscdb63.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #2789's CI to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b5bvooyvm</task-id>
+<tool-use-id>toolu_01E2kGVxFh76mgauDjZHUTa5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8b83cc0-a8fa-4ad8-8284-2deb9d1429b6/tasks/b5bvooyvm.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #2792's CI" completed (exit code 0)</summary>
+</task-notification>
