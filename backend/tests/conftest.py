@@ -257,16 +257,12 @@ def _db_engine() -> "Iterator[object]":
 _SHARED_ENGINE: object | None = None
 
 
-#: Tables whose committed rows leak into every later test: the audit chain is one shared head, so
-#: a leftover row (or a head whose event a later test deleted) breaks every test that verifies it.
-def _leak_probe() -> str:
-    """One statement naming every model table that holds a committed row (#2623, #2737)."""
+def _model_tables(engine: Any) -> list[tuple[str, str]]:
+    """(name, quoted name) of every model table, parents before children."""
     from backend.app.db.base import Base
 
-    return " UNION ALL ".join(
-        f"SELECT '{t.name}' WHERE EXISTS (SELECT 1 FROM {t.name})"
-        for t in Base.metadata.sorted_tables
-    )
+    quote = engine.dialect.identifier_preparer.format_table
+    return [(t.name, quote(t)) for t in Base.metadata.sorted_tables]
 
 
 @pytest.fixture(autouse=True)
@@ -277,27 +273,45 @@ def _no_committed_state(request: pytest.FixtureRequest) -> "Iterator[None]":
     override, commits to the shared test database, and nothing rolls that back: the rows then
     reach whichever later test counts rows, verifies the audit chain or assumes an empty
     workspace, and only in a full-suite run. Every model table is checked, the leaker is named
-    here, and the tables are emptied so one leaker does not fail the tests after it. A test that
+    here, and its rows are deleted so one leaker does not fail the tests after it. A test that
     commits on purpose is marked `commits_for_real`: its rows are still removed, but it is not a
     failure.
     """
     yield
-    engine = _SHARED_ENGINE
+    engine: Any = _SHARED_ENGINE
     if engine is None:
         return
     from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
 
-    with engine.begin() as conn:  # type: ignore[attr-defined]
-        # A leaker that still holds a lock must fail here, not hang the run.
-        conn.execute(text("SET LOCAL lock_timeout = '10s'"))
-        left = sorted(conn.execute(text(_leak_probe())).scalars())
+    tables = _model_tables(engine)
+    probe = " UNION ALL ".join(
+        f"SELECT '{name}', (SELECT count(*) FROM {quoted}) WHERE EXISTS (SELECT 1 FROM {quoted})"
+        for name, quoted in tables
+    )
+    cleanup_error = None
+    with engine.connect() as conn:
+        left = dict(conn.execute(text(probe)).tuples().all())
+        conn.rollback()  # the probe's own transaction; the cleanup takes a fresh one
         if left:
-            conn.execute(text(f"TRUNCATE {', '.join(left)} CASCADE"))
-    if left and request.node.get_closest_marker("commits_for_real") is None:
+            try:
+                with conn.begin():
+                    # A leaker that still holds a row lock must fail here, not hang the run.
+                    conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+                    # DELETE, children first: TRUNCATE would also wait on any session that has
+                    # merely read the table, such as a leaker's idle one.
+                    for name, quoted in reversed(tables):
+                        if name in left:
+                            conn.execute(text(f"DELETE FROM {quoted}"))
+            except OperationalError as exc:
+                cleanup_error = exc
+    if left and (cleanup_error or request.node.get_closest_marker("commits_for_real") is None):
+        rows = ", ".join(f"{name}: {n}" for name, n in sorted(left.items()))
+        stuck = f" They could not be removed ({cleanup_error.orig})." if cleanup_error else ""
         pytest.fail(
-            f"{request.node.nodeid} left committed rows behind (in {', '.join(left)}); they "
-            "survive into later tests. Use the `db_session` fixture (override `get_db` with it) or "
-            "delete what the test committed in its own teardown.",
+            f"{request.node.nodeid} left committed rows behind ({rows}); they survive into later "
+            "tests. Use the `db_session` fixture (override `get_db` with it) or delete what the "
+            f"test committed in its own teardown.{stuck}",
             pytrace=False,
         )
 
