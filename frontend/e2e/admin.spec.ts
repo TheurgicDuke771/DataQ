@@ -354,59 +354,87 @@ test.describe('Admin suite writes', () => {
       .filter({ hasText: ANALYST });
     await expect(row).toBeVisible();
 
-    await row.getByRole('button', { name: 'Revoke' }).click();
-    await page.locator('.ant-popconfirm').getByRole('button', { name: 'Revoke' }).click();
+    try {
+      await row.getByRole('button', { name: 'Revoke' }).click();
+      await page.locator('.ant-popconfirm').getByRole('button', { name: 'Revoke' }).click();
+      // The grant gone from the SERVER before the reload (a reload can cancel the request), and
+      // the list loaded after it: an absence asserted on a table still loading proves nothing.
+      await expect
+        .poll(async () => {
+          const shares = await (await page.request.get(`/api/v1/suites/${suiteId}/shares`)).json();
+          return shares.some((s: { user_id: string }) => s.user_id === analystId);
+        })
+        .toBe(false);
 
-    // Reload to prove the grant is gone from the SERVER, not just this render.
-    await page.reload();
-    await expect(
-      page.getByRole('main').locator('tr').filter({ hasText: suiteName }).filter({
-        hasText: ANALYST,
-      }),
-    ).toHaveCount(0);
-
-    await page.request.delete(`/api/v1/admin/suites/${suiteId}`);
+      await page.reload();
+      await expect(page.getByRole('main').locator('tr.ant-table-row').first()).toBeVisible();
+      await expect(
+        page.getByRole('main').locator('tr').filter({ hasText: suiteName }).filter({
+          hasText: ANALYST,
+        }),
+      ).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/v1/admin/suites/${suiteId}`);
+    }
   });
 
   test('transfers ownership and then deletes the suite behind a typed confirmation', async ({
     page,
   }) => {
     const { suiteId, suiteName } = await seedSuite(page);
+    try {
+      await page.goto('/admin/suites');
+      const row = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
+      await expect(row).toBeVisible();
 
-    await page.goto('/admin/suites');
-    const row = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
-    await expect(row).toBeVisible();
+      await row.getByRole('button', { name: 'Transfer' }).click();
+      // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
+      // an option by role is flaky in this lane (see notifications.spec.ts). Enter picks
+      // the ACTIVE option, which the list marks after the search results render; pressed
+      // before that, it picks nothing (Firefox and WebKit, #2766).
+      const picker = page.getByRole('dialog').getByRole('combobox');
+      await picker.fill('analyst');
+      await expect(
+        page.locator('.ant-select-item-option-active', { hasText: ANALYST }),
+      ).toBeVisible();
+      await picker.press('Enter');
+      const transfer = page.getByRole('dialog').getByRole('button', { name: 'Transfer' });
+      await expect(transfer).toBeEnabled();
+      await transfer.click();
+      // The modal closes once the transfer has answered; a reload before that can cancel it.
+      await expect(page.getByRole('dialog')).toBeHidden();
 
-    await row.getByRole('button', { name: 'Transfer' }).click();
-    // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
-    // an option by role is flaky in this lane (see notifications.spec.ts).
-    const picker = page.getByRole('dialog').getByRole('combobox');
-    await picker.fill('analyst');
-    await expect(page.getByText(new RegExp(ANALYST))).toBeVisible();
-    await picker.press('Enter');
-    await page.getByRole('dialog').getByRole('button', { name: 'Transfer' }).click();
+      await page.reload();
+      await expect(
+        page.getByRole('main').locator('tr').filter({ hasText: suiteName }),
+      ).toContainText(ANALYST);
 
-    await page.reload();
-    await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toContainText(
-      ANALYST,
-    );
+      // Delete — on the suite this spec created, never a seeded one.
+      const afterTransfer = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
+      await afterTransfer.getByRole('button', { name: 'Delete' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText(/This cannot be undone/)).toBeVisible();
+      const confirm = dialog.getByRole('button', { name: 'Delete' });
+      await expect(confirm).toBeDisabled();
+      await dialog.getByLabel('Suite name confirmation').fill(suiteName);
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+      // Wait for the delete to answer before reloading (a reload can cancel it), and for the
+      // list to load after it: an absence asserted on a table still loading proves nothing.
+      await expect(dialog).toBeHidden();
+      await expect
+        .poll(async () => (await page.request.get(`/api/v1/suites/${suiteId}`)).status())
+        .toBe(404);
 
-    // Delete — on the suite this spec created, never a seeded one.
-    const afterTransfer = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
-    await afterTransfer.getByRole('button', { name: 'Delete' }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByText(/This cannot be undone/)).toBeVisible();
-    const confirm = dialog.getByRole('button', { name: 'Delete' });
-    await expect(confirm).toBeDisabled();
-    await dialog.getByLabel('Suite name confirmation').fill(suiteName);
-    await expect(confirm).toBeEnabled();
-    await confirm.click();
-
-    await page.reload();
-    await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toHaveCount(
-      0,
-    );
-    expect((await page.request.get(`/api/v1/suites/${suiteId}`)).status()).toBe(404);
+      await page.reload();
+      await expect(page.getByRole('main').locator('tr.ant-table-row').first()).toBeVisible();
+      await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toHaveCount(
+        0,
+      );
+    } finally {
+      // A miss before the UI delete must not leave this suite in the shared seeded stack.
+      await page.request.delete(`/api/v1/admin/suites/${suiteId}`);
+    }
   });
 });
 
@@ -467,9 +495,7 @@ test.describe('Admin offboarding', () => {
       // an option by role is flaky in this lane (see notifications.spec.ts).
       const picker = dialog.getByRole('combobox');
       await picker.fill('analyst');
-      await expect(
-        page.locator('.ant-select-item-option', { hasText: HEIR }).first(),
-      ).toBeVisible();
+      await expect(page.locator('.ant-select-item-option-active', { hasText: HEIR })).toBeVisible();
       await picker.press('Enter');
       await dialog.getByLabel('Confirm email address').fill(TARGET);
       await expect(confirm).toBeEnabled();
