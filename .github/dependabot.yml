@@ -17,9 +17,9 @@ updates:
       - dependency-name: redis
         update-types:
           - version-update:semver-major
-      # SQLAlchemy 2.1 drops the mypy plugin pyproject.toml loads, and snowflake-sqlalchemy 1.11.x
-      # fails to import under it (#2181). 2.0.x patches still flow; the migration is #2275 —
-      # delete this entry there.
+      # snowflake-sqlalchemy 1.11.x fails to import under SQLAlchemy 2.1 (#2181); its 2.1 line
+      # works but needs snowflake-connector-python 5. 2.0.x patches still flow; the migration is
+      # #2275 — delete this entry there.
       - dependency-name: sqlalchemy
         update-types:
           - version-update:semver-minor
