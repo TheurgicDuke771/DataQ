@@ -8,7 +8,7 @@
 > Earlier ledgers: [progress-v1.md](progress-v1.md), [progress-v1.1.md](progress-v1.1.md),
 > [progress-v1.2.md](progress-v1.2.md); companion retro: [retro-v1.3.md](retro-v1.3.md).
 >
-> Point-in-time note: the Snapshot below was last refreshed on 2026-11-28 (OPENCOUNT open
+> Point-in-time note: the Snapshot below was last refreshed on 2026-11-28 (32 open
 > issues, 0 open PRs before the close-out PR).
 
 ## Status legend
@@ -31,8 +31,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **44** open repo-wide (2026-11-28, live re-count): Week 8 22, `v1.3 Backlog` 22; Week 7 closed with none open; every open issue has a milestone. |
-| **Open PRs** | **0 open** (2026-11-28), apart from the one carrying this update. |
+| **Open issues** | **32** open repo-wide (2026-11-28, live re-count at the close), all in `v1.3 Backlog`; Weeks 1–8 closed with none open. |
+| **Open PRs** | **0 open** (2026-11-28), apart from the v1.3 close-out. |
 
 ---
 

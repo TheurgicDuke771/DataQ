@@ -43,9 +43,9 @@ ADR 0048).
   were re-captured for the v1.3 UI, and a weekly Firefox/WebKit lane was added.
 - **Debt and decisions (W8).** Below under "Week 8".
 
-**By the numbers:** 264 squash-merged commits · 139 issues closed across the
-eight weekly milestones (W6 36, W7 45, W8 28 at the time of writing) · **6 new
-ADRs** (0048–0053) · 19 migrations · backend tests 8,536 → **10,693** collected ·
+**By the numbers:** 284 squash-merged commits · 148 issues closed across the
+eight weekly milestones (W6 36, W7 45, W8 37) · **6 new
+ADRs** (0048–0053) · 19 migrations · backend tests 8,536 → **10,734** collected ·
 frontend 1,651 → **2,069** · datasources 11 → **13** · MCP tools 54 → **59**.
 
 ### Week 8
@@ -102,7 +102,9 @@ frontend 1,651 → **2,069** · datasources 11 → **13** · MCP tools 54 → **
 - **CI was the bottleneck at the end.** Backend tests and the E2E job each took
   more than 10 minutes, and with 18 PRs open at once (11 of them Dependabot's)
   the runners queued for most of the afternoon. The parallel backend run cuts
-  the first. The second needs measuring once the demo job runs on its own.
+  the first: `pytest` on CI went from 677 s to 447 s, less than the local 5×, because the runner
+  has fewer, slower cores and runs under coverage. The E2E job fell below 8 minutes with the
+  demo in its own job. The next levers are the perf-budget and mypy steps.
 - **Reviews kept catching what the author's tests encoded.** The parity check's first tests
   compared against hand-written "Postgres renderings" that Postgres never produces; the override
   sweep's first version resolved with the old lockfile and called every floor met. Both were
@@ -147,8 +149,8 @@ frontend 1,651 → **2,069** · datasources 11 → **13** · MCP tools 54 → **
 
 - CI green on `main` at the close commit; zero open PRs once the close-out merges.
 - Weeks 1–7 closed with 0 open; Week 8 closes with the tag.
-- Backend 10,693 tests collected (10,515 passed and 178 opt-in live lanes skipped
-  in three consecutive parallel runs); frontend 2,069 passed.
+- Backend 10,734 tests collected (10,556 passed, 178 opt-in live lanes skipped, in the last
+  parallel run; CI also runs the MySQL/MariaDB battery now); frontend 2,069 passed.
 - `packages/dataq-client` at `1.3.0`, matching the tag.
 - **Not verified:** anything against a live Snowflake, Unity Catalog, Azure or
   AWS, BigQuery or GCS since 2026-10-03 (#2224). BigQuery and GCS were
@@ -156,7 +158,7 @@ frontend 1,651 → **2,069** · datasources 11 → **13** · MCP tools 54 → **
 
 ## What rolls (explicitly, never silently)
 
-- **[N] open issues** in `v1.3 Backlog` carry into v1.4 planning.
+- **32 open issues** in `v1.3 Backlog` carry into v1.4 planning.
 - **Waiting on a cloud instance (#2224):** the Snowflake and Unity Catalog live
   lanes, the Azure stack's live plan, #2275, #2575, SQL Server's Entra, Fabric
   and ODBC legs.

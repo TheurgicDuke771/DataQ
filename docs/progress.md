@@ -28,10 +28,10 @@
 | **v1 baseline** | `v1.0.0` tagged 2026-07-04; ledger at [progress-v1.md](progress-v1.md) |
 | **v1.1 baseline** | `v1.1.0` — 2026-07-04 → 2026-08-21; ledger at [progress-v1.1.md](progress-v1.1.md) |
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
-| **v1.3 baseline** | `v1.3.0` — 2026-10-05 → 2026-11-28, no net-new features (one exception, ADR 0048): ISSUESCLOSED issues closed across eight weekly milestones, ADRs 0048–0053, datasources 11 → 13, MCP tools 54 → 59; ledger at [progress-v1.3.md](progress-v1.3.md), retro at [retro-v1.3.md](retro-v1.3.md) |
+| **v1.3 baseline** | `v1.3.0` — 2026-10-05 → 2026-11-28, no net-new features (one exception, ADR 0048): 148 issues closed across eight weekly milestones, ADRs 0048–0053, datasources 11 → 13, MCP tools 54 → 59; ledger at [progress-v1.3.md](progress-v1.3.md), retro at [retro-v1.3.md](retro-v1.3.md) |
 | **Current cycle** | **v1.4 — not yet planned.** Inputs: the v1.3 retro, the open backlog, and [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **OPENCOUNT** open repo-wide (2026-11-28, live re-count at the v1.3 close), all in `v1.3 Backlog`. |
+| **Open issues** | **32** open repo-wide (2026-11-28, live re-count at the v1.3 close), all in `v1.3 Backlog`. |
 | **Open PRs** | **1 open** (2026-11-28): the v1.3 close-out. |
 
 ---
