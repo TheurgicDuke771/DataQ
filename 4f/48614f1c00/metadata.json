@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "4f48614f1c00",
+  "strategy": "manual-commit",
+  "branch": "test/issue-2462-shared-migration-harness",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/db/test_asset_description_migration.py",
+    "backend/tests/db/test_audit_events_migration.py",
+    "backend/tests/db/test_check_dimension_backfill_migration.py",
+    "backend/tests/db/test_check_enabled_migration.py",
+    "backend/tests/db/test_check_ordinal_migration.py",
+    "backend/tests/db/test_coverage_settings_migration.py",
+    "backend/tests/db/test_lineage_nullable_connection_migration.py",
+    "backend/tests/db/test_llm_invocations_status_index_migration.py",
+    "backend/tests/db/test_users_identity_migration.py",
+    "backend/tests/db/test_users_role_migration.py",
+    "backend/tests/support/migrations.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4f/48614f1c00/0/metadata.json",
+      "transcript": "/4f/48614f1c00/0/full.jsonl",
+      "compact_transcript": "/4f/48614f1c00/0/transcript.jsonl",
+      "content_hash": "/4f/48614f1c00/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 30377,
+    "cache_read_tokens": 5908366,
+    "output_tokens": 11371,
+    "api_call_count": 23
+  },
+  "redaction": {
+    "replacements": 15,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 8,
+      "credentialed_uri": 2,
+      "entropy": 0,
+      "key_context": 1,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
