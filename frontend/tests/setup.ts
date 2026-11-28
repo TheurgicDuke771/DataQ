@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
 // antd's responsive components (Descriptions, Card, …) call window.matchMedia,
 // which jsdom does not implement. Provide a no-op stub so they render in tests.
