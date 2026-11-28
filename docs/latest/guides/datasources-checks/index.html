@@ -3712,6 +3712,13 @@ connection, checks and monitors work unchanged.</p>
 <li>An <code>http://</code> endpoint is accepted (in-cluster MinIO usually has no TLS), but object
   bytes and request signatures then travel <strong>cleartext</strong> — prefer <code>https://</code> for anything
   crossing a network you don't control.</li>
+<li>The worker's own AWS SDK configuration still applies to whatever the connection
+  doesn't set. The key, secret, region and endpoint come from the connection, but an
+  AWS config file on the worker (<code>~/.aws/config</code> or <code>AWS_CONFIG_FILE</code>) can add S3
+  settings such as payload signing or a CA bundle, and with <strong>Endpoint URL</strong> blank an
+  <code>AWS_ENDPOINT_URL</code> or <code>AWS_ENDPOINT_URL_S3</code> environment variable redirects the
+  connection. Keep those unset on the worker unless every S3 connection
+  should get them.</li>
 </ul>
 <p><strong>Asset identity.</strong> With no <strong>Endpoint URL</strong> (AWS), the asset namespace is exactly
 <code>s3://{bucket}</code> — unchanged, since AWS bucket names are globally unique and this form
