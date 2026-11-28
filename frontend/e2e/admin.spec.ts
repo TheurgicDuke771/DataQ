@@ -379,12 +379,18 @@ test.describe('Admin suite writes', () => {
 
     await row.getByRole('button', { name: 'Transfer' }).click();
     // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
-    // an option by role is flaky in this lane (see notifications.spec.ts).
+    // an option by role is flaky in this lane (see notifications.spec.ts). Enter picks
+    // the ACTIVE option, which the list marks after the search results render; pressed
+    // before that, it picks nothing (Firefox and WebKit, #2766).
     const picker = page.getByRole('dialog').getByRole('combobox');
     await picker.fill('analyst');
-    await expect(page.getByText(new RegExp(ANALYST))).toBeVisible();
+    await expect(
+      page.locator('.ant-select-item-option-active', { hasText: ANALYST }),
+    ).toBeVisible();
     await picker.press('Enter');
-    await page.getByRole('dialog').getByRole('button', { name: 'Transfer' }).click();
+    const transfer = page.getByRole('dialog').getByRole('button', { name: 'Transfer' });
+    await expect(transfer).toBeEnabled();
+    await transfer.click();
 
     await page.reload();
     await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toContainText(
@@ -467,9 +473,7 @@ test.describe('Admin offboarding', () => {
       // an option by role is flaky in this lane (see notifications.spec.ts).
       const picker = dialog.getByRole('combobox');
       await picker.fill('analyst');
-      await expect(
-        page.locator('.ant-select-item-option', { hasText: HEIR }).first(),
-      ).toBeVisible();
+      await expect(page.locator('.ant-select-item-option-active', { hasText: HEIR })).toBeVisible();
       await picker.press('Enter');
       await dialog.getByLabel('Confirm email address').fill(TARGET);
       await expect(confirm).toBeEnabled();
