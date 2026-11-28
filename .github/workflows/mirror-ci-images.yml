@@ -1,6 +1,6 @@
 name: Mirror CI service images
 
-# Keep the two containers CI's required test jobs depend on inside GHCR, so a Docker Hub outage or
+# Keep the containers CI's required test jobs depend on inside GHCR, so a Docker Hub outage or
 # an anonymous-pull throttle cannot red a merge gate (#993).
 
 on:
@@ -35,6 +35,11 @@ jobs:
           # this tag is a conscious security decision, never a routine bump.
           - source: redis:7-alpine
             target: ci-redis
+          # The MySQL / MariaDB live battery (#2124): the current LTS line of each.
+          - source: mysql:8.4
+            target: ci-mysql
+          - source: mariadb:11.8
+            target: ci-mariadb
 
     steps:
       - name: Refuse a silent major bump
@@ -46,10 +51,13 @@ jobs:
           case "$SOURCE" in
             postgres:16-*) ;;
             redis:7-*) ;;
+            mysql:8.4) ;;
+            mariadb:11.8) ;;
             *)
               echo "::error::$SOURCE is not a pinned major this repo has agreed to."
               echo "Redis must stay on 7.x (#980 — Redis 8 bundles Vector Sets, an unpatched"
               echo "RCE surface). Postgres must stay on 16 to match compose and production."
+              echo "MySQL 8.4 and MariaDB 11.8 are the LTS lines the battery was verified on."
               exit 1
               ;;
           esac
