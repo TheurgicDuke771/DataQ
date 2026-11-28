@@ -391,6 +391,8 @@ test.describe('Admin suite writes', () => {
     const transfer = page.getByRole('dialog').getByRole('button', { name: 'Transfer' });
     await expect(transfer).toBeEnabled();
     await transfer.click();
+    // The modal closes once the transfer has answered; a reload before that can cancel it.
+    await expect(page.getByRole('dialog')).toBeHidden();
 
     await page.reload();
     await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toContainText(
@@ -407,12 +409,18 @@ test.describe('Admin suite writes', () => {
     await dialog.getByLabel('Suite name confirmation').fill(suiteName);
     await expect(confirm).toBeEnabled();
     await confirm.click();
+    // Wait for the delete to answer before reloading (a reload can cancel it), and for the
+    // list to load after it: an absence asserted on a table still loading proves nothing.
+    await expect(dialog).toBeHidden();
+    await expect
+      .poll(async () => (await page.request.get(`/api/v1/suites/${suiteId}`)).status())
+      .toBe(404);
 
     await page.reload();
+    await expect(page.getByRole('main').locator('tr.ant-table-row').first()).toBeVisible();
     await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toHaveCount(
       0,
     );
-    expect((await page.request.get(`/api/v1/suites/${suiteId}`)).status()).toBe(404);
   });
 });
 
