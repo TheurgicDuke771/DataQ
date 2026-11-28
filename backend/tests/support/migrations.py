@@ -4,6 +4,8 @@ session's connection."""
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -27,13 +29,20 @@ def load_migration(filename: str) -> ModuleType:
     return module
 
 
+@contextmanager
+def migration_ops(connection: Any) -> Iterator[None]:
+    """Alembic's ``op`` bound to ``connection``, configured as ``alembic upgrade`` is."""
+    # The env's target metadata, so the naming convention prefixes constraint names exactly as
+    # `alembic upgrade` does in production.
+    ctx = MigrationContext.configure(connection, opts={"target_metadata": Base.metadata})
+    with Operations.context(ctx):
+        yield
+
+
 def run_migration(db: Any, filename: str, direction: str) -> None:
     """Run ``upgrade`` or ``downgrade`` of one revision file on the session's connection."""
     module = load_migration(filename)
-    # The env's target metadata, so the naming convention prefixes constraint names exactly as
-    # `alembic upgrade` does in production.
-    ctx = MigrationContext.configure(db.connection(), opts={"target_metadata": Base.metadata})
-    with Operations.context(ctx):
+    with migration_ops(db.connection()):
         getattr(module, direction)()
     db.expire_all()
 
