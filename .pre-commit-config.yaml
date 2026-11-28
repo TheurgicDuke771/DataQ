@@ -62,6 +62,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(docs/site/.*\.md|scripts/check-docs-references\.py)$
+      - id: check-pnpm-overrides
+        name: Every pnpm override says why it exists
+        entry: python scripts/check-pnpm-overrides.py
+        language: system
+        pass_filenames: false
+        files: ^(frontend/package\.json|frontend/pnpm-overrides\.json|scripts/check-pnpm-overrides\.py)$
       - id: check-docs-assets
         name: Docs assets stay small and every image has alt text
         entry: python scripts/check-docs-assets.py
