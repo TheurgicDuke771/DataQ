@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.13.5",
+  "checkpoint_id": "2bec6f7657d9",
+  "strategy": "manual-commit",
+  "branch": "test/issue-1610-suite-document-twins",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/api/test_suite_document_twins.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2b/ec6f7657d9/0/metadata.json",
+      "transcript": "/2b/ec6f7657d9/0/full.jsonl",
+      "compact_transcript": "/2b/ec6f7657d9/0/transcript.jsonl",
+      "content_hash": "/2b/ec6f7657d9/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 11845,
+    "cache_read_tokens": 6133915,
+    "output_tokens": 7824,
+    "api_call_count": 11,
+    "subagent_tokens": {
+      "input_tokens": 34,
+      "cache_creation_tokens": 157488,
+      "cache_read_tokens": 1119277,
+      "output_tokens": 10238,
+      "api_call_count": 17
+    },
+    "subagent_tokens_complete": true
+  },
+  "redaction": {
+    "replacements": 34,
+    "layers": {
+      "betterleaks": 26,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 10,
+      "credentialed_uri": 10,
+      "entropy": 0,
+      "key_context": 2,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
