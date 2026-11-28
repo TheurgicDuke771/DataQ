@@ -189,6 +189,25 @@ def _null_polarities(sql: str) -> set[tuple[str, bool]]:
     return out
 
 
+# The other polarity flips no literal moves with (#1605): `IN` <-> `NOT IN`, `LIKE` <-> `NOT LIKE`,
+# `IS [NOT] DISTINCT FROM`. Postgres rewrites each on read-back (`NOT IN (...)` -> `<> ALL (...)`,
+# `NOT LIKE` -> `!~~`, a one-value `IN` -> `=`, a one-value `NOT IN` -> `<>`), so the positive
+# forms don't line up across the two sides; the negations do, and a flip changes their count.
+_NEGATIONS = {
+    # A one-value `NOT IN` comes back as plain `<>`, so not-equal is the same family.
+    "NOT IN / <>": re.compile(r"\bNOT\s+IN\s*\(|<>|!=|\bNOT\s*\(\s*[^()]*?\bIN\s*\(", re.I),
+    "NOT LIKE": re.compile(r"\bNOT\s+I?LIKE\b|!~~\*?|\bNOT\s*\(\s*[^()]*?\bI?LIKE\b", re.I),
+    "IS DISTINCT FROM": re.compile(r"\bIS\s+DISTINCT\s+FROM\b", re.I),
+    "IS NOT DISTINCT FROM": re.compile(r"\bIS\s+NOT\s+DISTINCT\s+FROM\b", re.I),
+}
+
+
+def _negations(sql: str) -> dict[str, int]:
+    """How many of each negated operator `sql` carries (only the non-zero ones)."""
+    counts = {name: len(pattern.findall(sql)) for name, pattern in _NEGATIONS.items()}
+    return {name: n for name, n in counts.items() if n}
+
+
 def _model_predicates() -> dict[str, str]:
     """`{object name: SQL text}` for every named CHECK and partial index in the model."""
     # `models` is imported for its side effect — defining the classes is what puts their tables on
@@ -230,8 +249,9 @@ def _live_predicates(conn: Any) -> dict[str, str]:
 
 
 def test_vocabularies_in_predicates_match_between_model_and_database(migrated_url: str) -> None:
-    """Every literal and every IS [NOT] NULL clause a CHECK or partial-index predicate carries must
-    match on both sides — literal-set alone is blind to a bare polarity flip (#1326).
+    """Every literal, every IS [NOT] NULL clause and every negated operator a CHECK or
+    partial-index predicate carries must match on both sides — literal-set alone is blind to a
+    bare polarity flip (#1326, #1605).
     """
     engine = create_engine(migrated_url)
     try:
@@ -251,6 +271,12 @@ def test_vocabularies_in_predicates_match_between_model_and_database(migrated_ur
                 f"{name}: model has {sorted(expected)}, database has {sorted(actual)}"
                 f" (missing from the database: {sorted(expected - actual)};"
                 f" extra: {sorted(actual - expected)})"
+            )
+        expected_negations, actual_negations = _negations(model_sql), _negations(live[name])
+        if expected_negations != actual_negations:
+            drift.append(
+                f"{name}: model has negations {expected_negations}, database has "
+                f"{actual_negations}"
             )
         expected_nulls, actual_nulls = _null_polarities(model_sql), _null_polarities(live[name])
         if expected_nulls != actual_nulls:
@@ -305,3 +331,44 @@ def test_null_polarities_unwraps_an_outer_not() -> None:
     """
     assert _null_polarities("NOT (col IS NULL)") == {("col", True)}
     assert _null_polarities("NOT (col IS NOT NULL)") == {("col", False)}
+
+
+@pytest.mark.parametrize(
+    ("model_sql", "live_sql"),
+    [
+        (
+            "status NOT IN ('a', 'b')",
+            "((status)::text <> ALL ((ARRAY['a'::character varying, 'b'::character varying])"
+            "::text[]))",
+        ),
+        ("NOT (status IN ('a', 'b'))", "((status)::text <> ALL (ARRAY['a'::text, 'b'::text]))"),
+        ("triggered_by NOT LIKE 'adf:%'", "((triggered_by)::text !~~ 'adf:%'::text)"),
+        ("a IS DISTINCT FROM b", "(a IS DISTINCT FROM b)"),
+        ("status NOT IN ('a')", "((status)::text <> 'a'::text)"),
+        ("name != ''", "((name)::text <> ''::text)"),
+    ],
+)
+def test_negations_read_the_same_from_the_model_and_the_database(
+    model_sql: str, live_sql: str
+) -> None:
+    assert _negations(model_sql) == _negations(live_sql) != {}
+
+
+@pytest.mark.parametrize(
+    ("model_sql", "flipped_live_sql"),
+    [
+        (
+            "status IN ('a', 'b')",
+            "((status)::text <> ALL ((ARRAY['a'::character varying, 'b'::character varying])"
+            "::text[]))",
+        ),
+        ("status NOT IN ('a', 'b')", "((status)::text = ANY (ARRAY['a'::text, 'b'::text]))"),
+        ("status IN ('a')", "((status)::text <> 'a'::text)"),
+        ("triggered_by LIKE 'adf:%'", "((triggered_by)::text !~~ 'adf:%'::text)"),
+        ("a IS DISTINCT FROM b", "(a IS NOT DISTINCT FROM b)"),
+    ],
+)
+def test_a_negation_flip_breaks_equality(model_sql: str, flipped_live_sql: str) -> None:
+    """Each pair keeps every literal, so `_literals()` alone passes it."""
+    assert _literals(model_sql) == _literals(flipped_live_sql)
+    assert _negations(model_sql) != _negations(flipped_live_sql)
