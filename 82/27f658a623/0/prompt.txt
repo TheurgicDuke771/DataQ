@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>by6h1vcwv</task-id>
+<tool-use-id>toolu_01W9ukCR1eoM5MJN7RJ6jTWb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8b83cc0-a8fa-4ad8-8284-2deb9d1429b6/tasks/by6h1vcwv.output</output-file>
+<status>completed</status>
+<summary>Background command "Three parallel full-suite runs" completed (exit code 0)</summary>
+</task-notification>
