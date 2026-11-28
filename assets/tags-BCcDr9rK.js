@@ -1,0 +1,1 @@
+import{L as e}from"./index-CEDv98C8.js";async function t(){let{data:t}=await e.get(`/tags`);return t}function n(e){return e.normalize(`NFC`).toLowerCase().trim().split(/\s+/).filter(Boolean).join(` `)}function r(e){return e.length>0&&!/\p{C}/u.test(e)}export{t as n,n as r,r as t};
