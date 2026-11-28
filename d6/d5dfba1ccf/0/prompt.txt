@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bdoga1g04</task-id>
+<tool-use-id>toolu_01UYw3NtioHcCUPzpoe9J6gW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/b8b83cc0-a8fa-4ad8-8284-2deb9d1429b6/tasks/bdoga1g04.output</output-file>
+<status>completed</status>
+<summary>Background command "Full serial suite with the all-table guard" completed (exit code 0)</summary>
+</task-notification>
